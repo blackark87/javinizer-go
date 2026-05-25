@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.3.5-alpha] - 2026-05-25
+
+### Fixed
+
+- Extract DMM screenshot URL normalization into shared imageutil package, fixing R18Dev screenshots missing `jp` suffix which caused smaller thumbnails to be pulled (issue #23)
+- Fix DMM new-site extractScreenshotsNewSite missing NormalizeDMMScreenshotURL
+- Fix JavLibrary incorrect jp- screenshot filter that was filtering out higher-resolution images
+- Remove LibreDMM dead ThumbnailImageURL-derived poster code that was always overwritten
+
+### Changed
+
+- Consolidate duplicated DMM screenshot URL normalization logic from 6 scrapers into shared `internal/imageutil/` package (NormalizeDMMScreenshotURL, UpgradeCoverResolution, GetOptimalPosterURL)
+- All 6 scrapers (DMM, R18Dev, JavBus, LibreDMM, JavLibrary, DMM actress) now use shared normalization pipeline for consistent CDN rewrite, host lowercase, content ID canonicalization, and cover resolution upgrade
+- Actress thumbnail normalization in DMM actress.go delegates to shared imageutil.NormalizeDMMScreenshotURL instead of inline CDN rewrite
+
 ## [v0.3.4-alpha] - 2026-05-02
 
 ### Fixed

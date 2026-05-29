@@ -203,14 +203,14 @@ func updateFileNFO(fileCtx context.Context, sourceDir string, filePath string, m
 		isMultiPart = pt == matcher.PatternExplicit
 	}
 
-	nfoPath, legacyPaths := nfo.ResolveNFOPath(sourceDir, movie, cfg.Metadata.NFO.FilenameTemplate, cfg.Output.GroupActress, cfg.Metadata.NFO.PerFile, isMultiPart, partSuffix, filePath)
+	nfoPath, legacyPaths := nfo.ResolveNFOPath(sourceDir, movie, cfg.Metadata.NFO.FilenameTemplate, cfg.Output.GroupActress, cfg.Output.GroupActressName, cfg.Metadata.NFO.PerFile, isMultiPart, partSuffix, filePath)
 	res.nfoPath = nfoPath
 
 	movieToWrite, mergeStats, foundPath := resolveNFOAndMerge(movie, sourceDir, filePath, opts, cfg, nfoPath, legacyPaths)
 	res.movieToWrite = movieToWrite
 	res.mergeStats = mergeStats
 
-	worker.ApplyDisplayTitle(fileCtx, movieToWrite, movie, cfg.Metadata.NFO.DisplayTitle, template.NewEngine())
+	worker.ApplyDisplayTitle(fileCtx, movieToWrite, movie, cfg.Metadata.NFO.DisplayTitle, template.NewEngine(), cfg.Output.GroupActress, cfg.Output.GroupActressName)
 
 	if isMultiPart {
 		res.multipart = &downloader.MultipartInfo{IsMultiPart: isMultiPart, PartNumber: partNum, PartSuffix: partSuffix}

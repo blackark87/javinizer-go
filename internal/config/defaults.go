@@ -232,9 +232,10 @@ func DefaultConfig() *Config {
 			MoveSubtitles:       false,
 			SubtitleExtensions:  []string{".srt", ".ass", ".ssa", ".smi", ".vtt"},
 			OperationMode:       "",
-			RenameFile:          true,  // Rename files by default
-			AllowRevert:         false, // Opt-in: revert is disabled by default for safety
-			GroupActress:        false, // Don't group actresses by default
+			RenameFile:          true,     // Rename files by default
+			AllowRevert:         false,    // Opt-in: revert is disabled by default for safety
+			GroupActress:        false,    // Don't group actresses by default
+			GroupActressName:    "@Group", // Default group name when group_actress is enabled
 			PosterFormat:        "<ID><IF:MULTIPART>-pt<PART></IF>-poster.jpg",
 			FanartFormat:        "<ID><IF:MULTIPART>-pt<PART></IF>-fanart.jpg",
 			TrailerFormat:       "<ID>-trailer.mp4",

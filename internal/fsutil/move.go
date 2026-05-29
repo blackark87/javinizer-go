@@ -1,12 +1,10 @@
 package fsutil
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"syscall"
 
 	"github.com/javinizer/javinizer-go/internal/configutil"
 	"github.com/spf13/afero"
@@ -90,10 +88,6 @@ func crossDeviceMoveFs(fs afero.Fs, src, dst string) error {
 	}
 
 	return nil
-}
-
-func isCrossDeviceError(err error) bool {
-	return errors.Is(err, syscall.EXDEV) || errors.Is(err, syscall.EINVAL)
 }
 
 func copyFileData(src, dst string) error {

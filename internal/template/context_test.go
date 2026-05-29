@@ -557,6 +557,7 @@ func TestClone(t *testing.T) {
 				TrailerURL:       "https://example.com/trailer.mp4",
 				DefaultLanguage:  "ja",
 				GroupActress:     true,
+				GroupActressName: "@Group",
 				Translations: map[string]models.MovieTranslation{
 					"en": {Language: "en", Title: "English Title"},
 					"ja": {Language: "ja", Title: "Japanese Title"},
@@ -630,6 +631,7 @@ func TestClone(t *testing.T) {
 			assert.Equal(t, tt.ctx.TrailerURL, clone.TrailerURL)
 			assert.Equal(t, tt.ctx.DefaultLanguage, clone.DefaultLanguage)
 			assert.Equal(t, tt.ctx.GroupActress, clone.GroupActress)
+			assert.Equal(t, tt.ctx.GroupActressName, clone.GroupActressName)
 
 			// Verify slices are equal
 			assert.Equal(t, tt.ctx.Actresses, clone.Actresses)

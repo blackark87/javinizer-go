@@ -35,6 +35,7 @@ func NewInPlaceNoRenameFolderStrategy(fs afero.Fs, cfg *config.OutputConfig, _ *
 func (s *InPlaceNoRenameFolderStrategy) Plan(match matcher.MatchResult, movie *models.Movie, destDir string, forceUpdate bool) (*OrganizePlan, error) {
 	ctx := template.NewContextFromMovie(movie)
 	ctx.GroupActress = s.config.GroupActress
+	ctx.GroupActressName = s.config.GroupActressName
 
 	applyTitleTruncation(s.templateEngine, ctx, s.config.MaxTitleLength)
 

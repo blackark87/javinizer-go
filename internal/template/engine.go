@@ -386,7 +386,11 @@ func (e *Engine) resolveTag(tagName, modifier string, ctx *Context) (string, err
 	case "ACTORS", "ACTRESSES":
 		if len(ctx.Actresses) > 0 {
 			if ctx.GroupActress && len(ctx.Actresses) > 1 {
-				return "@Group", nil
+				groupName := ctx.GroupActressName
+				if groupName == "" {
+					groupName = "@Group"
+				}
+				return groupName, nil
 			}
 
 			delimiter := ", "

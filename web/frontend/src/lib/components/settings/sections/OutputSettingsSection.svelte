@@ -44,12 +44,28 @@
 
 			<FormToggle
 				label="Group actress"
-				description="Group actress names with @ prefix (e.g., '@GroupName')"
+				description="Replace multiple actresses with a group folder name in templates (e.g., '@Group')"
 				checked={config.output.group_actress ?? false}
 				onchange={(val) => {
 					config.output.group_actress = val;
 				}}
 			/>
+
+			{#if config.output.group_actress}
+				<div class="py-4 border-b border-border">
+					<label class="block text-sm font-medium mb-2" for="group-actress-name">Group actress name</label>
+					<input
+						id="group-actress-name"
+						type="text"
+						bind:value={config.output.group_actress_name}
+						class={inputClass}
+						placeholder="@Group"
+					/>
+					<p class="text-xs text-muted-foreground mt-1">
+						Folder name used when a movie has multiple actresses (default: @Group)
+					</p>
+				</div>
+			{/if}
 
 			<div class="py-4 border-b border-border">
 				<label class="block text-sm font-medium mb-2" for="delimiter">Delimiter</label>

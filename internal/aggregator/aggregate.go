@@ -145,6 +145,8 @@ func (a *Aggregator) aggregateWithPriority(results []*models.ScraperResult, prio
 
 	if a.config.Metadata.NFO.DisplayTitle != "" {
 		ctx := template.NewContextFromMovie(movie)
+		ctx.GroupActress = a.config.Output.GroupActress
+		ctx.GroupActressName = a.config.Output.GroupActressName
 		displayTitle, err := a.templateEngine.Execute(a.config.Metadata.NFO.DisplayTitle, ctx)
 		if err == nil && displayTitle != "" {
 			movie.DisplayTitle = displayTitle

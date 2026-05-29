@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -186,6 +187,8 @@ func TestIsCrossDeviceError(t *testing.T) {
 	}{
 		{"nil_error", nil, false},
 		{"generic_error", os.ErrNotExist, false},
+		{"exdev", syscall.EXDEV, true},
+		{"einval", syscall.EINVAL, true},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {

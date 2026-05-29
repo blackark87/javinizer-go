@@ -73,7 +73,8 @@ type Context struct {
 	DefaultLanguage string
 
 	// Output configuration
-	GroupActress bool // Replace multiple actresses with "@Group"
+	GroupActress     bool   // Replace multiple actresses with group name
+	GroupActressName string // Folder name when GroupActress is enabled and multiple actresses (default: "@Group")
 }
 
 // NewContextFromMovie creates a template context from a Movie model
@@ -205,6 +206,7 @@ func (c *Context) Clone() *Context {
 		TrailerURL:       c.TrailerURL,
 		DefaultLanguage:  c.DefaultLanguage,
 		GroupActress:     c.GroupActress,
+		GroupActressName: c.GroupActressName,
 		cachedMediaInfo:  c.cachedMediaInfo,
 		mediaInfoError:   c.mediaInfoError,
 	}

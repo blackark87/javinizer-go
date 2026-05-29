@@ -62,6 +62,7 @@ func resolveBaseFileName(cfg *config.OutputConfig, engine *template.Engine, movi
 	if cfg.RenameFile {
 		baseCtx := template.NewContextFromMovie(movie)
 		baseCtx.GroupActress = cfg.GroupActress
+		baseCtx.GroupActressName = cfg.GroupActressName
 		applyTitleTruncation(engine, baseCtx, cfg.MaxTitleLength)
 
 		rendered, err := engine.Execute(cfg.FileFormat, baseCtx)

@@ -40,12 +40,14 @@ func TestConfigFromAppConfig_WithGroupActress(t *testing.T) {
 	}
 
 	outputCfg := &config.OutputConfig{
-		GroupActress: true,
+		GroupActress:     true,
+		GroupActressName: "@Group",
 	}
 
 	cfg := ConfigFromAppConfig(appCfg, outputCfg, nil, nil)
 
 	assert.True(t, cfg.GroupActress)
+	assert.Equal(t, "@Group", cfg.GroupActressName)
 }
 
 // TestConfigFromAppConfig_WithDatabase tests database integration
@@ -134,7 +136,8 @@ func TestConfigFromAppConfig_AllFields(t *testing.T) {
 	}
 
 	outputCfg := &config.OutputConfig{
-		GroupActress: true,
+		GroupActress:     true,
+		GroupActressName: "@Group",
 	}
 
 	cfg := ConfigFromAppConfig(appCfg, outputCfg, nil, nil)

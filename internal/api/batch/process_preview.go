@@ -116,22 +116,26 @@ func generatePreview(movie *models.Movie, fileResults []*worker.FileResult, dest
 	folderName := primaryPlan.FolderName
 	fileName := primaryPlan.BaseFileName
 
+	previewCtx := template.NewContextFromMovie(movie)
+	previewCtx.GroupActress = cfg.Output.GroupActress
+	previewCtx.GroupActressName = cfg.Output.GroupActressName
+
 	var nfoPath string
 	var nfoPaths []string
 	if !skipNFO {
-		nfoPath, nfoPaths = generateNFOPaths(movie, fileResults, cfg, template.NewContextFromMovie(movie), sharedEngine, fileName, folderPath)
+		nfoPath, nfoPaths = generateNFOPaths(movie, fileResults, cfg, previewCtx, sharedEngine, fileName, folderPath)
 	}
 
 	var posterPath, fanartPath string
 	var extrafanartPath string
 	var screenshots []string
 	if !skipDownload {
-		posterPath = generatePosterPath(movie, fileResults, cfg, template.NewContextFromMovie(movie), sharedEngine, folderPath)
-		fanartPath = generateFanartPath(movie, fileResults, cfg, template.NewContextFromMovie(movie), sharedEngine, folderPath)
+		posterPath = generatePosterPath(movie, fileResults, cfg, previewCtx, sharedEngine, folderPath)
+		fanartPath = generateFanartPath(movie, fileResults, cfg, previewCtx, sharedEngine, folderPath)
 		if cfg.Output.DownloadExtrafanart {
 			extrafanartPath = previewJoinPath(folderPath, cfg.Output.ScreenshotFolder)
 		}
-		screenshots = generateScreenshotNames(movie, cfg, template.NewContextFromMovie(movie), sharedEngine)
+		screenshots = generateScreenshotNames(movie, cfg, previewCtx, sharedEngine)
 	}
 
 	validatePathLengths(cfg, sharedEngine, videoFiles, nfoPath, nfoPaths, posterPath, fanartPath, extrafanartPath, screenshots)
@@ -302,22 +306,26 @@ func generateUNCPreview(movie *models.Movie, fileResults []*worker.FileResult, d
 	folderName := primaryPlan.FolderName
 	fileName := primaryPlan.BaseFileName
 
+	previewCtx := template.NewContextFromMovie(movie)
+	previewCtx.GroupActress = cfg.Output.GroupActress
+	previewCtx.GroupActressName = cfg.Output.GroupActressName
+
 	var nfoPath string
 	var nfoPaths []string
 	if !skipNFO {
-		nfoPath, nfoPaths = generateNFOPaths(movie, fileResults, cfg, template.NewContextFromMovie(movie), sharedEngine, fileName, folderPath)
+		nfoPath, nfoPaths = generateNFOPaths(movie, fileResults, cfg, previewCtx, sharedEngine, fileName, folderPath)
 	}
 
 	var posterPath, fanartPath string
 	var extrafanartPath string
 	var screenshots []string
 	if !skipDownload {
-		posterPath = generatePosterPath(movie, fileResults, cfg, template.NewContextFromMovie(movie), sharedEngine, folderPath)
-		fanartPath = generateFanartPath(movie, fileResults, cfg, template.NewContextFromMovie(movie), sharedEngine, folderPath)
+		posterPath = generatePosterPath(movie, fileResults, cfg, previewCtx, sharedEngine, folderPath)
+		fanartPath = generateFanartPath(movie, fileResults, cfg, previewCtx, sharedEngine, folderPath)
 		if cfg.Output.DownloadExtrafanart {
 			extrafanartPath = previewJoinPath(folderPath, cfg.Output.ScreenshotFolder)
 		}
-		screenshots = generateScreenshotNames(movie, cfg, template.NewContextFromMovie(movie), sharedEngine)
+		screenshots = generateScreenshotNames(movie, cfg, previewCtx, sharedEngine)
 	}
 
 	validatePathLengths(cfg, sharedEngine, videoFiles, nfoPath, nfoPaths, posterPath, fanartPath, extrafanartPath, screenshots)

@@ -78,7 +78,7 @@ func mergeScrapedNFO(
 	if isMultiPart {
 		partSuffix = matchResultPtr.PartSuffix
 	}
-	nfoPath, legacyPaths := nfo.ResolveNFOPath(sourceDir, movie, cfg.Metadata.NFO.FilenameTemplate, cfg.Output.GroupActress, cfg.Metadata.NFO.PerFile, isMultiPart, partSuffix, filePath)
+	nfoPath, legacyPaths := nfo.ResolveNFOPath(sourceDir, movie, cfg.Metadata.NFO.FilenameTemplate, cfg.Output.GroupActress, cfg.Output.GroupActressName, cfg.Metadata.NFO.PerFile, isMultiPart, partSuffix, filePath)
 
 	foundPath := findExistingNFO(job.ID, fileIndex, nfoPath, legacyPaths)
 
@@ -113,6 +113,8 @@ func mergeScrapedNFO(
 	if cfg != nil && cfg.Metadata.NFO.DisplayTitle != "" {
 		displayTmplEngine := job.TemplateEngine()
 		displayCtx := template.NewContextFromMovie(movie)
+		displayCtx.GroupActress = cfg.Output.GroupActress
+		displayCtx.GroupActressName = cfg.Output.GroupActressName
 		displayCtx.Title = preMergeTitle
 		if displayName, err := displayTmplEngine.ExecuteWithContext(ctx, cfg.Metadata.NFO.DisplayTitle, displayCtx); err == nil {
 			movie.DisplayTitle = displayName
@@ -147,7 +149,7 @@ func mergeCachedNFO(
 	if isMultiPart {
 		partSuffix = matchResultPtr.PartSuffix
 	}
-	nfoPath, legacyPaths := nfo.ResolveNFOPath(sourceDir, cached, cfg.Metadata.NFO.FilenameTemplate, cfg.Output.GroupActress, cfg.Metadata.NFO.PerFile, isMultiPart, partSuffix, filePath)
+	nfoPath, legacyPaths := nfo.ResolveNFOPath(sourceDir, cached, cfg.Metadata.NFO.FilenameTemplate, cfg.Output.GroupActress, cfg.Output.GroupActressName, cfg.Metadata.NFO.PerFile, isMultiPart, partSuffix, filePath)
 
 	foundPath := findExistingNFO(job.ID, fileIndex, nfoPath, legacyPaths)
 

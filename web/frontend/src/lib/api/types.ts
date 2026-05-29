@@ -801,6 +801,7 @@ export interface OutputConfig {
 	rename_file: boolean;
 	allow_revert: boolean;
 	group_actress: boolean;
+	group_actress_name: string;
 	poster_format: string;
 	fanart_format: string;
 	trailer_format: string;

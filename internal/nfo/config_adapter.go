@@ -13,8 +13,10 @@ func ConfigFromAppConfig(appCfg *config.NFOConfig, outputCfg *config.OutputConfi
 	}
 
 	groupActress := false
+	var groupActressName string
 	if outputCfg != nil {
 		groupActress = outputCfg.GroupActress
+		groupActressName = outputCfg.GroupActressName
 	}
 
 	nfoConfig := &Config{
@@ -36,6 +38,7 @@ func ConfigFromAppConfig(appCfg *config.NFOConfig, outputCfg *config.OutputConfi
 		StaticTagline:        appCfg.Tagline,
 		StaticCredits:        appCfg.Credits,
 		GroupActress:         groupActress,
+		GroupActressName:     groupActressName,
 	}
 
 	// Add tag database if enabled and db provided

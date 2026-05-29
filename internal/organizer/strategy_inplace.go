@@ -71,6 +71,7 @@ func (s *InPlaceStrategy) isDedicatedFolder(dir string, id string, m *matcher.Ma
 func (s *InPlaceStrategy) Plan(match matcher.MatchResult, movie *models.Movie, destDir string, forceUpdate bool) (*OrganizePlan, error) {
 	ctx := template.NewContextFromMovie(movie)
 	ctx.GroupActress = s.config.GroupActress
+	ctx.GroupActressName = s.config.GroupActressName
 
 	applyTitleTruncation(s.templateEngine, ctx, s.config.MaxTitleLength)
 
@@ -271,6 +272,7 @@ func (s *InPlaceStrategy) Execute(plan *OrganizePlan) (*OrganizeResult, error) {
 
 		if err := fsutil.MoveFileFs(s.fs, plan.SourcePath, plan.TargetPath); err != nil {
 			result.Error = fmt.Errorf("failed to move file: %w", err)
+			_ = s.fs.Remove(plan.TargetDir) // Best-effort cleanup: Remove fails silently on non-empty dirs
 			return result, result.Error
 		}
 

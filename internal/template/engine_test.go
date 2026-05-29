@@ -712,62 +712,78 @@ func TestTemplateEngine_GroupActress(t *testing.T) {
 	engine := NewEngine()
 
 	tests := []struct {
-		name         string
-		actresses    []string
-		groupActress bool
-		template     string
-		want         string
+		name             string
+		actresses        []string
+		groupActress     bool
+		groupActressName string
+		template         string
+		want             string
 	}{
 		{
-			name:         "Multiple actresses with GroupActress enabled",
-			actresses:    []string{"Actress One", "Actress Two", "Actress Three"},
-			groupActress: true,
-			template:     "<ID> - <ACTORS>",
-			want:         "IPX-535 - @Group",
+			name:             "Multiple actresses with GroupActress enabled (default name)",
+			actresses:        []string{"Actress One", "Actress Two", "Actress Three"},
+			groupActress:     true,
+			groupActressName: "",
+			template:         "<ID> - <ACTORS>",
+			want:             "IPX-535 - @Group",
 		},
 		{
-			name:         "Multiple actresses with GroupActress disabled",
-			actresses:    []string{"Actress One", "Actress Two", "Actress Three"},
-			groupActress: false,
-			template:     "<ID> - <ACTORS>",
-			want:         "IPX-535 - Actress One, Actress Two, Actress Three",
+			name:             "Multiple actresses with GroupActress enabled (custom name)",
+			actresses:        []string{"Actress One", "Actress Two", "Actress Three"},
+			groupActress:     true,
+			groupActressName: "Group",
+			template:         "<ID> - <ACTORS>",
+			want:             "IPX-535 - Group",
 		},
 		{
-			name:         "Single actress with GroupActress enabled (should not group)",
-			actresses:    []string{"Single Actress"},
-			groupActress: true,
-			template:     "<ID> - <ACTORS>",
-			want:         "IPX-535 - Single Actress",
+			name:             "Multiple actresses with GroupActress disabled",
+			actresses:        []string{"Actress One", "Actress Two", "Actress Three"},
+			groupActress:     false,
+			groupActressName: "",
+			template:         "<ID> - <ACTORS>",
+			want:             "IPX-535 - Actress One, Actress Two, Actress Three",
 		},
 		{
-			name:         "Single actress with GroupActress disabled",
-			actresses:    []string{"Single Actress"},
-			groupActress: false,
-			template:     "<ID> - <ACTORS>",
-			want:         "IPX-535 - Single Actress",
+			name:             "Single actress with GroupActress enabled (should not group)",
+			actresses:        []string{"Single Actress"},
+			groupActress:     true,
+			groupActressName: "",
+			template:         "<ID> - <ACTORS>",
+			want:             "IPX-535 - Single Actress",
 		},
 		{
-			name:         "No actresses with GroupActress enabled",
-			actresses:    []string{},
-			groupActress: true,
-			template:     "<ID> - <ACTORS>",
-			want:         "IPX-535 - ",
+			name:             "Single actress with GroupActress disabled",
+			actresses:        []string{"Single Actress"},
+			groupActress:     false,
+			groupActressName: "",
+			template:         "<ID> - <ACTORS>",
+			want:             "IPX-535 - Single Actress",
 		},
 		{
-			name:         "Two actresses with GroupActress enabled",
-			actresses:    []string{"Actress One", "Actress Two"},
-			groupActress: true,
-			template:     "<ID> - <ACTORS>",
-			want:         "IPX-535 - @Group",
+			name:             "No actresses with GroupActress enabled",
+			actresses:        []string{},
+			groupActress:     true,
+			groupActressName: "",
+			template:         "<ID> - <ACTORS>",
+			want:             "IPX-535 - ",
+		},
+		{
+			name:             "Two actresses with GroupActress enabled",
+			actresses:        []string{"Actress One", "Actress Two"},
+			groupActress:     true,
+			groupActressName: "",
+			template:         "<ID> - <ACTORS>",
+			want:             "IPX-535 - @Group",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := &Context{
-				ID:           "IPX-535",
-				Actresses:    tt.actresses,
-				GroupActress: tt.groupActress,
+				ID:               "IPX-535",
+				Actresses:        tt.actresses,
+				GroupActress:     tt.groupActress,
+				GroupActressName: tt.groupActressName,
 			}
 
 			got, err := engine.Execute(tt.template, ctx)

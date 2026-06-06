@@ -661,10 +661,10 @@ definitions:
   github_com_javinizer_javinizer-go_internal_api_contracts.BatchExcludeFailed:
     properties:
       error:
-        example: Movie not found in job
+        example: Result not found in job
         type: string
-      movie_id:
-        example: IPX-535
+      result_id:
+        example: uuid-1
         type: string
     type: object
   github_com_javinizer_javinizer-go_internal_api_contracts.BatchFileResult:
@@ -694,6 +694,8 @@ definitions:
       part_number:
         type: integer
       part_suffix:
+        type: string
+      result_id:
         type: string
       started_at:
         type: string
@@ -1170,15 +1172,15 @@ definitions:
     type: object
   internal_api_batch.BatchExcludeRequest:
     properties:
-      movie_ids:
+      result_ids:
         example:
-        - IPX-535
-        - ABC-123
+        - uuid-1
+        - uuid-2
         items:
           type: string
         type: array
     required:
-    - movie_ids
+    - result_ids
     type: object
   internal_api_batch.BatchExcludeResponse:
     properties:
@@ -2987,251 +2989,6 @@ paths:
       summary: Cancel batch job
       tags:
       - web
-  /api/v1/batch/{id}/movies/{movieId}:
-    patch:
-      consumes:
-      - application/json
-      description: Update a movie's metadata within a batch job's results
-      parameters:
-      - description: Job ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Movie ID
-        in: path
-        name: movieId
-        required: true
-        type: string
-      - description: Updated movie data
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api_batch.UpdateMovieRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api_batch.MovieResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api_batch.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/internal_api_batch.ErrorResponse'
-      summary: Update movie in batch job
-      tags:
-      - web
-  /api/v1/batch/{id}/movies/{movieId}/exclude:
-    post:
-      description: Mark a movie in a batch job as excluded from file organization
-      parameters:
-      - description: Job ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Movie ID
-        in: path
-        name: movieId
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/internal_api_batch.ErrorResponse'
-      summary: Exclude movie from batch organization
-      tags:
-      - web
-  /api/v1/batch/{id}/movies/{movieId}/poster-crop:
-    post:
-      consumes:
-      - application/json
-      description: Re-crop a temp poster for the review page using fixed-size crop
-        coordinates
-      parameters:
-      - description: Job ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Movie ID
-        in: path
-        name: movieId
-        required: true
-        type: string
-      - description: Crop coordinates
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api_batch.PosterCropRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api_batch.PosterCropResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api_batch.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/internal_api_batch.ErrorResponse'
-      summary: Update manual poster crop in batch job
-      tags:
-      - web
-  /api/v1/batch/{id}/movies/{movieId}/poster-from-url:
-    post:
-      consumes:
-      - application/json
-      description: Download a poster image from a URL and set it as the movie's poster
-        in the batch job
-      parameters:
-      - description: Job ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Movie ID
-        in: path
-        name: movieId
-        required: true
-        type: string
-      - description: Poster URL
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api_batch.PosterFromURLRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api_batch.PosterFromURLResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api_batch.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/internal_api_batch.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/internal_api_batch.ErrorResponse'
-      summary: Download poster from URL
-      tags:
-      - web
-  /api/v1/batch/{id}/movies/{movieId}/preview:
-    post:
-      consumes:
-      - application/json
-      description: Generate a preview of the expected output structure for a movie
-      parameters:
-      - description: Job ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Movie ID
-        in: path
-        name: movieId
-        required: true
-        type: string
-      - description: Preview parameters
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api_batch.OrganizePreviewRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api_batch.OrganizePreviewResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api_batch.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/internal_api_batch.ErrorResponse'
-      summary: Preview organize output
-      tags:
-      - web
-  /api/v1/batch/{id}/movies/{movieId}/rescrape:
-    post:
-      consumes:
-      - application/json
-      description: Rescrape a specific movie within a batch job using selected scrapers
-        or manual search input
-      parameters:
-      - description: Job ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Movie ID
-        in: path
-        name: movieId
-        required: true
-        type: string
-      - description: Rescrape options
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/internal_api_batch.BatchRescrapeRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/internal_api_batch.BatchRescrapeResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api_batch.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/internal_api_batch.ErrorResponse'
-        "410":
-          description: Gone
-          schema:
-            $ref: '#/definitions/internal_api_batch.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/internal_api_batch.ErrorResponse'
-      summary: Rescrape movie in batch job
-      tags:
-      - web
   /api/v1/batch/{id}/movies/batch-exclude:
     post:
       consumes:
@@ -3304,6 +3061,251 @@ paths:
           schema:
             $ref: '#/definitions/internal_api_batch.ErrorResponse'
       summary: Organize batch job files
+      tags:
+      - web
+  /api/v1/batch/{id}/results/{resultId}:
+    patch:
+      consumes:
+      - application/json
+      description: Update a movie's metadata within a batch job's results
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Result ID
+        in: path
+        name: resultId
+        required: true
+        type: string
+      - description: Updated movie data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_batch.UpdateMovieRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_batch.MovieResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_batch.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_batch.ErrorResponse'
+      summary: Update movie in batch job
+      tags:
+      - web
+  /api/v1/batch/{id}/results/{resultId}/exclude:
+    post:
+      description: Mark a movie in a batch job as excluded from file organization
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Result ID
+        in: path
+        name: resultId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_batch.ErrorResponse'
+      summary: Exclude movie from batch organization
+      tags:
+      - web
+  /api/v1/batch/{id}/results/{resultId}/poster-crop:
+    post:
+      consumes:
+      - application/json
+      description: Re-crop a temp poster for the review page using fixed-size crop
+        coordinates
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Result ID
+        in: path
+        name: resultId
+        required: true
+        type: string
+      - description: Crop coordinates
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_batch.PosterCropRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_batch.PosterCropResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_batch.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_batch.ErrorResponse'
+      summary: Update manual poster crop in batch job
+      tags:
+      - web
+  /api/v1/batch/{id}/results/{resultId}/poster-from-url:
+    post:
+      consumes:
+      - application/json
+      description: Download a poster image from a URL and set it as the movie's poster
+        in the batch job
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Result ID
+        in: path
+        name: resultId
+        required: true
+        type: string
+      - description: Poster URL
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_batch.PosterFromURLRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_batch.PosterFromURLResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_batch.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_batch.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_batch.ErrorResponse'
+      summary: Download poster from URL
+      tags:
+      - web
+  /api/v1/batch/{id}/results/{resultId}/preview:
+    post:
+      consumes:
+      - application/json
+      description: Generate a preview of the expected output structure for a movie
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Result ID
+        in: path
+        name: resultId
+        required: true
+        type: string
+      - description: Preview parameters
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_batch.OrganizePreviewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_batch.OrganizePreviewResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_batch.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_batch.ErrorResponse'
+      summary: Preview organize output
+      tags:
+      - web
+  /api/v1/batch/{id}/results/{resultId}/rescrape:
+    post:
+      consumes:
+      - application/json
+      description: Rescrape a specific movie within a batch job using selected scrapers
+        or manual search input
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Result ID
+        in: path
+        name: resultId
+        required: true
+        type: string
+      - description: Rescrape options
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_batch.BatchRescrapeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_batch.BatchRescrapeResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_batch.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_batch.ErrorResponse'
+        "410":
+          description: Gone
+          schema:
+            $ref: '#/definitions/internal_api_batch.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_batch.ErrorResponse'
+      summary: Rescrape movie in batch job
       tags:
       - web
   /api/v1/batch/{id}/update:

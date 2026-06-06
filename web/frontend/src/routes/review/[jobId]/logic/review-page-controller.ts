@@ -3,6 +3,7 @@ import type { BatchJobResponse, Movie } from '$lib/api/types';
 interface ReviewPageControllerDeps {
 	getJob: () => BatchJobResponse | null;
 	getCurrentMovie: () => Movie | null;
+	getCurrentResult: () => { result_id: string; movie_id: string } | undefined;
 	getEditedMovies: () => Map<string, Movie>;
 	getDestinationPath: () => string;
 	setDestinationPath: (destinationPath: string) => void;
@@ -13,7 +14,7 @@ interface ReviewPageControllerDeps {
 	setImageViewerImages: (images: string[]) => void;
 	setImageViewerIndex: (index: number) => void;
 	setImageViewerTitle: (title: string | undefined) => void;
-	excludeMovie: (jobId: string, movieId: string) => void;
+	excludeMovie: (jobId: string, resultId: string) => void;
 	api: {
 		getPreviewImageURL: (url: string) => string;
 	};
@@ -68,11 +69,12 @@ export function createReviewPageController(deps: ReviewPageControllerDeps) {
 	}
 
 	function excludeCurrentMovie() {
+		const currentResult = deps.getCurrentResult();
 		const currentMovie = deps.getCurrentMovie();
 		const job = deps.getJob();
-		if (!currentMovie || !job) return;
+		if (!currentResult || !currentMovie || !job) return;
 
-		deps.excludeMovie(job.id, currentMovie.id);
+		deps.excludeMovie(job.id, currentResult.result_id);
 	}
 
 	return {

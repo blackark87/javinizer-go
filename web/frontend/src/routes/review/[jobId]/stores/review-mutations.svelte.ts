@@ -20,10 +20,10 @@ import { normalizeCropBox, type PosterCropBox, type PosterCropState, type Poster
 	getMovieResultsLength: () => number;
 	gotoJobs: () => void;
 	setShowPosterCropModal: (show: boolean) => void;
-	updateBatchMoviePosterFromURL: (jobId: string, movieId: string, body: { url: string }) => Promise<PosterFromURLResponse>;
-	excludeBatchMovie: (jobId: string, movieId: string) => Promise<unknown>;
-	updateBatchMovie: (jobId: string, movieId: string, movie: Movie) => Promise<unknown>;
-	updateBatchMoviePosterCrop: (jobId: string, movieId: string, crop: PosterCropBox) => Promise<PosterCropResponse>;
+	updateBatchMoviePosterFromURL: (jobId: string, resultId: string, body: { url: string }) => Promise<PosterFromURLResponse>;
+	excludeBatchMovie: (jobId: string, resultId: string) => Promise<unknown>;
+	updateBatchMovie: (jobId: string, resultId: string, movie: Movie) => Promise<unknown>;
+	updateBatchMoviePosterCrop: (jobId: string, resultId: string, crop: PosterCropBox) => Promise<PosterCropResponse>;
 	batchExcludeMovies: (jobId: string, request: BatchExcludeRequest) => Promise<BatchExcludeResponse>;
 	bulkRescrapeMovies: (jobId: string, request: BulkRescrapeRequest) => Promise<BulkRescrapeResponse>;
 	getSelectedMovieIds: () => Set<string>;
@@ -42,10 +42,10 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 	}
 
 	const posterFromUrlMutation = createMutation(() => ({
-		mutationFn: async ({ movieId, url }: { movieId: string; url: string }) => {
-			return deps.updateBatchMoviePosterFromURL(deps.getJobId(), movieId, { url });
+		mutationFn: async ({ resultId, url }: { resultId: string; url: string }) => {
+			return deps.updateBatchMoviePosterFromURL(deps.getJobId(), resultId, { url });
 		},
-		onSuccess: (data: PosterFromURLResponse, { movieId }) => {
+		onSuccess: (data: PosterFromURLResponse, { resultId }) => {
 			const currentJob = deps.getJob();
 			if (currentJob) {
 				const updatedJob: BatchJobResponse = {
@@ -54,7 +54,7 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 				};
 				for (const [filePath, result] of Object.entries(updatedJob.results)) {
 					const r = result as FileResult;
-					if (r.movie_id === movieId && r.data) {
+					if (r.result_id === resultId && r.data) {
 						updatedJob.results[filePath] = {
 							...r,
 							data: {
@@ -71,7 +71,8 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 
 				const editedMovies = deps.getEditedMovies();
 				for (const [filePath, movie] of editedMovies) {
-					if (movie.id === movieId) {
+					const editedResultId = currentJob.results?.[filePath]?.result_id;
+					if (editedResultId === resultId) {
 						editedMovies.set(filePath, {
 							...movie,
 							poster_url: data.poster_url,
@@ -97,18 +98,25 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 		}
 	}));
 
-	function applyPosterFromUrl(movieId: string, url: string) {
+	function applyPosterFromUrl(resultId: string, url: string) {
 		if (!deps.getJob() || posterFromUrlMutation.isPending) return;
-		posterFromUrlMutation.mutate({ movieId, url });
+		posterFromUrlMutation.mutate({ resultId, url });
 	}
 
 	const excludeMovieMutation = createMutation(() => ({
-		mutationFn: async ({ jobId: mutationJobId, movieId }: { jobId: string; movieId: string }) => {
-			return deps.excludeBatchMovie(mutationJobId, movieId);
+		mutationFn: async ({ jobId: mutationJobId, resultId }: { jobId: string; resultId: string }) => {
+			return deps.excludeBatchMovie(mutationJobId, resultId);
 		},
-		onSuccess: async (_data, { movieId }) => {
-			deps.deleteSelectedMovieId(movieId);
-			deps.toastSuccess(`Movie ${movieId} excluded from organization`);
+		onSuccess: async (_data, { resultId }) => {
+			const job = deps.getJob();
+			for (const [, r] of Object.entries(job?.results ?? {})) {
+				const fr = r as FileResult;
+				if (fr.result_id === resultId) {
+					deps.deleteSelectedMovieId(fr.movie_id);
+					break;
+				}
+			}
+			deps.toastSuccess('Movie excluded from organization');
 			invalidateJobQueries();
 
 			const movieResultsLength = deps.getMovieResultsLength();
@@ -130,12 +138,15 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 
 	const saveEditsMutation = createMutation(() => ({
 		mutationFn: async () => {
+			const job = deps.getJob();
 			const savePromises = Array.from(deps.getEditedMovies().entries()).map(([filePath, movie]) => {
 				const movieToSave = { ...movie };
 				if (movieToSave.display_title) {
 					movieToSave.title = movieToSave.display_title;
 				}
-				return deps.updateBatchMovie(deps.getJobId(), movieToSave.id, movieToSave);
+				const resultId = job?.results?.[filePath]?.result_id;
+				if (!resultId) return Promise.resolve();
+				return deps.updateBatchMovie(deps.getJobId(), resultId, movieToSave);
 			});
 
 			if (savePromises.length > 0) {
@@ -151,10 +162,10 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 	}));
 
 	const posterCropMutation = createMutation(() => ({
-		mutationFn: async ({ jobId: mutationJobId, movieId, crop }: { jobId: string; movieId: string; crop: PosterCropBox }) => {
-			return deps.updateBatchMoviePosterCrop(mutationJobId, movieId, crop);
+		mutationFn: async ({ jobId: mutationJobId, resultId, crop }: { jobId: string; resultId: string; crop: PosterCropBox }) => {
+			return deps.updateBatchMoviePosterCrop(mutationJobId, resultId, crop);
 		},
-		onSuccess: (response: PosterCropResponse, { movieId }) => {
+		onSuccess: (response: PosterCropResponse) => {
 			const currentResultVal = deps.getCurrentResult();
 			if (currentResultVal) {
 				deps.getPosterPreviewOverrides().set(currentResultVal.file_path, {
@@ -180,8 +191,8 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 	}));
 
 	const bulkExcludeMutation = createMutation(() => ({
-		mutationFn: async ({ movieIds }: { movieIds: string[] }) => {
-			return deps.batchExcludeMovies(deps.getJobId(), { movie_ids: movieIds });
+		mutationFn: async ({ resultIds }: { resultIds: string[] }) => {
+			return deps.batchExcludeMovies(deps.getJobId(), { result_ids: resultIds });
 		},
 		onSuccess: (data) => {
 			if (data.job) {

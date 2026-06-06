@@ -91,7 +91,7 @@ func TestMultipartPreviewEndToEnd(t *testing.T) {
 
 	// Now call the preview endpoint
 	router := gin.New()
-	router.POST("/batch/:id/movies/:movieId/preview", previewOrganize(deps))
+	router.POST("/batch/:id/results/:resultId/preview", previewOrganize(deps))
 
 	reqBody := OrganizePreviewRequest{
 		Destination: "/output",
@@ -100,7 +100,7 @@ func TestMultipartPreviewEndToEnd(t *testing.T) {
 	body, err := json.Marshal(reqBody)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest("POST", "/batch/"+job.ID+"/movies/STSK-074/preview", bytes.NewBuffer(body))
+	req := httptest.NewRequest("POST", "/batch/"+job.ID+"/results/"+status.Results["/path/to/STSK-074-pt1.mp4"].ResultID+"/preview", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -230,13 +230,14 @@ func TestMultipartPreviewLetterPatternDiscoveryFlow(t *testing.T) {
 	}
 
 	// Test preview endpoint
+	status := job.GetStatus()
 	router := gin.New()
-	router.POST("/batch/:id/movies/:movieId/preview", previewOrganize(deps))
+	router.POST("/batch/:id/results/:resultId/preview", previewOrganize(deps))
 
 	reqBody := OrganizePreviewRequest{Destination: "/output"}
 	body, _ := json.Marshal(reqBody)
 
-	req := httptest.NewRequest("POST", "/batch/"+job.ID+"/movies/CEMD-349/preview", bytes.NewBuffer(body))
+	req := httptest.NewRequest("POST", "/batch/"+job.ID+"/results/"+status.Results["/media/cemd-349-a.mp4"].ResultID+"/preview", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -330,12 +331,12 @@ func TestMultipartPreviewLetterPatternFiles(t *testing.T) {
 
 	// Test preview for first file
 	router := gin.New()
-	router.POST("/batch/:id/movies/:movieId/preview", previewOrganize(deps))
+	router.POST("/batch/:id/results/:resultId/preview", previewOrganize(deps))
 
 	reqBody := OrganizePreviewRequest{Destination: "/output"}
 	body, _ := json.Marshal(reqBody)
 
-	req := httptest.NewRequest("POST", "/batch/"+job.ID+"/movies/CEMD-349/preview", bytes.NewBuffer(body))
+	req := httptest.NewRequest("POST", "/batch/"+job.ID+"/results/"+status.Results["/path/to/cemd-349-a.mp4"].ResultID+"/preview", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -406,13 +407,15 @@ func TestMultipartPreviewSingleFile(t *testing.T) {
 	}
 	job.UpdateFileResult("/path/to/STSK-074-pt1.mp4", result)
 
+	status := job.GetStatus()
+
 	router := gin.New()
-	router.POST("/batch/:id/movies/:movieId/preview", previewOrganize(deps))
+	router.POST("/batch/:id/results/:resultId/preview", previewOrganize(deps))
 
 	reqBody := OrganizePreviewRequest{Destination: "/output"}
 	body, _ := json.Marshal(reqBody)
 
-	req := httptest.NewRequest("POST", "/batch/"+job.ID+"/movies/STSK-074/preview", bytes.NewBuffer(body))
+	req := httptest.NewRequest("POST", "/batch/"+job.ID+"/results/"+status.Results["/path/to/STSK-074-pt1.mp4"].ResultID+"/preview", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 

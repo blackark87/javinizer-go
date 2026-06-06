@@ -300,7 +300,7 @@ export function createReviewState(pageStore: Page) {
 	});
 
 	const previewQuery = createQuery(() => ({
-		queryKey: ['organize-preview', jobId, currentMovie?.id, destinationPath, organizeOperation, skipNfo, skipDownload, editedMovieKey],
+		queryKey: ['organize-preview', jobId, currentResult?.result_id, currentMovie?.id, destinationPath, organizeOperation, skipNfo, skipDownload, editedMovieKey],
 		queryFn: () => {
 			const operationMode = getEffectiveOperationMode();
 			const copyOnly = organizeOperation !== 'move';
@@ -321,7 +321,7 @@ export function createReviewState(pageStore: Page) {
 				}
 			}
 
-			return apiClient.previewOrganize(jobId, currentMovie!.id, {
+			return apiClient.previewOrganize(jobId, currentResult!.result_id, {
 				destination: destinationPath,
 				copy_only: copyOnly,
 				link_mode: linkMode,
@@ -357,10 +357,10 @@ export function createReviewState(pageStore: Page) {
 		getMovieResultsLength: () => movieResults.length,
 		gotoJobs: () => { void goto('/jobs'); },
 		setShowPosterCropModal: (show) => { showPosterCropModal = show; },
-		updateBatchMoviePosterFromURL: (mutationJobId, movieId, body) => apiClient.updateBatchMoviePosterFromURL(mutationJobId, movieId, body),
-		excludeBatchMovie: (mutationJobId, movieId) => apiClient.excludeBatchMovie(mutationJobId, movieId),
-		updateBatchMovie: (mutationJobId, movieId, movie) => apiClient.updateBatchMovie(mutationJobId, movieId, movie),
-		updateBatchMoviePosterCrop: (mutationJobId, movieId, crop) => apiClient.updateBatchMoviePosterCrop(mutationJobId, movieId, crop),
+		updateBatchMoviePosterFromURL: (mutationJobId, resultId, body) => apiClient.updateBatchMoviePosterFromURL(mutationJobId, resultId, body),
+		excludeBatchMovie: (mutationJobId, resultId) => apiClient.excludeBatchMovie(mutationJobId, resultId),
+		updateBatchMovie: (mutationJobId, resultId, movie) => apiClient.updateBatchMovie(mutationJobId, resultId, movie),
+		updateBatchMoviePosterCrop: (mutationJobId, resultId, crop) => apiClient.updateBatchMoviePosterCrop(mutationJobId, resultId, crop),
 		batchExcludeMovies: (mutationJobId, request) => apiClient.batchExcludeMovies(mutationJobId, request),
 		bulkRescrapeMovies: (mutationJobId, request) => apiClient.bulkRescrapeMovies(mutationJobId, request),
 		getSelectedMovieIds: () => selectedMovieIds,
@@ -457,7 +457,7 @@ export function createReviewState(pageStore: Page) {
 			{ confirmLabel: 'Exclude', variant: 'danger' }
 		);
 		if (!confirmed) return;
-		mutations.bulkExcludeMutation.mutate({ movieIds: Array.from(selectedMovieIds) });
+		mutations.bulkExcludeMutation.mutate({ resultIds: filteredMovieGroups.filter(g => selectedMovieIds.has(g.movieId)).map(g => g.primaryResult.result_id) });
 	}
 
 	async function openBulkRescrapeModal() {
@@ -539,7 +539,7 @@ export function createReviewState(pageStore: Page) {
 		if (!posterChanged) return;
 
 		if (original.poster_url !== currentMovie.poster_url) {
-			mutations.applyPosterFromUrl(currentMovie.id, original.poster_url);
+			mutations.applyPosterFromUrl(currentResult!.result_id, original.poster_url);
 		} else {
 			updateCurrentMovie({
 				...currentMovie,
@@ -558,7 +558,7 @@ export function createReviewState(pageStore: Page) {
 		if (!confirmed) return;
 
 		clearPosterPreviewOverride();
-		mutations.applyPosterFromUrl(currentMovie.id, url);
+		mutations.applyPosterFromUrl(currentResult!.result_id, url);
 	}
 
 	async function saveAllEdits() {
@@ -646,14 +646,15 @@ export function createReviewState(pageStore: Page) {
 		getCropDragState: () => cropDragState,
 		setCropDragState: (state) => { cropDragState = state; },
 		getPosterCropStates: () => posterCropStates,
-		mutatePosterCrop: (mutationJobId, movieId, crop) => {
-			mutations.posterCropMutation.mutate({ jobId: mutationJobId, movieId, crop });
+		mutatePosterCrop: (mutationJobId, resultId, crop) => {
+			mutations.posterCropMutation.mutate({ jobId: mutationJobId, resultId, crop });
 		}
 	});
 
 	const reviewPageController = createReviewPageController({
 		getJob: () => job,
 		getCurrentMovie: () => currentMovie,
+		getCurrentResult: () => currentResult,
 		getEditedMovies: () => editedMovies,
 		getDestinationPath: () => destinationPath,
 		setDestinationPath: (path) => { destinationPath = path; },
@@ -664,8 +665,8 @@ export function createReviewState(pageStore: Page) {
 		setImageViewerImages: (images) => { imageViewerImages = images; },
 		setImageViewerIndex: (index) => { imageViewerIndex = index; },
 		setImageViewerTitle: (title) => { imageViewerTitle = title; },
-		excludeMovie: (mutationJobId, movieId) => {
-			mutations.excludeMovieMutation.mutate({ jobId: mutationJobId, movieId });
+		excludeMovie: (mutationJobId, resultId) => {
+			mutations.excludeMovieMutation.mutate({ jobId: mutationJobId, resultId });
 		},
 		api: {
 			getPreviewImageURL: (url) => apiClient.getPreviewImageURL(url)
@@ -693,7 +694,7 @@ export function createReviewState(pageStore: Page) {
 			}
 		}
 		rescrapeTargetResult = result;
-		rescrapeMovieId = result.movie_id;
+		rescrapeMovieId = result.result_id;
 		rescrapeSelectedScrapers = availableScrapers.filter((s) => s.enabled).map((s) => s.name);
 		manualSearchMode = true;
 		manualSearchInput = '';

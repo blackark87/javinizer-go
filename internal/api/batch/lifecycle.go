@@ -157,6 +157,7 @@ func getBatchJobFull(deps *ServerDependencies, c *gin.Context, jobID string) {
 		}
 
 		results[filePath] = &BatchFileResult{
+			ResultID:       fileResult.ResultID,
 			FilePath:       fileResult.FilePath,
 			MovieID:        fileResult.MovieID,
 			Status:         string(fileResult.Status),
@@ -217,6 +218,7 @@ func getBatchJobSlim(deps *ServerDependencies, c *gin.Context, jobID string) {
 		}
 
 		results[filePath] = &contracts.BatchFileResultSlim{
+			ResultID:       fileResult.ResultID,
 			FilePath:       fileResult.FilePath,
 			MovieID:        fileResult.MovieID,
 			Status:         string(fileResult.Status),

@@ -181,8 +181,11 @@ func TestPreviewOrganize_OperationMode(t *testing.T) {
 			}
 			job.UpdateFileResult("/path/to/TEST-001.mp4", result)
 
+			status := job.GetStatus()
+			resultID := status.Results["/path/to/TEST-001.mp4"].ResultID
+
 			router := gin.New()
-			router.POST("/batch/:id/movies/:movieId/preview", previewOrganize(deps))
+			router.POST("/batch/:id/results/:resultId/preview", previewOrganize(deps))
 
 			reqBody := OrganizePreviewRequest{
 				Destination:   "/output",
@@ -191,7 +194,7 @@ func TestPreviewOrganize_OperationMode(t *testing.T) {
 			body, err := json.Marshal(reqBody)
 			require.NoError(t, err)
 
-			req := httptest.NewRequest("POST", "/batch/"+job.ID+"/movies/TEST-001/preview", bytes.NewBuffer(body))
+			req := httptest.NewRequest("POST", "/batch/"+job.ID+"/results/"+resultID+"/preview", bytes.NewBuffer(body))
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
 
@@ -234,8 +237,11 @@ func TestPreviewOrganize_InvalidOperationMode(t *testing.T) {
 	}
 	job.UpdateFileResult("/path/to/TEST-001.mp4", result)
 
+	status := job.GetStatus()
+	resultID := status.Results["/path/to/TEST-001.mp4"].ResultID
+
 	router := gin.New()
-	router.POST("/batch/:id/movies/:movieId/preview", previewOrganize(deps))
+	router.POST("/batch/:id/results/:resultId/preview", previewOrganize(deps))
 
 	reqBody := OrganizePreviewRequest{
 		Destination:   "/output",
@@ -244,7 +250,7 @@ func TestPreviewOrganize_InvalidOperationMode(t *testing.T) {
 	body, err := json.Marshal(reqBody)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest("POST", "/batch/"+job.ID+"/movies/TEST-001/preview", bytes.NewBuffer(body))
+	req := httptest.NewRequest("POST", "/batch/"+job.ID+"/results/"+resultID+"/preview", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 

@@ -188,7 +188,7 @@
 							{#each s.filteredMovieGroups as group}
 								<ReviewGridCard
 									movieGroup={group}
-									isSelected={group.movieId === s.currentMovie?.id}
+									isSelected={group.primaryResult.result_id === s.currentResult?.result_id}
 									isEdited={s.editedMovies.has(group.primaryResult.file_path)}
 									isBulkSelected={s.selectedMovieIds.has(group.movieId)}
 									selectionMode={s.selectionMode}
@@ -265,8 +265,8 @@
 								currentMovie={s.currentMovie}
 								currentResult={s.currentResult}
 								bind:showFieldScraperSources={s.showFieldScraperSources}
-								isRescraping={s.rescrapingStates.get(s.currentResult?.movie_id || '') || false}
-								onOpenRescrape={() => s.currentResult && s.openRescrapeModal(s.currentResult.movie_id)}
+								isRescraping={s.rescrapingStates.get(s.currentResult?.result_id || '') || false}
+								onOpenRescrape={() => s.currentResult && s.openRescrapeModal(s.currentResult.result_id)}
 								onResetCurrentMovie={s.resetCurrentMovie}
 								onUpdateCurrentMovie={s.updateCurrentMovie}
 							/>
@@ -383,6 +383,7 @@
 	bind:show={s.showRescrapeModal}
 	rescraping={s.rescrapingStates.get(s.rescrapeMovieId) || false || s.bulkRescraping}
 	rescrapeMovieId={s.rescrapeMovieId}
+	rescrapeMovieName={s.currentMovie?.id}
 	bulkMovieCount={s.bulkRescrapeMovieIds.length || undefined}
 	availableScrapers={s.availableScrapers}
 	bind:selectedScrapers={s.rescrapeSelectedScrapers}

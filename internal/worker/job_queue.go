@@ -64,6 +64,7 @@ const (
 
 // FileResult represents the result of processing a single file
 type FileResult struct {
+	ResultID           string            `json:"result_id"`
 	FilePath           string            `json:"file_path"`
 	MovieID            string            `json:"movie_id"`
 	Revision           uint64            `json:"revision"`
@@ -141,6 +142,7 @@ func toFileResultSlim(src *FileResult) *FileResultSlim {
 		return nil
 	}
 	slim := &FileResultSlim{
+		ResultID:    src.ResultID,
 		FilePath:    src.FilePath,
 		MovieID:     src.MovieID,
 		Revision:    src.Revision,
@@ -186,6 +188,7 @@ const (
 // FileResultSlim is a lightweight FileResult that omits the Data field
 // for efficient status polling without deep-copying movie objects.
 type FileResultSlim struct {
+	ResultID           string            `json:"result_id"`
 	FilePath           string            `json:"file_path"`
 	MovieID            string            `json:"movie_id"`
 	Revision           uint64            `json:"revision"`
@@ -270,6 +273,7 @@ type BatchJob struct {
 	Excluded              map[string]bool          `json:"excluded"`
 	Files                 []string                 `json:"files"`
 	Results               map[string]*FileResult   `json:"results"`
+	ResultIndex           map[string]string        `json:"result_index,omitempty"`
 	FileMatchInfo         map[string]FileMatchInfo `json:"file_match_info,omitempty"`
 	Progress              float64                  `json:"progress"`
 	Destination           string                   `json:"destination"`
@@ -416,6 +420,7 @@ func (jq *JobQueue) reconstructBatchJob(dbJob *models.Job) *BatchJob {
 		RevertedAt:    dbJob.RevertedAt,
 		Update:        dbJob.Update,
 		Results:       make(map[string]*FileResult),
+		ResultIndex:   make(map[string]string),
 		Excluded:      make(map[string]bool),
 		FileMatchInfo: make(map[string]FileMatchInfo),
 		Done:          make(chan struct{}),
@@ -468,6 +473,24 @@ func (jq *JobQueue) reconstructBatchJob(dbJob *models.Job) *BatchJob {
 	if dbJob.FileMatchInfo != "" {
 		if err := json.Unmarshal([]byte(dbJob.FileMatchInfo), &batchJob.FileMatchInfo); err != nil {
 			logging.Warnf("Failed to parse file match info for job %s: %v", dbJob.ID, err)
+		}
+	}
+
+	// Rebuild ResultIndex from deserialized results, assigning new ResultIDs to legacy entries
+	if len(batchJob.Results) > 0 {
+		batchJob.ResultIndex = make(map[string]string, len(batchJob.Results))
+		needsPersist := false
+		for filePath, result := range batchJob.Results {
+			if result != nil {
+				if result.ResultID == "" {
+					result.ResultID = uuid.New().String()
+					needsPersist = true
+				}
+				batchJob.ResultIndex[result.ResultID] = filePath
+			}
+		}
+		if needsPersist {
+			go jq.PersistJob(batchJob)
 		}
 	}
 
@@ -563,6 +586,7 @@ func (jq *JobQueue) CreateJob(files []string) *BatchJob {
 		TotalFiles:     len(files),
 		Files:          files,
 		Results:        make(map[string]*FileResult),
+		ResultIndex:    make(map[string]string),
 		FileMatchInfo:  make(map[string]FileMatchInfo),
 		Excluded:       make(map[string]bool),
 		Done:           make(chan struct{}),
@@ -687,6 +711,14 @@ func (job *BatchJob) UpdateFileResult(filePath string, result *FileResult) {
 	job.mu.Lock()
 	defer job.mu.Unlock()
 
+	if result.ResultID == "" {
+		result.ResultID = uuid.New().String()
+	}
+
+	if job.ResultIndex == nil {
+		job.ResultIndex = make(map[string]string)
+	}
+
 	existing := job.Results[filePath]
 	if existing != nil {
 		switch existing.Status {
@@ -694,6 +726,9 @@ func (job *BatchJob) UpdateFileResult(filePath string, result *FileResult) {
 			job.Completed--
 		case JobStatusFailed:
 			job.Failed--
+		}
+		if existing.ResultID != "" {
+			delete(job.ResultIndex, existing.ResultID)
 		}
 	}
 
@@ -704,6 +739,7 @@ func (job *BatchJob) UpdateFileResult(filePath string, result *FileResult) {
 	}
 
 	job.Results[filePath] = result
+	job.ResultIndex[result.ResultID] = filePath
 
 	switch result.Status {
 	case JobStatusCompleted:
@@ -754,6 +790,19 @@ func (job *BatchJob) AtomicUpdateFileResult(filePath string, updateFn func(*File
 	// Write back the updated result
 	job.Results[filePath] = updated
 
+	// Update result index if ResultID changed (shouldn't normally happen, but be safe)
+	if job.ResultIndex == nil {
+		job.ResultIndex = make(map[string]string)
+	}
+	if current.ResultID != updated.ResultID {
+		if current.ResultID != "" {
+			delete(job.ResultIndex, current.ResultID)
+		}
+	}
+	if updated.ResultID != "" {
+		job.ResultIndex[updated.ResultID] = filePath
+	}
+
 	// Adjust counters: increment new status
 	switch updated.Status {
 	case JobStatusCompleted:
@@ -769,6 +818,31 @@ func (job *BatchJob) AtomicUpdateFileResult(filePath string, updateFn func(*File
 	}
 
 	return nil
+}
+
+// GetFileResultByResultID returns the FileResult and its file path for a given ResultID (thread-safe)
+func (job *BatchJob) GetFileResultByResultID(resultID string) (*FileResult, string, bool) {
+	job.mu.RLock()
+	defer job.mu.RUnlock()
+
+	if job.ResultIndex != nil {
+		filePath, ok := job.ResultIndex[resultID]
+		if ok {
+			result, exists := job.Results[filePath]
+			if exists {
+				return result, filePath, true
+			}
+		}
+	}
+
+	// Fallback: scan results if index is missing (e.g., on snapshots)
+	for filePath, result := range job.Results {
+		if result != nil && result.ResultID == resultID {
+			return result, filePath, true
+		}
+	}
+
+	return nil, "", false
 }
 
 // GetFileMatchInfo retrieves the FileMatchInfo for a file path (thread-safe)

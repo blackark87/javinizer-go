@@ -34,7 +34,7 @@ interface PosterCropControllerDeps {
 	getCropDragState: () => PosterCropDragState | null;
 	setCropDragState: (state: PosterCropDragState | null) => void;
 	getPosterCropStates: () => Map<string, PosterCropState>;
-	mutatePosterCrop: (jobId: string, movieId: string, crop: PosterCropBox) => void;
+	mutatePosterCrop: (jobId: string, resultId: string, crop: PosterCropBox) => void;
 	now?: () => number;
 }
 
@@ -106,7 +106,9 @@ export function createPosterCropController(deps: PosterCropControllerDeps) {
 	function handlePosterCropImageError() {
 		const currentMovie = deps.getCurrentMovie();
 		if (currentMovie && deps.getCropSourceURL().includes('-full.jpg')) {
-			const fallbackURL = `/api/v1/temp/posters/${deps.getJobId()}/${currentMovie.id}.jpg`;
+			const currentResult = deps.getCurrentResult();
+			const posterMovieId = currentResult?.movie_id ?? currentMovie.id;
+			const fallbackURL = `/api/v1/temp/posters/${deps.getJobId()}/${posterMovieId}.jpg`;
 			deps.setCropSourceURL(`${fallbackURL}?v=${now()}`);
 			return;
 		}
@@ -118,9 +120,11 @@ export function createPosterCropController(deps: PosterCropControllerDeps) {
 
 	function openPosterCropModal() {
 		const currentMovie = deps.getCurrentMovie();
+		const currentResult = deps.getCurrentResult();
 		if (!currentMovie) return;
 
-		const fullPosterURL = `/api/v1/temp/posters/${deps.getJobId()}/${currentMovie.id}-full.jpg`;
+		const posterMovieId = currentResult?.movie_id ?? currentMovie.id;
+		const fullPosterURL = `/api/v1/temp/posters/${deps.getJobId()}/${posterMovieId}-full.jpg`;
 		deps.setCropSourceURL(`${fullPosterURL}?v=${now()}`);
 		deps.setPosterCropLoadError(null);
 		deps.setCropMetrics(null);
@@ -212,7 +216,7 @@ export function createPosterCropController(deps: PosterCropControllerDeps) {
 		const cropBoxVal = deps.getCropBox();
 		if (!currentMovie || !currentResult || !cropBoxVal) return;
 
-		deps.mutatePosterCrop(deps.getJobId(), currentMovie.id, cropBoxVal);
+		deps.mutatePosterCrop(deps.getJobId(), currentResult.result_id, cropBoxVal);
 	}
 
 	function handleWindowResize() {

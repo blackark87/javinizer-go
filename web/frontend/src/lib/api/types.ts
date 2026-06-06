@@ -181,6 +181,7 @@ export interface BatchScrapeResponse {
 }
 
 export interface FileResult {
+	result_id: string;
 	file_path: string;
 	movie_id: string;
 	status: string;
@@ -1081,11 +1082,11 @@ export interface ActressesImportRequest {
 }
 
 export interface BatchExcludeRequest {
-	movie_ids: string[];
+	result_ids: string[];
 }
 
 export interface BatchExcludeFailed {
-	movie_id: string;
+	result_id: string;
 	error: string;
 }
 

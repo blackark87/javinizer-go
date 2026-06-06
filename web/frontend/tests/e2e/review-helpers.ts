@@ -54,6 +54,7 @@ const completeMovie2 = makeMovie('COMPLETE-2', {
 
 function makeFileResult(movie: Movie, filePath?: string): FileResult {
 	return {
+		result_id: crypto.randomUUID(),
 		file_path: filePath || `/videos/${movie.id}.mp4`,
 		movie_id: movie.id,
 		status: 'completed',
@@ -130,12 +131,12 @@ export async function setupMockRoutes(page: import('@playwright/test').Page): Pr
 			await route.fulfill({ json: buildBatchJob(excluded) });
 		} else if (method === 'POST' && url.includes('/batch-exclude')) {
 			const body = route.request().postDataJSON();
-			const movieIds: string[] = body?.movie_ids ?? [];
+			const resultIds: string[] = body?.result_ids ?? [];
 			const currentJob = buildBatchJob(excluded);
 			const filePathsToExclude: string[] = [];
 			for (const [filePath, result] of Object.entries(currentJob.results)) {
 				const r = result as FileResult;
-				if (movieIds.includes(r.movie_id)) {
+				if (resultIds.includes(r.result_id)) {
 					filePathsToExclude.push(filePath);
 				}
 			}
@@ -144,19 +145,19 @@ export async function setupMockRoutes(page: import('@playwright/test').Page): Pr
 			}
 			await route.fulfill({
 				json: {
-					excluded: movieIds,
+					excluded: resultIds,
 					failed: [],
 					job: buildBatchJob(excluded),
 				},
 			});
 		} else if (method === 'POST' && url.includes('/exclude')) {
 			const urlParts = url.split('/');
-			const moviesIdx = urlParts.indexOf('movies');
-			const movieId = moviesIdx !== -1 ? urlParts[moviesIdx + 1] : '';
+			const resultsIdx = urlParts.indexOf('results');
+			const resultId = resultsIdx !== -1 ? urlParts[resultsIdx + 1] : '';
 			const job = buildBatchJob(excluded);
 			for (const [filePath, result] of Object.entries(job.results)) {
 				const r = result as FileResult;
-				if (r.movie_id === movieId) {
+				if (r.result_id === resultId) {
 					excluded[filePath] = true;
 				}
 			}

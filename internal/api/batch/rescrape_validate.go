@@ -72,6 +72,33 @@ type fileLookupResult struct {
 	capturedRevision uint64
 }
 
+func findFileForResultID(job *worker.BatchJob, resultID string) (*fileLookupResult, int, string) {
+	result, filePath, found := job.GetFileResultByResultID(resultID)
+	if !found {
+		return nil, http.StatusNotFound, fmt.Sprintf("Result %s not found in batch job", resultID)
+	}
+
+	var capturedRevision uint64
+	var oldMovieID string
+
+	capturedRevision = result.Revision
+
+	if result.Data != nil {
+		if oldMovie, ok := result.Data.(*models.Movie); ok {
+			oldMovieID = oldMovie.ID
+		}
+	}
+	if oldMovieID == "" {
+		oldMovieID = result.MovieID
+	}
+
+	return &fileLookupResult{
+		foundFilePath:    filePath,
+		oldMovieID:       oldMovieID,
+		capturedRevision: capturedRevision,
+	}, 0, ""
+}
+
 func findFileForMovieID(job *worker.BatchJob, movieID string) (*fileLookupResult, int, string) {
 	status := job.GetStatus()
 

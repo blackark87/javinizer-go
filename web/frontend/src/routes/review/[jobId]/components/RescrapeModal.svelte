@@ -14,6 +14,7 @@
 		show: boolean;
 		rescraping: boolean;
 		rescrapeMovieId: string;
+		rescrapeMovieName?: string;
 		bulkMovieCount?: number;
 		availableScrapers: Scraper[];
 		selectedScrapers: string[];
@@ -29,6 +30,7 @@
 		show = $bindable(false),
 		rescraping,
 		rescrapeMovieId,
+		rescrapeMovieName,
 		bulkMovieCount = undefined,
 		availableScrapers,
 		selectedScrapers = $bindable([]),
@@ -64,7 +66,7 @@
 					{#if bulkMovieCount}
 						Rescrape {bulkMovieCount} movie{bulkMovieCount !== 1 ? 's' : ''}
 					{:else}
-						{manualSearchMode ? 'Manual Search' : `Rescrape ${rescrapeMovieId}`}
+						{manualSearchMode ? 'Manual Search' : `Rescrape ${rescrapeMovieName || rescrapeMovieId}`}}
 					{/if}
 				</h2>
 					<Button variant="ghost" size="icon" onclick={close} disabled={rescraping}>

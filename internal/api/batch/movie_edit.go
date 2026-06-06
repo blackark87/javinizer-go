@@ -21,6 +21,29 @@ import (
 	"github.com/spf13/afero"
 )
 
+// lookupResultByResultID finds a FileResult by its stable ResultID and collects all file paths
+// sharing the same MovieID (for multi-part support). Returns the primary result,
+// all related file paths, and whether the lookup succeeded.
+func lookupResultByResultID(job *worker.BatchJob, resultID string) (*worker.FileResult, []string, bool) {
+	result, filePath, found := job.GetFileResultByResultID(resultID)
+	if !found {
+		return nil, nil, false
+	}
+
+	status := job.GetStatus()
+	var filePaths []string
+	for fp, r := range status.Results {
+		if r.MovieID == result.MovieID {
+			filePaths = append(filePaths, fp)
+		}
+	}
+	if len(filePaths) == 0 {
+		filePaths = []string{filePath}
+	}
+
+	return result, filePaths, true
+}
+
 // updateBatchMovie godoc
 // @Summary Update movie in batch job
 // @Description Update a movie's metadata within a batch job's results
@@ -28,16 +51,16 @@ import (
 // @Accept json
 // @Produce json
 // @Param id path string true "Job ID"
-// @Param movieId path string true "Movie ID"
+// @Param resultId path string true "Result ID"
 // @Param request body UpdateMovieRequest true "Updated movie data"
 // @Success 200 {object} MovieResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
-// @Router /api/v1/batch/{id}/movies/{movieId} [patch]
+// @Router /api/v1/batch/{id}/results/{resultId} [patch]
 func updateBatchMovie(deps *ServerDependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		jobID := c.Param("id")
-		movieID := c.Param("movieId")
+		resultID := c.Param("resultId")
 
 		var req UpdateMovieRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -45,59 +68,45 @@ func updateBatchMovie(deps *ServerDependencies) gin.HandlerFunc {
 			return
 		}
 
-		// Use GetJobPointer to get the real job (not a snapshot) for mutations
 		job, ok := deps.JobQueue.GetJobPointer(jobID)
 		if !ok {
 			c.JSON(404, ErrorResponse{Error: "Job not found"})
 			return
 		}
 
-		// Get a snapshot to search for files
-		status := job.GetStatus()
-
-		// Collect ALL file paths for this movie ID (handles multi-part files)
-		var filePaths []string
-		for filePath, result := range status.Results {
-			if result.MovieID == movieID {
-				filePaths = append(filePaths, filePath)
-			}
-		}
-
-		// If not found by MovieID, try searching by the actual movie.ID (in case of content ID resolution)
-		if len(filePaths) == 0 {
-			for filePath, result := range status.Results {
-				if result.Data != nil {
-					if m, ok := result.Data.(*models.Movie); ok && m.ID == movieID {
-						filePaths = append(filePaths, filePath)
-					}
-				}
-			}
-		}
-
-		if len(filePaths) == 0 {
-			c.JSON(404, ErrorResponse{Error: fmt.Sprintf("Movie %s not found in job", movieID)})
+		// Look up the file result by stable ResultID
+		result, filePath, found := job.GetFileResultByResultID(resultID)
+		if !found {
+			c.JSON(404, ErrorResponse{Error: fmt.Sprintf("Result %s not found in job", resultID)})
 			return
 		}
 
-		// Update database first (before updating job state) to complete any mutations
-		// before exposing the pointer to concurrent readers
-		if _, err := deps.MovieRepo.Upsert(req.Movie); err != nil {
-			logging.Errorf("Failed to update movie in database: %v", err)
-			// Don't fail the request if DB update fails
+		// Collect ALL file paths for the same movie ID (handles multi-part files)
+		status := job.GetStatus()
+		var filePaths []string
+		for fp, r := range status.Results {
+			if r.MovieID == result.MovieID {
+				filePaths = append(filePaths, fp)
+			}
 		}
 
-		// Update ALL file parts for this movie ID (handles multi-part files like CD1, CD2, etc.)
-		for _, filePath := range filePaths {
-			err := job.AtomicUpdateFileResult(filePath, func(current *worker.FileResult) (*worker.FileResult, error) {
-				// Update the movie data
+		if len(filePaths) == 0 {
+			filePaths = []string{filePath}
+		}
+
+		if _, err := deps.MovieRepo.Upsert(req.Movie); err != nil {
+			logging.Errorf("Failed to update movie in database: %v", err)
+		}
+
+		for _, fp := range filePaths {
+			err := job.AtomicUpdateFileResult(fp, func(current *worker.FileResult) (*worker.FileResult, error) {
 				current.Data = req.Movie
-				// Always sync MovieID to keep job state consistent (handles both content ID resolution and user edits)
 				current.MovieID = req.Movie.ID
 				return current, nil
 			})
 
 			if err != nil {
-				logging.Errorf("Failed to update file result for %s: %v", filePath, err)
+				logging.Errorf("Failed to update file result for %s: %v", fp, err)
 				c.JSON(500, ErrorResponse{Error: fmt.Sprintf("Failed to update job state: %v", err)})
 				return
 			}
@@ -113,21 +122,16 @@ func updateBatchMovie(deps *ServerDependencies) gin.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param id path string true "Job ID"
-// @Param movieId path string true "Movie ID"
+// @Param resultId path string true "Result ID"
 // @Param request body PosterCropRequest true "Crop coordinates"
 // @Success 200 {object} PosterCropResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
-// @Router /api/v1/batch/{id}/movies/{movieId}/poster-crop [post]
+// @Router /api/v1/batch/{id}/results/{resultId}/poster-crop [post]
 func updateBatchMoviePosterCrop(deps *ServerDependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		jobID := c.Param("id")
-		movieID := c.Param("movieId")
-
-		if movieID != filepath.Base(movieID) || movieID == "" || movieID == "." {
-			c.JSON(404, ErrorResponse{Error: "Movie not found in job"})
-			return
-		}
+		resultID := c.Param("resultId")
 
 		var req PosterCropRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -141,36 +145,15 @@ func updateBatchMoviePosterCrop(deps *ServerDependencies) gin.HandlerFunc {
 			return
 		}
 
-		status := job.GetStatus()
-
-		// Collect all file paths for this movie ID (handles multipart files)
-		var filePaths []string
-		for filePath, result := range status.Results {
-			if result.MovieID == movieID {
-				filePaths = append(filePaths, filePath)
-			}
-		}
-
-		// If not found by FileResult.MovieID, match by actual Movie.ID (content ID resolution case)
-		if len(filePaths) == 0 {
-			for filePath, result := range status.Results {
-				if result.Data == nil {
-					continue
-				}
-				if m, ok := result.Data.(*models.Movie); ok && m.ID == movieID {
-					filePaths = append(filePaths, filePath)
-				}
-			}
-		}
-
-		if len(filePaths) == 0 {
-			c.JSON(404, ErrorResponse{Error: fmt.Sprintf("Movie %s not found in job", movieID)})
+		result, filePaths, found := lookupResultByResultID(job, resultID)
+		if !found {
+			c.JSON(404, ErrorResponse{Error: fmt.Sprintf("Result %s not found in job", resultID)})
 			return
 		}
 
-		posterID := movieID
-		if firstResult, exists := status.Results[filePaths[0]]; exists && firstResult != nil && firstResult.Data != nil {
-			if m, ok := firstResult.Data.(*models.Movie); ok && m.ID != "" {
+		posterID := result.MovieID
+		if result.Data != nil {
+			if m, ok := result.Data.(*models.Movie); ok && m.ID != "" {
 				posterID = m.ID
 			}
 		}
@@ -252,22 +235,17 @@ func updateBatchMoviePosterCrop(deps *ServerDependencies) gin.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param id path string true "Job ID"
-// @Param movieId path string true "Movie ID"
+// @Param resultId path string true "Result ID"
 // @Param request body PosterFromURLRequest true "Poster URL"
 // @Success 200 {object} PosterFromURLResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /api/v1/batch/{id}/movies/{movieId}/poster-from-url [post]
+// @Router /api/v1/batch/{id}/results/{resultId}/poster-from-url [post]
 func updateBatchMoviePosterFromURL(deps *ServerDependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		jobID := c.Param("id")
-		movieID := c.Param("movieId")
-
-		if movieID != filepath.Base(movieID) || movieID == "" || movieID == "." {
-			c.JSON(404, ErrorResponse{Error: "Movie not found in job"})
-			return
-		}
+		resultID := c.Param("resultId")
 
 		var req PosterFromURLRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -281,32 +259,15 @@ func updateBatchMoviePosterFromURL(deps *ServerDependencies) gin.HandlerFunc {
 			return
 		}
 
-		status := job.GetStatus()
-
-		var filePaths []string
-		for filePath, result := range status.Results {
-			if result.MovieID == movieID {
-				filePaths = append(filePaths, filePath)
-			}
-		}
-		if len(filePaths) == 0 {
-			for filePath, result := range status.Results {
-				if result.Data == nil {
-					continue
-				}
-				if m, ok := result.Data.(*models.Movie); ok && m.ID == movieID {
-					filePaths = append(filePaths, filePath)
-				}
-			}
-		}
-		if len(filePaths) == 0 {
-			c.JSON(404, ErrorResponse{Error: fmt.Sprintf("Movie %s not found in job", movieID)})
+		result, filePaths, found := lookupResultByResultID(job, resultID)
+		if !found {
+			c.JSON(404, ErrorResponse{Error: fmt.Sprintf("Result %s not found in job", resultID)})
 			return
 		}
 
-		posterID := movieID
-		if firstResult, exists := status.Results[filePaths[0]]; exists && firstResult != nil && firstResult.Data != nil {
-			if m, ok := firstResult.Data.(*models.Movie); ok && m.ID != "" {
+		posterID := result.MovieID
+		if result.Data != nil {
+			if m, ok := result.Data.(*models.Movie); ok && m.ID != "" {
 				posterID = m.ID
 			}
 		}
@@ -469,59 +430,29 @@ func copyFile(src, dst string) error {
 // @Tags web
 // @Produce json
 // @Param id path string true "Job ID"
-// @Param movieId path string true "Movie ID"
+// @Param resultId path string true "Result ID"
 // @Success 200 {object} map[string]string
 // @Failure 404 {object} ErrorResponse
-// @Router /api/v1/batch/{id}/movies/{movieId}/exclude [post]
+// @Router /api/v1/batch/{id}/results/{resultId}/exclude [post]
 func excludeBatchMovie(deps *ServerDependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		jobID := c.Param("id")
-		movieID := c.Param("movieId")
+		resultID := c.Param("resultId")
 
-		// Use GetJobPointer to get the real job (not a snapshot) for mutations
 		job, ok := deps.JobQueue.GetJobPointer(jobID)
 		if !ok {
 			c.JSON(404, ErrorResponse{Error: "Job not found"})
 			return
 		}
 
-		// Get a snapshot to search for the file(s)
-		status := job.GetStatus()
-
-		// Collect ALL file paths for this movie ID (handles multi-part files)
-		var filePaths []string
-		for filePath, result := range status.Results {
-			if result.MovieID == movieID {
-				filePaths = append(filePaths, filePath)
-			}
-		}
-
-		// If not found by MovieID, try searching by the actual movie.ID
-		if len(filePaths) == 0 {
-			logging.Debugf("[ExcludeBatchMovie] No matches by FileResult.MovieID, trying Movie.ID")
-			for filePath, result := range status.Results {
-				if result.Data != nil {
-					if m, ok := result.Data.(*models.Movie); ok {
-						logging.Debugf("[ExcludeBatchMovie] File: %s, Movie.ID: %s", filePath, m.ID)
-						if m.ID == movieID {
-							filePaths = append(filePaths, filePath)
-							logging.Debugf("[ExcludeBatchMovie] Matched by Movie.ID: %s", filePath)
-						}
-					}
-				}
-			}
-		}
-
-		if len(filePaths) == 0 {
-			c.JSON(404, ErrorResponse{Error: fmt.Sprintf("Movie %s not found in job", movieID)})
+		_, filePaths, found := lookupResultByResultID(job, resultID)
+		if !found {
+			c.JSON(404, ErrorResponse{Error: fmt.Sprintf("Result %s not found in job", resultID)})
 			return
 		}
 
-		// Mark ALL parts as excluded (handles multi-part files like CD1, CD2, etc.)
-		logging.Debugf("[ExcludeBatchMovie] Excluding %d file(s) for movieID=%s", len(filePaths), movieID)
 		for _, filePath := range filePaths {
 			job.ExcludeFile(filePath)
-			logging.Debugf("[ExcludeBatchMovie] Excluded: %s", filePath)
 		}
 
 		if job.AllFilesExcluded() {
@@ -530,7 +461,7 @@ func excludeBatchMovie(deps *ServerDependencies) gin.HandlerFunc {
 			logging.Infof("All files excluded from batch job %s, marked as cancelled", jobID)
 		}
 
-		logging.Infof("Movie %s (%d file(s)) excluded from batch job %s", movieID, len(filePaths), jobID)
+		logging.Infof("Result %s (%d file(s)) excluded from batch job %s", resultID, len(filePaths), jobID)
 
 		c.JSON(200, gin.H{"message": "Movie excluded from organization"})
 	}
@@ -560,13 +491,13 @@ func batchExcludeMovies(deps *ServerDependencies) gin.HandlerFunc {
 			return
 		}
 
-		if len(req.MovieIDs) == 0 {
-			c.JSON(400, ErrorResponse{Error: "movie_ids is required and must not be empty"})
+		if len(req.ResultIDs) == 0 {
+			c.JSON(400, ErrorResponse{Error: "result_ids is required and must not be empty"})
 			return
 		}
 
-		if len(req.MovieIDs) > bulkExcludeMaxMovies {
-			c.JSON(400, ErrorResponse{Error: fmt.Sprintf("movie_ids must not exceed %d items", bulkExcludeMaxMovies)})
+		if len(req.ResultIDs) > bulkExcludeMaxMovies {
+			c.JSON(400, ErrorResponse{Error: fmt.Sprintf("result_ids must not exceed %d items", bulkExcludeMaxMovies)})
 			return
 		}
 
@@ -576,33 +507,15 @@ func batchExcludeMovies(deps *ServerDependencies) gin.HandlerFunc {
 			return
 		}
 
-		status := job.GetStatus()
-
 		var excluded []string
 		var failed []BatchExcludeFailed
 
-		for _, movieID := range req.MovieIDs {
-			var filePaths []string
-			for filePath, result := range status.Results {
-				if result.MovieID == movieID {
-					filePaths = append(filePaths, filePath)
-				}
-			}
-
-			if len(filePaths) == 0 {
-				for filePath, result := range status.Results {
-					if result.Data != nil {
-						if m, ok := result.Data.(*models.Movie); ok && m.ID == movieID {
-							filePaths = append(filePaths, filePath)
-						}
-					}
-				}
-			}
-
-			if len(filePaths) == 0 {
+		for _, resultID := range req.ResultIDs {
+			_, filePaths, found := lookupResultByResultID(job, resultID)
+			if !found {
 				failed = append(failed, BatchExcludeFailed{
-					MovieID: movieID,
-					Error:   fmt.Sprintf("Movie %s not found in job", movieID),
+					ResultID: resultID,
+					Error:    fmt.Sprintf("Result %s not found in job", resultID),
 				})
 				continue
 			}
@@ -610,7 +523,7 @@ func batchExcludeMovies(deps *ServerDependencies) gin.HandlerFunc {
 			for _, filePath := range filePaths {
 				job.ExcludeFile(filePath)
 			}
-			excluded = append(excluded, movieID)
+			excluded = append(excluded, resultID)
 		}
 
 		if job.AllFilesExcluded() {
@@ -655,6 +568,7 @@ func buildBatchJobResponse(job *worker.BatchJob) *BatchJobResponse {
 		}
 
 		results[filePath] = &BatchFileResult{
+			ResultID:       fileResult.ResultID,
 			FilePath:       fileResult.FilePath,
 			MovieID:        fileResult.MovieID,
 			Status:         string(fileResult.Status),

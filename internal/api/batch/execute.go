@@ -202,16 +202,16 @@ func updateBatchJob(deps *ServerDependencies) gin.HandlerFunc {
 // @Accept json
 // @Produce json
 // @Param id path string true "Job ID"
-// @Param movieId path string true "Movie ID"
+// @Param resultId path string true "Result ID"
 // @Param request body OrganizePreviewRequest true "Preview parameters"
 // @Success 200 {object} OrganizePreviewResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
-// @Router /api/v1/batch/{id}/movies/{movieId}/preview [post]
+// @Router /api/v1/batch/{id}/results/{resultId}/preview [post]
 func previewOrganize(deps *ServerDependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		jobID := c.Param("id")
-		movieID := c.Param("movieId")
+		resultID := c.Param("resultId")
 
 		var req OrganizePreviewRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -221,7 +221,6 @@ func previewOrganize(deps *ServerDependencies) gin.HandlerFunc {
 
 		cfg := deps.GetConfig()
 
-		// Determine operation mode for preview
 		effectiveMode := cfg.Output.GetOperationMode()
 		if req.OperationMode != "" {
 			parsed, err := types.ParseOperationMode(req.OperationMode)
@@ -232,7 +231,6 @@ func previewOrganize(deps *ServerDependencies) gin.HandlerFunc {
 			effectiveMode = parsed
 		}
 
-		// Security: Validate destination directory for modes that use it
 		if effectiveMode == types.OperationModeOrganize || effectiveMode == types.OperationModePreview {
 			if !isDirAllowed(req.Destination, cfg.API.Security.AllowedDirectories, cfg.API.Security.DeniedDirectories) {
 				c.JSON(403, ErrorResponse{Error: "Access denied to requested directory"})
@@ -240,47 +238,37 @@ func previewOrganize(deps *ServerDependencies) gin.HandlerFunc {
 			}
 		}
 
-		// Get the batch job (already a snapshot, don't call GetStatus() again)
 		job, ok := deps.JobQueue.GetJob(jobID)
 		if !ok {
 			c.JSON(404, ErrorResponse{Error: "Job not found"})
 			return
 		}
 
-		var movie *models.Movie
-		fileResults := make([]*worker.FileResult, 0)
-
-		// Collect all results matching this movieID
-		for _, result := range job.Results {
-			if result.MovieID == movieID {
-				fileResults = append(fileResults, result)
-			}
-		}
-
-		// If not found by MovieID, try searching by the actual movie.ID (in case of content ID resolution)
-		if len(fileResults) == 0 {
-			for _, result := range job.Results {
-				if result.Data != nil {
-					if m, ok := result.Data.(*models.Movie); ok && m.ID == movieID {
-						fileResults = append(fileResults, result)
-					}
-				}
-			}
-		}
-
-		if len(fileResults) == 0 {
-			c.JSON(404, ErrorResponse{Error: fmt.Sprintf("Movie %s not found in job", movieID)})
+		result, filePaths, found := lookupResultByResultID(job, resultID)
+		if !found {
+			c.JSON(404, ErrorResponse{Error: fmt.Sprintf("Result %s not found in job", resultID)})
 			return
 		}
 
-		// Use the movie override from the request if provided (for previewing unsaved edits),
-		// otherwise fall back to the movie data stored in the job results
+		var movie *models.Movie
+		fileResults := make([]*worker.FileResult, 0)
+
+		for _, fp := range filePaths {
+			if r, exists := job.Results[fp]; exists {
+				fileResults = append(fileResults, r)
+			}
+		}
+
+		if len(fileResults) == 0 {
+			fileResults = []*worker.FileResult{result}
+		}
+
 		if req.Movie != nil {
 			movie = req.Movie
 		} else {
-			for _, result := range fileResults {
-				if result.Data != nil {
-					if m, ok := result.Data.(*models.Movie); ok {
+			for _, r := range fileResults {
+				if r.Data != nil {
+					if m, ok := r.Data.(*models.Movie); ok {
 						movie = m
 						break
 					}
@@ -289,7 +277,7 @@ func previewOrganize(deps *ServerDependencies) gin.HandlerFunc {
 		}
 
 		if movie == nil {
-			c.JSON(404, ErrorResponse{Error: fmt.Sprintf("Movie %s not found in job", movieID)})
+			c.JSON(404, ErrorResponse{Error: fmt.Sprintf("No movie data found for result %s", resultID)})
 			return
 		}
 

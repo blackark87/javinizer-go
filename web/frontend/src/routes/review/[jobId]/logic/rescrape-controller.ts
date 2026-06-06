@@ -162,13 +162,6 @@ export function createRescrapeController(deps: RescrapeControllerDeps) {
 					actress_sources: response.actress_sources ?? newResults[filePath].actress_sources
 				};
 				deps.setJob({ ...currentJob, results: newResults });
-
-				// Update rescrapeMovieId with the new ID from the rescrape result
-				// This ensures consecutive rescrapes use the correct movie ID
-				const newMovieId = updatedMovie?.id || updatedMovie?.content_id || rescrapeMovieId;
-				if (newMovieId && newMovieId !== rescrapeMovieId) {
-					deps.setRescrapeMovieId(newMovieId);
-				}
 			}
 
 			const editedMovies = deps.getEditedMovies();
@@ -179,17 +172,14 @@ export function createRescrapeController(deps: RescrapeControllerDeps) {
 			deps.toastSuccess(
 				effectiveManualSearchMode
 					? `Successfully scraped metadata for ${effectiveManualSearchInput.trim()}`
-					: `Successfully rescraped ${rescrapeMovieId}`
+					: 'Successfully rescraped'
 			);
 			deps.setShowRescrapeModal(false);
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
 			deps.toastError((effectiveManualSearchMode ? 'Manual search failed: ' : 'Rescrape failed: ') + errorMessage);
 		} finally {
-			if (deps.getRescrapeMovieId() !== rescrapeMovieId) {
-				setRescrapingState(deps, rescrapeMovieId, false);
-			}
-			setRescrapingState(deps, deps.getRescrapeMovieId(), false);
+			setRescrapingState(deps, rescrapeMovieId, false);
 		}
 	}
 

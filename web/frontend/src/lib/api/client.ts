@@ -220,31 +220,29 @@ class APIClient {
 	}
 
 	// Update movie in batch job
-	async updateBatchMovie(jobId: string, movieId: string, movie: Movie): Promise<{ movie: Movie }> {
-		return this.request<{ movie: Movie }>(`/api/v1/batch/${jobId}/movies/${movieId}`, {
+	async updateBatchMovie(jobId: string, resultId: string, movie: Movie): Promise<{ movie: Movie }> {
+		return this.request<{ movie: Movie }>(`/api/v1/batch/${jobId}/results/${resultId}`, {
 			method: 'PATCH',
 			body: JSON.stringify({ movie })
 		});
 	}
 
-	// Update manual poster crop for a movie in batch review
-	async updateBatchMoviePosterCrop(jobId: string, movieId: string, crop: PosterCropRequest): Promise<PosterCropResponse> {
-		return this.request<PosterCropResponse>(`/api/v1/batch/${jobId}/movies/${movieId}/poster-crop`, {
+	async updateBatchMoviePosterCrop(jobId: string, resultId: string, crop: PosterCropRequest): Promise<PosterCropResponse> {
+		return this.request<PosterCropResponse>(`/api/v1/batch/${jobId}/results/${resultId}/poster-crop`, {
 			method: 'POST',
 			body: JSON.stringify(crop)
 		});
 	}
 
-	async updateBatchMoviePosterFromURL(jobId: string, movieId: string, request: PosterFromURLRequest): Promise<PosterFromURLResponse> {
-		return this.request<PosterFromURLResponse>(`/api/v1/batch/${jobId}/movies/${movieId}/poster-from-url`, {
+	async updateBatchMoviePosterFromURL(jobId: string, resultId: string, request: PosterFromURLRequest): Promise<PosterFromURLResponse> {
+		return this.request<PosterFromURLResponse>(`/api/v1/batch/${jobId}/results/${resultId}/poster-from-url`, {
 			method: 'POST',
 			body: JSON.stringify(request)
 		});
 	}
 
-	// Exclude movie from batch organization
-	async excludeBatchMovie(jobId: string, movieId: string): Promise<{ message: string }> {
-		return this.request<{ message: string }>(`/api/v1/batch/${jobId}/movies/${movieId}/exclude`, {
+	async excludeBatchMovie(jobId: string, resultId: string): Promise<{ message: string }> {
+		return this.request<{ message: string }>(`/api/v1/batch/${jobId}/results/${resultId}/exclude`, {
 			method: 'POST'
 		});
 	}
@@ -283,8 +281,8 @@ class APIClient {
 	}
 
 	// Preview organize output
-	async previewOrganize(jobId: string, movieId: string, request: OrganizePreviewRequest): Promise<OrganizePreviewResponse> {
-		return this.request<OrganizePreviewResponse>(`/api/v1/batch/${jobId}/movies/${movieId}/preview`, {
+	async previewOrganize(jobId: string, resultId: string, request: OrganizePreviewRequest): Promise<OrganizePreviewResponse> {
+		return this.request<OrganizePreviewResponse>(`/api/v1/batch/${jobId}/results/${resultId}/preview`, {
 			method: 'POST',
 			body: JSON.stringify(request)
 		});
@@ -345,8 +343,8 @@ class APIClient {
 	}
 
 	// Rescrape movie within a batch job (batch-aware rescrape)
-	async rescrapeBatchMovie(jobId: string, movieId: string, req: BatchRescrapeRequest): Promise<BatchRescrapeResponse> {
-		return this.request<BatchRescrapeResponse>(`/api/v1/batch/${jobId}/movies/${movieId}/rescrape`, {
+	async rescrapeBatchMovie(jobId: string, resultId: string, req: BatchRescrapeRequest): Promise<BatchRescrapeResponse> {
+		return this.request<BatchRescrapeResponse>(`/api/v1/batch/${jobId}/results/${resultId}/rescrape`, {
 			method: 'POST',
 			body: JSON.stringify(req)
 		});

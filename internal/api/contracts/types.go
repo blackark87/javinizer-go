@@ -236,6 +236,7 @@ type OrganizePreviewResponse struct {
 
 // BatchFileResult wraps worker.FileResult with additional API-specific fields
 type BatchFileResult struct {
+	ResultID       string            `json:"result_id"`
 	FilePath       string            `json:"file_path"`
 	MovieID        string            `json:"movie_id"`
 	Status         string            `json:"status"`
@@ -253,6 +254,7 @@ type BatchFileResult struct {
 // BatchFileResultSlim is a lightweight BatchFileResult without the Data field
 // for efficient status polling.
 type BatchFileResultSlim struct {
+	ResultID       string            `json:"result_id"`
 	FilePath       string            `json:"file_path"`
 	MovieID        string            `json:"movie_id"`
 	Status         string            `json:"status"`
@@ -540,13 +542,13 @@ type OverlapInfo struct {
 
 // BatchExcludeRequest represents a request to exclude multiple movies from a batch job
 type BatchExcludeRequest struct {
-	MovieIDs []string `json:"movie_ids" binding:"required" example:"IPX-535,ABC-123"`
+	ResultIDs []string `json:"result_ids" binding:"required" example:"uuid-1,uuid-2"`
 }
 
-// BatchExcludeFailed represents a per-movie failure during batch exclude
+// BatchExcludeFailed represents a per-result failure during batch exclude
 type BatchExcludeFailed struct {
-	MovieID string `json:"movie_id" example:"IPX-535"`
-	Error   string `json:"error" example:"Movie not found in job"`
+	ResultID string `json:"result_id" example:"uuid-1"`
+	Error    string `json:"error" example:"Result not found in job"`
 }
 
 // BatchExcludeResponse represents the result of a batch exclude operation

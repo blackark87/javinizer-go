@@ -17,18 +17,18 @@ import (
 // @Accept json
 // @Produce json
 // @Param id path string true "Job ID"
-// @Param movieId path string true "Movie ID"
+// @Param resultId path string true "Result ID"
 // @Param request body BatchRescrapeRequest true "Rescrape options"
 // @Success 200 {object} BatchRescrapeResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 410 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
-// @Router /api/v1/batch/{id}/movies/{movieId}/rescrape [post]
+// @Router /api/v1/batch/{id}/results/{resultId}/rescrape [post]
 func rescrapeBatchMovie(deps *ServerDependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		jobID := c.Param("id")
-		movieID := c.Param("movieId")
+		resultID := c.Param("resultId")
 
 		var req BatchRescrapeRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -41,8 +41,8 @@ func rescrapeBatchMovie(deps *ServerDependencies) gin.HandlerFunc {
 			return
 		}
 
-		logging.Infof("Batch rescrape request for job %s, movie %s: scrapers=%v, manual_input=%s, force=%v",
-			jobID, movieID, req.SelectedScrapers, req.ManualSearchInput, req.Force)
+		logging.Infof("Batch rescrape request for job %s, result %s: scrapers=%v, manual_input=%s, force=%v",
+			jobID, resultID, req.SelectedScrapers, req.ManualSearchInput, req.Force)
 
 		job, ok := deps.JobQueue.GetJobPointer(jobID)
 		if !ok {
@@ -56,7 +56,7 @@ func rescrapeBatchMovie(deps *ServerDependencies) gin.HandlerFunc {
 			return
 		}
 
-		lookup, httpStatus, errMsg := findFileForMovieID(job, movieID)
+		lookup, httpStatus, errMsg := findFileForResultID(job, resultID)
 		if errMsg != "" {
 			c.JSON(httpStatus, ErrorResponse{Error: errMsg})
 			return
@@ -73,7 +73,7 @@ func rescrapeBatchMovie(deps *ServerDependencies) gin.HandlerFunc {
 		}
 		job.Unlock()
 
-		params, _ := resolveScrapeParams(&req, movieID, deps)
+		params, _ := resolveScrapeParams(&req, lookup.oldMovieID, deps)
 
 		result, err := executeRescrape(c.Request.Context(), params, job, lookup.foundFilePath, deps, &req, cfg)
 		if err != nil {

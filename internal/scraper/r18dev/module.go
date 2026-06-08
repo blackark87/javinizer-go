@@ -52,6 +52,7 @@ func init() {
 			Enabled:   true,
 			Language:  "en",
 			UserAgent: config.DefaultUserAgent,
+			Proxy:     &config.ProxyConfig{Enabled: false},
 		},
 		ScraperPriority: 100,
 		ConfigType:      func() scraperutil.ScraperConfigInterface { return &R18DevConfig{} },

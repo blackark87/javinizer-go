@@ -562,11 +562,15 @@ func (c *ScrapersConfig) NormalizeScraperConfigs() {
 			}
 		} else {
 			// Merge module defaults for zero-value fields.
-			// This ensures scraper-specific defaults (e.g. r18dev's Javinizer UA)
+			// This ensures scraper-specific defaults (e.g. r18dev's Javinizer UA, proxy disabled)
 			// are applied even when the user's config has the field empty.
 			if defaults := defaultScraperSettingsCopy(defaultSettings); defaults != nil {
 				if c.Overrides[name].UserAgent == "" && defaults.UserAgent != "" {
 					c.Overrides[name].UserAgent = defaults.UserAgent
+				}
+				if c.Overrides[name].Proxy == nil && defaults.Proxy != nil {
+					copied := *defaults.Proxy
+					c.Overrides[name].Proxy = &copied
 				}
 			}
 		}

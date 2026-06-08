@@ -24,7 +24,7 @@ const (
 	DirPermTemp = configutil.DirPermTemp
 	FilePerm    = configutil.FilePerm
 
-	DefaultUserAgent = "Javinizer (+https://github.com/javinizer/Javinizer)"
+	DefaultUserAgent = "Javinizer (+https://github.com/javinizer/javinizer-go)"
 
 	DefaultTempDir = "data/temp"
 )

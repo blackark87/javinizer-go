@@ -79,13 +79,8 @@ func testProxy(deps *ServerDependencies) gin.HandlerFunc {
 			client.SetTransport(transport)
 			client.SetRedirectPolicy(resty.NoRedirectPolicy())
 
-			userAgent := deps.GetConfig().Scrapers.UserAgent
-			if userAgent == "" {
-				userAgent = config.DefaultUserAgent
-			}
-
 			httpResp, err := client.R().
-				SetHeader("User-Agent", userAgent).
+				SetHeader("User-Agent", config.ResolveScraperUserAgent(deps.GetConfig().Scrapers.UserAgent)).
 				SetHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8").
 				Get(targetURL)
 

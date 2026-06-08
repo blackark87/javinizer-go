@@ -171,11 +171,7 @@ func serveTempImage(deps *ServerDependencies) gin.HandlerFunc {
 			return
 		}
 
-		userAgent := cfg.Scrapers.UserAgent
-		if userAgent == "" {
-			userAgent = config.DefaultUserAgent
-		}
-		req.Header.Set("User-Agent", userAgent)
+		req.Header.Set("User-Agent", config.ResolveScraperUserAgent(cfg.Scrapers.UserAgent))
 		req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
 		if referer := resolveTempImageReferer(parsedURL.String(), cfg.Scrapers.Referer); referer != "" {
 			req.Header.Set("Referer", referer)

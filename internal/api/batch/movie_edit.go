@@ -308,9 +308,7 @@ func updateBatchMoviePosterFromURL(deps *ServerDependencies) gin.HandlerFunc {
 			c.JSON(400, ErrorResponse{Error: fmt.Sprintf("Invalid URL: %v", err)})
 			return
 		}
-		if cfg.Scrapers.UserAgent != "" {
-			downloadReq.Header.Set("User-Agent", cfg.Scrapers.UserAgent)
-		}
+		downloadReq.Header.Set("User-Agent", config.ResolveScraperUserAgent(cfg.Scrapers.UserAgent))
 		downloadReq.Header.Set("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
 		if cfg.Scrapers.Referer != "" {
 			downloadReq.Header.Set("Referer", cfg.Scrapers.Referer)

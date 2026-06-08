@@ -49,8 +49,9 @@ func init() {
 			},
 		},
 		ScraperDefaults: config.ScraperSettings{
-			Enabled:  true,
-			Language: "en",
+			Enabled:   true,
+			Language:  "en",
+			UserAgent: config.DefaultUserAgent,
 		},
 		ScraperPriority: 100,
 		ConfigType:      func() scraperutil.ScraperConfigInterface { return &R18DevConfig{} },
@@ -72,6 +73,7 @@ func init() {
 				Proxy:             config.ProxyAsConfig(fc.Proxy),
 				DownloadProxy:     config.ProxyAsConfig(fc.DownloadProxy),
 				RespectRetryAfter: fc.RespectRetryAfter,
+				UserAgent:         config.DefaultUserAgent,
 			}
 		},
 	}

@@ -76,9 +76,7 @@ func GenerateTempPoster(
 	}
 
 	// Set headers from config (not hardcoded)
-	if userAgent != "" {
-		req.Header.Set("User-Agent", userAgent)
-	}
+	req.Header.Set("User-Agent", config.ResolveScraperUserAgent(userAgent))
 	req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
 	if effectiveReferer := resolvePosterReferer(originalPosterURL, referer, refererResolver); effectiveReferer != "" {
 		req.Header.Set("Referer", effectiveReferer)
@@ -194,9 +192,7 @@ func GenerateCroppedPoster(
 	}
 
 	// Set headers from config (not hardcoded)
-	if userAgent != "" {
-		req.Header.Set("User-Agent", userAgent)
-	}
+	req.Header.Set("User-Agent", config.ResolveScraperUserAgent(userAgent))
 	req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
 	if effectiveReferer := resolvePosterReferer(originalPosterURL, referer, refererResolver); effectiveReferer != "" {
 		req.Header.Set("Referer", effectiveReferer)

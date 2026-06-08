@@ -120,7 +120,7 @@ func GetImageDimensions(url string, client *http.Client) (width, height int, err
 	}
 
 	// Add headers to mimic a browser request
-	req.Header.Set("User-Agent", "Javinizer (+https://github.com/javinizer/Javinizer)")
+	req.Header.Set("User-Agent", "Javinizer (+https://github.com/javinizer/javinizer-go)")
 	req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
 	req.Header.Set("Referer", "https://www.dmm.co.jp/")
 

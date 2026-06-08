@@ -92,7 +92,7 @@ Javinizer supports multiple metadata scrapers that can be enabled/disabled and p
 config_version: 3
 
 scrapers:
-  user_agent: "Javinizer (+https://github.com/javinizer/Javinizer)"
+  user_agent: "Javinizer (+https://github.com/javinizer/javinizer-go)"
   priority:
     - dmm
     - r18dev
@@ -1158,7 +1158,7 @@ api:
 
 ```yaml
 scrapers:
-  user_agent: "Javinizer (+https://github.com/javinizer/Javinizer)"
+  user_agent: "Javinizer (+https://github.com/javinizer/javinizer-go)"
   referer: "https://www.dmm.co.jp/"
   timeout_seconds: 30
   request_timeout_seconds: 60

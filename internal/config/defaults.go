@@ -76,7 +76,7 @@ func DefaultConfig() *Config {
 			},
 		},
 		Scrapers: ScrapersConfig{
-			UserAgent:             DefaultUserAgent,
+			UserAgent:             "",
 			Referer:               "https://www.dmm.co.jp/", // Referer header for CDN compatibility (required by DMM/R18 CDN)
 			TimeoutSeconds:        30,                       // HTTP client timeout
 			RequestTimeoutSeconds: 60,                       // Overall request timeout

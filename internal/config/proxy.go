@@ -45,7 +45,7 @@ func (p *ProxyConfig) UnmarshalYAML(node *yaml.Node) error {
 }
 
 // ResolveScraperUserAgent resolves the effective User-Agent for a scraper.
-// If the scraper-specific userAgent is non-empty, it is used; otherwise DefaultScraperUserAgent is returned.
+// Priority: scraper config override → scraper module default → Chrome UA fallback.
 func ResolveScraperUserAgent(userAgent string) string {
 	if ua := strings.TrimSpace(userAgent); ua != "" {
 		return ua

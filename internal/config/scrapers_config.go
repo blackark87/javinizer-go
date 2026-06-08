@@ -560,6 +560,15 @@ func (c *ScrapersConfig) NormalizeScraperConfigs() {
 			if copied := defaultScraperSettingsCopy(defaultSettings); copied != nil {
 				c.Overrides[name] = copied
 			}
+		} else {
+			// Merge module defaults for zero-value fields.
+			// This ensures scraper-specific defaults (e.g. r18dev's Javinizer UA)
+			// are applied even when the user's config has the field empty.
+			if defaults := defaultScraperSettingsCopy(defaultSettings); defaults != nil {
+				if c.Overrides[name].UserAgent == "" && defaults.UserAgent != "" {
+					c.Overrides[name].UserAgent = defaults.UserAgent
+				}
+			}
 		}
 	}
 

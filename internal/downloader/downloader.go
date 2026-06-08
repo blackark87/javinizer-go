@@ -661,9 +661,7 @@ func (d *Downloader) download(ctx context.Context, url, destPath string, mediaTy
 	}
 
 	// Set user agent
-	if d.userAgent != "" {
-		req.Header.Set("User-Agent", d.userAgent)
-	}
+	req.Header.Set("User-Agent", config.ResolveScraperUserAgent(d.userAgent))
 	if referer := resolveDownloadReferer(url); referer != "" {
 		req.Header.Set("Referer", referer)
 	}
@@ -821,9 +819,7 @@ func (d *Downloader) downloadSimple(ctx context.Context, url, destPath string) e
 	}
 
 	// Set user agent
-	if d.userAgent != "" {
-		req.Header.Set("User-Agent", d.userAgent)
-	}
+	req.Header.Set("User-Agent", config.ResolveScraperUserAgent(d.userAgent))
 	if referer := resolveDownloadReferer(url); referer != "" {
 		req.Header.Set("Referer", referer)
 	}

@@ -162,7 +162,7 @@ metadata:
     tagline: Amazing content
     credits:
       - Scraped by Javinizer
-      - https://github.com/javinizer/Javinizer
+      - https://github.com/javinizer/javinizer-go
 `
 	tmpDir := t.TempDir()
 	cfgPath := filepath.Join(tmpDir, "nfo_extended.yaml")

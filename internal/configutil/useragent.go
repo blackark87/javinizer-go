@@ -73,7 +73,7 @@ func (u *UserAgentString) Scan(value interface{}) error {
 
 const (
 	// DefaultUserAgent is the true/identifying UA for Javinizer.
-	DefaultUserAgent = "Javinizer (+https://github.com/javinizer/Javinizer)"
+	DefaultUserAgent = "Javinizer (+https://github.com/javinizer/javinizer-go)"
 
 	// DefaultScraperUserAgent is a browser-like UA used as the default for scrapers
 	// when no scraper-specific or global user_agent is configured.

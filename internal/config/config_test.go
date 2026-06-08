@@ -179,7 +179,7 @@ func TestResolveScraperUserAgent(t *testing.T) {
 			expectedUA: "Custom-UA",
 		},
 		{
-			name:       "default fake user-agent when scraper UA empty",
+			name:       "Chrome UA fallback when scraper UA empty",
 			userAgent:  "",
 			expectedUA: configutil.DefaultScraperUserAgent,
 		},

@@ -1,7 +1,10 @@
 package config
 
 import (
+	"testing"
+
 	"github.com/javinizer/javinizer-go/internal/scraperutil"
+	"github.com/stretchr/testify/assert"
 )
 
 func RegisterTestScraperConfigs() {
@@ -26,11 +29,16 @@ func RegisterTestScraperConfigs() {
 		{"fc2", 35},
 		{"javstash", 10},
 	}
+
 	for _, sp := range scraperPriorities {
+		defaults := &ScraperSettings{Enabled: true}
+		if sp.name == "r18dev" {
+			defaults.UserAgent = DefaultUserAgent
+		}
 		module := &testScraperModule{
 			name:     sp.name,
 			priority: sp.priority,
-			defaults: &ScraperSettings{Enabled: true},
+			defaults: defaults,
 		}
 		scraperutil.RegisterModule(module)
 	}
@@ -95,3 +103,45 @@ func (m *testScraperModule) Options() any        { return nil }
 func (m *testScraperModule) Defaults() any       { return m.defaults }
 func (m *testScraperModule) Priority() int       { return m.priority }
 func (m *testScraperModule) FlattenFunc() any    { return m.flattenFunc }
+
+func TestNormalizeScraperConfigs_MergeUserAgentFromModuleDefaults(t *testing.T) {
+	RegisterTestScraperConfigs()
+
+	cfg := DefaultConfig()
+
+	// Simulate user config with r18dev.user_agent = "" (empty)
+	cfg.Scrapers.Overrides["r18dev"] = &ScraperSettings{
+		Enabled:   true,
+		Language:  "en",
+		UserAgent: "", // Empty — should be filled from r18dev module default
+	}
+
+	cfg.Scrapers.NormalizeScraperConfigs()
+
+	// r18dev's module default (Javinizer UA) should be merged in
+	assert.Equal(t, DefaultUserAgent, cfg.Scrapers.Overrides["r18dev"].UserAgent,
+		"empty user_agent should be filled from r18dev module default")
+
+	// Other scrapers should NOT get the Javinizer UA (they have no module default for UserAgent)
+	assert.Equal(t, "", cfg.Scrapers.Overrides["dmm"].UserAgent,
+		"scrapers without UserAgent module default should remain empty")
+}
+
+func TestNormalizeScraperConfigs_UserAgentOverridePreserved(t *testing.T) {
+	RegisterTestScraperConfigs()
+
+	cfg := DefaultConfig()
+
+	// Simulate user config with r18dev.user_agent = "Custom-UA" (explicit override)
+	cfg.Scrapers.Overrides["r18dev"] = &ScraperSettings{
+		Enabled:   true,
+		Language:  "en",
+		UserAgent: "Custom-UA", // Explicit override — should NOT be overwritten
+	}
+
+	cfg.Scrapers.NormalizeScraperConfigs()
+
+	// User's explicit override should be preserved
+	assert.Equal(t, "Custom-UA", cfg.Scrapers.Overrides["r18dev"].UserAgent,
+		"explicit user_agent override should not be overwritten by module default")
+}

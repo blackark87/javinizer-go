@@ -35,7 +35,14 @@
 		'<SET>',
 		'<RELEASEDATE>',
 		'<RUNTIME>',
-		'<RESOLUTION>'
+		'<RESOLUTION>',
+		'<SOURCEPATH>',
+		'<SOURCEDIR>',
+		'<SOURCEFOLDER>',
+		'<SOURCEPARENT>',
+		'<SOURCEFILE>',
+		'<SOURCEFILENAME>',
+		'<SOURCEEXT>'
 	];
 
 	let showTags = $state(false);

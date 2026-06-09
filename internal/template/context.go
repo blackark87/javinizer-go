@@ -2,6 +2,7 @@ package template
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -49,9 +50,16 @@ type Context struct {
 	// Categories
 	Genres []string
 
-	// Media info
+	// Media/source file info
 	OriginalFilename string
 	VideoFilePath    string // Path to video file for mediainfo extraction
+	SourcePath       string // Full source video path
+	SourceDir        string // Directory containing the source video
+	SourceFolder     string // Base folder name containing the source video
+	SourceParent     string // Parent folder name of SourceFolder
+	SourceFile       string // Source filename with extension
+	SourceFilename   string // Source filename without extension
+	SourceExtension  string // Source file extension including dot
 
 	// Indexing (for screenshots, multi-part, etc.)
 	Index int
@@ -198,6 +206,45 @@ func NewContextFromScraperResult(result *models.ScraperResult) *Context {
 	return ctx
 }
 
+// SetSourceFile attaches the currently processed source video path to the template context.
+// This enables source-path tags and allows <RESOLUTION> to analyze the actual media file.
+func (c *Context) SetSourceFile(path, name, extension string) {
+	path = strings.TrimSpace(path)
+	name = strings.TrimSpace(name)
+	extension = strings.TrimSpace(extension)
+
+	if name == "" && path != "" {
+		name = filepath.Base(path)
+	}
+	if extension == "" && name != "" {
+		extension = filepath.Ext(name)
+	}
+	if extension == "" && path != "" {
+		extension = filepath.Ext(path)
+	}
+
+	c.SourcePath = path
+	c.SourceFile = name
+	c.SourceExtension = extension
+	c.SourceFilename = strings.TrimSuffix(name, extension)
+
+	if path != "" {
+		c.VideoFilePath = path
+		c.SourceDir = filepath.Dir(path)
+		if c.SourceDir != "." && c.SourceDir != string(filepath.Separator) {
+			c.SourceFolder = filepath.Base(c.SourceDir)
+			parentDir := filepath.Dir(c.SourceDir)
+			if parentDir != c.SourceDir && parentDir != "." && parentDir != string(filepath.Separator) {
+				c.SourceParent = filepath.Base(parentDir)
+			}
+		}
+	}
+
+	if c.OriginalFilename == "" && c.SourceFilename != "" {
+		c.OriginalFilename = c.SourceFilename
+	}
+}
+
 // Clone creates a copy of the context.
 // Preserves cached mediainfo to avoid duplicate expensive analysis.
 func (c *Context) Clone() *Context {
@@ -218,6 +265,13 @@ func (c *Context) Clone() *Context {
 		Series:           c.Series,
 		OriginalFilename: c.OriginalFilename,
 		VideoFilePath:    c.VideoFilePath,
+		SourcePath:       c.SourcePath,
+		SourceDir:        c.SourceDir,
+		SourceFolder:     c.SourceFolder,
+		SourceParent:     c.SourceParent,
+		SourceFile:       c.SourceFile,
+		SourceFilename:   c.SourceFilename,
+		SourceExtension:  c.SourceExtension,
 		Index:            c.Index,
 		PartNumber:       c.PartNumber,
 		PartSuffix:       c.PartSuffix,

@@ -105,7 +105,7 @@ func (r *ProberRegistry) ProbeWithFallback(f *os.File) (*VideoInfo, error) {
 
 // MediaInfoConfig holds configuration for MediaInfo functionality
 type MediaInfoConfig struct {
-	CLIEnabled bool   // Enable MediaInfo CLI fallback (default: false)
+	CLIEnabled bool   // Enable MediaInfo CLI fallback (default: true)
 	CLIPath    string // Path to mediainfo binary (default: "mediainfo")
 	CLITimeout int    // Timeout in seconds (default: 30)
 }
@@ -113,7 +113,7 @@ type MediaInfoConfig struct {
 // DefaultMediaInfoConfig returns default configuration
 func DefaultMediaInfoConfig() *MediaInfoConfig {
 	return &MediaInfoConfig{
-		CLIEnabled: false,
+		CLIEnabled: true,
 		CLIPath:    "mediainfo",
 		CLITimeout: 30,
 	}

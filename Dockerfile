@@ -91,13 +91,14 @@ LABEL maintainer="javinizer@example.com" \
 # Working directory is now /javinizer (app state location)
 WORKDIR /javinizer
 
-# Install runtime dependencies including Chromium for browser automation
+# Install runtime dependencies including Chromium for browser automation and MediaInfo CLI
 RUN apk add --no-cache \
     ca-certificates \
     tzdata \
     sqlite \
     su-exec \
     wget \
+    mediainfo \
     chromium \
     nss \
     freetype \

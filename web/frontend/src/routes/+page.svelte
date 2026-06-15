@@ -25,7 +25,6 @@
 	import { apiClient } from '$lib/api/client';
 	import { websocketStore } from '$lib/stores/websocket';
 	import { isTerminalStatus } from '$lib/utils/job-progress';
-	import type { HealthResponse, HistoryRecord, HistoryStats } from '$lib/api/types';
 
 	const STORAGE_KEY_INPUT = 'javinizer_input_path';
 	const STORAGE_KEY_OUTPUT = 'javinizer_output_path';
@@ -40,19 +39,13 @@
 
 	const statsQuery = createQuery(() => ({
 		queryKey: ['history', 'stats'],
-		queryFn: () => apiClient.getHistoryStats(),
+		queryFn: () => apiClient.getHistoryDashboardStats(),
 		staleTime: 30_000
 	}));
 
 	const recentRunsQuery = createQuery(() => ({
 		queryKey: ['history', 'recent'],
 		queryFn: () => apiClient.getHistory({ limit: 8, offset: 0 }),
-		staleTime: 30_000
-	}));
-
-	const historyWindowQuery = createQuery(() => ({
-		queryKey: ['history', 'window'],
-		queryFn: () => apiClient.getHistory({ limit: 200, offset: 0 }),
 		staleTime: 30_000
 	}));
 
@@ -71,7 +64,6 @@
 	let health = $derived(healthQuery.data ?? null);
 	let stats = $derived(statsQuery.data ?? null);
 	let recentRuns = $derived(recentRunsQuery.data?.records ?? []);
-	let historyWindow = $derived(historyWindowQuery.data?.records ?? []);
 	let actressTotal = $derived(actressCountQuery.data?.total ?? null);
 	let currentWorkingDirectory = $derived(cwdQuery.data?.path ?? '');
 
@@ -87,7 +79,6 @@
 		healthQuery.isPending &&
 			statsQuery.isPending &&
 			recentRunsQuery.isPending &&
-			historyWindowQuery.isPending &&
 			actressCountQuery.isPending &&
 			cwdQuery.isPending
 	);
@@ -97,7 +88,6 @@
 			(healthQuery.isFetching ||
 				statsQuery.isFetching ||
 				recentRunsQuery.isFetching ||
-				historyWindowQuery.isFetching ||
 				actressCountQuery.isFetching ||
 				cwdQuery.isFetching)
 	);
@@ -107,12 +97,11 @@
 			healthQuery.error,
 			statsQuery.error,
 			recentRunsQuery.error,
-			historyWindowQuery.error,
 			actressCountQuery.error,
 			cwdQuery.error
 		].filter(Boolean);
 		if (errors.length === 0) return null;
-		if (errors.length === 6) return 'Unable to load dashboard data.';
+		if (errors.length === 5) return 'Unable to load dashboard data.';
 		return `Loaded with ${errors.length} partial error${errors.length > 1 ? 's' : ''}.`;
 	});
 
@@ -125,25 +114,15 @@
 		outputPath = savedOutput || cwd;
 	});
 
-
 	const wsState = $derived($websocketStore);
 	const recentRunCount = $derived(recentRuns.length);
 	const releaseVersion = $derived(health?.version ?? 'unknown');
 
-	const sevenDayMetrics = $derived.by(() => {
-		const now = Date.now();
-		const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
-		const records = historyWindow.filter((record) => {
-			const timestamp = Date.parse(record.created_at);
-			return !Number.isNaN(timestamp) && timestamp >= sevenDaysAgo;
-		});
-
-		const total = records.length;
-		const failed = records.filter((record) => record.status === 'failed').length;
-		const success = records.filter((record) => record.status === 'success').length;
-		const successRate = total > 0 ? Math.round((success / total) * 100) : 0;
-
-		return { total, failed, successRate };
+	const sevenDayMetrics = $derived({
+		total: stats?.total_7d ?? 0,
+		failed: stats?.failed_7d ?? 0,
+		success: stats?.success_7d ?? 0,
+		successRate: stats?.success_rate_7d ?? 0
 	});
 
 	const latestActivity = $derived.by(() => {

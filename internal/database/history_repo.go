@@ -22,6 +22,71 @@ func NewHistoryRepository(db *DB) *HistoryRepository {
 	}
 }
 
+// HistoryStatsAggregate contains grouped counts used by dashboard and history stats APIs.
+type HistoryStatsAggregate struct {
+	Total          int64
+	ByStatus       map[string]int64
+	ByOperation    map[string]int64
+	RecentByStatus map[string]int64
+}
+
+type groupedCount struct {
+	Key   string `gorm:"column:key"`
+	Count int64  `gorm:"column:count"`
+}
+
+// StatsAggregate returns total history count, grouped status counts, grouped
+// operation counts, and grouped status counts for records created since
+// recentSince. The grouped queries avoid repeated per-status and per-operation
+// count calls during dashboard initialization.
+func (r *HistoryRepository) StatsAggregate(recentSince time.Time) (*HistoryStatsAggregate, error) {
+	stats := &HistoryStatsAggregate{
+		ByStatus:       make(map[string]int64),
+		ByOperation:    make(map[string]int64),
+		RecentByStatus: make(map[string]int64),
+	}
+
+	if err := r.GetDB().Model(&models.History{}).Count(&stats.Total).Error; err != nil {
+		return nil, wrapDBErr("count", "history", err)
+	}
+
+	var statusCounts []groupedCount
+	if err := r.GetDB().Model(&models.History{}).
+		Select("status AS key, COUNT(*) AS count").
+		Group("status").
+		Scan(&statusCounts).Error; err != nil {
+		return nil, wrapDBErr("count", "history by status", err)
+	}
+	for _, row := range statusCounts {
+		stats.ByStatus[row.Key] = row.Count
+	}
+
+	var operationCounts []groupedCount
+	if err := r.GetDB().Model(&models.History{}).
+		Select("operation AS key, COUNT(*) AS count").
+		Group("operation").
+		Scan(&operationCounts).Error; err != nil {
+		return nil, wrapDBErr("count", "history by operation", err)
+	}
+	for _, row := range operationCounts {
+		stats.ByOperation[row.Key] = row.Count
+	}
+
+	var recentStatusCounts []groupedCount
+	if err := r.GetDB().Model(&models.History{}).
+		Select("status AS key, COUNT(*) AS count").
+		Where("datetime(created_at) >= datetime(?)", recentSince.UTC().Format(SqliteTimeFormat)).
+		Group("status").
+		Scan(&recentStatusCounts).Error; err != nil {
+		return nil, wrapDBErr("count", "recent history by status", err)
+	}
+	for _, row := range recentStatusCounts {
+		stats.RecentByStatus[row.Key] = row.Count
+	}
+
+	return stats, nil
+}
+
 func (r *HistoryRepository) Create(history *models.History) error {
 	return r.BaseRepository.Create(history)
 }

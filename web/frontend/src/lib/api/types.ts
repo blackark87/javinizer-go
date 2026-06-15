@@ -925,8 +925,16 @@ export interface HistoryStats {
 		organize: number;
 		download: number;
 		nfo: number;
+		[key: string]: number;
 	};
+	recent_window_days: number;
+	total_7d: number;
+	success_7d: number;
+	failed_7d: number;
+	success_rate_7d: number;
 }
+
+export type HistoryDashboardStats = HistoryStats;
 
 export interface HistoryListResponse {
 	records: HistoryRecord[];

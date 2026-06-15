@@ -216,6 +216,11 @@ func TestGetHistoryStats(t *testing.T) {
 				assert.Equal(t, int64(0), resp.Success)
 				assert.Equal(t, int64(0), resp.Failed)
 				assert.Equal(t, int64(0), resp.Reverted)
+				assert.Equal(t, 7, resp.RecentWindow)
+				assert.Equal(t, int64(0), resp.Total7d)
+				assert.Equal(t, int64(0), resp.Success7d)
+				assert.Equal(t, int64(0), resp.Failed7d)
+				assert.Equal(t, 0, resp.SuccessRate7d)
 				// ByOperation is always populated by the handler, even when empty
 			},
 		},
@@ -232,6 +237,11 @@ func TestGetHistoryStats(t *testing.T) {
 				assert.Equal(t, int64(1), resp.ByOperation["organize"])
 				assert.Equal(t, int64(1), resp.ByOperation["download"])
 				assert.Equal(t, int64(1), resp.ByOperation["nfo"])
+				assert.Equal(t, 7, resp.RecentWindow)
+				assert.Equal(t, int64(6), resp.Total7d)
+				assert.Equal(t, int64(4), resp.Success7d)
+				assert.Equal(t, int64(1), resp.Failed7d)
+				assert.Equal(t, 67, resp.SuccessRate7d)
 			},
 		},
 		{
@@ -304,6 +314,8 @@ func TestGetHistoryStats_EmptyDatabase(t *testing.T) {
 	assert.Equal(t, int64(0), resp.Success)
 	assert.Equal(t, int64(0), resp.Failed)
 	assert.Equal(t, int64(0), resp.Reverted)
+	assert.Equal(t, int64(0), resp.Total7d)
+	assert.Equal(t, 0, resp.SuccessRate7d)
 }
 
 func TestGetHistoryStats_WithAllOperationTypes(t *testing.T) {
@@ -380,6 +392,10 @@ func TestGetHistoryStats_AllFailurePaths(t *testing.T) {
 	assert.Equal(t, int64(4), resp.Success)
 	assert.Equal(t, int64(1), resp.Failed)
 	assert.Equal(t, int64(1), resp.Reverted)
+	assert.Equal(t, int64(6), resp.Total7d)
+	assert.Equal(t, int64(4), resp.Success7d)
+	assert.Equal(t, int64(1), resp.Failed7d)
+	assert.Equal(t, 67, resp.SuccessRate7d)
 }
 
 func TestDeleteHistory(t *testing.T) {
@@ -588,6 +604,10 @@ func TestGetHistoryStats_ByOperationType(t *testing.T) {
 	assert.Equal(t, int64(1), resp.ByOperation["organize"])
 	assert.Equal(t, int64(1), resp.ByOperation["download"])
 	assert.Equal(t, int64(1), resp.ByOperation["nfo"])
+	assert.Equal(t, int64(5), resp.Total7d)
+	assert.Equal(t, int64(3), resp.Success7d)
+	assert.Equal(t, int64(1), resp.Failed7d)
+	assert.Equal(t, 60, resp.SuccessRate7d)
 }
 
 func TestDeleteHistoryBulk_ByOperationType(t *testing.T) {

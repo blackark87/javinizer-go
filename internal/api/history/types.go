@@ -24,11 +24,16 @@ type HistoryListResponse struct {
 
 // HistoryStats represents aggregated history statistics
 type HistoryStats struct {
-	Total       int64            `json:"total"`
-	Success     int64            `json:"success"`
-	Failed      int64            `json:"failed"`
-	Reverted    int64            `json:"reverted"`
-	ByOperation map[string]int64 `json:"by_operation"`
+	Total         int64            `json:"total"`
+	Success       int64            `json:"success"`
+	Failed        int64            `json:"failed"`
+	Reverted      int64            `json:"reverted"`
+	ByOperation   map[string]int64 `json:"by_operation"`
+	RecentWindow  int              `json:"recent_window_days"`
+	Total7d       int64            `json:"total_7d"`
+	Success7d     int64            `json:"success_7d"`
+	Failed7d      int64            `json:"failed_7d"`
+	SuccessRate7d int              `json:"success_rate_7d"`
 }
 
 // DeleteHistoryBulkResponse is the response for bulk deletion

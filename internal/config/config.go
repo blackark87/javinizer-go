@@ -407,8 +407,20 @@ func (c *Config) validateTranslationConfig() error {
 		if strings.TrimSpace(t.Anthropic.Model) == "" {
 			return fmt.Errorf("metadata.translation.anthropic.model is required when provider=anthropic")
 		}
+	case "bedrock":
+		if strings.TrimSpace(t.Bedrock.Region) == "" {
+			return fmt.Errorf("metadata.translation.bedrock.region is required when provider=bedrock")
+		}
+		if strings.TrimSpace(t.Bedrock.BaseURL) != "" {
+			if err := validateHTTPBaseURL("metadata.translation.bedrock.base_url", t.Bedrock.BaseURL); err != nil {
+				return err
+			}
+		}
+		if strings.TrimSpace(t.Bedrock.Model) == "" {
+			return fmt.Errorf("metadata.translation.bedrock.model is required when provider=bedrock")
+		}
 	default:
-		return fmt.Errorf("metadata.translation.provider must be one of: openai, openai-compatible, anthropic, deepl, google")
+		return fmt.Errorf("metadata.translation.provider must be one of: openai, openai-compatible, anthropic, bedrock, deepl, google")
 	}
 
 	// REGV-04: Validate API key presence at config time
@@ -431,6 +443,13 @@ func (c *Config) validateTranslationConfig() error {
 	case "anthropic":
 		if strings.TrimSpace(t.Anthropic.APIKey) == "" {
 			return fmt.Errorf("metadata.translation.anthropic.api_key is required when provider=anthropic")
+		}
+	case "bedrock":
+		if strings.TrimSpace(t.Bedrock.AccessKeyID) == "" {
+			return fmt.Errorf("metadata.translation.bedrock.access_key_id is required when provider=bedrock")
+		}
+		if strings.TrimSpace(t.Bedrock.SecretAccessKey) == "" {
+			return fmt.Errorf("metadata.translation.bedrock.secret_access_key is required when provider=bedrock")
 		}
 	}
 

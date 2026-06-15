@@ -66,7 +66,7 @@ func TestVideoInfo_GetResolution(t *testing.T) {
 		{"1080p", 1080, "1080p"},
 		{"720p", 720, "720p"},
 		{"480p", 480, "480p"},
-		{"SD", 360, "SD"},
+		{"below 480p floor", 360, "480p"},
 	}
 
 	for _, tt := range tests {

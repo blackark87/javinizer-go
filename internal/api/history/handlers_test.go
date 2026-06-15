@@ -198,6 +198,106 @@ func TestGetHistory(t *testing.T) {
 	}
 }
 
+func seedHistoryPaginationData(t *testing.T, repo *database.HistoryRepository) {
+	t.Helper()
+
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	records := []*models.History{
+		{MovieID: "IPX-900", Operation: "scrape", Status: "failed", CreatedAt: base.Add(1 * time.Minute)},
+		{MovieID: "IPX-900", Operation: "scrape", Status: "success", CreatedAt: base.Add(2 * time.Minute)},
+		{MovieID: "IPX-901", Operation: "scrape", Status: "failed", CreatedAt: base.Add(3 * time.Minute)},
+		{MovieID: "IPX-900", Operation: "organize", Status: "failed", CreatedAt: base.Add(4 * time.Minute)},
+		{MovieID: "IPX-902", Operation: "scrape", Status: "success", CreatedAt: base.Add(5 * time.Minute)},
+		{MovieID: "IPX-903", Operation: "download", Status: "success", CreatedAt: base.Add(6 * time.Minute)},
+	}
+
+	for _, r := range records {
+		require.NoError(t, repo.Create(r))
+	}
+}
+
+func TestGetHistory_FilteredPagination(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name        string
+		queryParams string
+		validateFn  func(*testing.T, *HistoryListResponse)
+	}{
+		{
+			name:        "status filter applies limit and offset in query",
+			queryParams: "?status=failed&limit=2&offset=1",
+			validateFn: func(t *testing.T, resp *HistoryListResponse) {
+				assert.Equal(t, int64(3), resp.Total)
+				assert.Equal(t, 2, resp.Limit)
+				assert.Equal(t, 1, resp.Offset)
+				require.Len(t, resp.Records, 2)
+				assert.Equal(t, "IPX-901", resp.Records[0].MovieID)
+				assert.Equal(t, "IPX-900", resp.Records[1].MovieID)
+				for _, r := range resp.Records {
+					assert.Equal(t, "failed", r.Status)
+				}
+			},
+		},
+		{
+			name:        "operation filter applies limit and offset in query",
+			queryParams: "?operation=scrape&limit=2&offset=1",
+			validateFn: func(t *testing.T, resp *HistoryListResponse) {
+				assert.Equal(t, int64(4), resp.Total)
+				require.Len(t, resp.Records, 2)
+				assert.Equal(t, "IPX-901", resp.Records[0].MovieID)
+				assert.Equal(t, "IPX-900", resp.Records[1].MovieID)
+				for _, r := range resp.Records {
+					assert.Equal(t, "scrape", r.Operation)
+				}
+			},
+		},
+		{
+			name:        "movie_id filter applies limit and offset in query",
+			queryParams: "?movie_id=IPX-900&limit=1&offset=1",
+			validateFn: func(t *testing.T, resp *HistoryListResponse) {
+				assert.Equal(t, int64(3), resp.Total)
+				require.Len(t, resp.Records, 1)
+				assert.Equal(t, "IPX-900", resp.Records[0].MovieID)
+				assert.Equal(t, "scrape", resp.Records[0].Operation)
+				assert.Equal(t, "success", resp.Records[0].Status)
+			},
+		},
+		{
+			name:        "no filter preserves paginated list behavior",
+			queryParams: "?limit=2&offset=2",
+			validateFn: func(t *testing.T, resp *HistoryListResponse) {
+				assert.Equal(t, int64(6), resp.Total)
+				require.Len(t, resp.Records, 2)
+				assert.Equal(t, "IPX-900", resp.Records[0].MovieID)
+				assert.Equal(t, "IPX-901", resp.Records[1].MovieID)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, repo := setupHistoryTestDB(t)
+			defer func() { _ = db.Close() }()
+			seedHistoryPaginationData(t, repo)
+
+			router := gin.New()
+			router.GET("/api/v1/history", getHistory(repo))
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/history"+tt.queryParams, nil)
+			w := httptest.NewRecorder()
+
+			router.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusOK, w.Code)
+
+			var resp HistoryListResponse
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+			tt.validateFn(t, &resp)
+		})
+	}
+}
+
 func TestGetHistoryStats(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

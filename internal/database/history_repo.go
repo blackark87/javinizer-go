@@ -5,10 +5,18 @@ import (
 	"time"
 
 	"github.com/javinizer/javinizer-go/internal/models"
+	"gorm.io/gorm"
 )
 
 type HistoryRepository struct {
 	*BaseRepository[models.History, uint]
+}
+
+// HistoryFilter contains optional filters for querying history records.
+type HistoryFilter struct {
+	Operation string
+	Status    string
+	MovieID   string
 }
 
 func NewHistoryRepository(db *DB) *HistoryRepository {
@@ -150,6 +158,42 @@ func (r *HistoryRepository) FindByDateRange(start, end time.Time) ([]models.Hist
 
 func (r *HistoryRepository) Count() (int64, error) {
 	return r.BaseRepository.Count()
+}
+
+func (r *HistoryRepository) applyFilter(filter HistoryFilter) *gorm.DB {
+	query := r.GetDB().Model(&models.History{})
+	if filter.Operation != "" {
+		query = query.Where("operation = ?", filter.Operation)
+	}
+	if filter.Status != "" {
+		query = query.Where("status = ?", filter.Status)
+	}
+	if filter.MovieID != "" {
+		query = query.Where("movie_id = ?", filter.MovieID)
+	}
+	return query
+}
+
+func (r *HistoryRepository) ListFiltered(filter HistoryFilter, limit int, offset int) ([]models.History, error) {
+	var history []models.History
+	query := r.applyFilter(filter).Order("created_at DESC")
+	if limit > 0 {
+		query = query.Limit(limit).Offset(offset)
+	}
+	err := query.Find(&history).Error
+	if err != nil {
+		return nil, wrapDBErr("find", "filtered history", err)
+	}
+	return history, nil
+}
+
+func (r *HistoryRepository) CountFiltered(filter HistoryFilter) (int64, error) {
+	var count int64
+	err := r.applyFilter(filter).Count(&count).Error
+	if err != nil {
+		return 0, wrapDBErr("count", "filtered history", err)
+	}
+	return count, nil
 }
 
 func (r *HistoryRepository) CountByStatus(status string) (int64, error) {

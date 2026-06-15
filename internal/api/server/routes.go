@@ -72,7 +72,7 @@ func registerCORSMiddleware(router *gin.Engine, deps *core.ServerDependencies) {
 		origin := c.Request.Header.Get("Origin")
 		allowedOrigins := deps.GetConfig().API.Security.AllowedOrigins
 
-		if origin != "" && isSameOrigin(origin, c.Request) {
+		if origin != "" && isSameOriginWithConfig(origin, c.Request, &deps.GetConfig().API.Security) {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 			c.Writer.Header().Add("Vary", "Origin")

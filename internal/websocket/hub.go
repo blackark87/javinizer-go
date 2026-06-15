@@ -3,7 +3,9 @@ package websocket
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/javinizer/javinizer-go/internal/logging"
@@ -20,10 +22,20 @@ type ProgressMessage struct {
 	Error     string  `json:"error,omitempty"`
 }
 
+const (
+	writeWait      = 10 * time.Second
+	pongWait       = 60 * time.Second
+	pingPeriod     = (pongWait * 9) / 10
+	maxMessageSize = 512
+)
+
 // Client represents a websocket client
 type Client struct {
-	conn *websocket.Conn
-	send chan []byte
+	conn       *websocket.Conn
+	send       chan []byte
+	remoteAddr string
+	origin     string
+	host       string
 }
 
 // Hub maintains the set of active clients and broadcasts messages to them
@@ -76,7 +88,7 @@ func (h *Hub) Run(ctx context.Context) {
 			h.mu.Lock()
 			h.clients[client] = true
 			h.mu.Unlock()
-			logging.Infof("WebSocket client connected. Total clients: %d", len(h.clients))
+			logging.Infof("WebSocket client connected. Total clients: %d remote_addr=%q origin=%q host=%q", len(h.clients), client.remoteAddr, client.origin, client.host)
 
 		case client := <-h.unregister:
 			h.mu.Lock()
@@ -85,7 +97,7 @@ func (h *Hub) Run(ctx context.Context) {
 				close(client.send)
 			}
 			h.mu.Unlock()
-			logging.Infof("WebSocket client disconnected. Total clients: %d", len(h.clients))
+			logging.Infof("WebSocket client disconnected. Total clients: %d remote_addr=%q origin=%q host=%q", len(h.clients), client.remoteAddr, client.origin, client.host)
 
 		case message := <-h.broadcast:
 			// Phase 1: Collect clients under read lock (prevents deadlock during channel sends)
@@ -178,45 +190,94 @@ func (h *Hub) BroadcastProgress(msg *ProgressMessage) error {
 	return h.Broadcast(msg)
 }
 
-// NewClient creates a new client
-func NewClient(conn *websocket.Conn) *Client {
-	return &Client{
+// NewClient creates a new client.
+func NewClient(conn *websocket.Conn, requests ...*http.Request) *Client {
+	client := &Client{
 		conn: conn,
 		send: make(chan []byte, 256),
 	}
+	if len(requests) > 0 && requests[0] != nil {
+		r := requests[0]
+		client.remoteAddr = r.RemoteAddr
+		client.origin = r.Header.Get("Origin")
+		client.host = r.Host
+	}
+	return client
 }
 
-// WritePump pumps messages from the hub to the websocket connection
+// WritePump pumps messages from the hub to the websocket connection.
 func (c *Client) WritePump() {
+	ticker := time.NewTicker(pingPeriod)
 	defer func() {
+		ticker.Stop()
 		_ = c.conn.Close()
 	}()
 
-	for message := range c.send {
-		if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
-			logging.Errorf("Error writing to websocket: %v", err)
-			return
+	for {
+		select {
+		case message, ok := <-c.send:
+			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if !ok {
+				_ = c.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+				return
+			}
+
+			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
+				logging.Errorf("Error writing to websocket: %v remote_addr=%q origin=%q host=%q", err, c.remoteAddr, c.origin, c.host)
+				return
+			}
+		case <-ticker.C:
+			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				logging.Errorf("Error writing websocket ping: %v remote_addr=%q origin=%q host=%q", err, c.remoteAddr, c.origin, c.host)
+				return
+			}
 		}
 	}
-	// The hub closed the channel.
-	_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 }
 
-// ReadPump pumps messages from the websocket connection to the hub
+// ReadPump pumps messages from the websocket connection to the hub.
 func (c *Client) ReadPump(hub *Hub) {
 	defer func() {
 		hub.Unregister(c)
 		_ = c.conn.Close()
 	}()
 
+	c.conn.SetReadLimit(maxMessageSize)
+	_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	c.conn.SetPongHandler(func(string) error {
+		return c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	})
+
 	for {
 		_, _, err := c.conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				logging.Errorf("Unexpected websocket error: %v", err)
-			}
+			c.logReadError(err)
 			break
 		}
-		// We don't process client messages for now, just keep the connection alive
+		// We don't process client messages for now, just keep the connection alive.
+	}
+}
+
+func (c *Client) logReadError(err error) {
+	if closeErr, ok := err.(*websocket.CloseError); ok {
+		format := "WebSocket closed code=%d reason=%q remote_addr=%q origin=%q host=%q"
+		if isExpectedCloseCode(closeErr.Code) {
+			logging.Infof(format, closeErr.Code, closeErr.Text, c.remoteAddr, c.origin, c.host)
+			return
+		}
+		logging.Warnf(format, closeErr.Code, closeErr.Text, c.remoteAddr, c.origin, c.host)
+		return
+	}
+
+	logging.Errorf("WebSocket read error: %v remote_addr=%q origin=%q host=%q", err, c.remoteAddr, c.origin, c.host)
+}
+
+func isExpectedCloseCode(code int) bool {
+	switch code {
+	case websocket.CloseNormalClosure, websocket.CloseGoingAway:
+		return true
+	default:
+		return false
 	}
 }

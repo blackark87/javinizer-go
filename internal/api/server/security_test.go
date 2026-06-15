@@ -25,6 +25,11 @@ func TestCORS_OriginValidation(t *testing.T) {
 		name                  string
 		allowedOrigins        []string
 		requestOrigin         string
+		requestHost           string
+		remoteAddr            string
+		forwardedProto        string
+		forwardedHost         string
+		trustedProxies        []string
 		expectedAllowOrigin   string
 		expectedAllowCreds    string
 		shouldAllowConnection bool
@@ -44,6 +49,32 @@ func TestCORS_OriginValidation(t *testing.T) {
 			expectedAllowOrigin:   "http://localhost:8080",
 			expectedAllowCreds:    "true",
 			shouldAllowConnection: true,
+		},
+		{
+			name:                  "trusted proxy headers allow external https same-origin without allowlist",
+			allowedOrigins:        []string{},
+			requestOrigin:         "https://example.com",
+			requestHost:           "backend:8080",
+			remoteAddr:            "127.0.0.1:12345",
+			forwardedProto:        "https",
+			forwardedHost:         "example.com",
+			trustedProxies:        []string{"127.0.0.1"},
+			expectedAllowOrigin:   "https://example.com",
+			expectedAllowCreds:    "true",
+			shouldAllowConnection: true,
+		},
+		{
+			name:                  "untrusted proxy headers do not allow external same-origin fallback",
+			allowedOrigins:        []string{},
+			requestOrigin:         "https://example.com",
+			requestHost:           "backend:8080",
+			remoteAddr:            "127.0.0.1:12345",
+			forwardedProto:        "https",
+			forwardedHost:         "example.com",
+			trustedProxies:        []string{"10.0.0.1"},
+			expectedAllowOrigin:   "",
+			expectedAllowCreds:    "",
+			shouldAllowConnection: false,
 		},
 		{
 			name:                  "empty config blocks different origin",
@@ -109,6 +140,7 @@ func TestCORS_OriginValidation(t *testing.T) {
 				API: config.APIConfig{
 					Security: config.SecurityConfig{
 						AllowedOrigins: tt.allowedOrigins,
+						TrustedProxies: tt.trustedProxies,
 					},
 				},
 				Logging: config.LoggingConfig{
@@ -142,8 +174,21 @@ func TestCORS_OriginValidation(t *testing.T) {
 			if tt.requestOrigin != "" {
 				req.Header.Set("Origin", tt.requestOrigin)
 			}
+			if tt.forwardedProto != "" {
+				req.Header.Set("X-Forwarded-Proto", tt.forwardedProto)
+			}
+			if tt.forwardedHost != "" {
+				req.Header.Set("X-Forwarded-Host", tt.forwardedHost)
+			}
 			// Set Host for same-origin checking
-			req.Host = "localhost:8080"
+			if tt.requestHost != "" {
+				req.Host = tt.requestHost
+			} else {
+				req.Host = "localhost:8080"
+			}
+			if tt.remoteAddr != "" {
+				req.RemoteAddr = tt.remoteAddr
+			}
 			w := httptest.NewRecorder()
 
 			router.ServeHTTP(w, req)
@@ -246,10 +291,13 @@ func TestCORS_PreflightRequest(t *testing.T) {
 // TestIsSameOrigin tests the same-origin checking logic
 func TestIsSameOrigin(t *testing.T) {
 	tests := []struct {
-		name          string
-		origin        string
-		requestHost   string
-		expectedMatch bool
+		name           string
+		origin         string
+		requestHost    string
+		remoteAddr     string
+		trustedProxies []string
+		headers        map[string]string
+		expectedMatch  bool
 	}{
 		{
 			name:          "exact match",
@@ -287,15 +335,56 @@ func TestIsSameOrigin(t *testing.T) {
 			requestHost:   "localhost:8080",
 			expectedMatch: false, // HTTP and HTTPS are different origins (security requirement)
 		},
+		{
+			name:           "trusted forwarded proto and host match external origin",
+			origin:         "https://example.com",
+			requestHost:    "backend:8080",
+			remoteAddr:     "127.0.0.1:12345",
+			trustedProxies: []string{"127.0.0.1"},
+			headers: map[string]string{
+				"X-Forwarded-Proto": "https",
+				"X-Forwarded-Host":  "example.com",
+			},
+			expectedMatch: true,
+		},
+		{
+			name:           "untrusted forwarded proto and host are ignored",
+			origin:         "https://example.com",
+			requestHost:    "backend:8080",
+			remoteAddr:     "127.0.0.1:12345",
+			trustedProxies: []string{"10.0.0.1"},
+			headers: map[string]string{
+				"X-Forwarded-Proto": "https",
+				"X-Forwarded-Host":  "example.com",
+			},
+			expectedMatch: false,
+		},
+		{
+			name:           "trusted RFC Forwarded proto and host match external origin",
+			origin:         "https://example.com",
+			requestHost:    "backend:8080",
+			remoteAddr:     "127.0.0.1:12345",
+			trustedProxies: []string{"127.0.0.0/8"},
+			headers: map[string]string{
+				"Forwarded": `for=203.0.113.10;proto=https;host="example.com"`,
+			},
+			expectedMatch: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := &http.Request{
-				Host: tt.requestHost,
+				Host:       tt.requestHost,
+				RemoteAddr: tt.remoteAddr,
+				Header:     make(http.Header),
 			}
+			for key, value := range tt.headers {
+				req.Header.Set(key, value)
+			}
+			cfg := &config.SecurityConfig{TrustedProxies: tt.trustedProxies}
 
-			result := isSameOrigin(tt.origin, req)
+			result := isSameOriginWithConfig(tt.origin, req, cfg)
 			assert.Equal(t, tt.expectedMatch, result)
 		})
 	}

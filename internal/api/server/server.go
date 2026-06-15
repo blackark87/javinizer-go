@@ -16,6 +16,13 @@ import (
 
 // isSameOrigin checks if the origin matches the request host (same-origin).
 func isSameOrigin(origin string, r *http.Request) bool {
+	return isSameOriginWithConfig(origin, r, nil)
+}
+
+// isSameOriginWithConfig checks same-origin using trusted proxy headers when configured.
+// X-Forwarded-Proto, X-Forwarded-Host, and Forwarded are only trusted when
+// the direct client IP (RemoteAddr) matches api.security.trusted_proxies.
+func isSameOriginWithConfig(origin string, r *http.Request, cfg *config.SecurityConfig) bool {
 	if origin == "" {
 		return true
 	}
@@ -25,10 +32,7 @@ func isSameOrigin(origin string, r *http.Request) bool {
 		return false
 	}
 
-	reqScheme := "http"
-	if r.TLS != nil {
-		reqScheme = "https"
-	}
+	reqScheme := externalRequestScheme(r, cfg)
 
 	originPort := u.Port()
 	if originPort == "" {
@@ -40,9 +44,10 @@ func isSameOrigin(origin string, r *http.Request) bool {
 		}
 	}
 
-	reqHost := r.Host
+	reqHostPort := externalRequestHost(r, cfg)
+	reqHost := reqHostPort
 	reqPort := ""
-	if host, port, err := net.SplitHostPort(r.Host); err == nil {
+	if host, port, err := net.SplitHostPort(reqHostPort); err == nil {
 		reqHost = host
 		reqPort = port
 	}
@@ -57,6 +62,92 @@ func isSameOrigin(origin string, r *http.Request) bool {
 	return strings.EqualFold(u.Scheme, reqScheme) &&
 		strings.EqualFold(u.Hostname(), reqHost) &&
 		originPort == reqPort
+}
+
+// externalRequestScheme returns the externally visible request scheme.
+func externalRequestScheme(r *http.Request, cfg *config.SecurityConfig) string {
+	reqScheme := "http"
+	if r != nil && r.TLS != nil {
+		reqScheme = "https"
+	}
+	if !trustsProxyHeaders(r, cfg) {
+		return reqScheme
+	}
+	if proto := firstHeaderValue(r.Header.Get("X-Forwarded-Proto")); proto == "http" || proto == "https" {
+		return proto
+	}
+	if proto := forwardedParam(r.Header.Get("Forwarded"), "proto"); proto == "http" || proto == "https" {
+		return proto
+	}
+	return reqScheme
+}
+
+func externalRequestHost(r *http.Request, cfg *config.SecurityConfig) string {
+	if r == nil {
+		return ""
+	}
+	if !trustsProxyHeaders(r, cfg) {
+		return r.Host
+	}
+	if host := firstHeaderValue(r.Header.Get("X-Forwarded-Host")); host != "" {
+		return host
+	}
+	if host := forwardedParam(r.Header.Get("Forwarded"), "host"); host != "" {
+		return host
+	}
+	return r.Host
+}
+
+func trustsProxyHeaders(r *http.Request, cfg *config.SecurityConfig) bool {
+	if r == nil || cfg == nil || len(cfg.TrustedProxies) == 0 {
+		return false
+	}
+	clientIP := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(clientIP); err == nil {
+		clientIP = host
+	}
+	ip := net.ParseIP(strings.Trim(clientIP, "[]"))
+	if ip == nil {
+		return false
+	}
+	for _, trusted := range cfg.TrustedProxies {
+		trusted = strings.TrimSpace(trusted)
+		if trusted == "" {
+			continue
+		}
+		if _, cidr, err := net.ParseCIDR(trusted); err == nil {
+			if cidr.Contains(ip) {
+				return true
+			}
+			continue
+		}
+		if trustedIP := net.ParseIP(strings.Trim(trusted, "[]")); trustedIP != nil && trustedIP.Equal(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func firstHeaderValue(value string) string {
+	if value == "" {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(strings.Split(value, ",")[0]))
+}
+
+func forwardedParam(value, key string) string {
+	if value == "" {
+		return ""
+	}
+	first := strings.Split(value, ",")[0]
+	for _, part := range strings.Split(first, ";") {
+		name, val, ok := strings.Cut(strings.TrimSpace(part), "=")
+		if !ok || !strings.EqualFold(strings.TrimSpace(name), key) {
+			continue
+		}
+		return strings.ToLower(strings.Trim(strings.TrimSpace(val), `"`))
+	}
+	return ""
 }
 
 // isOriginAllowed checks if an origin is allowed based on configuration.
@@ -123,7 +214,7 @@ func NewServer(deps *core.ServerDependencies) *gin.Engine {
 		CheckOrigin: func(r *http.Request) bool {
 			origin := r.Header.Get("Origin")
 			allowedOrigins := deps.GetConfig().API.Security.AllowedOrigins
-			if origin != "" && isSameOrigin(origin, r) {
+			if origin != "" && isSameOriginWithConfig(origin, r, &deps.GetConfig().API.Security) {
 				return true
 			}
 			if len(allowedOrigins) == 0 && origin == "" {

@@ -80,6 +80,21 @@ func ApplyEnvironmentOverrides(cfg *Config) {
 	if anthropicKey := os.Getenv("ANTHROPIC_API_KEY"); anthropicKey != "" {
 		cfg.Metadata.Translation.Anthropic.APIKey = strings.TrimSpace(anthropicKey)
 	}
+	if v := os.Getenv("AWS_ACCESS_KEY_ID"); v != "" {
+		cfg.Metadata.Translation.Bedrock.AccessKeyID = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("AWS_SECRET_ACCESS_KEY"); v != "" {
+		cfg.Metadata.Translation.Bedrock.SecretAccessKey = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("AWS_SESSION_TOKEN"); v != "" {
+		cfg.Metadata.Translation.Bedrock.SessionToken = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("AWS_REGION"); v != "" {
+		cfg.Metadata.Translation.Bedrock.Region = strings.TrimSpace(v)
+	}
+	if v := os.Getenv("BEDROCK_MODEL"); v != "" {
+		cfg.Metadata.Translation.Bedrock.Model = strings.TrimSpace(v)
+	}
 
 	// Translation provider settings (separate from credentials)
 	if provider := os.Getenv("METADATA_TRANSLATION_PROVIDER"); provider != "" {

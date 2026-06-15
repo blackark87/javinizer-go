@@ -326,7 +326,7 @@ metadata:
     # Metadata translation pipeline
     translation:
         enabled: false                # Opt-in: disabled by default
-        provider: openai              # openai | openai-compatible | anthropic | deepl | google
+        provider: openai              # openai | openai-compatible | anthropic | bedrock | deepl | google
         source_language: ja           # e.g., en, ja, zh, auto
         target_language: en           # e.g., en, ja, zh
         timeout_seconds: 60
@@ -364,6 +364,13 @@ metadata:
             base_url: https://api.anthropic.com
             api_key: ""               # Required when provider=anthropic (set via ANTHROPIC_API_KEY env var)
             model: claude-sonnet-4-20250514
+        bedrock:
+            region: us-east-1
+            base_url: ""              # Optional endpoint override
+            access_key_id: ""         # Tip: set via AWS_ACCESS_KEY_ID env var
+            secret_access_key: ""     # Tip: set via AWS_SECRET_ACCESS_KEY env var
+            session_token: ""         # Optional; set via AWS_SESSION_TOKEN env var
+            model: anthropic.claude-3-5-sonnet-20241022-v2:0
 
     # Genres to ignore/filter out. Supports both exact strings and regex patterns.
     # Patterns starting with ^, ending with $, or containing regex metacharacters are treated as regex.

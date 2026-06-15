@@ -177,6 +177,14 @@ func DefaultConfig() *Config {
 					APIKey:  "",
 					Model:   "claude-sonnet-4-20250514",
 				},
+				Bedrock: BedrockTranslationConfig{
+					Region:          "us-east-1",
+					BaseURL:         "",
+					AccessKeyID:     "",
+					SecretAccessKey: "",
+					SessionToken:    "",
+					Model:           "anthropic.claude-3-5-sonnet-20241022-v2:0",
+				},
 			},
 			IgnoreGenres: []string{},
 			NFO: NFOConfig{

@@ -11,6 +11,7 @@ import type {
 	ProxyConfig,
 	OpenAICompatibleTranslationConfig,
 	AnthropicTranslationConfig,
+	BedrockTranslationConfig,
 	TranslationConfig
 } from '$lib/api/types';
 
@@ -203,6 +204,15 @@ export function createSettingsStore(deps: SettingsStoreDeps): SettingsStore {
 		if (!translation.anthropic.base_url) translation.anthropic.base_url = 'https://api.anthropic.com';
 		if (!translation.anthropic.model) translation.anthropic.model = '';
 		if (!translation.anthropic.api_key) translation.anthropic.api_key = '';
+
+		if (!translation.bedrock || typeof translation.bedrock !== 'object')
+			translation.bedrock = {} as BedrockTranslationConfig;
+		if (!translation.bedrock.region) translation.bedrock.region = 'us-east-1';
+		if (!translation.bedrock.base_url) translation.bedrock.base_url = '';
+		if (!translation.bedrock.model) translation.bedrock.model = 'anthropic.claude-3-5-sonnet-20241022-v2:0';
+		if (!translation.bedrock.access_key_id) translation.bedrock.access_key_id = '';
+		if (!translation.bedrock.secret_access_key) translation.bedrock.secret_access_key = '';
+		if (!translation.bedrock.session_token) translation.bedrock.session_token = '';
 	}
 
 	$effect(() => {

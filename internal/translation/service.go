@@ -19,6 +19,7 @@ const (
 	providerDeepL            = "deepl"
 	providerGoogle           = "google"
 	providerAnthropic        = "anthropic"
+	providerBedrock          = "bedrock"
 
 	maxTranslationResponseSize = 10 * 1024 * 1024
 )
@@ -250,6 +251,8 @@ func (s *Service) translateTexts(ctx context.Context, sourceLang, targetLang str
 			result, err = s.translateWithOpenAICompatible(ctx, sourceLang, targetLang, texts)
 		case providerAnthropic:
 			result, err = s.translateWithAnthropic(ctx, sourceLang, targetLang, texts)
+		case providerBedrock:
+			result, err = s.translateWithBedrock(ctx, sourceLang, targetLang, texts)
 		default:
 			return nil, fmt.Errorf("unsupported translation provider: %s", provider)
 		}

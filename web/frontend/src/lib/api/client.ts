@@ -35,6 +35,7 @@ import type {
 	HistoryListResponse,
 	HistoryListParams,
 	HistoryStats,
+	HistoryDashboardStats,
 	DeleteHistoryBulkParams,
 	DeleteHistoryBulkResponse,
 	JobListResponse,
@@ -555,6 +556,11 @@ class APIClient {
 	// Get history statistics
 	async getHistoryStats(): Promise<HistoryStats> {
 		return this.request<HistoryStats>('/api/v1/history/stats');
+	}
+
+	// Get dashboard history statistics including the recent 7-day window
+	async getHistoryDashboardStats(): Promise<HistoryDashboardStats> {
+		return this.request<HistoryDashboardStats>('/api/v1/history/stats/dashboard');
 	}
 
 	// Delete a single history record

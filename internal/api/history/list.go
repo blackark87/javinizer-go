@@ -26,25 +26,6 @@ func toHistoryRecord(h models.History) HistoryRecord {
 	}
 }
 
-// paginateAndConvert paginates a slice of History records and converts them to
-// HistoryRecord API response objects.
-func paginateAndConvert(all []models.History, limit, offset int) (records []HistoryRecord, total int64) {
-	total = int64(len(all))
-	start := offset
-	end := offset + limit
-	if start > len(all) {
-		start = len(all)
-	}
-	if end > len(all) {
-		end = len(all)
-	}
-	records = make([]HistoryRecord, 0, end-start)
-	for _, h := range all[start:end] {
-		records = append(records, toHistoryRecord(h))
-	}
-	return records, total
-}
-
 // getHistory godoc
 // @Summary List history records
 // @Description Get a paginated list of history records with optional filtering
@@ -67,53 +48,29 @@ func getHistory(historyRepo *database.HistoryRepository) gin.HandlerFunc {
 		status := c.Query("status")
 		movieID := c.Query("movie_id")
 
-		var records []HistoryRecord
-		var total int64
+		filter := database.HistoryFilter{
+			Operation: operation,
+			Status:    status,
+			MovieID:   movieID,
+		}
 
-		if movieID != "" {
-			history, findErr := historyRepo.FindByMovieID(movieID)
-			if findErr != nil {
-				logging.Errorf("Failed to get history by movie ID: %v", findErr)
-				c.JSON(500, ErrorResponse{Error: "Failed to retrieve history"})
-				return
-			}
-			records, total = paginateAndConvert(history, limit, offset)
-		} else if operation != "" {
-			history, findErr := historyRepo.FindByOperation(operation, 0)
-			if findErr != nil {
-				logging.Errorf("Failed to get history by operation: %v", findErr)
-				c.JSON(500, ErrorResponse{Error: "Failed to retrieve history"})
-				return
-			}
-			records, total = paginateAndConvert(history, limit, offset)
-		} else if status != "" {
-			history, findErr := historyRepo.FindByStatus(status, 0)
-			if findErr != nil {
-				logging.Errorf("Failed to get history by status: %v", findErr)
-				c.JSON(500, ErrorResponse{Error: "Failed to retrieve history"})
-				return
-			}
-			records, total = paginateAndConvert(history, limit, offset)
-		} else {
-			var err error
-			total, err = historyRepo.Count()
-			if err != nil {
-				logging.Errorf("Failed to count history: %v", err)
-				c.JSON(500, ErrorResponse{Error: "Failed to count history"})
-				return
-			}
+		total, err := historyRepo.CountFiltered(filter)
+		if err != nil {
+			logging.Errorf("Failed to count history: %v", err)
+			c.JSON(500, ErrorResponse{Error: "Failed to count history"})
+			return
+		}
 
-			history, findErr := historyRepo.List(limit, offset)
-			if findErr != nil {
-				logging.Errorf("Failed to list history: %v", findErr)
-				c.JSON(500, ErrorResponse{Error: "Failed to retrieve history"})
-				return
-			}
+		history, findErr := historyRepo.ListFiltered(filter, limit, offset)
+		if findErr != nil {
+			logging.Errorf("Failed to list history: %v", findErr)
+			c.JSON(500, ErrorResponse{Error: "Failed to retrieve history"})
+			return
+		}
 
-			records = make([]HistoryRecord, 0, len(history))
-			for _, h := range history {
-				records = append(records, toHistoryRecord(h))
-			}
+		records := make([]HistoryRecord, 0, len(history))
+		for _, h := range history {
+			records = append(records, toHistoryRecord(h))
 		}
 
 		c.JSON(200, HistoryListResponse{

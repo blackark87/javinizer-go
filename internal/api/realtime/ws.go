@@ -31,11 +31,19 @@ func handleWebSocket(wsHub *ws.Hub) gin.HandlerFunc {
 		}
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
-			logging.Errorf("Failed to upgrade to websocket: %v", err)
+			logging.Errorf(
+				"Failed to upgrade to websocket: %v origin=%q host=%q remote_addr=%q x_forwarded_host=%q x_forwarded_proto=%q",
+				err,
+				c.Request.Header.Get("Origin"),
+				c.Request.Host,
+				c.Request.RemoteAddr,
+				c.Request.Header.Get("X-Forwarded-Host"),
+				c.Request.Header.Get("X-Forwarded-Proto"),
+			)
 			return
 		}
 
-		client := ws.NewClient(conn)
+		client := ws.NewClient(conn, c.Request)
 		wsHub.Register(client)
 
 		// Start pumps

@@ -8,6 +8,7 @@ import (
 func RegisterRoutes(protected *gin.RouterGroup, deps *core.ServerDependencies) {
 	protected.GET("/history", getHistory(deps.HistoryRepo))
 	protected.GET("/history/stats", getHistoryStats(deps.HistoryRepo))
+	protected.GET("/history/stats/dashboard", getHistoryStats(deps.HistoryRepo))
 	protected.DELETE("/history/:id", deleteHistory(deps.HistoryRepo))
 	protected.DELETE("/history", deleteHistoryBulk(deps.HistoryRepo))
 }

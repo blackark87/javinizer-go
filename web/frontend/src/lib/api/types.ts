@@ -532,7 +532,7 @@ export interface ProxyTestResponse {
 }
 
 export interface TranslationModelsRequest {
-	provider: 'openai' | 'openai-compatible' | 'anthropic';
+	provider: 'openai' | 'openai-compatible' | 'anthropic' | 'bedrock';
 	base_url: string;
 	api_key: string;
 }
@@ -551,6 +551,15 @@ export interface OpenAICompatibleTranslationConfig {
 export interface AnthropicTranslationConfig {
 	base_url: string;
 	api_key: string;
+	model: string;
+}
+
+export interface BedrockTranslationConfig {
+	region: string;
+	base_url?: string;
+	access_key_id: string;
+	secret_access_key: string;
+	session_token?: string;
 	model: string;
 }
 
@@ -732,6 +741,7 @@ export interface TranslationConfig {
 	google?: GoogleTranslationConfig;
 	openai_compatible?: OpenAICompatibleTranslationConfig;
 	anthropic?: AnthropicTranslationConfig;
+	bedrock?: BedrockTranslationConfig;
 }
 
 export interface ActressDatabaseConfig {
@@ -925,8 +935,16 @@ export interface HistoryStats {
 		organize: number;
 		download: number;
 		nfo: number;
+		[key: string]: number;
 	};
+	recent_window_days: number;
+	total_7d: number;
+	success_7d: number;
+	failed_7d: number;
+	success_rate_7d: number;
 }
+
+export type HistoryDashboardStats = HistoryStats;
 
 export interface HistoryListResponse {
 	records: HistoryRecord[];

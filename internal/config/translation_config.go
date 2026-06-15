@@ -35,7 +35,7 @@ type MetadataConfig struct {
 // TranslationConfig holds metadata translation settings.
 type TranslationConfig struct {
 	Enabled                 bool                              `yaml:"enabled" json:"enabled"`                                     // Enable metadata translation after aggregation
-	Provider                string                            `yaml:"provider" json:"provider"`                                   // openai, openai-compatible, anthropic, deepl, google
+	Provider                string                            `yaml:"provider" json:"provider"`                                   // openai, openai-compatible, anthropic, bedrock, deepl, google
 	SourceLanguage          string                            `yaml:"source_language" json:"source_language"`                     // Source language code (e.g., en, ja, auto)
 	TargetLanguage          string                            `yaml:"target_language" json:"target_language"`                     // Target language code (e.g., en, ja, zh)
 	TimeoutSeconds          int                               `yaml:"timeout_seconds" json:"timeout_seconds"`                     // Request timeout in seconds
@@ -47,6 +47,7 @@ type TranslationConfig struct {
 	Google                  GoogleTranslationConfig           `yaml:"google" json:"google"`                                       // Google provider settings
 	OpenAICompatible        OpenAICompatibleTranslationConfig `yaml:"openai_compatible" json:"openai_compatible"`                 // OpenAI-compatible (Ollama, vLLM, etc.) provider settings
 	Anthropic               AnthropicTranslationConfig        `yaml:"anthropic" json:"anthropic"`                                 // Anthropic (Claude) provider settings
+	Bedrock                 BedrockTranslationConfig          `yaml:"bedrock" json:"bedrock"`                                     // AWS Bedrock provider settings
 }
 
 // TranslationFieldsConfig controls which metadata fields are translated.
@@ -98,6 +99,16 @@ type AnthropicTranslationConfig struct {
 	BaseURL string `yaml:"base_url" json:"base_url"` // e.g., https://api.anthropic.com
 	APIKey  string `yaml:"api_key" json:"api_key"`   // Required
 	Model   string `yaml:"model" json:"model"`       // e.g., claude-sonnet-4-20250514
+}
+
+// BedrockTranslationConfig holds AWS Bedrock translation settings.
+type BedrockTranslationConfig struct {
+	Region          string `yaml:"region" json:"region"`                         // AWS region, e.g., us-east-1
+	BaseURL         string `yaml:"base_url,omitempty" json:"base_url,omitempty"` // Optional endpoint override
+	AccessKeyID     string `yaml:"access_key_id" json:"access_key_id"`           // AWS access key ID
+	SecretAccessKey string `yaml:"secret_access_key" json:"secret_access_key"`   // AWS secret access key
+	SessionToken    string `yaml:"session_token,omitempty" json:"session_token,omitempty"`
+	Model           string `yaml:"model" json:"model"` // Bedrock model ID, e.g., anthropic.claude-3-5-sonnet-20241022-v2:0
 }
 
 // PriorityConfig defines scraper priority for metadata aggregation.
@@ -328,6 +339,8 @@ func (tc *TranslationConfig) SettingsHash() string {
 		hashInput.OpenAICompatibleEnableThinking = tc.OpenAICompatible.EffectiveEnableThinking()
 	case "anthropic":
 		hashInput.AnthropicModel = tc.Anthropic.Model
+	case "bedrock":
+		hashInput.BedrockModel = tc.Bedrock.Model
 	case "deepl":
 		hashInput.DeepLMode = tc.DeepL.Mode
 	case "google":
@@ -360,6 +373,7 @@ type settingsHashInput struct {
 	OpenAICompatibleModel          string                  `json:"openai_compatible_model,omitempty"`
 	OpenAICompatibleEnableThinking bool                    `json:"openai_compatible_enable_thinking,omitempty"`
 	AnthropicModel                 string                  `json:"anthropic_model,omitempty"`
+	BedrockModel                   string                  `json:"bedrock_model,omitempty"`
 	DeepLMode                      string                  `json:"deepl_mode,omitempty"`
 	GoogleMode                     string                  `json:"google_mode,omitempty"`
 }

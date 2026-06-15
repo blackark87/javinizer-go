@@ -8,7 +8,7 @@
 	import FormTextInput from '$lib/components/settings/FormTextInput.svelte';
 	import FormToggle from '$lib/components/settings/FormToggle.svelte';
 	import { apiClient } from '$lib/api/client';
-	import type { DeepLUsageResponse, SettingsConfig, TranslationConfig as TranslationConfigType, OpenAICompatibleTranslationConfig as OpenAICompatibleTranslationConfigType, AnthropicTranslationConfig as AnthropicTranslationConfigType, DeepLTranslationConfig as DeepLTranslationConfigType, GoogleTranslationConfig as GoogleTranslationConfigType, TranslationFieldsConfig as TranslationFieldsConfigType } from '$lib/api/types';
+	import type { DeepLUsageResponse, SettingsConfig, TranslationConfig as TranslationConfigType, OpenAICompatibleTranslationConfig as OpenAICompatibleTranslationConfigType, AnthropicTranslationConfig as AnthropicTranslationConfigType, BedrockTranslationConfig as BedrockTranslationConfigType, DeepLTranslationConfig as DeepLTranslationConfigType, GoogleTranslationConfig as GoogleTranslationConfigType, TranslationFieldsConfig as TranslationFieldsConfigType } from '$lib/api/types';
 
 	interface Props {
 		config: SettingsConfig;
@@ -91,6 +91,7 @@
 					<option value="openai">OpenAI (ChatGPT)</option>
 					<option value="openai-compatible">OpenAI Compatible LLM (Ollama/vLLM/OpenRouter)</option>
 					<option value="anthropic">Anthropic (Claude)</option>
+					<option value="bedrock">AWS Bedrock</option>
 					<option value="deepl">DeepL</option>
 					<option value="google">Google Translate</option>
 				</select>
@@ -326,6 +327,48 @@
 						config.metadata.translation!.anthropic.api_key = val;
 					}}
 				/>
+			</fieldset>
+		</SettingsSubsection>
+
+	{:else if config.metadata.translation?.provider === 'bedrock'}
+		<SettingsSubsection title="AWS Bedrock Provider">
+			<fieldset disabled={!translationEnabled} class={`space-y-0 ${!translationEnabled ? 'opacity-60' : ''}`}>
+				<FormTextInput
+					label="AWS Region"
+					description="Region where Bedrock Runtime is available"
+					value={config.metadata.translation?.bedrock?.region ?? 'us-east-1'}
+					placeholder="us-east-1"
+					onchange={(val) => {
+						if (!config.metadata.translation) config.metadata.translation = {} as TranslationConfigType;
+						if (!config.metadata.translation!.bedrock) config.metadata.translation!.bedrock = {} as BedrockTranslationConfigType;
+						config.metadata.translation!.bedrock.region = val.trim();
+					}}
+				/>
+				<FormTextInput
+					label="Endpoint Override"
+					description="Optional Bedrock Runtime endpoint override"
+					value={config.metadata.translation?.bedrock?.base_url ?? ''}
+					placeholder="https://bedrock-runtime.us-east-1.amazonaws.com"
+					onchange={(val) => {
+						if (!config.metadata.translation) config.metadata.translation = {} as TranslationConfigType;
+						if (!config.metadata.translation!.bedrock) config.metadata.translation!.bedrock = {} as BedrockTranslationConfigType;
+						config.metadata.translation!.bedrock.base_url = val.trim();
+					}}
+				/>
+				<FormTextInput
+					label="Model ID"
+					description="Bedrock model ID for an Anthropic Claude model"
+					value={config.metadata.translation?.bedrock?.model ?? ''}
+					placeholder="anthropic.claude-3-5-sonnet-20241022-v2:0"
+					onchange={(val) => {
+						if (!config.metadata.translation) config.metadata.translation = {} as TranslationConfigType;
+						if (!config.metadata.translation!.bedrock) config.metadata.translation!.bedrock = {} as BedrockTranslationConfigType;
+						config.metadata.translation!.bedrock.model = val.trim();
+					}}
+				/>
+				<FormTextInput label="Access Key ID" value={config.metadata.translation?.bedrock?.access_key_id ?? ''} onchange={(val) => { if (!config.metadata.translation) config.metadata.translation = {} as TranslationConfigType; if (!config.metadata.translation!.bedrock) config.metadata.translation!.bedrock = {} as BedrockTranslationConfigType; config.metadata.translation!.bedrock.access_key_id = val.trim(); }} />
+				<FormPasswordInput label="Secret Access Key" value={config.metadata.translation?.bedrock?.secret_access_key ?? ''} onchange={(val) => { if (!config.metadata.translation) config.metadata.translation = {} as TranslationConfigType; if (!config.metadata.translation!.bedrock) config.metadata.translation!.bedrock = {} as BedrockTranslationConfigType; config.metadata.translation!.bedrock.secret_access_key = val; }} />
+				<FormPasswordInput label="Session Token" description="Optional for temporary AWS credentials" value={config.metadata.translation?.bedrock?.session_token ?? ''} onchange={(val) => { if (!config.metadata.translation) config.metadata.translation = {} as TranslationConfigType; if (!config.metadata.translation!.bedrock) config.metadata.translation!.bedrock = {} as BedrockTranslationConfigType; config.metadata.translation!.bedrock.session_token = val; }} />
 			</fieldset>
 		</SettingsSubsection>
 	{:else if config.metadata.translation?.provider === 'deepl'}

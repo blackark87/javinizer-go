@@ -25,6 +25,10 @@ func (c *Config) Redact() *Config {
 	copy.Metadata.Translation.OpenAICompatible.APIKey = redactString(c.Metadata.Translation.OpenAICompatible.APIKey)
 	copy.Metadata.Translation.Anthropic = c.Metadata.Translation.Anthropic
 	copy.Metadata.Translation.Anthropic.APIKey = redactString(c.Metadata.Translation.Anthropic.APIKey)
+	copy.Metadata.Translation.Bedrock = c.Metadata.Translation.Bedrock
+	copy.Metadata.Translation.Bedrock.AccessKeyID = redactString(c.Metadata.Translation.Bedrock.AccessKeyID)
+	copy.Metadata.Translation.Bedrock.SecretAccessKey = redactString(c.Metadata.Translation.Bedrock.SecretAccessKey)
+	copy.Metadata.Translation.Bedrock.SessionToken = redactString(c.Metadata.Translation.Bedrock.SessionToken)
 
 	copy.Scrapers = c.Scrapers
 	copy.Scrapers.Proxy = redactProxyConfig(c.Scrapers.Proxy)

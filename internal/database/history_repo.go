@@ -5,10 +5,18 @@ import (
 	"time"
 
 	"github.com/javinizer/javinizer-go/internal/models"
+	"gorm.io/gorm"
 )
 
 type HistoryRepository struct {
 	*BaseRepository[models.History, uint]
+}
+
+// HistoryFilter contains optional filters for querying history records.
+type HistoryFilter struct {
+	Operation string
+	Status    string
+	MovieID   string
 }
 
 func NewHistoryRepository(db *DB) *HistoryRepository {
@@ -20,6 +28,71 @@ func NewHistoryRepository(db *DB) *HistoryRepository {
 			WithNewEntity[models.History, uint](func() models.History { return models.History{} }),
 		),
 	}
+}
+
+// HistoryStatsAggregate contains grouped counts used by dashboard and history stats APIs.
+type HistoryStatsAggregate struct {
+	Total          int64
+	ByStatus       map[string]int64
+	ByOperation    map[string]int64
+	RecentByStatus map[string]int64
+}
+
+type groupedCount struct {
+	Key   string `gorm:"column:key"`
+	Count int64  `gorm:"column:count"`
+}
+
+// StatsAggregate returns total history count, grouped status counts, grouped
+// operation counts, and grouped status counts for records created since
+// recentSince. The grouped queries avoid repeated per-status and per-operation
+// count calls during dashboard initialization.
+func (r *HistoryRepository) StatsAggregate(recentSince time.Time) (*HistoryStatsAggregate, error) {
+	stats := &HistoryStatsAggregate{
+		ByStatus:       make(map[string]int64),
+		ByOperation:    make(map[string]int64),
+		RecentByStatus: make(map[string]int64),
+	}
+
+	if err := r.GetDB().Model(&models.History{}).Count(&stats.Total).Error; err != nil {
+		return nil, wrapDBErr("count", "history", err)
+	}
+
+	var statusCounts []groupedCount
+	if err := r.GetDB().Model(&models.History{}).
+		Select("status AS key, COUNT(*) AS count").
+		Group("status").
+		Scan(&statusCounts).Error; err != nil {
+		return nil, wrapDBErr("count", "history by status", err)
+	}
+	for _, row := range statusCounts {
+		stats.ByStatus[row.Key] = row.Count
+	}
+
+	var operationCounts []groupedCount
+	if err := r.GetDB().Model(&models.History{}).
+		Select("operation AS key, COUNT(*) AS count").
+		Group("operation").
+		Scan(&operationCounts).Error; err != nil {
+		return nil, wrapDBErr("count", "history by operation", err)
+	}
+	for _, row := range operationCounts {
+		stats.ByOperation[row.Key] = row.Count
+	}
+
+	var recentStatusCounts []groupedCount
+	if err := r.GetDB().Model(&models.History{}).
+		Select("status AS key, COUNT(*) AS count").
+		Where("datetime(created_at) >= datetime(?)", recentSince.UTC().Format(SqliteTimeFormat)).
+		Group("status").
+		Scan(&recentStatusCounts).Error; err != nil {
+		return nil, wrapDBErr("count", "recent history by status", err)
+	}
+	for _, row := range recentStatusCounts {
+		stats.RecentByStatus[row.Key] = row.Count
+	}
+
+	return stats, nil
 }
 
 func (r *HistoryRepository) Create(history *models.History) error {
@@ -85,6 +158,42 @@ func (r *HistoryRepository) FindByDateRange(start, end time.Time) ([]models.Hist
 
 func (r *HistoryRepository) Count() (int64, error) {
 	return r.BaseRepository.Count()
+}
+
+func (r *HistoryRepository) applyFilter(filter HistoryFilter) *gorm.DB {
+	query := r.GetDB().Model(&models.History{})
+	if filter.Operation != "" {
+		query = query.Where("operation = ?", filter.Operation)
+	}
+	if filter.Status != "" {
+		query = query.Where("status = ?", filter.Status)
+	}
+	if filter.MovieID != "" {
+		query = query.Where("movie_id = ?", filter.MovieID)
+	}
+	return query
+}
+
+func (r *HistoryRepository) ListFiltered(filter HistoryFilter, limit int, offset int) ([]models.History, error) {
+	var history []models.History
+	query := r.applyFilter(filter).Order("created_at DESC")
+	if limit > 0 {
+		query = query.Limit(limit).Offset(offset)
+	}
+	err := query.Find(&history).Error
+	if err != nil {
+		return nil, wrapDBErr("find", "filtered history", err)
+	}
+	return history, nil
+}
+
+func (r *HistoryRepository) CountFiltered(filter HistoryFilter) (int64, error) {
+	var count int64
+	err := r.applyFilter(filter).Count(&count).Error
+	if err != nil {
+		return 0, wrapDBErr("count", "filtered history", err)
+	}
+	return count, nil
 }
 
 func (r *HistoryRepository) CountByStatus(status string) (int64, error) {

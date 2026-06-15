@@ -1,10 +1,14 @@
 package history
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/logging"
 )
+
+const dashboardStatsWindowDays = 7
 
 // getHistoryStats godoc
 // @Summary Get history statistics
@@ -16,52 +20,47 @@ import (
 // @Router /api/v1/history/stats [get]
 func getHistoryStats(historyRepo *database.HistoryRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		total, err := historyRepo.Count()
+		recentSince := time.Now().UTC().AddDate(0, 0, -dashboardStatsWindowDays)
+		stats, err := historyRepo.StatsAggregate(recentSince)
 		if err != nil {
-			logging.Errorf("Failed to count history: %v", err)
+			logging.Errorf("Failed to aggregate history statistics: %v", err)
 			c.JSON(500, ErrorResponse{Error: "Failed to get statistics"})
 			return
 		}
 
-		success, err := historyRepo.CountByStatus("success")
-		if err != nil {
-			logging.Errorf("Failed to count success history: %v", err)
-			c.JSON(500, ErrorResponse{Error: "Failed to get statistics"})
-			return
+		byOperation := make(map[string]int64, len(stats.ByOperation))
+		for _, op := range []string{"scrape", "organize", "download", "nfo"} {
+			byOperation[op] = stats.ByOperation[op]
 		}
-
-		failed, err := historyRepo.CountByStatus("failed")
-		if err != nil {
-			logging.Errorf("Failed to count failed history: %v", err)
-			c.JSON(500, ErrorResponse{Error: "Failed to get statistics"})
-			return
-		}
-
-		reverted, err := historyRepo.CountByStatus("reverted")
-		if err != nil {
-			logging.Errorf("Failed to count reverted history: %v", err)
-			c.JSON(500, ErrorResponse{Error: "Failed to get statistics"})
-			return
-		}
-
-		// Get counts by operation
-		byOperation := make(map[string]int64)
-		operations := []string{"scrape", "organize", "download", "nfo"}
-		for _, op := range operations {
-			count, err := historyRepo.CountByOperation(op)
-			if err != nil {
-				logging.Errorf("Failed to count %s history: %v", op, err)
-				continue
+		for op, count := range stats.ByOperation {
+			if _, ok := byOperation[op]; !ok {
+				byOperation[op] = count
 			}
-			byOperation[op] = count
+		}
+
+		success7d := stats.RecentByStatus["success"]
+		failed7d := stats.RecentByStatus["failed"]
+		total7d := int64(0)
+		for _, count := range stats.RecentByStatus {
+			total7d += count
+		}
+
+		successRate7d := 0
+		if total7d > 0 {
+			successRate7d = int(((success7d * 100) + (total7d / 2)) / total7d)
 		}
 
 		c.JSON(200, HistoryStats{
-			Total:       total,
-			Success:     success,
-			Failed:      failed,
-			Reverted:    reverted,
-			ByOperation: byOperation,
+			Total:         stats.Total,
+			Success:       stats.ByStatus["success"],
+			Failed:        stats.ByStatus["failed"],
+			Reverted:      stats.ByStatus["reverted"],
+			ByOperation:   byOperation,
+			RecentWindow:  dashboardStatsWindowDays,
+			Total7d:       total7d,
+			Success7d:     success7d,
+			Failed7d:      failed7d,
+			SuccessRate7d: successRate7d,
 		})
 	}
 }

@@ -93,7 +93,7 @@ func detectContainer(header []byte) string {
 }
 
 // GetResolution returns human-readable resolution string.
-// Examples: "8K", "4K", "1080p", "720p", "SD".
+// Examples: "8K", "4K", "1080p", "720p", "480p".
 func (v *VideoInfo) GetResolution() string {
 	if v.Width >= 7680 || v.Height >= 4320 {
 		return "8K"
@@ -103,10 +103,8 @@ func (v *VideoInfo) GetResolution() string {
 		return "1080p"
 	} else if v.Height >= 720 {
 		return "720p"
-	} else if v.Height >= 480 {
-		return "480p"
 	}
-	return "SD"
+	return "480p"
 }
 
 // GetAudioChannelDescription returns human-readable audio channel description

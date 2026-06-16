@@ -137,6 +137,7 @@ func DefaultConfig() *Config {
 				Provider:                "openai",
 				SourceLanguage:          "ja", // Japanese content translated to English
 				TargetLanguage:          "en",
+				TargetLanguages:         nil,
 				TimeoutSeconds:          60,
 				ApplyToPrimary:          true,
 				OverwriteExistingTarget: true,

@@ -38,24 +38,70 @@ func New(cfg config.TranslationConfig) *Service {
 	}
 }
 
-func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, settingsHash string) (*models.MovieTranslation, string, error) {
+func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, settingsHash string) ([]models.MovieTranslation, string, error) {
 	if s == nil || movie == nil || !s.cfg.Enabled {
 		return nil, "", nil
 	}
 
-	targetLang := normalizeLanguage(s.cfg.TargetLanguage)
-	sourceLang := normalizeLanguage(s.cfg.SourceLanguage)
-	if targetLang == "" {
+	targetLanguages := s.targetLanguages()
+	if len(targetLanguages) == 0 {
 		return nil, "", fmt.Errorf("target language is required")
 	}
+
+	sourceLang := normalizeLanguage(s.cfg.SourceLanguage)
 	if sourceLang == "" {
 		sourceLang = sourceLangAuto
 	}
 
-	if sourceLang != sourceLangAuto && sourceLang == targetLang {
-		return nil, "", nil
+	translations := make([]models.MovieTranslation, 0, len(targetLanguages))
+	warnings := make([]string, 0)
+	for _, targetLang := range targetLanguages {
+		if sourceLang != sourceLangAuto && sourceLang == targetLang {
+			continue
+		}
+
+		translatedRecord, warning, err := s.translateMovieToLanguage(ctx, movie, sourceLang, targetLang, settingsHash)
+		if err != nil {
+			return nil, warning, err
+		}
+		if warning != "" {
+			warnings = append(warnings, warning)
+		}
+		if translatedRecord != nil {
+			translations = append(translations, *translatedRecord)
+		}
 	}
 
+	if len(translations) == 0 {
+		return nil, strings.Join(warnings, "; "), nil
+	}
+
+	return translations, strings.Join(warnings, "; "), nil
+}
+
+func (s *Service) targetLanguages() []string {
+	if len(s.cfg.TargetLanguages) == 0 {
+		lang := normalizeLanguage(s.cfg.TargetLanguage)
+		if lang == "" {
+			return nil
+		}
+		return []string{lang}
+	}
+
+	languages := make([]string, 0, len(s.cfg.TargetLanguages))
+	seen := make(map[string]bool, len(s.cfg.TargetLanguages))
+	for _, raw := range s.cfg.TargetLanguages {
+		lang := normalizeLanguage(raw)
+		if lang == "" || seen[lang] {
+			continue
+		}
+		seen[lang] = true
+		languages = append(languages, lang)
+	}
+	return languages
+}
+
+func (s *Service) translateMovieToLanguage(ctx context.Context, movie *models.Movie, sourceLang, targetLang, settingsHash string) (*models.MovieTranslation, string, error) {
 	type pendingText struct {
 		text      string
 		fieldName string
@@ -111,21 +157,21 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 	if fields.Genres {
 		for i := range movie.Genres {
 			idx := i
-			queueField(movie.Genres[idx].Name, func(string) {}, func(v string) {
-				movie.Genres[idx].Name = v
-			}, fmt.Sprintf("genre[%d]", i))
+			queueField(movie.Genres[idx].Name, func(string) {}, func(v string) { movie.Genres[idx].Name = v }, fmt.Sprintf("genre[%d]", i))
 		}
 	}
 	if fields.Actresses {
+		translatedActresses := make([]string, len(movie.Actresses))
 		for i := range movie.Actresses {
 			idx := i
 			name := actressDisplayTitle(movie.Actresses[idx])
 			if strings.TrimSpace(name) == "" {
 				continue
 			}
-			queueField(name, func(string) {}, func(v string) {
-				replaceActressName(&movie.Actresses[idx], v)
-			}, fmt.Sprintf("actress[%d]", i))
+			queueField(name, func(v string) {
+				translatedActresses[idx] = v
+				translatedRecord.Actresses = joinNonEmpty(translatedActresses)
+			}, func(v string) { replaceActressName(&movie.Actresses[idx], v) }, fmt.Sprintf("actress[%d]", i))
 		}
 	}
 
@@ -163,11 +209,21 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 
 	var warning string
 	if len(warnings) > 0 {
-		warning = fmt.Sprintf("Translation (%s): %s", normalizeProvider(s.cfg.Provider), strings.Join(warnings, "; "))
+		warning = fmt.Sprintf("Translation (%s/%s): %s", normalizeProvider(s.cfg.Provider), targetLang, strings.Join(warnings, "; "))
 		logging.Warnf("Translation: %s", warning)
 	}
 
 	return translatedRecord, warning, nil
+}
+
+func joinNonEmpty(values []string) string {
+	joined := make([]string, 0, len(values))
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			joined = append(joined, trimmed)
+		}
+	}
+	return strings.Join(joined, " | ")
 }
 
 func normalizeProvider(provider string) string {

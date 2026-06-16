@@ -37,7 +37,7 @@ func (a *Aggregator) ApplyConfiguredTranslation(movie *models.Movie) string {
 	defer cancel()
 
 	service := translation.New(translationCfg)
-	translatedRecord, warning, err := service.TranslateMovie(ctx, movie, settingsHash)
+	translatedRecords, warning, err := service.TranslateMovie(ctx, movie, settingsHash)
 	if err != nil {
 		id := movie.ID
 		if id == "" {
@@ -46,18 +46,20 @@ func (a *Aggregator) ApplyConfiguredTranslation(movie *models.Movie) string {
 		logging.Warnf("[%s] Metadata translation failed: %v", id, err)
 		return warning
 	}
-	if translatedRecord == nil {
-		logging.Debugf("Translation: returned nil record (no fields to translate or source==target)")
-		return ""
+	if len(translatedRecords) == 0 {
+		logging.Debugf("Translation: returned no records (no fields to translate or source==target)")
+		return warning
 	}
 
-	logging.Debugf("Translation: appending %s translation (title=%q, hash=%s)", translatedRecord.Language, translatedRecord.Title, translatedRecord.SettingsHash)
+	for _, translatedRecord := range translatedRecords {
+		logging.Debugf("Translation: appending %s translation (title=%q, hash=%s)", translatedRecord.Language, translatedRecord.Title, translatedRecord.SettingsHash)
 
-	movie.Translations = mergeOrAppendTranslation(
-		movie.Translations,
-		*translatedRecord,
-		translationCfg.OverwriteExistingTarget,
-	)
+		movie.Translations = mergeOrAppendTranslation(
+			movie.Translations,
+			translatedRecord,
+			translationCfg.OverwriteExistingTarget,
+		)
+	}
 
 	logging.Debugf("Translation: movie now has %d translation(s)", len(movie.Translations))
 	return warning

@@ -45,6 +45,9 @@ func mergeTranslationFields(current, incoming models.MovieTranslation) models.Mo
 	if incoming.Description != "" {
 		merged.Description = incoming.Description
 	}
+	if incoming.Actresses != "" {
+		merged.Actresses = incoming.Actresses
+	}
 	if incoming.Director != "" {
 		merged.Director = incoming.Director
 	}

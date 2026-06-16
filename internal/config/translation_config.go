@@ -38,6 +38,7 @@ type TranslationConfig struct {
 	Provider                string                            `yaml:"provider" json:"provider"`                                   // openai, openai-compatible, anthropic, bedrock, deepl, google
 	SourceLanguage          string                            `yaml:"source_language" json:"source_language"`                     // Source language code (e.g., en, ja, auto)
 	TargetLanguage          string                            `yaml:"target_language" json:"target_language"`                     // Target language code (e.g., en, ja, zh)
+	TargetLanguages         []string                          `yaml:"target_languages" json:"target_languages"`                   // Optional list of target language codes for multi-language output
 	TimeoutSeconds          int                               `yaml:"timeout_seconds" json:"timeout_seconds"`                     // Request timeout in seconds
 	ApplyToPrimary          bool                              `yaml:"apply_to_primary" json:"apply_to_primary"`                   // Replace primary movie metadata with translated text
 	OverwriteExistingTarget bool                              `yaml:"overwrite_existing_target" json:"overwrite_existing_target"` // Overwrite target-language translation if already present
@@ -315,6 +316,20 @@ func (n *NFOConfig) IsUnknownActressFallback() bool {
 	return n.UnknownActressMode == "fallback"
 }
 
+func normalizeLanguageList(languages []string) []string {
+	normalized := make([]string, 0, len(languages))
+	seen := make(map[string]bool, len(languages))
+	for _, language := range languages {
+		lang := strings.ToLower(strings.TrimSpace(language))
+		if lang == "" || seen[lang] {
+			continue
+		}
+		seen[lang] = true
+		normalized = append(normalized, lang)
+	}
+	return normalized
+}
+
 // SettingsHash computes a deterministic hash of output-affecting translation settings.
 // The hash is used for cache invalidation - when settings change, the hash changes,
 // triggering re-translation of cached movies.
@@ -325,6 +340,7 @@ func (tc *TranslationConfig) SettingsHash() string {
 		Provider:                tc.Provider,
 		SourceLanguage:          strings.ToLower(strings.TrimSpace(tc.SourceLanguage)),
 		TargetLanguage:          strings.ToLower(strings.TrimSpace(tc.TargetLanguage)),
+		TargetLanguages:         normalizeLanguageList(tc.TargetLanguages),
 		ApplyToPrimary:          tc.ApplyToPrimary,
 		OverwriteExistingTarget: tc.OverwriteExistingTarget,
 		Fields:                  tc.Fields,
@@ -366,6 +382,7 @@ type settingsHashInput struct {
 	Provider                       string                  `json:"provider"`
 	SourceLanguage                 string                  `json:"source_language"`
 	TargetLanguage                 string                  `json:"target_language"`
+	TargetLanguages                []string                `json:"target_languages,omitempty"`
 	ApplyToPrimary                 bool                    `json:"apply_to_primary"`
 	OverwriteExistingTarget        bool                    `json:"overwrite_existing_target"`
 	Fields                         TranslationFieldsConfig `json:"fields"`

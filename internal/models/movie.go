@@ -55,6 +55,7 @@ type MovieTranslation struct {
 	Title         string    `json:"title"`
 	OriginalTitle string    `json:"original_title"` // Japanese/original language title
 	Description   string    `json:"description" gorm:"type:text"`
+	Actresses     string    `json:"actresses" gorm:"type:text"`
 	Director      string    `json:"director"`
 	Maker         string    `json:"maker"`
 	Label         string    `json:"label"`

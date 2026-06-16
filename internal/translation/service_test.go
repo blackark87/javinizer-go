@@ -167,7 +167,7 @@ func TestTranslateMovie_ApplyToPrimary(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		assert.Equal(t, "Translated Title", result.Title)
+		assert.Equal(t, "Translated Title", result[0].Title)
 		// Verify movie was mutated when ApplyToPrimary is enabled
 		assert.Equal(t, "Translated Title", movie.Title)
 	})
@@ -209,7 +209,7 @@ func TestTranslateMovie_ApplyToPrimary(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		assert.Equal(t, "Translated Title", result.Title)
+		assert.Equal(t, "Translated Title", result[0].Title)
 		// Verify movie was NOT mutated when ApplyToPrimary is disabled
 		assert.Equal(t, originalTitle, movie.Title)
 	})
@@ -1508,7 +1508,7 @@ func TestTranslateMovie_FullFlow(t *testing.T) {
 			}
 
 			if tt.wantTitle != "" {
-				assert.Equal(t, tt.wantTitle, result.Title)
+				assert.Equal(t, tt.wantTitle, result[0].Title)
 			}
 
 			// Verify that the appropriate fields were translated based on config
@@ -2898,7 +2898,7 @@ func TestService_TranslateMovie_StoresHash(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, translation)
-	assert.Equal(t, "abc123def456", translation.SettingsHash, "hash should be stored in translation")
+	assert.Equal(t, "abc123def456", translation[0].SettingsHash, "hash should be stored in translation")
 }
 
 func TestSanitizeTranslationWarning(t *testing.T) {

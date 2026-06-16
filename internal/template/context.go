@@ -306,6 +306,9 @@ func (c *Context) Clone() *Context {
 	if c.Translations != nil {
 		clone.Translations = make(map[string]models.MovieTranslation, len(c.Translations))
 		for k, v := range c.Translations {
+			if v.Actresses != nil {
+				v.Actresses = append([]string(nil), v.Actresses...)
+			}
 			clone.Translations[k] = v
 		}
 	}
@@ -348,11 +351,23 @@ func buildTranslationMap(translations []models.MovieTranslation) map[string]mode
 		// Keep first non-empty translation for a language
 		// Deterministic because input is ordered
 		if _, exists := m[lang]; !exists {
+			translation.Actresses = normalizeTranslatedActresses(translation.Actresses)
 			m[lang] = translation
 		}
 	}
 
 	return m
+}
+
+func normalizeTranslatedActresses(actresses []string) []string {
+	if len(actresses) == 0 {
+		return nil
+	}
+	normalized := make([]string, len(actresses))
+	for i, actress := range actresses {
+		normalized[i] = strings.TrimSpace(actress)
+	}
+	return normalized
 }
 
 // normalizeLanguageCode normalizes language codes to base language only.

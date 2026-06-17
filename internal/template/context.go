@@ -415,7 +415,7 @@ func (c *Context) formatActressNameForLanguage(detail ActressDetail, lang string
 	}
 	formatted := c.formatActressName(detail)
 	if lang == "en" && formatted != "" && cjkRegex.MatchString(formatted) {
-		return detail.JapaneseName
+		return ""
 	}
 	return formatted
 }

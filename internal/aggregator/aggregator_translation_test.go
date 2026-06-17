@@ -211,6 +211,7 @@ func TestMergeTranslationFields(t *testing.T) {
 			Maker:         "New Maker",
 			Label:         "New Label",
 			Series:        "New Series",
+			Actresses:     []string{"Translated Actress"},
 			SourceName:    "new-source",
 		}
 
@@ -223,6 +224,7 @@ func TestMergeTranslationFields(t *testing.T) {
 		assert.Equal(t, "New Maker", merged.Maker)
 		assert.Equal(t, "New Label", merged.Label)
 		assert.Equal(t, "New Series", merged.Series)
+		assert.Equal(t, []string{"Translated Actress"}, merged.Actresses)
 		assert.Equal(t, "new-source", merged.SourceName)
 	})
 
@@ -253,6 +255,36 @@ func TestMergeTranslationFields(t *testing.T) {
 		assert.Equal(t, "Old Series", merged.Series)
 		assert.Equal(t, "old-source", merged.SourceName)
 	})
+	t.Run("keeps existing actress translations when incoming slice is nil", func(t *testing.T) {
+		current := models.MovieTranslation{
+			Language:  "en",
+			Actresses: []string{"Existing Actress"},
+		}
+		incoming := models.MovieTranslation{
+			Language: "en",
+		}
+
+		merged := mergeTranslationFields(current, incoming)
+		assert.Equal(t, []string{"Existing Actress"}, merged.Actresses)
+	})
+
+	t.Run("overwrites actress translations when incoming slice is non-nil", func(t *testing.T) {
+		current := models.MovieTranslation{
+			Language:  "en",
+			Actresses: []string{"Existing Actress"},
+		}
+		incoming := models.MovieTranslation{
+			Language:  "en",
+			Actresses: []string{"Translated Actress"},
+		}
+
+		merged := mergeTranslationFields(current, incoming)
+		assert.Equal(t, []string{"Translated Actress"}, merged.Actresses)
+
+		incoming.Actresses[0] = "Mutated"
+		assert.Equal(t, []string{"Translated Actress"}, merged.Actresses)
+	})
+
 }
 
 func TestAggregate_TranslationWarningOnProviderError(t *testing.T) {

@@ -38,6 +38,7 @@ type TranslationConfig struct {
 	Provider                string                            `yaml:"provider" json:"provider"`                                   // openai, openai-compatible, anthropic, bedrock, deepl, google
 	SourceLanguage          string                            `yaml:"source_language" json:"source_language"`                     // Source language code (e.g., en, ja, auto)
 	TargetLanguage          string                            `yaml:"target_language" json:"target_language"`                     // Target language code (e.g., en, ja, zh)
+	ActressTargetLanguage   string                            `yaml:"actress_target_language" json:"actress_target_language"`     // Target language for actress names (defaults to en)
 	TimeoutSeconds          int                               `yaml:"timeout_seconds" json:"timeout_seconds"`                     // Request timeout in seconds
 	ApplyToPrimary          bool                              `yaml:"apply_to_primary" json:"apply_to_primary"`                   // Replace primary movie metadata with translated text
 	OverwriteExistingTarget bool                              `yaml:"overwrite_existing_target" json:"overwrite_existing_target"` // Overwrite target-language translation if already present

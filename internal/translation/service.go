@@ -39,6 +39,14 @@ func New(cfg config.TranslationConfig) *Service {
 }
 
 func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, settingsHash string) (*models.MovieTranslation, string, error) {
+	records, warning, err := s.TranslateMovieRecords(ctx, movie, settingsHash)
+	if err != nil || len(records) == 0 {
+		return nil, warning, err
+	}
+	return &records[0], warning, nil
+}
+
+func (s *Service) TranslateMovieRecords(ctx context.Context, movie *models.Movie, settingsHash string) ([]models.MovieTranslation, string, error) {
 	if s == nil || movie == nil || !s.cfg.Enabled {
 		return nil, "", nil
 	}
@@ -51,32 +59,49 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 	if sourceLang == "" {
 		sourceLang = sourceLangAuto
 	}
-
-	if sourceLang != sourceLangAuto && sourceLang == targetLang {
-		return nil, "", nil
+	actressTargetLang := normalizeLanguage(s.cfg.ActressTargetLanguage)
+	if actressTargetLang == "" {
+		actressTargetLang = "en"
 	}
 
 	type pendingText struct {
-		text      string
-		fieldName string
-		apply     func(string)
+		text       string
+		fieldName  string
+		targetLang string
+		apply      func(string)
 	}
 
 	requests := make([]pendingText, 0)
-	translatedRecord := &models.MovieTranslation{
-		Language:     targetLang,
-		SourceName:   "translation:" + normalizeProvider(s.cfg.Provider),
-		SettingsHash: settingsHash,
+	records := make(map[string]*models.MovieTranslation)
+	touchedRecords := make(map[string]bool)
+	getRecord := func(lang string) *models.MovieTranslation {
+		record, ok := records[lang]
+		if ok {
+			return record
+		}
+		record = &models.MovieTranslation{
+			Language:     lang,
+			SourceName:   "translation:" + normalizeProvider(s.cfg.Provider),
+			SettingsHash: settingsHash,
+		}
+		records[lang] = record
+		return record
 	}
 
-	queueField := func(raw string, assignRecord func(string), assignMovie func(string), fieldName string) {
+	queueField := func(lang, raw string, assignRecord func(string), assignMovie func(string), fieldName string) {
+		lang = normalizeLanguage(lang)
+		if lang == "" || (sourceLang != sourceLangAuto && sourceLang == lang) {
+			return
+		}
 		trimmed := strings.TrimSpace(raw)
 		if trimmed == "" {
 			return
 		}
+		touchedRecords[lang] = true
 		requests = append(requests, pendingText{
-			text:      trimmed,
-			fieldName: fieldName,
+			text:       trimmed,
+			fieldName:  fieldName,
+			targetLang: lang,
 			apply: func(translated string) {
 				assignRecord(translated)
 				if s.cfg.ApplyToPrimary {
@@ -87,43 +112,48 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 	}
 
 	fields := s.cfg.Fields
+	metadataRecord := getRecord(targetLang)
 	if fields.Title {
-		queueField(movie.Title, func(v string) { translatedRecord.Title = v }, func(v string) { movie.Title = v }, "title")
+		queueField(targetLang, movie.Title, func(v string) { metadataRecord.Title = v }, func(v string) { movie.Title = v }, "title")
 	}
 	if fields.OriginalTitle {
-		queueField(movie.OriginalTitle, func(v string) { translatedRecord.OriginalTitle = v }, func(v string) { movie.OriginalTitle = v }, "original_title")
+		queueField(targetLang, movie.OriginalTitle, func(v string) { metadataRecord.OriginalTitle = v }, func(v string) { movie.OriginalTitle = v }, "original_title")
 	}
 	if fields.Description {
-		queueField(movie.Description, func(v string) { translatedRecord.Description = v }, func(v string) { movie.Description = v }, "description")
+		queueField(targetLang, movie.Description, func(v string) { metadataRecord.Description = v }, func(v string) { movie.Description = v }, "description")
 	}
 	if fields.Director {
-		queueField(movie.Director, func(v string) { translatedRecord.Director = v }, func(v string) { movie.Director = v }, "director")
+		queueField(targetLang, movie.Director, func(v string) { metadataRecord.Director = v }, func(v string) { movie.Director = v }, "director")
 	}
 	if fields.Maker {
-		queueField(movie.Maker, func(v string) { translatedRecord.Maker = v }, func(v string) { movie.Maker = v }, "maker")
+		queueField(targetLang, movie.Maker, func(v string) { metadataRecord.Maker = v }, func(v string) { movie.Maker = v }, "maker")
 	}
 	if fields.Label {
-		queueField(movie.Label, func(v string) { translatedRecord.Label = v }, func(v string) { movie.Label = v }, "label")
+		queueField(targetLang, movie.Label, func(v string) { metadataRecord.Label = v }, func(v string) { movie.Label = v }, "label")
 	}
 	if fields.Series {
-		queueField(movie.Series, func(v string) { translatedRecord.Series = v }, func(v string) { movie.Series = v }, "series")
+		queueField(targetLang, movie.Series, func(v string) { metadataRecord.Series = v }, func(v string) { movie.Series = v }, "series")
 	}
 	if fields.Genres {
 		for i := range movie.Genres {
 			idx := i
-			queueField(movie.Genres[idx].Name, func(string) {}, func(v string) {
+			queueField(targetLang, movie.Genres[idx].Name, func(string) {}, func(v string) {
 				movie.Genres[idx].Name = v
 			}, fmt.Sprintf("genre[%d]", i))
 		}
 	}
 	if fields.Actresses {
+		actressRecord := getRecord(actressTargetLang)
+		actressRecord.Actresses = make([]string, len(movie.Actresses))
 		for i := range movie.Actresses {
 			idx := i
 			name := actressDisplayTitle(movie.Actresses[idx])
 			if strings.TrimSpace(name) == "" {
 				continue
 			}
-			queueField(name, func(string) {}, func(v string) {
+			queueField(actressTargetLang, name, func(v string) {
+				actressRecord.Actresses[idx] = v
+			}, func(v string) {
 				replaceActressName(&movie.Actresses[idx], v)
 			}, fmt.Sprintf("actress[%d]", i))
 		}
@@ -133,32 +163,39 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 		return nil, "", nil
 	}
 
-	texts := make([]string, 0, len(requests))
-	for _, req := range requests {
-		texts = append(texts, req.text)
-	}
-
-	translatedTexts, err := s.translateTexts(ctx, sourceLang, targetLang, texts)
-	if err != nil {
-		logging.Debugf("Translation: translateTexts failed: %v", err)
-		warning := sanitizeTranslationWarning(normalizeProvider(s.cfg.Provider), err)
-		return nil, warning, err
-	}
-	if len(translatedTexts) != len(requests) {
-		logging.Debugf("Translation: count mismatch - got %d, expected %d", len(translatedTexts), len(requests))
-		return nil, "", fmt.Errorf("translation provider returned %d items for %d inputs", len(translatedTexts), len(requests))
+	requestsByTarget := make(map[string][]int)
+	for i := range requests {
+		requestsByTarget[requests[i].targetLang] = append(requestsByTarget[requests[i].targetLang], i)
 	}
 
 	var warnings []string
-	for i := range requests {
-		raw := translatedTexts[i]
-		translated := strings.TrimSpace(raw)
-		if translated == "" {
-			logging.Debugf("Translation: empty result for %s (original=%q, raw=%q), falling back to original", requests[i].fieldName, requests[i].text, raw)
-			warnings = append(warnings, fmt.Sprintf("%s: empty translation, kept original", requests[i].fieldName))
-			translated = requests[i].text
+	for lang, indexes := range requestsByTarget {
+		texts := make([]string, 0, len(indexes))
+		for _, idx := range indexes {
+			texts = append(texts, requests[idx].text)
 		}
-		requests[i].apply(translated)
+
+		translatedTexts, err := s.translateTexts(ctx, sourceLang, lang, texts)
+		if err != nil {
+			logging.Debugf("Translation: translateTexts failed: %v", err)
+			warning := sanitizeTranslationWarning(normalizeProvider(s.cfg.Provider), err)
+			return nil, warning, err
+		}
+		if len(translatedTexts) != len(indexes) {
+			logging.Debugf("Translation: count mismatch - got %d, expected %d", len(translatedTexts), len(indexes))
+			return nil, "", fmt.Errorf("translation provider returned %d items for %d inputs", len(translatedTexts), len(indexes))
+		}
+
+		for i, reqIdx := range indexes {
+			raw := translatedTexts[i]
+			translated := strings.TrimSpace(raw)
+			if translated == "" {
+				logging.Debugf("Translation: empty result for %s (original=%q, raw=%q), falling back to original", requests[reqIdx].fieldName, requests[reqIdx].text, raw)
+				warnings = append(warnings, fmt.Sprintf("%s: empty translation, kept original", requests[reqIdx].fieldName))
+				translated = requests[reqIdx].text
+			}
+			requests[reqIdx].apply(translated)
+		}
 	}
 
 	var warning string
@@ -167,7 +204,33 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 		logging.Warnf("Translation: %s", warning)
 	}
 
-	return translatedRecord, warning, nil
+	out := make([]models.MovieTranslation, 0, len(records))
+	appendRecord := func(lang string) {
+		record, ok := records[lang]
+		if !ok {
+			return
+		}
+		if touchedRecords[record.Language] || movieTranslationHasContent(*record) {
+			out = append(out, *record)
+		}
+	}
+	appendRecord(targetLang)
+	if actressTargetLang != targetLang {
+		appendRecord(actressTargetLang)
+	}
+	return out, warning, nil
+}
+
+func movieTranslationHasContent(record models.MovieTranslation) bool {
+	if record.Title != "" || record.OriginalTitle != "" || record.Description != "" || record.Director != "" || record.Maker != "" || record.Label != "" || record.Series != "" {
+		return true
+	}
+	for _, actress := range record.Actresses {
+		if strings.TrimSpace(actress) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeProvider(provider string) string {

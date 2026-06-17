@@ -59,6 +59,7 @@ type MovieTranslation struct {
 	Maker         string    `json:"maker"`
 	Label         string    `json:"label"`
 	Series        string    `json:"series"`
+	Actresses     []string  `json:"actresses" gorm:"-"`                    // Translated actress names for template rendering
 	SourceName    string    `json:"source_name"`                           // Which scraper provided this translation
 	SettingsHash  string    `gorm:"type:varchar(16)" json:"settings_hash"` // Hash of translation settings used
 	CreatedAt     time.Time `json:"created_at"`

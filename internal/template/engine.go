@@ -309,6 +309,9 @@ func (e *Engine) resolveTag(tagName, modifier string, ctx *Context) (string, err
 		}
 		return ctx.Series, nil
 	case "ACTORS", "ACTRESSES":
+		if parsed.isLanguage {
+			return e.resolveActressNames(parsed.languageSpec, ctx), nil
+		}
 		if len(ctx.Actresses) > 0 {
 			if ctx.GroupActress && len(ctx.Actresses) > 1 {
 				groupName := ctx.GroupActressName
@@ -325,6 +328,9 @@ func (e *Engine) resolveTag(tagName, modifier string, ctx *Context) (string, err
 		}
 		return "", nil
 	case "ACTRESS", "ACTORNAME", "ACTRESSNAME":
+		if parsed.isLanguage {
+			return e.resolveActressName(parsed.languageSpec, 0, ctx), nil
+		}
 		if ctx.ActressName != "" {
 			return ctx.ActressName, nil
 		}
@@ -667,6 +673,69 @@ func (e *Engine) resolveTranslatedTag(tagName, explicitLang string, ctx *Context
 		}
 	}
 	return e.resolveBaseTag(tagName, ctx)
+}
+
+func (e *Engine) resolveActressNames(explicitLang string, ctx *Context) string {
+	if len(ctx.Actresses) == 0 && len(ctx.ActressDetails) == 0 {
+		return ""
+	}
+	names := make([]string, 0, max(len(ctx.Actresses), len(ctx.ActressDetails)))
+	count := len(ctx.ActressDetails)
+	if len(ctx.Actresses) > count {
+		count = len(ctx.Actresses)
+	}
+	for i := 0; i < count; i++ {
+		if name := e.resolveActressName(explicitLang, i, ctx); name != "" {
+			names = append(names, name)
+		}
+	}
+	return strings.Join(names, ", ")
+}
+
+func (e *Engine) resolveActressName(explicitLang string, index int, ctx *Context) string {
+	primaryLang := ""
+	for _, lang := range e.languageCandidates(explicitLang, ctx) {
+		if primaryLang == "" {
+			primaryLang = lang
+		}
+		if name := e.translatedActressName(lang, index, ctx); e.isAcceptableActressTranslation(lang, name) {
+			return name
+		}
+	}
+	if index < len(ctx.ActressDetails) {
+		detail := ctx.ActressDetails[index]
+		if name := ctx.formatActressNameForLanguage(detail, primaryLang); name != "" {
+			return name
+		}
+	}
+	if index < len(ctx.Actresses) {
+		name := strings.TrimSpace(ctx.Actresses[index])
+		if primaryLang != "en" || !e.containsCJK(name) {
+			return name
+		}
+	}
+	return ""
+}
+
+func (e *Engine) translatedActressName(lang string, index int, ctx *Context) string {
+	if ctx.Translations == nil {
+		return ""
+	}
+	translation, ok := ctx.Translations[lang]
+	if !ok || index < 0 || index >= len(translation.Actresses) {
+		return ""
+	}
+	return strings.TrimSpace(translation.Actresses[index])
+}
+
+func (e *Engine) isAcceptableActressTranslation(lang, name string) bool {
+	if name == "" {
+		return false
+	}
+	if lang == "en" && e.containsCJK(name) {
+		return false
+	}
+	return true
 }
 
 func (e *Engine) resolveBaseTag(tagName string, ctx *Context) string {

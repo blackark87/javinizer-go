@@ -138,6 +138,7 @@ func DefaultConfig() *Config {
 				SourceLanguage:          "ja", // Japanese content translated to English
 				TargetLanguage:          "en",
 				TargetLanguages:         nil,
+				ActressTargetLanguage:   "en",
 				TimeoutSeconds:          60,
 				ApplyToPrimary:          true,
 				OverwriteExistingTarget: true,

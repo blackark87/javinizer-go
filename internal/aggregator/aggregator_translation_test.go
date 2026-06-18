@@ -253,6 +253,37 @@ func TestMergeTranslationFields(t *testing.T) {
 		assert.Equal(t, "Old Series", merged.Series)
 		assert.Equal(t, "old-source", merged.SourceName)
 	})
+
+	t.Run("keeps existing actress translations when incoming slice is nil", func(t *testing.T) {
+		current := models.MovieTranslation{
+			Language:  "en",
+			Actresses: []string{"Existing Actress"},
+		}
+		incoming := models.MovieTranslation{
+			Language: "en",
+		}
+
+		merged := mergeTranslationFields(current, incoming)
+		assert.Equal(t, []string{"Existing Actress"}, merged.Actresses)
+	})
+
+	t.Run("overwrites actress translations when incoming slice is non-nil", func(t *testing.T) {
+		current := models.MovieTranslation{
+			Language:  "en",
+			Actresses: []string{"Existing Actress"},
+		}
+		incoming := models.MovieTranslation{
+			Language:  "en",
+			Actresses: []string{"Translated Actress"},
+		}
+
+		merged := mergeTranslationFields(current, incoming)
+		assert.Equal(t, []string{"Translated Actress"}, merged.Actresses)
+
+		// Verify it's a copy, not a reference
+		incoming.Actresses[0] = "Mutated"
+		assert.Equal(t, []string{"Translated Actress"}, merged.Actresses)
+	})
 }
 
 func TestAggregate_TranslationWarningOnProviderError(t *testing.T) {

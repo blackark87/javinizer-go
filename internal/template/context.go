@@ -409,6 +409,17 @@ func (c *Context) formatActressName(detail ActressDetail) string {
 	return detail.JapaneseName
 }
 
+func (c *Context) formatActressNameForLanguage(detail ActressDetail, lang string) string {
+	if lang == "ja" && detail.JapaneseName != "" {
+		return detail.JapaneseName
+	}
+	formatted := c.formatActressName(detail)
+	if lang == "en" && formatted != "" && cjkRegex.MatchString(formatted) {
+		return ""
+	}
+	return formatted
+}
+
 func (c *Context) formatActressNames() []string {
 	if len(c.ActressDetails) == 0 {
 		return c.Actresses

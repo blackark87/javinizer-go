@@ -735,6 +735,19 @@ func TestTemplateBackwardCompatibility(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:       "English actress tag rejects CJK fallback",
+			engineOpts: EngineOptions{},
+			template:   "<ACTRESS:en>",
+			ctx: &Context{
+				Actresses: []string{"波多野結衣"},
+				ActressDetails: []ActressDetail{
+					{JapaneseName: "波多野結衣"},
+				},
+			},
+			want:    "",
+			wantErr: false,
+		},
+		{
 			name:       "All original tags still work without translations",
 			engineOpts: EngineOptions{},
 			template:   "<ID> - <CONTENTID> - <TITLE> - <ORIGINALTITLE> - <YEAR> - <RELEASEDATE> - <RUNTIME> - <DIRECTOR> - <MAKER> - <LABEL> - <SERIES> - <ACTORS> - <GENRES>",

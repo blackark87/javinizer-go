@@ -693,21 +693,32 @@ func (e *Engine) resolveActressNames(explicitLang string, ctx *Context) string {
 }
 
 func (e *Engine) resolveActressName(explicitLang string, index int, ctx *Context) string {
+	primaryLang := ""
 	for _, lang := range e.languageCandidates(explicitLang, ctx) {
-		if name := e.translatedActressName(lang, index, ctx); name != "" {
+		if primaryLang == "" {
+			primaryLang = lang
+		}
+		if name := e.translatedActressName(lang, index, ctx); e.isAcceptableActressTranslation(lang, name) {
 			return name
 		}
 	}
 	if index < len(ctx.ActressDetails) {
 		detail := ctx.ActressDetails[index]
-		if name := ctx.formatActressName(detail); name != "" {
+		if name := ctx.formatActressNameForLanguage(detail, primaryLang); name != "" {
 			return name
 		}
 	}
-	if index < len(ctx.Actresses) && ctx.Actresses[index] != "" {
-		return ctx.Actresses[index]
-	}
 	return ""
+}
+
+func (e *Engine) isAcceptableActressTranslation(lang, name string) bool {
+	if name == "" {
+		return false
+	}
+	if lang == "en" && cjkRegex.MatchString(name) {
+		return false
+	}
+	return true
 }
 
 func (e *Engine) translatedActressName(lang string, index int, ctx *Context) string {

@@ -51,8 +51,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=mediainfo
-            type=sha,prefix=mediainfo-
+            type=raw,value=latest
+            type=sha,prefix=latest-
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -64,7 +64,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=mediainfo-${{ github.sha }}
+            VERSION=latest-${{ github.sha }}
             COMMIT=${{ github.sha }}
             BUILD_DATE=${{ github.run_id }}
           cache-from: type=gha

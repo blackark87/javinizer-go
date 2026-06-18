@@ -527,6 +527,17 @@
 					}}
 				/>
 
+				<FormTextInput
+					label="Actress target language"
+					description="Target language code for actress names used by <ACTRESS:en>/<ACTRESSES:en> (independent from metadata target language)"
+					value={config.metadata.translation?.actress_target_language ?? 'en'}
+					placeholder="en"
+					onchange={(val) => {
+						if (!config.metadata.translation) config.metadata.translation = {} as TranslationConfigType;
+						config.metadata.translation!.actress_target_language = val.trim();
+					}}
+				/>
+
 				<FormNumberInput
 					label="Timeout"
 					description="Maximum time to wait for translation API calls"

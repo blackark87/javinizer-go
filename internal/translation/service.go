@@ -53,30 +53,177 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 		sourceLang = sourceLangAuto
 	}
 
-	translations := make([]models.MovieTranslation, 0, len(targetLanguages))
-	warnings := make([]string, 0)
-	for _, targetLang := range targetLanguages {
-		if sourceLang != sourceLangAuto && sourceLang == targetLang {
-			continue
+	actressTargetLang := s.actressTargetLanguage()
+
+	type pendingText struct {
+		text       string
+		fieldName  string
+		targetLang string
+		apply      func(string)
+	}
+
+	requests := make([]pendingText, 0)
+	records := make(map[string]*models.MovieTranslation)
+	touchedRecords := make(map[string]bool)
+
+	getRecord := func(lang string) *models.MovieTranslation {
+		if rec, ok := records[lang]; ok {
+			return rec
+		}
+		rec := &models.MovieTranslation{
+			Language:     lang,
+			SourceName:   "translation:" + normalizeProvider(s.cfg.Provider),
+			SettingsHash: settingsHash,
+		}
+		records[lang] = rec
+		return rec
+	}
+
+	queueField := func(lang, raw string, assignRecord func(string), assignMovie func(string), fieldName string) {
+		if sourceLang != sourceLangAuto && sourceLang == lang {
+			return
+		}
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			return
+		}
+		touchedRecords[lang] = true
+		requests = append(requests, pendingText{
+			text:       trimmed,
+			fieldName:  fieldName,
+			targetLang: lang,
+			apply: func(translated string) {
+				assignRecord(translated)
+				if s.cfg.ApplyToPrimary && lang == targetLanguages[0] {
+					assignMovie(translated)
+				}
+			},
+		})
+	}
+
+	// Queue metadata fields for each target language — texts captured from ORIGINAL movie
+	fields := s.cfg.Fields
+	for _, lang := range targetLanguages {
+		rec := getRecord(lang)
+		if fields.Title {
+			queueField(lang, movie.Title, func(v string) { rec.Title = v }, func(v string) { movie.Title = v }, "title")
+		}
+		if fields.OriginalTitle {
+			queueField(lang, movie.OriginalTitle, func(v string) { rec.OriginalTitle = v }, func(v string) { movie.OriginalTitle = v }, "original_title")
+		}
+		if fields.Description {
+			queueField(lang, movie.Description, func(v string) { rec.Description = v }, func(v string) { movie.Description = v }, "description")
+		}
+		if fields.Director {
+			queueField(lang, movie.Director, func(v string) { rec.Director = v }, func(v string) { movie.Director = v }, "director")
+		}
+		if fields.Maker {
+			queueField(lang, movie.Maker, func(v string) { rec.Maker = v }, func(v string) { movie.Maker = v }, "maker")
+		}
+		if fields.Label {
+			queueField(lang, movie.Label, func(v string) { rec.Label = v }, func(v string) { movie.Label = v }, "label")
+		}
+		if fields.Series {
+			queueField(lang, movie.Series, func(v string) { rec.Series = v }, func(v string) { movie.Series = v }, "series")
+		}
+		if fields.Genres {
+			for i := range movie.Genres {
+				idx := i
+				queueField(lang, movie.Genres[idx].Name, func(string) {}, func(v string) { movie.Genres[idx].Name = v }, fmt.Sprintf("genre[%d]", i))
+			}
+		}
+	}
+
+	// Queue actress fields for actressTargetLang — independent of metadata languages
+	if fields.Actresses {
+		actressRecord := getRecord(actressTargetLang)
+		actressRecord.Actresses = make([]string, len(movie.Actresses))
+		for i := range movie.Actresses {
+			idx := i
+			rawName := actressDisplayTitle(movie.Actresses[idx])
+			name := cleanActressNameForTranslation(rawName)
+			if name == "" {
+				continue
+			}
+			queueField(actressTargetLang, name, func(v string) {
+				actressRecord.Actresses[idx] = v
+			}, func(v string) {
+				replaceActressName(&movie.Actresses[idx], v)
+			}, fmt.Sprintf("actress[%d]", i))
+		}
+	}
+
+	if len(requests) == 0 {
+		return nil, "", nil
+	}
+
+	// Group requests by target language and execute in batches
+	requestsByTarget := make(map[string][]int)
+	for i := range requests {
+		requestsByTarget[requests[i].targetLang] = append(requestsByTarget[requests[i].targetLang], i)
+	}
+
+	var warnings []string
+	for lang, indexes := range requestsByTarget {
+		texts := make([]string, 0, len(indexes))
+		for _, idx := range indexes {
+			texts = append(texts, requests[idx].text)
 		}
 
-		translatedRecord, warning, err := s.translateMovieToLanguage(ctx, movie, sourceLang, targetLang, settingsHash)
+		translatedTexts, err := s.translateTexts(ctx, sourceLang, lang, texts)
 		if err != nil {
+			logging.Debugf("Translation: translateTexts failed: %v", err)
+			warning := sanitizeTranslationWarning(normalizeProvider(s.cfg.Provider), err)
 			return nil, warning, err
 		}
-		if warning != "" {
-			warnings = append(warnings, warning)
+		if len(translatedTexts) != len(indexes) {
+			logging.Debugf("Translation: count mismatch - got %d, expected %d", len(translatedTexts), len(indexes))
+			return nil, "", fmt.Errorf("translation provider returned %d items for %d inputs", len(translatedTexts), len(indexes))
 		}
-		if translatedRecord != nil {
-			translations = append(translations, *translatedRecord)
+
+		for i, reqIdx := range indexes {
+			raw := translatedTexts[i]
+			translated := strings.TrimSpace(raw)
+			if translated == "" {
+				logging.Debugf("Translation: empty result for %s (original=%q, raw=%q), falling back to original", requests[reqIdx].fieldName, requests[reqIdx].text, raw)
+				warnings = append(warnings, fmt.Sprintf("%s: empty translation, kept original", requests[reqIdx].fieldName))
+				translated = requests[reqIdx].text
+			}
+			requests[reqIdx].apply(translated)
 		}
 	}
 
-	if len(translations) == 0 {
-		return nil, strings.Join(warnings, "; "), nil
+	var warning string
+	if len(warnings) > 0 {
+		warning = fmt.Sprintf("Translation (%s): %s", normalizeProvider(s.cfg.Provider), strings.Join(warnings, "; "))
+		logging.Warnf("Translation: %s", warning)
 	}
 
-	return translations, strings.Join(warnings, "; "), nil
+	// Collect output records: metadata languages first, then actress language if distinct
+	out := make([]models.MovieTranslation, 0, len(records))
+	seen := make(map[string]bool)
+	for _, lang := range targetLanguages {
+		rec, ok := records[lang]
+		if !ok || seen[lang] {
+			continue
+		}
+		if touchedRecords[lang] || movieTranslationHasContent(*rec) {
+			out = append(out, *rec)
+			seen[lang] = true
+		}
+	}
+	if !seen[actressTargetLang] {
+		if rec, ok := records[actressTargetLang]; ok {
+			if touchedRecords[actressTargetLang] || movieTranslationHasContent(*rec) {
+				out = append(out, *rec)
+			}
+		}
+	}
+
+	if len(out) == 0 {
+		return nil, warning, nil
+	}
+	return out, warning, nil
 }
 
 func (s *Service) targetLanguages() []string {
@@ -101,129 +248,40 @@ func (s *Service) targetLanguages() []string {
 	return languages
 }
 
-func (s *Service) translateMovieToLanguage(ctx context.Context, movie *models.Movie, sourceLang, targetLang, settingsHash string) (*models.MovieTranslation, string, error) {
-	type pendingText struct {
-		text      string
-		fieldName string
-		apply     func(string)
+func (s *Service) actressTargetLanguage() string {
+	lang := normalizeLanguage(s.cfg.ActressTargetLanguage)
+	if lang == "" {
+		return "en"
 	}
-
-	requests := make([]pendingText, 0)
-	translatedRecord := &models.MovieTranslation{
-		Language:     targetLang,
-		SourceName:   "translation:" + normalizeProvider(s.cfg.Provider),
-		SettingsHash: settingsHash,
-	}
-
-	queueField := func(raw string, assignRecord func(string), assignMovie func(string), fieldName string) {
-		trimmed := strings.TrimSpace(raw)
-		if trimmed == "" {
-			return
-		}
-		requests = append(requests, pendingText{
-			text:      trimmed,
-			fieldName: fieldName,
-			apply: func(translated string) {
-				assignRecord(translated)
-				if s.cfg.ApplyToPrimary {
-					assignMovie(translated)
-				}
-			},
-		})
-	}
-
-	fields := s.cfg.Fields
-	if fields.Title {
-		queueField(movie.Title, func(v string) { translatedRecord.Title = v }, func(v string) { movie.Title = v }, "title")
-	}
-	if fields.OriginalTitle {
-		queueField(movie.OriginalTitle, func(v string) { translatedRecord.OriginalTitle = v }, func(v string) { movie.OriginalTitle = v }, "original_title")
-	}
-	if fields.Description {
-		queueField(movie.Description, func(v string) { translatedRecord.Description = v }, func(v string) { movie.Description = v }, "description")
-	}
-	if fields.Director {
-		queueField(movie.Director, func(v string) { translatedRecord.Director = v }, func(v string) { movie.Director = v }, "director")
-	}
-	if fields.Maker {
-		queueField(movie.Maker, func(v string) { translatedRecord.Maker = v }, func(v string) { movie.Maker = v }, "maker")
-	}
-	if fields.Label {
-		queueField(movie.Label, func(v string) { translatedRecord.Label = v }, func(v string) { movie.Label = v }, "label")
-	}
-	if fields.Series {
-		queueField(movie.Series, func(v string) { translatedRecord.Series = v }, func(v string) { movie.Series = v }, "series")
-	}
-	if fields.Genres {
-		for i := range movie.Genres {
-			idx := i
-			queueField(movie.Genres[idx].Name, func(string) {}, func(v string) { movie.Genres[idx].Name = v }, fmt.Sprintf("genre[%d]", i))
-		}
-	}
-	if fields.Actresses {
-		translatedActresses := make([]string, len(movie.Actresses))
-		for i := range movie.Actresses {
-			idx := i
-			name := actressDisplayTitle(movie.Actresses[idx])
-			if strings.TrimSpace(name) == "" {
-				continue
-			}
-			queueField(name, func(v string) {
-				translatedActresses[idx] = v
-				translatedRecord.Actresses = joinNonEmpty(translatedActresses)
-			}, func(v string) { replaceActressName(&movie.Actresses[idx], v) }, fmt.Sprintf("actress[%d]", i))
-		}
-	}
-
-	if len(requests) == 0 {
-		return nil, "", nil
-	}
-
-	texts := make([]string, 0, len(requests))
-	for _, req := range requests {
-		texts = append(texts, req.text)
-	}
-
-	translatedTexts, err := s.translateTexts(ctx, sourceLang, targetLang, texts)
-	if err != nil {
-		logging.Debugf("Translation: translateTexts failed: %v", err)
-		warning := sanitizeTranslationWarning(normalizeProvider(s.cfg.Provider), err)
-		return nil, warning, err
-	}
-	if len(translatedTexts) != len(requests) {
-		logging.Debugf("Translation: count mismatch - got %d, expected %d", len(translatedTexts), len(requests))
-		return nil, "", fmt.Errorf("translation provider returned %d items for %d inputs", len(translatedTexts), len(requests))
-	}
-
-	var warnings []string
-	for i := range requests {
-		raw := translatedTexts[i]
-		translated := strings.TrimSpace(raw)
-		if translated == "" {
-			logging.Debugf("Translation: empty result for %s (original=%q, raw=%q), falling back to original", requests[i].fieldName, requests[i].text, raw)
-			warnings = append(warnings, fmt.Sprintf("%s: empty translation, kept original", requests[i].fieldName))
-			translated = requests[i].text
-		}
-		requests[i].apply(translated)
-	}
-
-	var warning string
-	if len(warnings) > 0 {
-		warning = fmt.Sprintf("Translation (%s/%s): %s", normalizeProvider(s.cfg.Provider), targetLang, strings.Join(warnings, "; "))
-		logging.Warnf("Translation: %s", warning)
-	}
-
-	return translatedRecord, warning, nil
+	return lang
 }
 
-func joinNonEmpty(values []string) string {
-	joined := make([]string, 0, len(values))
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			joined = append(joined, trimmed)
+func movieTranslationHasContent(record models.MovieTranslation) bool {
+	if record.Title != "" || record.OriginalTitle != "" || record.Description != "" || record.Director != "" || record.Maker != "" || record.Label != "" || record.Series != "" {
+		return true
+	}
+	for _, actress := range record.Actresses {
+		if strings.TrimSpace(actress) != "" {
+			return true
 		}
 	}
-	return strings.Join(joined, " | ")
+	return false
+}
+
+// cleanActressNameForTranslation strips extra content from actress name strings
+// before sending to the LLM. Handles bracket notation "[name]" and comma-separated
+// extra info "name, age, occupation".
+func cleanActressNameForTranslation(name string) string {
+	name = strings.TrimSpace(name)
+	if strings.HasPrefix(name, "[") {
+		if end := strings.LastIndex(name, "]"); end > 0 {
+			name = strings.TrimSpace(name[1:end])
+		}
+	}
+	if idx := strings.Index(name, ","); idx >= 0 {
+		name = strings.TrimSpace(name[:idx])
+	}
+	return name
 }
 
 func normalizeProvider(provider string) string {

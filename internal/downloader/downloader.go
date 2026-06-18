@@ -16,6 +16,7 @@ import (
 
 	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/configutil"
+	"github.com/javinizer/javinizer-go/internal/fsutil"
 	"github.com/javinizer/javinizer-go/internal/httpclient"
 	imageutil "github.com/javinizer/javinizer-go/internal/image"
 	"github.com/javinizer/javinizer-go/internal/logging"
@@ -614,6 +615,107 @@ func (d *Downloader) DownloadAll(ctx context.Context, movie *models.Movie, destD
 	}
 
 	return results, nil
+}
+
+// MoveExistingMetadata moves metadata files (poster, fanart, extrafanart, actress images,
+// trailer) from sourceDir to targetDir when a video file is being organized to a new location.
+// Files are only moved when the source file exists and the destination does not, so the
+// downloader's subsequent existence check will skip re-downloading them.
+// NFO files are intentionally excluded because they are always regenerated fresh.
+// Returns destination paths of successfully moved files for history/revert tracking.
+func (d *Downloader) MoveExistingMetadata(sourceDir, targetDir string, movie *models.Movie, multipart *MultipartInfo) []string {
+	if sourceDir == targetDir {
+		return nil
+	}
+
+	var moved []string
+
+	moveFile := func(filename string) {
+		if filename == "" {
+			return
+		}
+		src := filepath.Join(sourceDir, filename)
+		dst := filepath.Join(targetDir, filename)
+		if _, err := d.fs.Stat(src); err != nil {
+			return // source doesn't exist
+		}
+		if _, err := d.fs.Stat(dst); err == nil {
+			return // destination already exists — downloader will also skip
+		}
+		if err := fsutil.MoveFileFs(d.fs, src, dst); err != nil {
+			logging.Warnf("MoveExistingMetadata: failed to move %s → %s: %v", src, dst, err)
+			return
+		}
+		moved = append(moved, dst)
+	}
+
+	moveFolder := func(folderName string) {
+		if folderName == "" {
+			return
+		}
+		srcFolder := filepath.Join(sourceDir, folderName)
+		dstFolder := filepath.Join(targetDir, folderName)
+		entries, err := afero.ReadDir(d.fs, srcFolder)
+		if err != nil {
+			return // source folder doesn't exist or unreadable
+		}
+		if err := d.fs.MkdirAll(dstFolder, 0755); err != nil {
+			logging.Warnf("MoveExistingMetadata: failed to create dir %s: %v", dstFolder, err)
+			return
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			src := filepath.Join(srcFolder, entry.Name())
+			dst := filepath.Join(dstFolder, entry.Name())
+			if _, err := d.fs.Stat(dst); err == nil {
+				continue // destination already exists
+			}
+			if err := fsutil.MoveFileFs(d.fs, src, dst); err != nil {
+				logging.Warnf("MoveExistingMetadata: failed to move %s → %s: %v", src, dst, err)
+				continue
+			}
+			moved = append(moved, dst)
+		}
+	}
+
+	// Fanart (cover)
+	fanartName := d.generateFilename(movie, d.config.FanartFormat, 0, multipart)
+	if fanartName == "" {
+		fanartName = fmt.Sprintf("%s-fanart.jpg", movie.ID)
+	}
+	moveFile(fanartName)
+
+	// Poster
+	posterName := d.generateFilename(movie, d.config.PosterFormat, 0, multipart)
+	if posterName == "" {
+		posterName = fmt.Sprintf("%s-poster.jpg", movie.ID)
+	}
+	moveFile(posterName)
+
+	// Trailer
+	if movie.TrailerURL != "" {
+		ext := filepath.Ext(movie.TrailerURL)
+		if ext == "" {
+			ext = ".mp4"
+		}
+		trailerName := d.generateFilename(movie, d.config.TrailerFormat, 0, multipart)
+		if trailerName == "" {
+			trailerName = fmt.Sprintf("%s-trailer%s", movie.ID, ext)
+		} else if filepath.Ext(trailerName) == "" {
+			trailerName += ext
+		}
+		moveFile(trailerName)
+	}
+
+	// Extrafanart folder (screenshots)
+	moveFolder(d.config.ScreenshotFolder)
+
+	// Actress images folder
+	moveFolder(d.config.ActressFolder)
+
+	return moved
 }
 
 // download performs the actual HTTP download

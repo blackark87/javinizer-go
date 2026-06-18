@@ -194,16 +194,21 @@ func handlePostOrganize(ctx context.Context, result *organizer.OrganizeResult, m
 		}
 	}
 
-	if result.ShouldGenerateMetadata && !skipDownload {
-		var multipart *downloader.MultipartInfo
-		if match.IsMultiPart {
-			multipart = &downloader.MultipartInfo{
-				IsMultiPart: match.IsMultiPart,
-				PartNumber:  match.PartNumber,
-				PartSuffix:  match.PartSuffix,
-			}
+	var multipart *downloader.MultipartInfo
+	if match.IsMultiPart {
+		multipart = &downloader.MultipartInfo{
+			IsMultiPart: match.IsMultiPart,
+			PartNumber:  match.PartNumber,
+			PartSuffix:  match.PartSuffix,
 		}
+	}
 
+	if result.ShouldGenerateMetadata && sourceDir != result.FolderPath {
+		movedPaths := dl.MoveExistingMetadata(sourceDir, result.FolderPath, movie, multipart)
+		por.downloadPaths = append(por.downloadPaths, movedPaths...)
+	}
+
+	if result.ShouldGenerateMetadata && !skipDownload {
 		posterPath := copyTempCroppedPoster(job, movie, result.FolderPath, cfg, "Organize", multipart)
 		if posterPath != "" {
 			por.downloadPaths = append(por.downloadPaths, posterPath)

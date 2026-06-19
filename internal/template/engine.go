@@ -710,9 +710,18 @@ func (e *Engine) resolveActressName(explicitLang string, index int, ctx *Context
 	}
 	if index < len(ctx.ActressDetails) {
 		detail := ctx.ActressDetails[index]
+		// Language-filtered name (respects CJK rejection for English requests)
 		if name := ctx.formatActressNameForLanguage(detail, primaryLang); name != "" {
 			return name
 		}
+		// No translation available — fall back to raw name regardless of script
+		if rawName := ctx.formatActressName(detail); rawName != "" {
+			return rawName
+		}
+	}
+	// Fall back to raw Actresses slice (covers case where ActressDetails is absent)
+	if index < len(ctx.Actresses) {
+		return ctx.Actresses[index]
 	}
 	return ""
 }

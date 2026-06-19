@@ -704,7 +704,7 @@ func TestTemplateEngine_Conditionals(t *testing.T) {
 			want: "Hatano Yui",
 		},
 		{
-			name:     "Language-qualified IF - Japanese-only actress falls back to ELSE",
+			name:     "Language-qualified IF - Japanese-only actress uses Japanese fallback",
 			template: "<IF:ACTRESS:en><ACTRESS:en><ELSE>Unknown</IF>",
 			ctx: &Context{
 				Actresses: []string{"波多野結衣"},
@@ -712,13 +712,52 @@ func TestTemplateEngine_Conditionals(t *testing.T) {
 					{JapaneseName: "波多野結衣"},
 				},
 			},
-			want: "Unknown",
+			want: "波多野結衣",
 		},
 		{
 			name:     "Language-qualified IF - no actress falls back to ELSE",
 			template: "<IF:ACTRESS:en><ACTRESS:en><ELSE>Unknown</IF>",
 			ctx:      &Context{},
 			want:     "Unknown",
+		},
+		{
+			name:     "ACTRESS:en priority - English name used when available",
+			template: "<ACTRESS:en>",
+			ctx: &Context{
+				Actresses: []string{"波多野結衣"},
+				ActressDetails: []ActressDetail{
+					{FirstName: "Yui", LastName: "Hatano", JapaneseName: "波多野結衣"},
+				},
+			},
+			want: "Hatano Yui",
+		},
+		{
+			name:     "ACTRESS:en priority - Japanese fallback when no English name",
+			template: "<ACTRESS:en>",
+			ctx: &Context{
+				Actresses: []string{"波多野結衣"},
+				ActressDetails: []ActressDetail{
+					{JapaneseName: "波多野結衣"},
+				},
+			},
+			want: "波多野結衣",
+		},
+		{
+			name:     "IF:ACTRESS with ACTRESS:en - Unknown only when no actress",
+			template: "<IF:ACTRESS><ACTRESS:en><ELSE>Unknown</IF>",
+			ctx:      &Context{},
+			want:     "Unknown",
+		},
+		{
+			name:     "IF:ACTRESS with ACTRESS:en - Japanese name when no English",
+			template: "<IF:ACTRESS><ACTRESS:en><ELSE>Unknown</IF>",
+			ctx: &Context{
+				Actresses: []string{"波多野結衣"},
+				ActressDetails: []ActressDetail{
+					{JapaneseName: "波多野結衣"},
+				},
+			},
+			want: "波多野結衣",
 		},
 		{
 			name:     "Unqualified IF still true for Japanese-only actress (backward compat)",

@@ -44,10 +44,10 @@ func organizeJob(deps *ServerDependencies) gin.HandlerFunc {
 			return
 		}
 
-		// Check if job is in correct state (completed scraping)
+		// Check if job is in correct state (completed scraping, or cancelled during organize for resume)
 		status := job.GetStatus()
-		if status.Status != worker.JobStatusCompleted {
-			c.JSON(400, ErrorResponse{Error: "Job must be completed before organizing"})
+		if status.Status != worker.JobStatusCompleted && status.Status != worker.JobStatusCancelled {
+			c.JSON(400, ErrorResponse{Error: "Job must be in completed or cancelled state before organizing"})
 			return
 		}
 
@@ -107,7 +107,7 @@ func organizeJob(deps *ServerDependencies) gin.HandlerFunc {
 			ctx, cancel := context.WithCancel(context.Background())
 			job.SetCancelFunc(cancel)
 			defer cancel()
-			processOrganizeJob(ctx, job, deps.JobQueue, req.Destination, req.CopyOnly, req.LinkMode, req.SkipNFO, req.SkipDownload, deps.DB, cfg, deps.GetRegistry(), deps.EventEmitter)
+			processOrganizeJob(ctx, job, deps.JobQueue, req.Destination, req.CopyOnly, req.LinkMode, req.SkipNFO, req.SkipDownload, deps.DB, cfg, deps.GetRegistry(), deps.EventEmitter, req.Resume)
 		}()
 
 		c.JSON(200, gin.H{"message": "Organization started"})

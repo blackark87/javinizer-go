@@ -203,6 +203,7 @@ type OrganizeRequest struct {
 	OperationMode string `json:"operation_mode,omitempty" example:"organize"`
 	SkipNFO       bool   `json:"skip_nfo"`
 	SkipDownload  bool   `json:"skip_download"`
+	Resume        bool   `json:"resume,omitempty"`
 }
 
 // OrganizePreviewRequest represents a preview request

@@ -456,6 +456,68 @@ func (_c *MockBatchFileOperationRepositoryInterface_FindByID_Call) RunAndReturn(
 	return _c
 }
 
+// GetOrganizedOriginalPaths provides a mock function for the type MockBatchFileOperationRepositoryInterface
+func (_mock *MockBatchFileOperationRepositoryInterface) GetOrganizedOriginalPaths(batchJobID string) (map[string]bool, error) {
+	ret := _mock.Called(batchJobID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetOrganizedOriginalPaths")
+	}
+
+	var r0 map[string]bool
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(string) (map[string]bool, error)); ok {
+		return returnFunc(batchJobID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(string) map[string]bool); ok {
+		r0 = returnFunc(batchJobID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(map[string]bool)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(string) error); ok {
+		r1 = returnFunc(batchJobID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockBatchFileOperationRepositoryInterface_GetOrganizedOriginalPaths_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetOrganizedOriginalPaths'
+type MockBatchFileOperationRepositoryInterface_GetOrganizedOriginalPaths_Call struct {
+	*mock.Call
+}
+
+// GetOrganizedOriginalPaths is a helper method to define mock.On call
+//   - batchJobID string
+func (_e *MockBatchFileOperationRepositoryInterface_Expecter) GetOrganizedOriginalPaths(batchJobID interface{}) *MockBatchFileOperationRepositoryInterface_GetOrganizedOriginalPaths_Call {
+	return &MockBatchFileOperationRepositoryInterface_GetOrganizedOriginalPaths_Call{Call: _e.mock.On("GetOrganizedOriginalPaths", batchJobID)}
+}
+
+func (_c *MockBatchFileOperationRepositoryInterface_GetOrganizedOriginalPaths_Call) Run(run func(batchJobID string)) *MockBatchFileOperationRepositoryInterface_GetOrganizedOriginalPaths_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockBatchFileOperationRepositoryInterface_GetOrganizedOriginalPaths_Call) Return(paths map[string]bool, err error) *MockBatchFileOperationRepositoryInterface_GetOrganizedOriginalPaths_Call {
+	_c.Call.Return(paths, err)
+	return _c
+}
+
+func (_c *MockBatchFileOperationRepositoryInterface_GetOrganizedOriginalPaths_Call) RunAndReturn(run func(batchJobID string) (map[string]bool, error)) *MockBatchFileOperationRepositoryInterface_GetOrganizedOriginalPaths_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Update provides a mock function for the type MockBatchFileOperationRepositoryInterface
 func (_mock *MockBatchFileOperationRepositoryInterface) Update(op *models.BatchFileOperation) error {
 	ret := _mock.Called(op)

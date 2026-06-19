@@ -180,6 +180,7 @@
 						expectedOrganizeFilePaths={s.expectedOrganizeFilePaths}
 						isUpdateMode={s.isUpdateMode}
 						onRetryFailed={s.retryFailed}
+						onResume={s.resumeOrganize}
 						onContinue={() => goto('/browse')}
 					/>
 

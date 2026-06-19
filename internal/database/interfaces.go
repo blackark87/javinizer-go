@@ -124,6 +124,7 @@ type BatchFileOperationRepositoryInterface interface {
 	FindByID(id uint) (*models.BatchFileOperation, error)
 	FindByBatchJobID(batchJobID string) ([]models.BatchFileOperation, error)
 	FindByBatchJobIDAndRevertStatus(batchJobID string, revertStatus string) ([]models.BatchFileOperation, error)
+	GetOrganizedOriginalPaths(batchJobID string) (map[string]bool, error)
 	Update(op *models.BatchFileOperation) error
 	UpdateRevertStatus(id uint, status string) error
 	CountByBatchJobID(batchJobID string) (int64, error)

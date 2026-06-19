@@ -268,16 +268,55 @@ export function createOrganizeController(deps: OrganizeControllerDeps) {
 		}
 	}
 
+	async function resumeOrganize(skipNfo?: boolean, skipDownload?: boolean) {
+		const effectiveMode = deps.getOperationMode();
+		const needsDestination = effectiveMode === 'organize';
+		if (needsDestination && !deps.getDestinationPath().trim()) {
+			deps.toastError('Please enter a destination path');
+			return;
+		}
+
+		lastSkipNfo = skipNfo ?? lastSkipNfo;
+		lastSkipDownload = skipDownload ?? lastSkipDownload;
+
+		const { copyOnly, linkMode } = getOrganizeRequestOptions(deps.getOrganizeOperation());
+		prepareOrganizeRun();
+
+		try {
+			if (deps.getEditedMovies().size > 0) {
+				await deps.saveAllEdits();
+			}
+
+			await deps.api.organizeBatchJob(deps.getJobId(), {
+				destination: deps.getDestinationPath(),
+				copy_only: copyOnly,
+				link_mode: linkMode,
+				operation_mode: deps.getOperationMode() as OperationMode,
+				skip_nfo: lastSkipNfo,
+				skip_download: lastSkipDownload,
+				resume: true,
+			});
+
+			startOrganizeCompletionPolling();
+		} catch (e) {
+			deps.setOrganizeStatus('failed');
+			deps.setOrganizing(false);
+			clearOrganizePollTimer();
+			const errorMessage = e instanceof Error ? e.message : 'Failed to resume organize';
+			deps.toastError(errorMessage, 7000);
+		}
+	}
+
 	async function retryFailed() {
 		const failedCount = Array.from(deps.getFileStatuses().values()).filter((s) => s.status === 'failed').length;
 		if (failedCount === 0) return;
 
-		deps.toastInfo(`Retrying ${failedCount} failed file${failedCount > 1 ? 's' : ''}...`);
+		deps.toastInfo(`Resuming ${failedCount} failed file${failedCount > 1 ? 's' : ''}...`);
 
 		if (deps.getIsUpdateMode()) {
 			await updateAll(lastUpdateOptions);
 		} else {
-			await organizeAll(lastSkipNfo, lastSkipDownload);
+			await resumeOrganize(lastSkipNfo, lastSkipDownload);
 		}
 	}
 
@@ -317,6 +356,30 @@ export function createOrganizeController(deps: OrganizeControllerDeps) {
 		}
 	}
 
+	function restoreOrganizeState(jobStatus: string, wsMessagesByFile: Record<string, ProgressMessage> | undefined) {
+		if (jobStatus !== 'running') return;
+		if (deps.getOrganizeStatus() !== 'idle') return;
+
+		const messages = Object.values(wsMessagesByFile ?? {});
+		if (messages.length > 0) {
+			const statuses = deps.getFileStatuses();
+			for (const msg of messages) {
+				if (!msg.file_path) continue;
+				if (msg.status === 'organized' || msg.status === 'updated') {
+					statuses.set(msg.file_path, { status: 'success' });
+				} else if (msg.status === 'failed') {
+					statuses.set(msg.file_path, { status: 'failed', error: msg.error });
+				}
+			}
+			const lastProgress = messages.reduce((max, m) => Math.max(max, m.progress ?? 0), 0);
+			deps.setOrganizeProgress(lastProgress);
+		}
+
+		deps.setOrganizeStatus('organizing');
+		deps.setOrganizing(true);
+		startOrganizeCompletionPolling();
+	}
+
 	function cleanup() {
 		clearOrganizePollTimer();
 		clearOrganizeCompletionTimer();
@@ -325,7 +388,9 @@ export function createOrganizeController(deps: OrganizeControllerDeps) {
 	return {
 		organizeAll,
 		updateAll,
+		resumeOrganize,
 		retryFailed,
+		restoreOrganizeState,
 		handleWebSocketMessage,
 		cleanup
 	};

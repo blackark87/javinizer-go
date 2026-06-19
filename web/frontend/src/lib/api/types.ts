@@ -448,6 +448,7 @@ export interface OrganizeRequest {
 	operation_mode?: OperationMode;
 	skip_nfo?: boolean;
 	skip_download?: boolean;
+	resume?: boolean;
 }
 
 export interface OrganizeResponse {

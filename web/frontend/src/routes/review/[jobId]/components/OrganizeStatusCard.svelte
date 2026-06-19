@@ -17,6 +17,7 @@
 		expectedOrganizeFilePaths: string[];
 		isUpdateMode: boolean;
 		onRetryFailed: () => void;
+		onResume: () => void;
 		onContinue: () => void;
 	}
 
@@ -27,6 +28,7 @@
 		expectedOrganizeFilePaths,
 		isUpdateMode,
 		onRetryFailed,
+		onResume,
 		onContinue
 	}: Props = $props();
 
@@ -124,9 +126,14 @@
 					</div>
 
 					<div class="mt-4 flex gap-2">
-						<Button onclick={onRetryFailed}>
+						<Button onclick={onResume}>
 							{#snippet children()}
-								Retry Failed
+								Resume (skip done)
+							{/snippet}
+						</Button>
+						<Button variant="outline" onclick={onRetryFailed}>
+							{#snippet children()}
+								Retry All
 							{/snippet}
 						</Button>
 						<Button variant="outline" onclick={onContinue}>

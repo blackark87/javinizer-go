@@ -1,4 +1,5 @@
 import { onDestroy, onMount, untrack } from 'svelte';
+import { get } from 'svelte/store';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
@@ -731,6 +732,10 @@ export function createReviewState(pageStore: Page) {
 		await organizeController.retryFailed();
 	}
 
+	async function resumeOrganize() {
+		await organizeController.resumeOrganize(skipNfo, skipDownload);
+	}
+
 	$effect(() => {
 		currentMovieIndex;
 		showFullSourcePath = false;
@@ -766,6 +771,16 @@ export function createReviewState(pageStore: Page) {
 		});
 
 		return unsubscribe;
+	});
+
+	let organizeStateRestored = false;
+	$effect(() => {
+		if (!job || organizeStateRestored) return;
+		if (job.status === 'running') {
+			const wsState = get(websocketStore);
+			organizeController.restoreOrganizeState(job.status, wsState.messagesByFile[jobId]);
+			organizeStateRestored = true;
+		}
 	});
 
 	onMount(() => {
@@ -960,5 +975,6 @@ export function createReviewState(pageStore: Page) {
 		organizeAll,
 		updateAll,
 		retryFailed,
+		resumeOrganize,
 	};
 }

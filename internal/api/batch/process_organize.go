@@ -373,10 +373,19 @@ func finalizeOrganizeJob(job *worker.BatchJob, jobQueue *worker.JobQueue, organi
 	}
 }
 
-func processOrganizeJob(ctx context.Context, job *worker.BatchJob, jobQueue *worker.JobQueue, destination string, copyOnly bool, linkModeRaw string, skipNFO bool, skipDownload bool, db *database.DB, cfg *config.Config, registry *models.ScraperRegistry, emitter eventlog.EventEmitter) {
+func processOrganizeJob(ctx context.Context, job *worker.BatchJob, jobQueue *worker.JobQueue, destination string, copyOnly bool, linkModeRaw string, skipNFO bool, skipDownload bool, db *database.DB, cfg *config.Config, registry *models.ScraperRegistry, emitter eventlog.EventEmitter, resume bool) {
 	deps, err := initOrganizeDependencies(job, jobQueue, cfg, db, registry, emitter, linkModeRaw, skipDownload)
 	if err != nil {
 		return
+	}
+
+	var alreadyOrganized map[string]bool
+	if resume {
+		alreadyOrganized, err = deps.batchFileOpRepo.GetOrganizedOriginalPaths(job.ID)
+		if err != nil {
+			logging.Warnf("Failed to load organized paths for resume (job %s): %v — proceeding without skip", job.ID, err)
+			alreadyOrganized = map[string]bool{}
+		}
 	}
 
 	broadcastProgress(&ws.ProgressMessage{
@@ -424,6 +433,18 @@ func processOrganizeJob(ctx context.Context, job *worker.BatchJob, jobQueue *wor
 		}
 		if job.IsExcluded(filePath) {
 			logging.Infof("Skipping excluded file: %s", filePath)
+			continue
+		}
+		if alreadyOrganized[filePath] {
+			logging.Infof("Skipping already-organized file (resume): %s", filePath)
+			organized++
+			broadcastProgress(&ws.ProgressMessage{
+				JobID:    job.ID,
+				FilePath: filePath,
+				Status:   "organized",
+				Progress: float64(organized+failed) / float64(totalFiles) * 100,
+				Message:  "Already organized (skipped)",
+			})
 			continue
 		}
 

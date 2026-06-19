@@ -73,6 +73,19 @@ func (r *BatchFileOperationRepository) UpdateRevertStatus(id uint, status string
 	return nil
 }
 
+func (r *BatchFileOperationRepository) GetOrganizedOriginalPaths(batchJobID string) (map[string]bool, error) {
+	var ops []models.BatchFileOperation
+	err := r.GetDB().Select("original_path").Where("batch_job_id = ? AND new_path != ''", batchJobID).Find(&ops).Error
+	if err != nil {
+		return nil, wrapDBErr("find", fmt.Sprintf("organized paths for job %s", batchJobID), err)
+	}
+	result := make(map[string]bool, len(ops))
+	for _, op := range ops {
+		result[op.OriginalPath] = true
+	}
+	return result, nil
+}
+
 func (r *BatchFileOperationRepository) CountByBatchJobID(batchJobID string) (int64, error) {
 	var count int64
 	err := r.GetDB().Model(&models.BatchFileOperation{}).Where("batch_job_id = ?", batchJobID).Count(&count).Error

@@ -93,6 +93,19 @@
 	}}
 >
 	<div class="relative w-full {displayImageType === 'cover' ? 'aspect-video' : 'aspect-2/3'} bg-muted">
+		{#if selectionMode}
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="absolute top-2 left-2 z-20" onclick={(e) => e.stopPropagation()}>
+				<input
+					type="checkbox"
+					checked={isBulkSelected}
+					class="h-5 w-5 cursor-pointer accent-blue-500 rounded shadow"
+					onclick={(e) => e.stopPropagation()}
+					onchange={(e) => { e.stopPropagation(); onclick(new MouseEvent('click')); }}
+				/>
+			</div>
+		{/if}
 		{#if imageSrc}
 			<img
 				src={imageSrc}

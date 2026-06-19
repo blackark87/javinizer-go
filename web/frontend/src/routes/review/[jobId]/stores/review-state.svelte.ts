@@ -523,6 +523,49 @@ export function createReviewState(pageStore: Page) {
 		}
 	}
 
+	async function executeForceRefresh() {
+		if (selectedMovieIds.size === 0) return;
+		if (availableScrapers.length === 0) {
+			try {
+				availableScrapers = await apiClient.getScrapers();
+			} catch {
+				toastStore.error('Failed to load scrapers');
+				return;
+			}
+		}
+		const movieIds = Array.from(selectedMovieIds);
+		const enabledScrapers = availableScrapers.filter(s => s.enabled).map(s => s.name);
+
+		bulkRescraping = true;
+		bulkRescrapeProgress = movieIds.map(id => ({ movie_id: id, status: 'pending' }));
+
+		try {
+			const result = await mutations.bulkRescrapeMutation.mutateAsync({
+				movieIds,
+				selectedScrapers: enabledScrapers,
+				force: true,
+			});
+
+			bulkRescrapeProgress = result.results.map(r => ({
+				movie_id: r.movie_id,
+				status: r.status,
+				error: r.error,
+			}));
+
+			if (result.job) {
+				skipJobSync = true;
+				job = JSON.parse(JSON.stringify(result.job));
+			}
+
+			void queryClient.invalidateQueries({ queryKey: ['batch-job', jobId] });
+		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			toastStore.error(`Force refresh failed: ${errorMessage}`);
+		} finally {
+			bulkRescraping = false;
+		}
+	}
+
 	function clearPosterPreviewOverride() {
 		if (!currentResult) return;
 		posterPreviewOverrides.delete(currentResult.file_path);
@@ -1002,5 +1045,6 @@ export function createReviewState(pageStore: Page) {
 		updateAll,
 		retryFailed,
 		resumeOrganize,
+		executeForceRefresh,
 	};
 }

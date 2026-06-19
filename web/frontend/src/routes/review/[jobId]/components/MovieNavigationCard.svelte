@@ -8,7 +8,10 @@
 		movieResultsLength: number;
 		currentMovieId: string;
 		hasChanges: boolean;
+		selectionMode?: boolean;
+		isSelected?: boolean;
 		onExclude: () => void;
+		onToggleSelection?: () => void;
 	}
 
 	let {
@@ -16,7 +19,10 @@
 		movieResultsLength,
 		currentMovieId,
 		hasChanges,
-		onExclude
+		selectionMode = false,
+		isSelected = false,
+		onExclude,
+		onToggleSelection,
 	}: Props = $props();
 
 	const pageOptions = $derived(
@@ -61,6 +67,17 @@
 				</select>
 			</div>
 			<p class="text-sm text-muted-foreground">{currentMovieId}</p>
+			{#if selectionMode}
+				<label class="flex items-center justify-center gap-2 mt-1 cursor-pointer">
+					<input
+						type="checkbox"
+						checked={isSelected}
+						class="h-4 w-4 accent-blue-500"
+						onchange={() => onToggleSelection?.()}
+					/>
+					<span class="text-sm text-muted-foreground">Select</span>
+				</label>
+			{/if}
 			{#if hasChanges}
 				<span class="text-xs text-orange-600 flex items-center gap-1 justify-center mt-1">
 					<CircleAlert class="h-3 w-3" />

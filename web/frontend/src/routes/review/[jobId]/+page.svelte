@@ -168,6 +168,7 @@
 						onDeselectAll={s.deselectAllMovies}
 						onBulkExclude={s.bulkExcludeMovies}
 						onBulkRescrape={s.openBulkRescrapeModal}
+						onForceRefresh={s.executeForceRefresh}
 						onClose={() => goto('/browse')}
 						onUpdateAll={s.updateAll}
 						onOrganizeAll={s.organizeAll}
@@ -239,7 +240,10 @@
 								movieResultsLength={s.movieResults.length}
 								currentMovieId={s.currentMovie.id}
 								hasChanges={s.reviewPageController.hasChanges(s.currentResult.file_path)}
+								selectionMode={s.selectionMode}
+								isSelected={s.selectedMovieIds.has(s.currentMovieGroup?.movieId ?? '')}
 								onExclude={s.reviewPageController.excludeCurrentMovie}
+								onToggleSelection={() => s.currentMovieGroup && s.toggleMovieSelection(s.currentMovieGroup.movieId, false)}
 							/>
 
 							<SourceFilesCard

@@ -27,6 +27,7 @@
 		onDeselectAll?: () => void;
 		onBulkExclude?: () => void;
 		onBulkRescrape?: () => void;
+		onForceRefresh?: () => void;
 		onClose: () => void;
 		onUpdateAll: () => void;
 		onOrganizeAll: () => void;
@@ -56,6 +57,7 @@
 		onDeselectAll,
 		onBulkExclude,
 		onBulkRescrape,
+		onForceRefresh,
 		onClose,
 		onUpdateAll,
 		onOrganizeAll
@@ -158,36 +160,36 @@
 	</div>
 </div>
 
-{#if viewMode === 'grid-poster' || viewMode === 'grid-cover'}
-	<div class="flex items-center gap-3 mb-4">
+<div class="flex items-center gap-3 mb-4">
+	<Button
+		size="sm"
+		variant={selectionMode ? 'default' : 'outline'}
+		aria-pressed={selectionMode}
+		onclick={() => onToggleSelectionMode?.()}
+	>
+		{#snippet children()}
+			<MousePointerClick class="h-4 w-4 mr-1" />
+			Select
+		{/snippet}
+	</Button>
+	{#if selectionMode}
 		<Button
 			size="sm"
-			variant={selectionMode ? 'default' : 'outline'}
-			aria-pressed={selectionMode}
-			onclick={() => onToggleSelectionMode?.()}
+			variant="outline"
+			onclick={allSelected ? onDeselectAll : onSelectAll}
 		>
 			{#snippet children()}
-				<MousePointerClick class="h-4 w-4 mr-1" />
-				Select
+				{#if allSelected}
+					<CheckSquare class="h-4 w-4 mr-1" />
+					Deselect All
+				{:else}
+					<Square class="h-4 w-4 mr-1" />
+					Select All
+				{/if}
 			{/snippet}
 		</Button>
-		{#if selectionMode}
-			<Button
-				size="sm"
-				variant="outline"
-				onclick={allSelected ? onDeselectAll : onSelectAll}
-			>
-				{#snippet children()}
-					{#if allSelected}
-						<CheckSquare class="h-4 w-4 mr-1" />
-						Deselect All
-					{:else}
-						<Square class="h-4 w-4 mr-1" />
-						Select All
-					{/if}
-				{/snippet}
-			</Button>
-		{/if}
+	{/if}
+	{#if viewMode === 'grid-poster' || viewMode === 'grid-cover'}
 		<div class="h-4 w-px bg-border"></div>
 		<div class="inline-flex items-center gap-1">
 			{#each tierConfig as { tier, label, dotClass }}
@@ -205,46 +207,61 @@
 				</button>
 			{/each}
 		</div>
-		{#if selectedCount > 0}
-			<div class="ml-auto flex items-center gap-3">
-				<span class="text-sm font-medium text-muted-foreground whitespace-nowrap">
-					{selectedCount} selected
-				</span>
-				<Button
-					size="sm"
-					variant="outline"
-					onclick={onBulkExclude}
-					disabled={bulkExcluding || bulkRescraping}
-					class="text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300"
-				>
-					{#snippet children()}
-						{#if bulkExcluding}
-							<LoaderCircle class="h-4 w-4 mr-1 animate-spin" />
-						{:else}
-							<Trash2 class="h-4 w-4 mr-1" />
-						{/if}
-						Remove
-					{/snippet}
-				</Button>
-				<Button
-					size="sm"
-					variant="outline"
-					onclick={onBulkRescrape}
-					disabled={bulkExcluding || bulkRescraping}
-				>
-					{#snippet children()}
-						{#if bulkRescraping}
-							<LoaderCircle class="h-4 w-4 mr-1 animate-spin" />
-						{:else}
-							<RotateCcw class="h-4 w-4 mr-1" />
-						{/if}
-						Rescrape
-					{/snippet}
-				</Button>
-			</div>
-		{/if}
-	</div>
-{/if}
+	{/if}
+	{#if selectedCount > 0}
+		<div class="ml-auto flex items-center gap-3">
+			<span class="text-sm font-medium text-muted-foreground whitespace-nowrap">
+				{selectedCount} selected
+			</span>
+			<Button
+				size="sm"
+				variant="outline"
+				onclick={onForceRefresh}
+				disabled={bulkExcluding || bulkRescraping}
+			>
+				{#snippet children()}
+					{#if bulkRescraping}
+						<LoaderCircle class="h-4 w-4 mr-1 animate-spin" />
+					{:else}
+						<RefreshCw class="h-4 w-4 mr-1" />
+					{/if}
+					Force Refresh
+				{/snippet}
+			</Button>
+			<Button
+				size="sm"
+				variant="outline"
+				onclick={onBulkExclude}
+				disabled={bulkExcluding || bulkRescraping}
+				class="text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300"
+			>
+				{#snippet children()}
+					{#if bulkExcluding}
+						<LoaderCircle class="h-4 w-4 mr-1 animate-spin" />
+					{:else}
+						<Trash2 class="h-4 w-4 mr-1" />
+					{/if}
+					Remove
+				{/snippet}
+			</Button>
+			<Button
+				size="sm"
+				variant="outline"
+				onclick={onBulkRescrape}
+				disabled={bulkExcluding || bulkRescraping}
+			>
+				{#snippet children()}
+					{#if bulkRescraping}
+						<LoaderCircle class="h-4 w-4 mr-1 animate-spin" />
+					{:else}
+						<RotateCcw class="h-4 w-4 mr-1" />
+					{/if}
+					Rescrape
+				{/snippet}
+			</Button>
+		</div>
+	{/if}
+</div>
 
 {#if isUpdateMode}
 	<div class="mb-4">

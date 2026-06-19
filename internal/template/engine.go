@@ -11,7 +11,7 @@ import (
 
 var (
 	cjkRegex              = regexp.MustCompile(`[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]`)
-	conditionalTokenRegex = regexp.MustCompile(`(?i)<IF:[A-Z_]+>|</IF>`)
+	conditionalTokenRegex = regexp.MustCompile(`(?i)<IF:[A-Z_]+(?::[a-zA-Z]{2,5})?>|</IF>`)
 )
 
 const (
@@ -60,7 +60,7 @@ func NewEngineWithOptions(opts EngineOptions) *Engine {
 
 	return &Engine{
 		tagPattern:         regexp.MustCompile(`(?i)<([A-Z_]+)(?::([^>]+))?>`),
-		conditionalPattern: regexp.MustCompile(`(?i)<IF:([A-Z_]+)>(.*?)(?:<ELSE>(.*?))?</IF>`),
+		conditionalPattern: regexp.MustCompile(`(?i)<IF:([A-Z_]+(?::[a-zA-Z]{2,5})??)>(.*?)(?:<ELSE>(.*?))?</IF>`),
 		options:            opts,
 	}
 }
@@ -166,13 +166,19 @@ func (e *Engine) processConditionalsWithContext(execCtx context.Context, templat
 			}
 		}
 		fullBlock := match[0]
-		tagName := strings.ToUpper(match[1])
+		rawTag := match[1]
+		tagName := strings.ToUpper(rawTag)
+		modifier := ""
+		if idx := strings.Index(rawTag, ":"); idx != -1 {
+			tagName = strings.ToUpper(rawTag[:idx])
+			modifier = strings.ToLower(rawTag[idx+1:])
+		}
 		trueContent := match[2]
 		falseContent := ""
 		if len(match) > 3 {
 			falseContent = match[3]
 		}
-		value, _ := e.resolveTag(tagName, "", ctx)
+		value, _ := e.resolveTag(tagName, modifier, ctx)
 		if value != "" {
 			blockReplacements[fullBlock] = trueContent
 		} else {

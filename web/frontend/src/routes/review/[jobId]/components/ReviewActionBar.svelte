@@ -25,7 +25,7 @@
 {#if !isUpdateMode}
 	<Card class="p-4">
 		<div class="flex items-center justify-end gap-3">
-			<Button variant="outline" onclick={onCancel} disabled={organizing}>
+			<Button variant="outline" onclick={onCancel}>
 				{#snippet children()}
 					<X class="h-4 w-4 mr-2" />
 					Cancel

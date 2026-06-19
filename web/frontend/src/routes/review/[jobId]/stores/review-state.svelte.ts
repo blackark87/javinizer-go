@@ -1,5 +1,4 @@
 import { onDestroy, onMount, untrack } from 'svelte';
-import { get } from 'svelte/store';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
@@ -101,6 +100,7 @@ export function createReviewState(pageStore: Page) {
 	let organizeStatus = $state<'idle' | 'organizing' | 'completed' | 'failed'>('idle');
 	let fileStatuses = new SvelteMap<string, FileStatus>();
 	let expectedOrganizeFilePaths = $state<string[]>([]);
+	const organizeStorageKey = $derived(`javinizer.organize.state.${jobId}`);
 
 	const showCoverPanel = $derived(config?.output?.download_cover ?? true);
 	const showPosterPanel = $derived(config?.output?.download_poster ?? true);
@@ -766,6 +766,16 @@ export function createReviewState(pageStore: Page) {
 	});
 
 	$effect(() => {
+		if (!browser || organizeStatus === 'idle') return;
+		const key = organizeStorageKey;
+		localStorage.setItem(key, JSON.stringify({
+			status: organizeStatus,
+			progress: organizeProgress,
+			fileStatuses: [...fileStatuses.entries()],
+		}));
+	});
+
+	$effect(() => {
 		const unsubscribe = websocketStore.subscribe((ws) => {
 			organizeController.handleWebSocketMessage(ws.messages.at(-1));
 		});
@@ -776,11 +786,8 @@ export function createReviewState(pageStore: Page) {
 	let organizeStateRestored = false;
 	$effect(() => {
 		if (!job || organizeStateRestored) return;
-		if (job.status === 'running') {
-			const wsState = get(websocketStore);
-			organizeController.restoreOrganizeState(job.status, wsState.messagesByFile[jobId]);
-			organizeStateRestored = true;
-		}
+		organizeStateRestored = true;
+		organizeController.restoreOrganizeState(job.status);
 	});
 
 	onMount(() => {
@@ -811,6 +818,25 @@ export function createReviewState(pageStore: Page) {
 					});
 				} catch {
 					localStorage.removeItem(posterCropStatesStorageKey);
+				}
+			}
+
+			const organizeKey = `javinizer.organize.state.${jobId}`;
+			const savedOrganize = localStorage.getItem(organizeKey);
+			if (savedOrganize) {
+				try {
+					const saved = JSON.parse(savedOrganize) as { status: string; progress: number; fileStatuses: [string, FileStatus][] };
+					if (saved.status && saved.status !== 'idle') {
+						untrack(() => {
+							organizeStatus = saved.status as typeof organizeStatus;
+							organizeProgress = saved.progress ?? 0;
+							for (const [k, v] of (saved.fileStatuses || [])) {
+								fileStatuses.set(k, v);
+							}
+						});
+					}
+				} catch {
+					localStorage.removeItem(organizeKey);
 				}
 			}
 		}

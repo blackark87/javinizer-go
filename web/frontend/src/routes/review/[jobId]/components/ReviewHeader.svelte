@@ -126,7 +126,7 @@
 			</Button>
 		</div>
 		<div class="h-8 w-px bg-border"></div>
-		<Button variant="outline" onclick={onClose} disabled={organizing}>
+		<Button variant="outline" onclick={onClose}>
 			{#snippet children()}
 				<X class="h-4 w-4 mr-2" />
 				{isUpdateMode ? 'Close' : 'Cancel'}

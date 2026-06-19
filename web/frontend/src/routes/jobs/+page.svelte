@@ -481,7 +481,7 @@
 										{:else if job.status.toLowerCase() === 'completed'}
 											{#if job.completed > 0}
 												<Button variant="default" size="sm" onclick={() => goto(`/review/${job.id}`)}>
-													Review & Organize
+													{job.operation_count > 0 ? 'Resume Organize' : 'Review & Organize'}
 												</Button>
 											{/if}
 											{#if job.failed > 0}

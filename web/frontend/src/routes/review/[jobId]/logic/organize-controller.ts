@@ -156,7 +156,7 @@ export function createOrganizeController(deps: OrganizeControllerDeps) {
 				deps.setJob(latestJob);
 				lastPollError = null;
 
-				if (latestJob.status === 'completed') {
+				if (latestJob.status === 'completed' || latestJob.status === 'organized') {
 					const action = deps.getIsUpdateMode() ? 'Update' : 'Organization';
 					finalizeOrganizeSuccess(`${action} completed successfully! Redirecting in 5 seconds...`);
 					return;
@@ -356,28 +356,24 @@ export function createOrganizeController(deps: OrganizeControllerDeps) {
 		}
 	}
 
-	function restoreOrganizeState(jobStatus: string, wsMessagesByFile: Record<string, ProgressMessage> | undefined) {
-		if (jobStatus !== 'running') return;
-		if (deps.getOrganizeStatus() !== 'idle') return;
+	function restoreOrganizeState(jobStatus: string) {
+		const currentStatus = deps.getOrganizeStatus();
+		// If localStorage restored a non-organizing status, nothing to do
+		if (currentStatus !== 'organizing') return;
 
-		const messages = Object.values(wsMessagesByFile ?? {});
-		if (messages.length > 0) {
-			const statuses = deps.getFileStatuses();
-			for (const msg of messages) {
-				if (!msg.file_path) continue;
-				if (msg.status === 'organized' || msg.status === 'updated') {
-					statuses.set(msg.file_path, { status: 'success' });
-				} else if (msg.status === 'failed') {
-					statuses.set(msg.file_path, { status: 'failed', error: msg.error });
-				}
+		if (jobStatus === 'running') {
+			// Organize still in progress — re-attach polling
+			deps.setOrganizing(true);
+			startOrganizeCompletionPolling();
+		} else {
+			// Job finished while we were away — finalize based on job status
+			if (jobStatus === 'organized' || jobStatus === 'completed') {
+				deps.setOrganizeStatus('completed');
+			} else {
+				deps.setOrganizeStatus('failed');
 			}
-			const lastProgress = messages.reduce((max, m) => Math.max(max, m.progress ?? 0), 0);
-			deps.setOrganizeProgress(lastProgress);
+			deps.setOrganizing(false);
 		}
-
-		deps.setOrganizeStatus('organizing');
-		deps.setOrganizing(true);
-		startOrganizeCompletionPolling();
 	}
 
 	function cleanup() {

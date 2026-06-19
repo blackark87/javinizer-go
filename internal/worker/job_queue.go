@@ -397,9 +397,25 @@ func (jq *JobQueue) loadFromDatabase() {
 
 	for i := range jobs {
 		batchJob := jq.reconstructBatchJob(&jobs[i])
-		if batchJob != nil {
-			jq.jobs[batchJob.ID] = batchJob
+		if batchJob == nil {
+			continue
 		}
+		// Jobs left in 'running' state from a previous server session will never
+		// complete. Restore to a terminal state based on whether scraping finished:
+		// - Has completed results → restore to 'completed' (was mid-organize, can retry)
+		// - No completed results → mark as 'failed' (was mid-scrape, nothing to organize)
+		if batchJob.Status == JobStatusRunning {
+			if batchJob.Completed > 0 {
+				batchJob.Status = JobStatusCompleted
+				logging.Warnf("[Job %s] Restoring orphaned job to 'completed' (server restarted during organize)", batchJob.ID)
+			} else {
+				batchJob.Status = JobStatusFailed
+				logging.Warnf("[Job %s] Marking orphaned job as 'failed' (server restarted during scrape)", batchJob.ID)
+			}
+			close(batchJob.Done)
+			go jq.PersistJob(batchJob)
+		}
+		jq.jobs[batchJob.ID] = batchJob
 	}
 }
 

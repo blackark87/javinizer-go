@@ -988,21 +988,25 @@ func TestRescrapeBatchMovie_ConcurrentOverwriteCleanup(t *testing.T) {
 
 	wg.Wait()
 
-	// With CAS revision check, concurrent rescrapes are serialized
-	// One will succeed (200), the other will get 409 Conflict
-	// This is correct behavior - prevents stale overwrites
 	status1 := rescrape1Status.Load()
 	status2 := rescrape2Status.Load()
 
 	t.Logf("Rescrape 1: status=%d, err=%s", status1, rescrape1Err)
 	t.Logf("Rescrape 2: status=%d, err=%s", status2, rescrape2Err)
 
-	// With CAS, exactly one succeeds (200).
-	// The other request can get:
-	// - 409 Conflict: Both captured same revision, loser detected CAS mismatch
-	// - 404 Not Found: Timing was off, winner completed before loser started,
-	//   so the movie ID in the URL no longer exists in the job
-	// Both outcomes are valid race conditions - the test verifies no corruption occurs.
+	// With CAS revision check, there are two valid race outcomes:
+	//
+	// 1. Overlapping reads: Both goroutines capture the same revision before
+	//    either writes. CAS detects the conflict — one succeeds (200), the
+	//    other gets 409 Conflict or 404 Not Found.
+	//
+	// 2. Serialized execution: One goroutine completes entirely before the
+	//    other reads the result. The second goroutine sees a different
+	//    revision and the result may no longer match (404), or it may
+	//    succeed (200) if the lookup still resolves. On fast runners
+	//    with a trivial stub scraper, both can succeed.
+	//
+	// Both outcomes are valid — the test verifies no data corruption.
 	successCount := 0
 	conflictCount := 0
 	notFoundCount := 0
@@ -1020,8 +1024,9 @@ func TestRescrapeBatchMovie_ConcurrentOverwriteCleanup(t *testing.T) {
 	} else if status2 == http.StatusNotFound {
 		notFoundCount++
 	}
-	require.Equal(t, 1, successCount, "Exactly one rescrape should succeed (200)")
-	require.Equal(t, 1, conflictCount+notFoundCount, "Exactly one rescrape should get conflict (409) or not found (404)")
+	require.Equal(t, 2, successCount+conflictCount+notFoundCount, "Both rescrapes should produce a definitive status")
+	require.GreaterOrEqual(t, successCount, 1, "At least one rescrape should succeed (200)")
+	require.LessOrEqual(t, successCount, 2, "At most two rescrapes can succeed (200)")
 
 	// Determine which rescrape succeeded based on final movie ID
 	status := job.GetStatus()

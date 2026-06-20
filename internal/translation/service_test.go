@@ -216,6 +216,164 @@ func TestTranslateMovie_ApplyToPrimary(t *testing.T) {
 }
 
 // =============================================================================
+// TranslateMovie tests - title == actress name substitution
+// =============================================================================
+
+func TestTranslateMovie_TitleIsActressName(t *testing.T) {
+	t.Run("title matches actress JapaneseName via FirstName - uses romanized form", func(t *testing.T) {
+		// LLM must NOT be called — no server needed
+		cfg := config.TranslationConfig{
+			Enabled:        true,
+			Provider:       "openai",
+			TargetLanguage: "ko",
+			ApplyToPrimary: true,
+			Fields: config.TranslationFieldsConfig{
+				Title:    true,
+				Actresses: true,
+			},
+			OpenAI: config.OpenAITranslationConfig{
+				APIKey: "key",
+			},
+		}
+
+		s := New(cfg)
+		movie := &models.Movie{
+			Title: "まひる",
+			Actresses: []models.Actress{
+				{
+					JapaneseName: "まひる",
+					FirstName:    "Mahiru", // provided by r18dev name_romaji
+				},
+			},
+		}
+
+		result, _, err := s.TranslateMovie(context.Background(), movie, "")
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		assert.Equal(t, "Mahiru", result[0].Title, "translation record title should be romanized actress name")
+		assert.Equal(t, "Mahiru", movie.Title, "primary title should be updated via ApplyToPrimary")
+	})
+
+	t.Run("title matches actress JapaneseName via ThumbURL - uses extracted name", func(t *testing.T) {
+		cfg := config.TranslationConfig{
+			Enabled:        true,
+			Provider:       "openai",
+			TargetLanguage: "ko",
+			ApplyToPrimary: true,
+			Fields: config.TranslationFieldsConfig{
+				Title:    true,
+				Actresses: true,
+			},
+			OpenAI: config.OpenAITranslationConfig{
+				APIKey: "key",
+			},
+		}
+
+		s := New(cfg)
+		movie := &models.Movie{
+			Title: "双葉れぇな",
+			Actresses: []models.Actress{
+				{
+					JapaneseName: "双葉れぇな",
+					ThumbURL:     "https://pics.dmm.co.jp/mono/actjpgs/hutaba_reena.jpg",
+				},
+			},
+		}
+
+		result, _, err := s.TranslateMovie(context.Background(), movie, "")
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		assert.Equal(t, "Hutaba Reena", result[0].Title)
+		assert.Equal(t, "Hutaba Reena", movie.Title)
+	})
+
+	t.Run("title does not match any actress - normal LLM translation path", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			response := map[string]interface{}{
+				"choices": []map[string]interface{}{
+					{"message": map[string]string{"content": `["번역된 제목"]`}},
+				},
+			}
+			_ = json.NewEncoder(w).Encode(response)
+		}))
+		defer server.Close()
+
+		cfg := config.TranslationConfig{
+			Enabled:        true,
+			Provider:       "openai",
+			TargetLanguage: "ko",
+			ApplyToPrimary: true,
+			Fields: config.TranslationFieldsConfig{
+				Title:    true,
+				Actresses: true,
+			},
+			OpenAI: config.OpenAITranslationConfig{
+				BaseURL: server.URL,
+				APIKey:  "key",
+			},
+		}
+
+		s := New(cfg)
+		movie := &models.Movie{
+			Title: "素晴らしい夜",
+			Actresses: []models.Actress{
+				{JapaneseName: "田中香", FirstName: "Yui", LastName: "Tanaka"},
+			},
+		}
+
+		result, _, err := s.TranslateMovie(context.Background(), movie, "")
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		assert.Equal(t, "번역된 제목", result[0].Title, "non-name title should go through LLM")
+	})
+
+	t.Run("title matches actress but actresses field disabled - normal LLM path", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			response := map[string]interface{}{
+				"choices": []map[string]interface{}{
+					{"message": map[string]string{"content": `["대낮"]`}},
+				},
+			}
+			_ = json.NewEncoder(w).Encode(response)
+		}))
+		defer server.Close()
+
+		cfg := config.TranslationConfig{
+			Enabled:        true,
+			Provider:       "openai",
+			TargetLanguage: "ko",
+			ApplyToPrimary: true,
+			Fields: config.TranslationFieldsConfig{
+				Title:    true,
+				Actresses: false, // actress field disabled — name map not built
+			},
+			OpenAI: config.OpenAITranslationConfig{
+				BaseURL: server.URL,
+				APIKey:  "key",
+			},
+		}
+
+		s := New(cfg)
+		movie := &models.Movie{
+			Title: "まひる",
+			Actresses: []models.Actress{
+				{JapaneseName: "まひる", FirstName: "Mahiru"},
+			},
+		}
+
+		result, _, err := s.TranslateMovie(context.Background(), movie, "")
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Actress field disabled → name map not built → LLM translates literally
+		assert.Equal(t, "대낮", result[0].Title)
+	})
+}
+
+// =============================================================================
 // TranslateMovie tests - actress URL extraction applies to primary
 // =============================================================================
 

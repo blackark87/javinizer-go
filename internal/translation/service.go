@@ -104,10 +104,48 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 
 	// Queue metadata fields for each target language — texts captured from ORIGINAL movie
 	fields := s.cfg.Fields
+
+	// Pre-pass: build JapaneseName → romanized name map so we can detect when the title
+	// is an actress name and substitute the romanized form instead of translating it.
+	actressJaNameToRomanized := make(map[string]string)
+	if fields.Actresses {
+		for _, actress := range movie.Actresses {
+			jaName := strings.TrimSpace(actress.JapaneseName)
+			if jaName == "" {
+				continue
+			}
+			if lastName, firstName, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL); ok {
+				actressJaNameToRomanized[jaName] = capitalize(lastName) + " " + capitalize(firstName)
+			} else if actress.FirstName != "" {
+				name := strings.TrimSpace(actress.FirstName)
+				if actress.LastName != "" {
+					name = strings.TrimSpace(actress.LastName) + " " + name
+				}
+				actressJaNameToRomanized[jaName] = name
+			}
+		}
+	}
+
+	romanizedTitle := ""
+	if normTitle := strings.TrimSpace(movie.Title); normTitle != "" {
+		if romanized, ok := actressJaNameToRomanized[normTitle]; ok && romanized != "" {
+			romanizedTitle = romanized
+			logging.Debugf("Translation: title %q matches actress JapaneseName → using romanized %q instead of translating", normTitle, romanized)
+		}
+	}
+
 	for _, lang := range targetLanguages {
 		rec := getRecord(lang)
 		if fields.Title {
-			queueField(lang, movie.Title, func(v string) { rec.Title = v }, func(v string) { movie.Title = v }, "title")
+			if romanizedTitle != "" {
+				rec.Title = romanizedTitle
+				touchedRecords[lang] = true
+				if s.cfg.ApplyToPrimary && lang == targetLanguages[0] {
+					movie.Title = romanizedTitle
+				}
+			} else {
+				queueField(lang, movie.Title, func(v string) { rec.Title = v }, func(v string) { movie.Title = v }, "title")
+			}
 		}
 		if fields.OriginalTitle {
 			queueField(lang, movie.OriginalTitle, func(v string) { rec.OriginalTitle = v }, func(v string) { movie.OriginalTitle = v }, "original_title")

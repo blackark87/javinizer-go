@@ -401,6 +401,49 @@ func TestReplaceActressName(t *testing.T) {
 }
 
 // =============================================================================
+// cleanActressNameForTranslation tests
+// =============================================================================
+
+func TestCleanActressNameForTranslation(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		// no-op cases
+		{"カレン", "カレン"},
+		{"田中香", "田中香"},
+		{"まひる", "まひる"},
+		{"", ""},
+		// bracket stripping (existing)
+		{"[カレン]", "カレン"},
+		{"[田中香]", "田中香"},
+		// comma stripping (existing)
+		{"カレン, 25歳, 歯科衛生士", "カレン"},
+		// middle-dot stripping (new)
+		{"りむ・Hカップ 20歳 コンカフェ店員", "りむ"},
+		{"りむ・Hカップ", "りむ"},
+		// age suffix stripping (new)
+		{"カレン 25歳 歯科衛生士", "カレン"},
+		{"ひとみさん 27歳 探偵", "ひとみさん"},
+		{"あおいちゃん 22歳 地下アイドル", "あおいちゃん"},
+		{"ミウちゃん 22歳 職業不詳SSS級ギャル", "ミウちゃん"},
+		{"まひるちゃん 22歳 美容師のアシスタント", "まひるちゃん"},
+		{"カレン ２５歳 歯科衛生士", "カレン"}, // full-width digits
+		// honorific-based name extraction from trailing token (new)
+		{"高身長172cmショート× Gカップ豹変アクメギャル メイちゃん", "メイちゃん"},
+		{"デカパイ美容師 ひとみさん", "ひとみさん"},
+		// entirely description — no extraction possible, pass through as-is
+		{"某高級ホテル従業員", "某高級ホテル従業員"},
+		{"植え込みに頭突っ込んでたデカパイ女", "植え込みに頭突っ込んでたデカパイ女"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			assert.Equal(t, tt.expected, cleanActressNameForTranslation(tt.input))
+		})
+	}
+}
+
+// =============================================================================
 // isLikelyRomanized tests
 // =============================================================================
 

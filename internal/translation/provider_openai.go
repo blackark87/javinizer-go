@@ -95,6 +95,8 @@ func buildActressTranslationPrompts(sourceLang, targetLang string, texts []strin
 			"(2) Return names in Japanese name order: FamilyName GivenName (e.g. 'Hatano Yui', not 'Yui Hatano'). "+
 			"(3) Do NOT translate meaning — romanize phonetically only. "+
 			"(4) Preserve order and return ONLY the indexed output markers in ascending order. Do not add commentary. Do not omit any index. "+
+			"(5) If the input contains a personal name alongside descriptive text (age, occupation, cup size, height, etc.), romanize ONLY the personal name — ignore age (歳), cup sizes, occupations, heights, and other non-name content. "+
+			"(6) If the input contains NO personal name (e.g. it is a job title, physical description, or scene description only), return an empty string for that entry. "+
 			"Source language: %s. Target language: %s.",
 		sourceLang, targetLang,
 	)

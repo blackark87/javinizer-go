@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -355,19 +356,44 @@ func movieTranslationHasContent(record models.MovieTranslation) bool {
 	return false
 }
 
-// cleanActressNameForTranslation strips extra content from actress name strings
-// before sending to the LLM. Handles bracket notation "[name]" and comma-separated
-// extra info "name, age, occupation".
+// cleanActressNameForTranslation strips descriptive extras from actress name strings
+// before sending to the LLM. Handles multiple patterns scrapers append to names.
 func cleanActressNameForTranslation(name string) string {
 	name = strings.TrimSpace(name)
+
+	// "[name]" → "name"
 	if strings.HasPrefix(name, "[") {
 		if end := strings.LastIndex(name, "]"); end > 0 {
 			name = strings.TrimSpace(name[1:end])
 		}
 	}
+
+	// "name, age, occupation" → "name"
 	if idx := strings.Index(name, ","); idx >= 0 {
 		name = strings.TrimSpace(name[:idx])
 	}
+
+	// "りむ・Hカップ 20歳..." → "りむ"  (middle-dot separates name from extras)
+	if idx := strings.Index(name, "・"); idx >= 0 {
+		name = strings.TrimSpace(name[:idx])
+	}
+
+	// "カレン 25歳 歯科衛生士" → "カレン"  (age suffix and everything after)
+	name = strings.TrimSpace(ageOccupationSuffixRE.ReplaceAllString(name, ""))
+
+	// "高身長172cmショート× Gカップ豹変アクメギャル メイちゃん" → "メイちゃん"
+	// When multiple space-separated tokens remain and the last ends with a Japanese
+	// name honorific, the description precedes the name — use only the last token.
+	if tokens := strings.Fields(name); len(tokens) > 1 {
+		last := tokens[len(tokens)-1]
+		for _, sfx := range []string{"ちゃん", "さん", "くん"} {
+			if strings.HasSuffix(last, sfx) {
+				name = last
+				break
+			}
+		}
+	}
+
 	return name
 }
 
@@ -407,6 +433,10 @@ func actressDisplayTitle(actress models.Actress) string {
 	full := strings.TrimSpace(strings.TrimSpace(actress.LastName) + " " + strings.TrimSpace(actress.FirstName))
 	return full
 }
+
+// ageOccupationSuffixRE matches " N歳..." suffixes (ASCII or full-width digits).
+// These are descriptive extras appended to actress names by some scrapers.
+var ageOccupationSuffixRE = regexp.MustCompile(`\s+[0-9０-９]+歳.*`)
 
 var longVowelReplacer = strings.NewReplacer(
 	"ā", "a", "Ā", "A",

@@ -446,6 +446,20 @@ var longVowelReplacer = strings.NewReplacer(
 	"ī", "i", "Ī", "I",
 )
 
+// nihonshikiToHepburn converts DMM actjpgs URL romanization (Nihon-shiki) to
+// standard Hepburn. Compound digraphs are listed before their single-character
+// prefixes so the replacer matches the longer form first.
+var nihonshikiToHepburn = strings.NewReplacer(
+	"sya", "sha", "syu", "shu", "syo", "sho",
+	"tya", "cha", "tyu", "chu", "tyo", "cho",
+	"zya", "ja", "zyu", "ju", "zyo", "jo",
+	"si", "shi",
+	"ti", "chi",
+	"tu", "tsu",
+	"zi", "ji",
+	"hu", "fu",
+)
+
 func normalizeRomanizationToASCII(s string) string {
 	return longVowelReplacer.Replace(s)
 }
@@ -513,7 +527,7 @@ func extractNamesFromDMMActjpgsURL(thumbURL string) (lastName, firstName string,
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return "", "", false
 	}
-	return parts[0], parts[1], true
+	return nihonshikiToHepburn.Replace(parts[0]), nihonshikiToHepburn.Replace(parts[1]), true
 }
 
 func capitalize(s string) string {

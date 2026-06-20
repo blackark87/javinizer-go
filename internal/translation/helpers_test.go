@@ -590,16 +590,16 @@ func TestExtractNamesFromDMMActjpgsURL(t *testing.T) {
 		wantOk        bool
 	}{
 		{
-			name:          "standard format",
+			name:          "standard format - nihonshiki si→shi",
 			thumbURL:      "https://pics.dmm.co.jp/mono/actjpgs/miyosi_yuka.jpg",
-			wantLastName:  "miyosi",
+			wantLastName:  "miyoshi",
 			wantFirstName: "yuka",
 			wantOk:        true,
 		},
 		{
-			name:          "trailing number stripped",
+			name:          "trailing number stripped - nihonshiki si→shi",
 			thumbURL:      "https://pics.dmm.co.jp/mono/actjpgs/miyasita_rena2.jpg",
-			wantLastName:  "miyasita",
+			wantLastName:  "miyashita",
 			wantFirstName: "rena",
 			wantOk:        true,
 		},
@@ -630,6 +630,34 @@ func TestExtractNamesFromDMMActjpgsURL(t *testing.T) {
 			thumbURL:      "https://pics.dmm.co.jp/mono/actjpgs/tanaka_yui.jpg?v=123",
 			wantLastName:  "tanaka",
 			wantFirstName: "yui",
+			wantOk:        true,
+		},
+		{
+			name:          "nihonshiki ti→chi",
+			thumbURL:      "https://pics.dmm.co.jp/mono/actjpgs/itinose_ameri.jpg",
+			wantLastName:  "ichinose",
+			wantFirstName: "ameri",
+			wantOk:        true,
+		},
+		{
+			name:          "nihonshiki tu→tsu",
+			thumbURL:      "https://pics.dmm.co.jp/mono/actjpgs/tutumi_rei.jpg",
+			wantLastName:  "tsutsumi",
+			wantFirstName: "rei",
+			wantOk:        true,
+		},
+		{
+			name:          "nihonshiki tu+zi→tsu+ji",
+			thumbURL:      "https://pics.dmm.co.jp/mono/actjpgs/tuzi_kana.jpg",
+			wantLastName:  "tsuji",
+			wantFirstName: "kana",
+			wantOk:        true,
+		},
+		{
+			name:          "no nihonshiki - unchanged",
+			thumbURL:      "https://pics.dmm.co.jp/mono/actjpgs/tanaka_yuka.jpg",
+			wantLastName:  "tanaka",
+			wantFirstName: "yuka",
 			wantOk:        true,
 		},
 	}

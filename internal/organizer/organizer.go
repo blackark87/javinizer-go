@@ -66,6 +66,7 @@ func resolveBaseFileName(cfg *config.OutputConfig, engine *template.Engine, movi
 		baseCtx.GroupUnknownActressName = cfg.GroupUnknownActressName
 		baseCtx.FirstNameOrder = cfg.FirstNameOrder
 		baseCtx.ActressLanguageJa = cfg.ActressLanguageJA
+		baseCtx.ActressDelimiter = cfg.ActressDelimiter
 		applyTitleTruncation(engine, baseCtx, cfg.MaxTitleLength)
 
 		rendered, err := engine.Execute(cfg.FileFormat, baseCtx)

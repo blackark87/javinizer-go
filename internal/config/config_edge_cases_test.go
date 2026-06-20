@@ -260,7 +260,7 @@ output:
   subfolder_format:
     - <YEAR>
     - <MAKER>
-  delimiter: " | "
+  actress_delimiter: " | "
   max_title_length: 150
   max_path_length: 200
   move_subtitles: true
@@ -299,7 +299,7 @@ output:
 	assert.Len(t, output.SubfolderFormat, 2)
 	assert.Contains(t, output.SubfolderFormat, "<YEAR>")
 	assert.Contains(t, output.SubfolderFormat, "<MAKER>")
-	assert.Equal(t, " | ", output.Delimiter)
+	assert.Equal(t, " | ", output.ActressDelimiter)
 	assert.Equal(t, 150, output.MaxTitleLength)
 	assert.Equal(t, 200, output.MaxPathLength)
 	assert.True(t, output.MoveSubtitles)

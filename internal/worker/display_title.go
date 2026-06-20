@@ -17,6 +17,7 @@ func applyDisplayTitle(ctx context.Context, job *BatchJob, cfg *config.Config, m
 		displayCtx.GroupUnknownActressName = cfg.Output.GroupUnknownActressName
 		displayCtx.FirstNameOrder = cfg.Output.FirstNameOrder
 		displayCtx.ActressLanguageJa = cfg.Output.ActressLanguageJA
+		displayCtx.ActressDelimiter = cfg.Output.ActressDelimiter
 		displayCtx.Title = titleSource.Title
 		if displayName, err := displayTmplEngine.ExecuteWithContext(ctx, cfg.Metadata.NFO.DisplayTitle, displayCtx); err == nil {
 			movie.DisplayTitle = displayName
@@ -28,13 +29,14 @@ func applyDisplayTitle(ctx context.Context, job *BatchJob, cfg *config.Config, m
 	}
 }
 
-func ApplyDisplayTitle(ctx context.Context, movie *models.Movie, titleSource *models.Movie, displayTitleTmpl string, templateEngine *template.Engine, groupActress bool, groupActressName string, groupUnknownActressName string, firstNameOrder bool) {
+func ApplyDisplayTitle(ctx context.Context, movie *models.Movie, titleSource *models.Movie, displayTitleTmpl string, templateEngine *template.Engine, groupActress bool, groupActressName string, groupUnknownActressName string, firstNameOrder bool, actressDelimiter string) {
 	if displayTitleTmpl != "" {
 		displayCtx := template.NewContextFromMovie(movie)
 		displayCtx.GroupActress = groupActress
 		displayCtx.GroupActressName = groupActressName
 		displayCtx.GroupUnknownActressName = groupUnknownActressName
 		displayCtx.FirstNameOrder = firstNameOrder
+		displayCtx.ActressDelimiter = actressDelimiter
 		displayCtx.Title = titleSource.Title
 		if displayName, err := templateEngine.ExecuteWithContext(ctx, displayTitleTmpl, displayCtx); err == nil {
 			movie.DisplayTitle = displayName

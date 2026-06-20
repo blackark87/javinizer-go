@@ -33,12 +33,13 @@ type EngineOptions struct {
 }
 
 // parsedModifier represents a parsed tag modifier with language awareness
-// plus an optional first-name-order override (ACTORS tags only).
+// plus optional per-tag overrides (ACTORS tags only).
 type parsedModifier struct {
 	isLanguage       bool
 	languageSpec     string
 	legacyModifier   string
-	firstNameOrder   *bool // nil = use ctx.FirstNameOrder; non-nil = tag-level override
+	firstNameOrder   *bool  // nil = use ctx.FirstNameOrder; non-nil = tag-level override
+	delimiter        string // non-empty = explicit per-tag joiner from <TAG:DELIM=X>
 	rejectedLanguage bool
 }
 
@@ -401,11 +402,12 @@ func (e *Engine) resolveTag(tagName, modifier string, ctx *Context) (string, err
 		// a comma:
 		//   - language spec (<ACTORS:JA>, <ACTORS:EN>, <ACTORS:JA|EN>)
 		//   - name order   (<ACTORS:FIRST>, <ACTORS:LAST>, <ACTORS:FIRSTNAMEORDER>, <ACTORS:LASTNAMEORDER>)
-		//   - combination  (<ACTORS:JA,FIRST>)
+		//   - delimiter    (<ACTORS:DELIM=|>, <ACTORS:DELIM= & >)
+		//   - combination  (<ACTORS:JA,FIRST,DELIM=|>)
 		// Language spec takes precedence over the config-level ActressLanguageJa
 		// default. Name order takes precedence over the config-level
-		// FirstNameOrder default. Anything not matching any recognized keyword
-		// is treated as the legacy delimiter between names (e.g. <ACTORS:|>).
+		// FirstNameOrder default. The delimiter takes precedence over the
+		// config-level ActressDelimiter default.
 		pm := e.parseActressModifier(modifier)
 		preferJa := ctx.ActressLanguageJa
 		if pm.isLanguage {
@@ -429,12 +431,14 @@ func (e *Engine) resolveTag(tagName, modifier string, ctx *Context) (string, err
 			return names[0], nil
 		}
 
-		// Delimiter handling. When pm has no keyword flags and we still have
-		// a modifier, treat it as a custom delimiter (e.g. <ACTORS:|>).
-		// This preserves backward compat for the legacy delimiter behavior.
-		delimiter := ", "
-		if modifier != "" && !pm.isLanguage && pm.firstNameOrder == nil && pm.legacyModifier != "" {
-			delimiter = pm.legacyModifier
+		// Join delimiter precedence: tag-level DELIM= modifier > ctx.ActressDelimiter
+		// (config-level actress_delimiter, default ", ").
+		delimiter := pm.delimiter
+		if delimiter == "" {
+			delimiter = ctx.ActressDelimiter
+			if delimiter == "" {
+				delimiter = ", "
+			}
 		}
 		return strings.Join(names, delimiter), nil
 
@@ -755,8 +759,10 @@ func parseActressOrderModifier(part string) *bool {
 }
 
 // parseActressModifier parses a modifier on the actress tags (<ACTORS>,
-// <ACTRESS>, <ACTORNAME>). It supports three kinds of components combined with
-// a comma:
+// <ACTRESS>, <ACTORNAME>). It supports three kinds of components combined
+// with a comma:
+//   - Delimiter: DELIM=<value> — explicit joiner between names. Captures the
+//     remainder of the modifier literally (may contain commas).
 //   - Language spec: JA, EN, JA|EN, ...
 //   - Name order: FIRST|FIRSTNAMEORDER | LAST|LASTNAMEORDER
 //
@@ -765,30 +771,48 @@ func parseActressOrderModifier(part string) *bool {
 //	<ACTORS:JA>                  -> prefer Japanese names
 //	<ACTORS:FIRST>               -> force FirstName LastName
 //	<ACTORS:LAST>                -> force LastName FirstName
-//	<ACTORS:JA,FIRST>            -> Japanese + first-name order (Japanese
-//	                                 ignores order since it returns the
-//	                                 name as-is, but order stays set)
+//	<ACTORS:JA,FIRST>            -> Japanese + first-name order
 //	<ACTORS:JA|EN,FIRST>         -> Japanese-with-English-fallback +
 //	                                 first-name order
+//	<ACTORS:DELIM=|>             -> join names with "|"
+//	<ACTORS:DELIM= & >           -> join names with " & "
+//	<ACTORS:JA,DELIM=|>          -> Japanese joined with "|"
+//	<ACTORS:FIRST,DELIM=|>       -> First Last joined with "|"
+//	<ACTORS:JA,FIRST,DELIM=,>    -> Japanese (comma in DELIM= is preserved)
 //
-// If NO component matches a recognized keyword (e.g. "|" or " & "), the
-// whole modifier is treated as a legacy delimiter string and returned in
-// legacyModifier (preserves backward compat for tags like <ACTORS:|>).
+// Hard break: the legacy implicit-delimiter form <ACTORS:|> is no longer
+// supported. Use <ACTORS:DELIM=|> instead. When the modifier has no
+// recognized keyword and no DELIM= prefix, parseActressModifier returns an
+// empty parsedModifier and the resolver falls back to ctx.ActressDelimiter
+// (the configured actress_delimiter, default ", ").
 //
-// If the modifier contains a comma AND some components are recognized but
-// others are not, the unrecognized components are ignored (so a stray comma
-// does not break when combined with a recognized keyword).
+// If only some components are recognized (e.g. "JA,foo"), the unrecognized
+// ones are ignored.
 func (e *Engine) parseActressModifier(modifier string) parsedModifier {
 	if modifier == "" {
 		return parsedModifier{}
 	}
 
-	// Split on comma into components. If no comma, this is a single component.
+	// Extract DELIM=value first so the value can freely contain commas.
+	// The keyword is case-insensitive but the value itself is preserved as-is.
+	var delimited string
+	prefix := modifier
+	if idx := strings.Index(strings.ToUpper(modifier), "DELIM="); idx >= 0 {
+		delimited = modifier[idx+len("DELIM="):]
+		prefix = modifier[:idx]
+		// Trim any trailing comma in prefix so the keyword-split step doesn't
+		// see an empty trailing element.
+		prefix = strings.TrimRight(prefix, ",")
+	}
+
+	// Split the prefix on commas into keyword components.
 	var parts []string
-	if strings.Contains(modifier, ",") {
-		parts = strings.Split(modifier, ",")
-	} else {
-		parts = []string{modifier}
+	if prefix != "" {
+		if strings.Contains(prefix, ",") {
+			parts = strings.Split(prefix, ",")
+		} else {
+			parts = []string{prefix}
+		}
 	}
 
 	var (
@@ -798,15 +822,16 @@ func (e *Engine) parseActressModifier(modifier string) parsedModifier {
 	)
 	for _, raw := range parts {
 		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			continue
+		}
 		if order := parseActressOrderModifier(trimmed); order != nil {
 			firstNameOrder = order
 			sawKeyword = true
 			continue
 		}
 		if e.looksLikeLanguageSpec(trimmed) {
-			// Accept the partial language spec; preserve the whole original
-			// (normalized). Single-component language spec ("ja") or
-			// fallback chain ("ja|en").
+			// Accept the component; preserve the original (single code or chain).
 			normalized := normalizeLanguageCode(trimmed)
 			if normalized == "" {
 				// try as fallback chain
@@ -824,7 +849,6 @@ func (e *Engine) parseActressModifier(modifier string) parsedModifier {
 				normalized = trimmed
 			}
 			if normalized != "" {
-				// merge with earlier language specs via fallback chain
 				if languageSpec != "" {
 					languageSpec = languageSpec + "|" + normalized
 				} else {
@@ -835,8 +859,10 @@ func (e *Engine) parseActressModifier(modifier string) parsedModifier {
 		}
 	}
 
-	if !sawKeyword {
-		return parsedModifier{legacyModifier: modifier}
+	// No DELIM= and no keyword: hard break — return empty so the resolver
+	// falls back to ctx.ActressDelimiter.
+	if !sawKeyword && delimited == "" {
+		return parsedModifier{}
 	}
 
 	pm := parsedModifier{firstNameOrder: firstNameOrder}
@@ -844,6 +870,7 @@ func (e *Engine) parseActressModifier(modifier string) parsedModifier {
 		pm.isLanguage = true
 		pm.languageSpec = languageSpec
 	}
+	pm.delimiter = delimited
 	return pm
 }
 

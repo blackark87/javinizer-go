@@ -298,6 +298,7 @@ func (d *Downloader) generateFilename(movie *models.Movie, templateStr string, i
 	ctx.GroupActress = d.config.GroupActress
 	ctx.GroupActressName = d.config.GroupActressName
 	ctx.GroupUnknownActressName = d.config.GroupUnknownActressName
+	ctx.ActressDelimiter = d.config.ActressDelimiter
 	ctx.FirstNameOrder = d.actorFirstNameOrder
 	ctx.ActressLanguageJa = d.actorJapaneseNames
 
@@ -326,6 +327,7 @@ func (d *Downloader) generateActressFilename(movie *models.Movie, actressName st
 	ctx.GroupActress = d.config.GroupActress
 	ctx.GroupActressName = d.config.GroupActressName
 	ctx.GroupUnknownActressName = d.config.GroupUnknownActressName
+	ctx.ActressDelimiter = d.config.ActressDelimiter
 	ctx.FirstNameOrder = d.actorFirstNameOrder
 	ctx.ActressLanguageJa = d.actorJapaneseNames
 

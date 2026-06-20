@@ -4073,6 +4073,10 @@ const docTemplate = `{
         "github_com_javinizer_javinizer-go_internal_config.OutputConfig": {
             "type": "object",
             "properties": {
+                "actress_delimiter": {
+                    "description": "Delimiter between actress names when joining \u003cACTORS\u003e/\u003cACTRESSES\u003e with no in-tag DELIM= modifier (default: \", \")",
+                    "type": "string"
+                },
                 "actress_folder": {
                     "type": "string"
                 },
@@ -4086,9 +4090,6 @@ const docTemplate = `{
                 "allow_revert": {
                     "description": "Enable revert operations (default: false — opt-in for safety)",
                     "type": "boolean"
-                },
-                "delimiter": {
-                    "type": "string"
                 },
                 "download_actress": {
                     "type": "boolean"

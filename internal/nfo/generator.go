@@ -59,6 +59,7 @@ type Config struct {
 	GroupActress            bool   // Replace multiple actresses with group name (default: false)
 	GroupActressName        string // Folder name when GroupActress is enabled and multiple actresses (default: "@Group")
 	GroupUnknownActressName string // Replacement when group_actress is enabled and the actress list is empty or unknown (default: "@Unknown")
+	ActressDelimiter        string // Delimiter between <ACTORS>/<ACTRESSES> names when no DELIM= modifier is present (default: ", ")
 }
 
 // NewGenerator creates a new NFO generator
@@ -113,6 +114,7 @@ func (g *Generator) Generate(movie *models.Movie, outputPath string, partSuffix 
 	ctx.GroupUnknownActressName = g.config.GroupUnknownActressName
 	ctx.FirstNameOrder = g.config.ActorFirstNameOrder
 	ctx.ActressLanguageJa = g.config.ActorJapaneseNames
+	ctx.ActressDelimiter = g.config.ActressDelimiter
 	filename, err := g.templateEngine.Execute(g.config.NFOFilenameTemplate, ctx)
 	if err != nil {
 		return fmt.Errorf("failed to generate NFO filename: %w", err)
@@ -653,12 +655,13 @@ func (g *Generator) extractStreamDetails(videoFilePath string) *StreamDetails {
 // ResolveNFOFilename computes the NFO filename for a movie using the same logic
 // as Generate, without writing the file. This ensures that history/revert code
 // tracks the exact path the generator will use.
-func ResolveNFOFilename(movie *models.Movie, nfoFilenameTemplate string, groupActress bool, groupActressName string, groupUnknownActressName string, firstNameOrder bool, perFile bool, isMultiPart bool, partSuffix string) string {
+func ResolveNFOFilename(movie *models.Movie, nfoFilenameTemplate string, groupActress bool, groupActressName string, groupUnknownActressName string, firstNameOrder bool, actressDelimiter string, perFile bool, isMultiPart bool, partSuffix string) string {
 	tmplCtx := template.NewContextFromMovie(movie)
 	tmplCtx.GroupActress = groupActress
 	tmplCtx.GroupActressName = groupActressName
 	tmplCtx.GroupUnknownActressName = groupUnknownActressName
 	tmplCtx.FirstNameOrder = firstNameOrder
+	tmplCtx.ActressDelimiter = actressDelimiter
 	engine := template.NewEngine()
 	filename, err := engine.Execute(nfoFilenameTemplate, tmplCtx)
 	if err != nil {

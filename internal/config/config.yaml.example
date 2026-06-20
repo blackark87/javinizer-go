@@ -438,7 +438,13 @@ output:
     file_format: <ID><IF:MULTIPART>-pt<PART></IF>
     subfolder_format:
         - <ID>
-    delimiter: ', '
+    # Delimiter between actress names when joining <ACTORS>/<ACTRESSES> (default: ", ").
+    # Can be overridden per-tag with the DELIM= modifier, e.g.
+    #   <ACTORS:DELIM=|>           -> join with |
+    #   <ACTORS:DELIM= & >         -> join with " & "
+    #   <ACTORS:JA,DELIM=|>        -> Japanese names joined by |
+    #   <ACTORS:FIRST,DELIM=|>     -> First Last joined by |
+    actress_delimiter: ', '
     max_title_length: 100
     max_path_length: 240
     move_subtitles: false

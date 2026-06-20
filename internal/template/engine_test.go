@@ -80,7 +80,7 @@ func TestTemplateEngine_Execute(t *testing.T) {
 		},
 		{
 			name:     "Actresses with custom delimiter",
-			template: "<ID> - <ACTORS: and >",
+			template: "<ID> - <ACTORS:DELIM= and >",
 			want:     "IPX-535 - Sakura Momo and Test Actress",
 		},
 		{
@@ -879,7 +879,7 @@ func TestTemplateEngine_FirstNameOrder(t *testing.T) {
 				{FirstName: "Ai", LastName: "Uehara"},
 			},
 			firstNameOrder: true,
-			template:       "<ACTRESSES: & >",
+			template:       "<ACTRESSES:DELIM= & >",
 			want:           "Yui Hatano & Ai Uehara",
 		},
 		{
@@ -1083,9 +1083,9 @@ func TestTemplateEngine_ActorsLanguageModifier(t *testing.T) {
 		},
 		// Backward compat: legacy delimiter modifier still works when not a language code
 		{
-			name:              "legacy pipe delimiter preserved",
+			name:              "DELIM= pipe delimiter",
 			actressLanguageJa: false,
-			template:          "<ACTORS:|>",
+			template:          "<ACTORS:DELIM=|>",
 			want:              "Hatano Yui|Uehara Ai",
 		},
 		// Single-actress ACTRESS tag
@@ -1236,15 +1236,15 @@ func TestTemplateEngine_ActorsFirstNameOrderModifier(t *testing.T) {
 		},
 		// Legacy delimiter preserved when not matching keyword
 		{
-			name:           "legacy pipe delimiter preserved",
+			name:           "DELIM= pipe delimiter",
 			firstNameOrder: false,
-			template:       "<ACTORS:|>",
+			template:       "<ACTORS:DELIM=|>",
 			want:           "Hatano Yui|Uehara Ai",
 		},
 		{
-			name:           "legacy ' & ' delimiter preserved",
+			name:           `DELIM= " & " delimiter`,
 			firstNameOrder: false,
-			template:       "<ACTORS: & >",
+			template:       "<ACTORS:DELIM= & >",
 			want:           "Hatano Yui & Uehara Ai",
 		},
 		// Single-actress ACTRESS tag
@@ -1283,6 +1283,143 @@ func TestTemplateEngine_ActorsFirstNameOrderModifier(t *testing.T) {
 				Actresses:      prebuilt(details),
 				ActressDetails: details,
 				FirstNameOrder: tt.firstNameOrder,
+			}
+			got, err := engine.Execute(tt.template, ctx)
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("Execute() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestTemplateEngine_ActorsDelimModifier covers the explicit DELIM= modifier
+// on the actress tags (<ACTORS>/<ACTRESS>/<ACTORNAME>) plus the hard break
+// of the legacy implicit-delimiter form (<ACTORS:|> is no longer a delimiter).
+// Also verifies ctx.ActressDelimiter (output.actress_delimiter config) honors
+// the configured default joiner when no DELIM= is given.
+func TestTemplateEngine_ActorsDelimModifier(t *testing.T) {
+	engine := NewEngine()
+
+	actresses := []ActressDetail{
+		{FirstName: "Yui", LastName: "Hatano", JapaneseName: "波多野結衣"},
+		{FirstName: "Ai", LastName: "Uehara", JapaneseName: "上原亜衣"},
+	}
+	prebuilt := func(details []ActressDetail) []string {
+		out := make([]string, len(details))
+		for i, d := range details {
+			if d.LastName != "" {
+				out[i] = d.LastName + " " + d.FirstName
+			} else {
+				out[i] = d.FirstName
+			}
+		}
+		return out
+	}
+
+	tests := []struct {
+		name             string
+		actressDelimiter string // ctx-level default
+		template         string
+		want             string
+	}{
+		// DELIM= alone
+		{
+			name:             "DELIM= pipe",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:DELIM=|>",
+			want:             "Hatano Yui|Uehara Ai",
+		},
+		{
+			name:             "DELIM= spaces around pipe",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:DELIM= | >",
+			want:             "Hatano Yui | Uehara Ai",
+		},
+		{
+			name:             "DELIM= colon",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:DELIM=:>",
+			want:             "Hatano Yui:Uehara Ai",
+		},
+		{
+			name:             "DELIM= ampersand",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:DELIM= & >",
+			want:             "Hatano Yui & Uehara Ai",
+		},
+		// DELIM= combined with language/order keywords
+		{
+			name:             "JA+DELIM= pipe",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:JA,DELIM=|>",
+			want:             "波多野結衣|上原亜衣",
+		},
+		{
+			name:             "FIRST+DELIM= pipe",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:FIRST,DELIM=|>",
+			want:             "Yui Hatano|Ai Uehara",
+		},
+		{
+			name:             "JA,FIRST+DELIM= pipe",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:JA,FIRST,DELIM=|>",
+			want:             "波多野結衣|上原亜衣",
+		},
+		// DELIM= value may contain commas
+		{
+			name:             "DELIM= value with comma",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:DELIM=,>",
+			want:             "Hatano Yui,Uehara Ai",
+		},
+		// Case-insensitive DELIM keyword
+		{
+			name:             "lowercase delim= keyword",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:delim=|>",
+			want:             "Hatano Yui|Uehara Ai",
+		},
+		// Config-level actress_delimiter honored when no DELIM= is given
+		{
+			name:             "no modifier uses ctx default",
+			actressDelimiter: " | ",
+			template:         "<ACTORS>",
+			want:             "Hatano Yui | Uehara Ai",
+		},
+		{
+			name:             "JA only inherits ctx delimiter",
+			actressDelimiter: " - ",
+			template:         "<ACTORS:JA>",
+			want:             "波多野結衣 - 上原亜衣",
+		},
+		// Hard break: legacy implicit-delimiter form is NOT treated as delimiter
+		// anymore. <ACTORS:|> now parses as an unknown modifier and falls back
+		// to the configured actress_delimiter (", " by default).
+		{
+			name:             "hard break <ACTORS:|> falls back to default",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:|>",
+			want:             "Hatano Yui, Uehara Ai",
+		},
+		{
+			name:             "hard break <ACTORS: & > falls back to default",
+			actressDelimiter: ", ",
+			template:         "<ACTORS: & >",
+			want:             "Hatano Yui, Uehara Ai",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &Context{
+				ID:               "IPX-535",
+				Actresses:        prebuilt(actresses),
+				ActressDetails:   actresses,
+				ActressDelimiter: tt.actressDelimiter,
 			}
 			got, err := engine.Execute(tt.template, ctx)
 			if err != nil {

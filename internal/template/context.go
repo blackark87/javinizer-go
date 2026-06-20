@@ -84,9 +84,10 @@ type Context struct {
 	// Output configuration
 	GroupActress            bool   // Replace multiple actresses with group name
 	GroupActressName        string // Folder name when GroupActress is enabled and multiple actresses (default: "@Group")
-	GroupUnknownActressName string // Replacement when GroupActress is enabled and the actress is unknown/empty (default: "@Unknown")
+	GroupUnknownActressName string // Replacement when GroupActress is enabled and the actress list is empty or unknown (default: "@Unknown")
 	FirstNameOrder          bool   // true = FirstName LastName, false = LastName FirstName (default: false for backward compat)
 	ActressLanguageJa       bool   // true = prefer JapaneseName over First/Last when available (mirrors nfo.actress_language_ja)
+	ActressDelimiter        string // Delimiter between actress names when <ACTORS> has no DELIM= modifier (default: ", ")
 }
 
 // NewContextFromMovie creates a template context from a Movie model
@@ -204,36 +205,39 @@ func NewContextFromScraperResult(result *models.ScraperResult) *Context {
 // Preserves cached mediainfo to avoid duplicate expensive analysis.
 func (c *Context) Clone() *Context {
 	clone := Context{
-		ID:               c.ID,
-		ContentID:        c.ContentID,
-		Title:            c.Title,
-		OriginalTitle:    c.OriginalTitle,
-		ReleaseDate:      c.ReleaseDate,
-		ReleaseYear:      c.ReleaseYear,
-		Runtime:          c.Runtime,
-		Director:         c.Director,
-		ActressName:      c.ActressName,
-		FirstName:        c.FirstName,
-		LastName:         c.LastName,
-		Maker:            c.Maker,
-		Label:            c.Label,
-		Series:           c.Series,
-		OriginalFilename: c.OriginalFilename,
-		VideoFilePath:    c.VideoFilePath,
-		Index:            c.Index,
-		PartNumber:       c.PartNumber,
-		PartSuffix:       c.PartSuffix,
-		IsMultiPart:      c.IsMultiPart,
-		Rating:           c.Rating,
-		Description:      c.Description,
-		CoverURL:         c.CoverURL,
-		TrailerURL:       c.TrailerURL,
-		DefaultLanguage:  c.DefaultLanguage,
-		GroupActress:     c.GroupActress,
-		GroupActressName: c.GroupActressName,
-		FirstNameOrder:   c.FirstNameOrder,
-		cachedMediaInfo:  c.cachedMediaInfo,
-		mediaInfoError:   c.mediaInfoError,
+		ID:                      c.ID,
+		ContentID:               c.ContentID,
+		Title:                   c.Title,
+		OriginalTitle:           c.OriginalTitle,
+		ReleaseDate:             c.ReleaseDate,
+		ReleaseYear:             c.ReleaseYear,
+		Runtime:                 c.Runtime,
+		Director:                c.Director,
+		ActressName:             c.ActressName,
+		FirstName:               c.FirstName,
+		LastName:                c.LastName,
+		Maker:                   c.Maker,
+		Label:                   c.Label,
+		Series:                  c.Series,
+		OriginalFilename:        c.OriginalFilename,
+		VideoFilePath:           c.VideoFilePath,
+		Index:                   c.Index,
+		PartNumber:              c.PartNumber,
+		PartSuffix:              c.PartSuffix,
+		IsMultiPart:             c.IsMultiPart,
+		Rating:                  c.Rating,
+		Description:             c.Description,
+		CoverURL:                c.CoverURL,
+		TrailerURL:              c.TrailerURL,
+		DefaultLanguage:         c.DefaultLanguage,
+		GroupActress:            c.GroupActress,
+		GroupActressName:        c.GroupActressName,
+		GroupUnknownActressName: c.GroupUnknownActressName,
+		FirstNameOrder:          c.FirstNameOrder,
+		ActressLanguageJa:       c.ActressLanguageJa,
+		ActressDelimiter:        c.ActressDelimiter,
+		cachedMediaInfo:         c.cachedMediaInfo,
+		mediaInfoError:          c.mediaInfoError,
 	}
 
 	if c.Actresses != nil {

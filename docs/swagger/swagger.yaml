@@ -691,6 +691,10 @@ definitions:
     type: object
   github_com_javinizer_javinizer-go_internal_config.OutputConfig:
     properties:
+      actress_delimiter:
+        description: 'Delimiter between actress names when joining <ACTORS>/<ACTRESSES>
+          with no in-tag DELIM= modifier (default: ", ")'
+        type: string
       actress_folder:
         type: string
       actress_format:
@@ -703,8 +707,6 @@ definitions:
       allow_revert:
         description: 'Enable revert operations (default: false — opt-in for safety)'
         type: boolean
-      delimiter:
-        type: string
       download_actress:
         type: boolean
       download_cover:

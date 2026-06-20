@@ -154,7 +154,7 @@ type OutputConfig struct {
 	FolderFormat            string              `yaml:"folder_format" json:"folder_format"`
 	FileFormat              string              `yaml:"file_format" json:"file_format"`
 	SubfolderFormat         []string            `yaml:"subfolder_format" json:"subfolder_format"`
-	Delimiter               string              `yaml:"delimiter" json:"delimiter"`
+	ActressDelimiter        string              `yaml:"actress_delimiter" json:"actress_delimiter"` // Delimiter between actress names when joining <ACTORS>/<ACTRESSES> with no in-tag DELIM= modifier (default: ", ")
 	MaxTitleLength          int                 `yaml:"max_title_length" json:"max_title_length"`
 	MaxPathLength           int                 `yaml:"max_path_length" json:"max_path_length"`
 	MoveSubtitles           bool                `yaml:"move_subtitles" json:"move_subtitles"`

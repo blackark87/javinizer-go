@@ -585,7 +585,7 @@ func TestTemplateBackwardCompatibility(t *testing.T) {
 		{
 			name:       "Actor delimiter modifier still works",
 			engineOpts: EngineOptions{},
-			template:   "<ACTORS: | >",
+			template:   "<ACTORS:DELIM= | >",
 			ctx: &Context{
 				Actresses: []string{"Actor1", "Actor2", "Actor3"},
 			},

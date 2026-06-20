@@ -75,6 +75,7 @@ func (s *InPlaceStrategy) Plan(match matcher.MatchResult, movie *models.Movie, d
 	ctx.GroupUnknownActressName = s.config.GroupUnknownActressName
 	ctx.FirstNameOrder = s.config.FirstNameOrder
 	ctx.ActressLanguageJa = s.config.ActressLanguageJA
+	ctx.ActressDelimiter = s.config.ActressDelimiter
 
 	applyTitleTruncation(s.templateEngine, ctx, s.config.MaxTitleLength)
 

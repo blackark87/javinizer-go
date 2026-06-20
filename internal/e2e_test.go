@@ -394,7 +394,7 @@ func createTestConfig(dataDir string) *config.Config {
 	// Output config
 	cfg.Output.FolderFormat = "<ID> [<STUDIO>] - <TITLE> (<YEAR>)"
 	cfg.Output.FileFormat = "<ID>"
-	cfg.Output.Delimiter = ", "
+	cfg.Output.ActressDelimiter = ", "
 	cfg.Output.DownloadCover = true
 
 	// Database config

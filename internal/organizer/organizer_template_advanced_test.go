@@ -167,7 +167,7 @@ func TestOrganizerTemplate_CustomFunctions(t *testing.T) {
 		},
 		{
 			name:     "actresses with custom delimiter",
-			template: "<ID> - <ACTRESSES: & >",
+			template: "<ID> - <ACTRESSES:DELIM= & >",
 			movieSetup: func() *testutil.MovieBuilder {
 				return testutil.NewMovieBuilder().
 					WithID("IPX-123").
@@ -178,7 +178,7 @@ func TestOrganizerTemplate_CustomFunctions(t *testing.T) {
 		},
 		{
 			name:     "actresses with pipe delimiter",
-			template: "<ACTRESSES:|>",
+			template: "<ACTRESSES:DELIM=|>",
 			movieSetup: func() *testutil.MovieBuilder {
 				return testutil.NewMovieBuilder().
 					WithID("TEST-001").
@@ -265,13 +265,13 @@ func TestOrganizerTemplate_MultipleActresses(t *testing.T) {
 		{
 			name:           "two actresses with slash",
 			actresses:      []string{"Actress One", "Actress Two"},
-			template:       "<ACTRESSES: / >",
+			template:       "<ACTRESSES:DELIM= / >",
 			expectedOutput: "Actress One _ Actress Two", // Slash sanitized
 		},
 		{
 			name:           "three actresses with ampersand",
 			actresses:      []string{"A", "B", "C"},
-			template:       "<ACTRESSES: & >",
+			template:       "<ACTRESSES:DELIM= & >",
 			expectedOutput: "A & B & C",
 		},
 	}

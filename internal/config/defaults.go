@@ -226,7 +226,7 @@ func DefaultConfig() *Config {
 			FolderFormat:            "<ID> [<STUDIO>] - <TITLE> (<YEAR>)",
 			FileFormat:              "<ID><IF:MULTIPART>-pt<PART></IF>",
 			SubfolderFormat:         []string{"<ID>"},
-			Delimiter:               ", ",
+			ActressDelimiter:        ", ",
 			MaxTitleLength:          100,
 			MaxPathLength:           240,
 			MoveSubtitles:           false,

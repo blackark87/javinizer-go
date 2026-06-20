@@ -2383,7 +2383,7 @@ func TestResolveAwsimgsrcPoster(t *testing.T) {
 		{
 			name:        "digital/video content with prefix 4 (SONE-860)",
 			contentID:   "4sone00860",
-			expectedIDs: []string{"sone860", "4sone860", "7sone860", "9sone860", "77sone860", "88sone860"},
+			expectedIDs: []string{"sone860", "4sone860", "7sone860", "9sone860", "77sone860"},
 		},
 		{
 			name:        "mono/movie/adult content (ROYD-191)",

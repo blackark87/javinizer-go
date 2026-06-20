@@ -224,6 +224,9 @@ linters:
       - path: internal/scraper/r18dev/r18dev\.go
         linters:
           - unparam
+      - path: internal/scraper/r18dev/content_id_prefixes\.go
+        linters:
+          - misspell
       - path: internal/tui/update\.go
         linters:
           - unparam

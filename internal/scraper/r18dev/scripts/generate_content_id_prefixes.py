@@ -48,7 +48,18 @@ def main():
     rows = extract_videos(sql_path)
     print(f"Extracted {len(rows)} video entries")
 
-    content_id_pattern = re.compile(r'^(\d*)([a-z]+)(\d+)$')
+    # Capture both DMM numeric prefixes (e.g. "118san00457" -> "118") and
+    # PPV underscore prefixes (e.g. "h_796san00457" -> "h_796"). Digital-only
+    # releases only have a PPV content_id with a null dvd_id, so without
+    # capturing the underscore form the prefix table silently drops them.
+    content_id_pattern = re.compile(r'^(?:(\d+)|([a-z])_(\d+))?([a-z]+)(\d+)$')
+
+    def prefix_from_match(m):
+        if m.group(1) is not None:
+            return m.group(1)
+        if m.group(2) is not None:
+            return m.group(2) + '_' + m.group(3)
+        return ''
 
     # Build: series -> set of prefixes from ALL rows
     series_prefixes = defaultdict(set)
@@ -56,15 +67,19 @@ def main():
         m = content_id_pattern.match(cid)
         if not m:
             continue
-        prefix = m.group(1)
-        series = m.group(2)
+        prefix = prefix_from_match(m)
+        series = m.group(4)
         series_prefixes[series].add(prefix)
 
-    # Sort prefixes: empty string first, then by length, then numerically
+    # Sort prefixes: empty string first, then numeric prefixes (by length then
+    # value), then PPV underscore prefixes last so standard DMM ids are probed
+    # before PPV-only content_ids at runtime.
     def prefix_sort_key(p):
         if p == '':
             return (0, 0, '')
-        return (1, len(p), int(p))
+        if p.isdigit():
+            return (1, len(p), int(p))
+        return (2, len(p), p)
 
     # Generate Go source file
     lines = []
@@ -79,7 +94,7 @@ def main():
     for series in sorted(series_prefixes.keys()):
         prefixes = sorted(series_prefixes[series], key=prefix_sort_key)
         prefix_strs = ', '.join(f'"{p}"' for p in prefixes)
-        lines.append(f'\t"{series}": {{{prefix_str}}},')
+        lines.append(f'\t"{series}": {{{prefix_strs}}},')
 
     lines.append('}')
     lines.append('')

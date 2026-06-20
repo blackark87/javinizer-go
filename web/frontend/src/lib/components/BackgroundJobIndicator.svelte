@@ -83,7 +83,7 @@
 					{statusConfig.label}
 				</div>
 				<div class="text-xs text-muted-foreground mt-0.5">
-					{job.completed + job.failed} / {job.total_files} files &middot; {job.progress.toFixed(0)}%
+					{job.completed + job.failed + (job.cancelled ?? 0)} / {job.total_files} files &middot; {job.progress.toFixed(0)}%
 				</div>
 			</div>
 		</button>
@@ -132,7 +132,7 @@
 					<div class="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
 						<span>{job.completed} completed</span>
 						<span class="text-center">{job.failed} failed</span>
-						<span class="text-right">{Math.max(0, job.total_files - job.completed - job.failed)} remaining</span>
+						<span class="text-right">{Math.max(0, job.total_files - job.completed - job.failed - (job.cancelled ?? 0))} remaining</span>
 					</div>
 				</div>
 			</div>

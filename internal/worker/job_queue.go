@@ -214,6 +214,7 @@ type BatchJobSlim struct {
 	TotalFiles            int                        `json:"total_files"`
 	Completed             int                        `json:"completed"`
 	Failed                int                        `json:"failed"`
+	Cancelled             int                        `json:"cancelled"`
 	Excluded              map[string]bool            `json:"excluded"`
 	Files                 []string                   `json:"files"`
 	Results               map[string]*FileResultSlim `json:"results"`
@@ -270,6 +271,7 @@ type BatchJob struct {
 	TotalFiles            int                      `json:"total_files"`
 	Completed             int                      `json:"completed"`
 	Failed                int                      `json:"failed"`
+	Cancelled             int                      `json:"cancelled"`
 	Excluded              map[string]bool          `json:"excluded"`
 	Files                 []string                 `json:"files"`
 	Results               map[string]*FileResult   `json:"results"`
@@ -427,6 +429,7 @@ func (jq *JobQueue) reconstructBatchJob(dbJob *models.Job) *BatchJob {
 		TotalFiles:    dbJob.TotalFiles,
 		Completed:     dbJob.Completed,
 		Failed:        dbJob.Failed,
+		Cancelled:     dbJob.Cancelled,
 		Progress:      dbJob.Progress,
 		Destination:   dbJob.Destination,
 		TempDir:       dbJob.TempDir,
@@ -570,6 +573,7 @@ func (jq *JobQueue) persistToDatabase(job *BatchJob) {
 		TotalFiles:    job.TotalFiles,
 		Completed:     job.Completed,
 		Failed:        job.Failed,
+		Cancelled:     job.Cancelled,
 		Progress:      job.Progress,
 		Destination:   job.Destination,
 		TempDir:       tempDir,
@@ -742,6 +746,8 @@ func (job *BatchJob) UpdateFileResult(filePath string, result *FileResult) {
 			job.Completed--
 		case JobStatusFailed:
 			job.Failed--
+		case JobStatusCancelled:
+			job.Cancelled--
 		}
 		if existing.ResultID != "" {
 			delete(job.ResultIndex, existing.ResultID)
@@ -762,12 +768,14 @@ func (job *BatchJob) UpdateFileResult(filePath string, result *FileResult) {
 		job.Completed++
 	case JobStatusFailed:
 		job.Failed++
+	case JobStatusCancelled:
+		job.Cancelled++
 	}
 
 	if job.TotalFiles == 0 {
 		job.Progress = 100
 	} else {
-		job.Progress = float64(job.Completed+job.Failed) / float64(job.TotalFiles) * 100
+		job.Progress = float64(job.Completed+job.Failed+job.Cancelled) / float64(job.TotalFiles) * 100
 	}
 }
 
@@ -801,6 +809,8 @@ func (job *BatchJob) AtomicUpdateFileResult(filePath string, updateFn func(*File
 		job.Completed--
 	case JobStatusFailed:
 		job.Failed--
+	case JobStatusCancelled:
+		job.Cancelled--
 	}
 
 	// Write back the updated result
@@ -825,12 +835,14 @@ func (job *BatchJob) AtomicUpdateFileResult(filePath string, updateFn func(*File
 		job.Completed++
 	case JobStatusFailed:
 		job.Failed++
+	case JobStatusCancelled:
+		job.Cancelled++
 	}
 
 	if job.TotalFiles == 0 {
 		job.Progress = 100
 	} else {
-		job.Progress = float64(job.Completed+job.Failed) / float64(job.TotalFiles) * 100
+		job.Progress = float64(job.Completed+job.Failed+job.Cancelled) / float64(job.TotalFiles) * 100
 	}
 
 	return nil
@@ -1077,6 +1089,7 @@ func (job *BatchJob) GetStatus() *BatchJob {
 		TotalFiles:            job.TotalFiles,
 		Completed:             job.Completed,
 		Failed:                job.Failed,
+		Cancelled:             job.Cancelled,
 		Excluded:              excluded,
 		Files:                 files,
 		Results:               results,
@@ -1146,6 +1159,7 @@ func (job *BatchJob) GetStatusSlim() *BatchJobSlim {
 		TotalFiles:            job.TotalFiles,
 		Completed:             job.Completed,
 		Failed:                job.Failed,
+		Cancelled:             job.Cancelled,
 		Excluded:              excluded,
 		Files:                 files,
 		Results:               results,
@@ -1234,6 +1248,13 @@ func (job *BatchJob) GetFailed() int {
 	job.mu.RLock()
 	defer job.mu.RUnlock()
 	return job.Failed
+}
+
+// GetCancelled returns the cancelled count (thread-safe)
+func (job *BatchJob) GetCancelled() int {
+	job.mu.RLock()
+	defer job.mu.RUnlock()
+	return job.Cancelled
 }
 
 // GetTotalFiles returns the total files count (thread-safe)

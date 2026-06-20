@@ -160,6 +160,19 @@ function createWebSocketStore() {
 			ws.onmessage = (event) => {
 				try {
 					const message: ProgressMessage = JSON.parse(event.data);
+
+					// System alert — show as toast, don't store in progress tracking
+					if (message.type === 'alert') {
+						if (message.status === 'warning') {
+							toastStore.warning(message.message);
+						} else if (message.status === 'error') {
+							toastStore.error(message.message);
+						} else {
+							toastStore.info(message.message);
+						}
+						return;
+					}
+
 					update((state) => {
 						const newMessagesByFile = { ...state.messagesByFile };
 						if (message.file_path && message.job_id) {

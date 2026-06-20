@@ -11,8 +11,11 @@ import (
 	"github.com/javinizer/javinizer-go/internal/logging"
 )
 
-// ProgressMessage represents a progress update message
+// ProgressMessage represents a progress update message.
+// Type "progress" (default) carries per-file scraping updates.
+// Type "alert" carries system-level notifications (e.g. DB lock warnings).
 type ProgressMessage struct {
+	Type      string  `json:"type,omitempty"` // "progress" or "alert"
 	JobID     string  `json:"job_id"`
 	FileIndex int     `json:"file_index"`
 	FilePath  string  `json:"file_path"`
@@ -20,6 +23,15 @@ type ProgressMessage struct {
 	Progress  float64 `json:"progress"`
 	Message   string  `json:"message"`
 	Error     string  `json:"error,omitempty"`
+}
+
+// BroadcastAlert sends a system-level alert to all connected WebSocket clients.
+func (h *Hub) BroadcastAlert(severity, message string) error {
+	return h.Broadcast(&ProgressMessage{
+		Type:    "alert",
+		Status:  severity,
+		Message: message,
+	})
 }
 
 const (

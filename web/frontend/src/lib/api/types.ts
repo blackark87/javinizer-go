@@ -204,6 +204,7 @@ export interface BatchJobResponse {
 	total_files: number;
 	completed: number;
 	failed: number;
+	cancelled: number;
 	operation_count: number;
 	reverted_count: number;
 	excluded: Record<string, boolean>;
@@ -218,6 +219,7 @@ export interface BatchJobResponse {
 }
 
 export interface ProgressMessage {
+	type?: string;
 	job_id: string;
 	file_index: number;
 	file_path: string;
@@ -980,6 +982,7 @@ export interface JobListItem {
 	total_files: number;
 	completed: number;
 	failed: number;
+	cancelled: number;
 	operation_count: number;
 	reverted_count: number;
 	progress: number;

@@ -1,6 +1,6 @@
 import type { ProgressMessage } from '$lib/api/types';
 
-export const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled', 'organized', 'reverted']);
+export const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled', 'canceled', 'organized', 'reverted']);
 
 export function isTerminalStatus(status: string | null | undefined): boolean {
 	if (!status) return false;

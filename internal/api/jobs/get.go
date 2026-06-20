@@ -56,6 +56,7 @@ func getJob(deps *ServerDependencies) gin.HandlerFunc {
 			TotalFiles:     job.TotalFiles,
 			Completed:      job.Completed,
 			Failed:         job.Failed,
+			Cancelled:      job.Cancelled,
 			OperationCount: opCount,
 			RevertedCount:  revertedCount,
 			Progress:       job.Progress,

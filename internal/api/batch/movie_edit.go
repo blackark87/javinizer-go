@@ -590,6 +590,7 @@ func buildBatchJobResponse(job *worker.BatchJob) *BatchJobResponse {
 		TotalFiles:            job.TotalFiles,
 		Completed:             job.Completed,
 		Failed:                job.Failed,
+		Cancelled:             job.Cancelled,
 		Excluded:              job.Excluded,
 		Progress:              job.Progress,
 		Destination:           job.Destination,

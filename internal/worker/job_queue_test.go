@@ -235,6 +235,24 @@ func TestBatchJob_UpdateFileResult(t *testing.T) {
 		assert.Equal(t, 1, job.Completed)
 		assert.Equal(t, 2, job.TotalFiles-job.Completed-job.Failed) // 2 pending
 	})
+
+	t.Run("Cancelled files count toward progress", func(t *testing.T) {
+		jq := NewJobQueue(nil, "", nil)
+		files := []string{"file1.mp4", "file2.mkv", "file3.avi", "file4.mp4"}
+		job := jq.CreateJob(files)
+
+		now := time.Now()
+
+		job.UpdateFileResult("file1.mp4", &FileResult{FilePath: "file1.mp4", Status: JobStatusCompleted, StartedAt: now})
+		job.UpdateFileResult("file2.mkv", &FileResult{FilePath: "file2.mkv", Status: JobStatusCompleted, StartedAt: now})
+		job.UpdateFileResult("file3.avi", &FileResult{FilePath: "file3.avi", Status: JobStatusCancelled, StartedAt: now})
+		job.UpdateFileResult("file4.mp4", &FileResult{FilePath: "file4.mp4", Status: JobStatusCancelled, StartedAt: now})
+
+		assert.Equal(t, 2, job.Completed)
+		assert.Equal(t, 0, job.Failed)
+		assert.Equal(t, 2, job.Cancelled)
+		assert.Equal(t, 100.0, job.Progress) // (2+0+2)/4 * 100
+	})
 }
 
 func TestBatchJob_StatusTransitions(t *testing.T) {

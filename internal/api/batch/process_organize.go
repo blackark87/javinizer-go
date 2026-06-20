@@ -132,6 +132,9 @@ func capturePreOrganizeSnapshot(movie *models.Movie, filePath string, sourceDir 
 	)
 	if err := batchFileOpRepo.Create(preRecord); err != nil {
 		logging.Warnf("Failed to persist pre-organize record for %s: %v", movie.ID, err)
+		if database.IsLockedError(err) {
+			broadcastAlert("warning", fmt.Sprintf("Database is temporarily locked while organizing %s — retrying automatically. If this persists, check for long-running queries.", movie.ID))
+		}
 	}
 	return preRecord, snapshotResult
 }
@@ -291,6 +294,9 @@ func updatePreOrganizeRecord(preRecord *models.BatchFileOperation, result *organ
 	history.UpdatePostOrganize(preRecord, result.NewPath, inPlaceRenamed, originalDir, generatedFilesJSON)
 	if err := batchFileOpRepo.Update(preRecord); err != nil {
 		logging.Warnf("Failed to update post-organize record for %s: %v", movie.ID, err)
+		if database.IsLockedError(err) {
+			broadcastAlert("warning", fmt.Sprintf("Database is temporarily locked while saving organize result for %s.", movie.ID))
+		}
 	}
 }
 

@@ -276,6 +276,7 @@ type BatchJobResponse struct {
 	TotalFiles            int                         `json:"total_files"`
 	Completed             int                         `json:"completed"`
 	Failed                int                         `json:"failed"`
+	Cancelled             int                         `json:"cancelled"`
 	OperationCount        int64                       `json:"operation_count"`
 	RevertedCount         int64                       `json:"reverted_count"`
 	Excluded              map[string]bool             `json:"excluded"`
@@ -296,6 +297,7 @@ type BatchJobResponseSlim struct {
 	TotalFiles            int                             `json:"total_files"`
 	Completed             int                             `json:"completed"`
 	Failed                int                             `json:"failed"`
+	Cancelled             int                             `json:"cancelled"`
 	Excluded              map[string]bool                 `json:"excluded"`
 	Progress              float64                         `json:"progress"`
 	Destination           string                          `json:"destination"`
@@ -470,6 +472,7 @@ type JobListItem struct {
 	TotalFiles     int     `json:"total_files" example:"10"`
 	Completed      int     `json:"completed" example:"9"`
 	Failed         int     `json:"failed" example:"1"`
+	Cancelled      int     `json:"cancelled" example:"0"`
 	OperationCount int64   `json:"operation_count" example:"10"`
 	RevertedCount  int64   `json:"reverted_count,omitempty" example:"7"`
 	Progress       float64 `json:"progress" example:"0.9"`

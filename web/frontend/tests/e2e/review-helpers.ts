@@ -71,6 +71,7 @@ function buildBatchJob(excluded: Record<string, boolean> = {}): BatchJobResponse
 		total_files: 5,
 		completed: 5,
 		failed: 0,
+		cancelled: 0,
 		operation_count: 0,
 		reverted_count: 0,
 		excluded,

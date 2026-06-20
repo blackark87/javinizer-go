@@ -157,6 +157,7 @@ func movieIDMatches(id1, id2 string, cfg *config.Config, jobID string) bool {
 func updateJobProgress(job *worker.BatchJob) {
 	completed := 0
 	failed := 0
+	cancelled := 0
 	for _, r := range job.Results {
 		if r == nil {
 			continue
@@ -166,14 +167,17 @@ func updateJobProgress(job *worker.BatchJob) {
 			completed++
 		case worker.JobStatusFailed:
 			failed++
+		case worker.JobStatusCancelled:
+			cancelled++
 		}
 	}
 	job.Completed = completed
 	job.Failed = failed
+	job.Cancelled = cancelled
 	if job.TotalFiles == 0 {
 		job.Progress = 100
 	} else {
-		job.Progress = float64(completed+failed) / float64(job.TotalFiles) * 100
+		job.Progress = float64(completed+failed+cancelled) / float64(job.TotalFiles) * 100
 	}
 }
 

@@ -15,3 +15,13 @@ func broadcastProgress(msg *ws.ProgressMessage) {
 		logging.Warnf("Failed to broadcast progress update for job %s: %v", msg.JobID, err)
 	}
 }
+
+func broadcastAlert(severity, message string) {
+	runtime := core.DefaultRuntimeState()
+	if runtime == nil || runtime.WebSocketHub() == nil {
+		return
+	}
+	if err := runtime.WebSocketHub().BroadcastAlert(severity, message); err != nil {
+		logging.Warnf("Failed to broadcast alert: %v", err)
+	}
+}

@@ -70,6 +70,18 @@ func New(cfg *config.Config) (*DB, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
+	// Enable WAL journal mode for better concurrent write performance and
+	// set a 30s busy timeout so concurrent organise/scrape writes retry
+	// instead of immediately returning "database is locked".
+	if cfg.Database.Type == "sqlite" || cfg.Database.Type == "" {
+		if err := db.Exec("PRAGMA journal_mode=WAL").Error; err != nil {
+			return nil, fmt.Errorf("failed to enable WAL mode: %w", err)
+		}
+		if err := db.Exec("PRAGMA busy_timeout=30000").Error; err != nil {
+			return nil, fmt.Errorf("failed to set busy_timeout: %w", err)
+		}
+	}
+
 	return &DB{
 		DB:  db,
 		dsn: cfg.Database.DSN,

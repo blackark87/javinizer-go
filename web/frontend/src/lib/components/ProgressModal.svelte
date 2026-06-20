@@ -100,7 +100,7 @@
 	});
 
 	const liveProgress = $derived.by(() => {
-		const finishedCount = (job?.completed ?? 0) + (job?.failed ?? 0);
+		const finishedCount = (job?.completed ?? 0) + (job?.failed ?? 0) + (job?.cancelled ?? 0);
 		return computeJobProgress(
 			wsState.messagesByFile[jobId],
 			job?.total_files ?? 0,

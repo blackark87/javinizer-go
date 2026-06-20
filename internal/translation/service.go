@@ -116,9 +116,9 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 			}
 			if lastName, firstName, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL); ok {
 				actressJaNameToRomanized[jaName] = capitalize(lastName) + " " + capitalize(firstName)
-			} else if actress.FirstName != "" {
+			} else if actress.FirstName != "" && isLikelyRomanized(actress.FirstName) {
 				name := strings.TrimSpace(actress.FirstName)
-				if actress.LastName != "" {
+				if actress.LastName != "" && isLikelyRomanized(actress.LastName) {
 					name = strings.TrimSpace(actress.LastName) + " " + name
 				}
 				actressJaNameToRomanized[jaName] = name
@@ -420,6 +420,18 @@ func normalizeRomanizationToASCII(s string) string {
 	return longVowelReplacer.Replace(s)
 }
 
+// isLikelyRomanized returns true when s contains only ASCII or Latin Extended
+// characters (U+0000–U+024F). Rejects Hangul, CJK, kana, and other scripts
+// so we never treat a non-romanized name as a valid romanization substitute.
+func isLikelyRomanized(s string) bool {
+	for _, r := range s {
+		if r > 0x024F {
+			return false
+		}
+	}
+	return true
+}
+
 func replaceActressName(actress *models.Actress, translated string) {
 	translated = strings.TrimSpace(translated)
 	if actress == nil || translated == "" {
@@ -433,6 +445,10 @@ func replaceActressName(actress *models.Actress, translated string) {
 		return
 	}
 	translated = normalizeRomanizationToASCII(translated)
+	if !isLikelyRomanized(translated) {
+		logging.Debugf("Translation: replaceActressName skipping non-Latin result %q", translated)
+		return
+	}
 	// Prompt returns Japanese name order: FamilyName GivenName.
 	// parts[0] = family name → LastName; parts[1:] = given name → FirstName.
 	// JapaneseName is preserved for <ACTRESS:ja>.

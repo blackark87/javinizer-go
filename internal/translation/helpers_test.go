@@ -346,6 +346,34 @@ func TestReplaceActressName(t *testing.T) {
 				FirstName: "Mai",
 			},
 		},
+		{
+			name: "Korean LLM output ignored - actress unchanged",
+			actress: &models.Actress{
+				JapaneseName: "まひる",
+				FirstName:    "Mahiru",
+				LastName:     "",
+			},
+			translated: "마히루",
+			expected: models.Actress{
+				JapaneseName: "まひる",
+				FirstName:    "Mahiru",
+				LastName:     "",
+			},
+		},
+		{
+			name: "CJK LLM output ignored - actress unchanged",
+			actress: &models.Actress{
+				JapaneseName: "田中香",
+				FirstName:    "Yui",
+				LastName:     "Tanaka",
+			},
+			translated: "田中香",
+			expected: models.Actress{
+				JapaneseName: "田中香",
+				FirstName:    "Yui",
+				LastName:     "Tanaka",
+			},
+		},
 	}
 
 	// Test nil actress directly for nil-safety branch
@@ -368,6 +396,34 @@ func TestReplaceActressName(t *testing.T) {
 			assert.Equal(t, tt.expected.JapaneseName, actressCopy.JapaneseName)
 			assert.Equal(t, tt.expected.FirstName, actressCopy.FirstName)
 			assert.Equal(t, tt.expected.LastName, actressCopy.LastName)
+		})
+	}
+}
+
+// =============================================================================
+// isLikelyRomanized tests
+// =============================================================================
+
+func TestIsLikelyRomanized(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected bool
+	}{
+		{"Mahiru", true},
+		{"Tanaka Yui", true},
+		{"De Niro Maria", true},
+		{"Futabareena", true},
+		{"Oshima", true},
+		{"", true},
+		{"마히루", false},
+		{"대낮", false},
+		{"まひる", false},
+		{"田中香", false},
+		{"Mahiru 마히루", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			assert.Equal(t, tt.expected, isLikelyRomanized(tt.input))
 		})
 	}
 }

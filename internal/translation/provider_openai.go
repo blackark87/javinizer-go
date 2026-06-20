@@ -60,7 +60,7 @@ type openAIChatCallOptions struct {
 }
 
 func buildLLMTranslationPrompts(sourceLang, targetLang string, texts []string) (string, string, error) {
-	systemPrompt := fmt.Sprintf("You are a translation engine. Translate each input item to the requested target language. Preserve order and return ONLY the indexed output markers in ascending order. Do not use JSON. Do not add commentary. Do not omit any index. Keep each translation on a single logical line; if needed, replace internal newlines with spaces. Translate ALL text in each item, including any Latin or English portions — do not leave any part untranslated. Source language: %s. Target language: %s.", sourceLang, targetLang)
+	systemPrompt := fmt.Sprintf("You are a translator specializing in Japanese adult video (JAV) content metadata. Translate each item into natural, engaging promotional copy — not a literal word-for-word translation. Titles should be concise and enticing; descriptions should read as sensual, persuasive marketing blurbs in the target language. Use terminology and phrasing natural to adult content promotion in the target language. Translate ALL text in each item, including any Latin or English portions — do not leave any part untranslated. Preserve order and return ONLY the indexed output markers in ascending order. Do not use JSON. Do not add commentary. Do not omit any index. Keep each translation on a single logical line; if needed, replace internal newlines with spaces. Source language: %s. Target language: %s.", sourceLang, targetLang)
 
 	payloadBytes, err := json.Marshal(texts)
 	if err != nil {

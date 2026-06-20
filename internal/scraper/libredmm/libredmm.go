@@ -538,7 +538,7 @@ func parseActresses(entries []actressPayload, base string) []models.ActressInfo 
 	out := make([]models.ActressInfo, 0, len(entries))
 
 	for _, actress := range entries {
-		name := scraperutil.CleanString(actress.Name)
+		name := scraperutil.CleanActressName(actress.Name)
 		if name == "" || seen[name] {
 			continue
 		}

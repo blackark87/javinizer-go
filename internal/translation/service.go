@@ -326,12 +326,7 @@ func replaceActressName(actress *models.Actress, translated string) {
 	if actress == nil || translated == "" {
 		return
 	}
-
-	if strings.TrimSpace(actress.JapaneseName) != "" || (strings.TrimSpace(actress.FirstName) == "" && strings.TrimSpace(actress.LastName) == "") {
-		actress.JapaneseName = translated
-		return
-	}
-
+	// Store translation in FirstName so JapaneseName is preserved for <ACTRESS:ja>
 	actress.FirstName = translated
 	actress.LastName = ""
 }

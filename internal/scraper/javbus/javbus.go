@@ -502,7 +502,7 @@ func extractActresses(doc *goquery.Document) []models.ActressInfo {
 	actresses := make([]models.ActressInfo, 0)
 
 	appendName := func(name string, thumb string) {
-		name = scraperutil.CleanString(name)
+		name = scraperutil.CleanActressName(name)
 		if isInvalidActressName(name) || seen[name] {
 			return
 		}

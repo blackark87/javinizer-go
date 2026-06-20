@@ -679,7 +679,7 @@ func extractActresses(scope *goquery.Selection) []models.ActressInfo {
 	seen := map[string]bool{}
 	out := make([]models.ActressInfo, 0)
 	scope.Find("a[href*='ppv_actressdetail'], a[href*='ppv_ActressDetail'], a[href*='/ppv/idoldetail']").Each(func(_ int, a *goquery.Selection) {
-		name := scraperutil.CleanString(a.Text())
+		name := scraperutil.CleanActressName(a.Text())
 		if name == "" || seen[name] {
 			return
 		}

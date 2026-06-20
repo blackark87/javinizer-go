@@ -54,6 +54,19 @@ func NormalizeID(v string) string {
 	return nonAlphaNumRegex.ReplaceAllString(v, "")
 }
 
+// CleanActressName normalizes an actress name by stripping parenthetical extras.
+// Sites often include age, alternate names, or other info in parentheses next to
+// the actress name, e.g. "セリナ（本名：佐藤セリナ）" or "セリナ(" (truncated).
+func CleanActressName(name string) string {
+	name = CleanString(name)
+	for _, paren := range []string{"（", "("} {
+		if idx := strings.Index(name, paren); idx >= 0 {
+			name = strings.TrimSpace(name[:idx])
+		}
+	}
+	return name
+}
+
 func HasJapanese(v string) bool {
 	for _, r := range v {
 		if unicode.In(r, unicode.Hiragana, unicode.Katakana, unicode.Han) {

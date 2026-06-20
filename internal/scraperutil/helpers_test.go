@@ -58,6 +58,33 @@ func TestCleanString(t *testing.T) {
 	}
 }
 
+func TestCleanActressName(t *testing.T) {
+	testCases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"clean name unchanged", "セリナ", "セリナ"},
+		{"trailing half-width paren", "セリナ(", "セリナ"},
+		{"trailing full-width paren", "セリナ（", "セリナ"},
+		{"full half-width parenthetical", "セリナ(本名：佐藤セリナ)", "セリナ"},
+		{"full full-width parenthetical", "セリナ（本名：佐藤セリナ）", "セリナ"},
+		{"english name unchanged", "Yui Hatano", "Yui Hatano"},
+		{"english with paren", "Yui Hatano (alias)", "Yui Hatano"},
+		{"whitespace before paren", "セリナ  （extra）", "セリナ"},
+		{"empty string", "", ""},
+		{"only paren", "(test)", ""},
+		{"leading whitespace cleaned", "  セリナ  ", "セリナ"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := CleanActressName(tc.input)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
 func TestNormalizeLanguage(t *testing.T) {
 	testCases := []struct {
 		name  string

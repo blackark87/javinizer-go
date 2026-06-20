@@ -1521,9 +1521,9 @@ func TestTranslateMovie_FullFlow(t *testing.T) {
 			}
 
 			// Verify actresses translation if configured
-			if tt.cfg.Fields.Actresses && len(tt.movie.Actresses) > 0 {
-				originalActressName := actressDisplayTitle(tt.movie.Actresses[0])
-				assert.NotEqual(t, originalActressName, actressDisplayTitle(movieCopy.Actresses[0]))
+			// replaceActressName now stores the translation in FirstName, preserving JapaneseName
+			if tt.cfg.Fields.Actresses && len(tt.movie.Actresses) > 0 && tt.wantPrimarySet {
+				assert.NotEmpty(t, movieCopy.Actresses[0].FirstName, "translated actress name should be stored in FirstName")
 			}
 
 			// Verify genres translation if configured

@@ -698,7 +698,7 @@ func createActressInfo(name string) models.ActressInfo {
 
 	actress := models.ActressInfo{}
 	if isJapanese {
-		actress.JapaneseName = name
+		actress.JapaneseName = scraperutil.CleanActressName(name)
 	} else {
 		// Try to split Western names
 		parts := strings.Fields(name)

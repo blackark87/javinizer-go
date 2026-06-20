@@ -431,7 +431,7 @@ func extractActresses(html string) []models.ActressInfo {
 	}
 
 	for _, rawName := range names {
-		name := scraperutil.CleanString(rawName)
+		name := scraperutil.CleanActressName(rawName)
 		if name == "" || seen[name] || len(name) > 80 {
 			continue
 		}
@@ -439,7 +439,7 @@ func extractActresses(html string) []models.ActressInfo {
 
 		info := models.ActressInfo{}
 		if scraperutil.HasJapanese(name) {
-			info.JapaneseName = strings.ReplaceAll(name, "（", "(")
+			info.JapaneseName = name
 		} else {
 			parts := strings.Fields(name)
 			switch len(parts) {

@@ -228,17 +228,19 @@ func TestReplaceActressName(t *testing.T) {
 		expected   models.Actress
 	}{
 		{
-			name: "japanese name replacement",
+			name: "japanese name replacement - preserves JapaneseName, stores in FirstName",
 			actress: &models.Actress{
 				JapaneseName: "田中香",
 			},
 			translated: "Yui Tanaka",
 			expected: models.Actress{
-				JapaneseName: "Yui Tanaka",
+				JapaneseName: "田中香",
+				FirstName:    "Yui Tanaka",
+				LastName:     "",
 			},
 		},
 		{
-			name: "first last name replacement - keep visible",
+			name: "first last name replacement - keeps visible",
 			actress: &models.Actress{
 				FirstName: "Yui",
 				LastName:  "Tanaka",
@@ -261,11 +263,11 @@ func TestReplaceActressName(t *testing.T) {
 			},
 		},
 		{
-			name:       "empty actress - sets japanese name from translated",
+			name:       "empty actress - stores translation in FirstName",
 			actress:    &models.Actress{},
 			translated: "Test Name",
 			expected: models.Actress{
-				JapaneseName: "Test Name",
+				FirstName: "Test Name",
 			},
 		},
 		{

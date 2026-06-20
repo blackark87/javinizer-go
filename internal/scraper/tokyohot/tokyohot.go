@@ -438,7 +438,7 @@ func extractActresses(doc *goquery.Document) []models.ActressInfo {
 
 	if raw != "" {
 		for _, name := range splitNames(raw) {
-			name = scraperutil.CleanString(name)
+			name = scraperutil.CleanActressName(name)
 			if name == "" || seen[name] {
 				continue
 			}

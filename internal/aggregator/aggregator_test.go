@@ -2413,3 +2413,56 @@ func TestApplyActressAlias(t *testing.T) {
 		assert.Equal(t, "波多野結衣", actress.JapaneseName)
 	})
 }
+
+func TestFC2IDNormalization(t *testing.T) {
+	cfg := &config.Config{}
+	agg, err := New(cfg, nil)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name          string
+		sourceID      string
+		sourceContent string
+		wantID        string
+		wantContentID string
+	}{
+		{
+			name:          "FC2 without PPV gets normalized",
+			sourceID:      "FC2-2314275",
+			sourceContent: "FC2-2314275",
+			wantID:        "FC2-PPV-2314275",
+			wantContentID: "FC2-PPV-2314275",
+		},
+		{
+			name:          "FC2-PPV already canonical stays unchanged",
+			sourceID:      "FC2-PPV-2314275",
+			sourceContent: "FC2-PPV-2314275",
+			wantID:        "FC2-PPV-2314275",
+			wantContentID: "FC2-PPV-2314275",
+		},
+		{
+			name:          "Non-FC2 ID unchanged",
+			sourceID:      "IPX-535",
+			sourceContent: "IPX-535",
+			wantID:        "IPX-535",
+			wantContentID: "IPX-535",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results := []*models.ScraperResult{
+				{
+					Source:    "javdb",
+					ID:        tt.sourceID,
+					ContentID: tt.sourceContent,
+					Title:     "Test Title",
+				},
+			}
+			movie, _, err := agg.Aggregate(results)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantID, movie.ID)
+			assert.Equal(t, tt.wantContentID, movie.ContentID)
+		})
+	}
+}

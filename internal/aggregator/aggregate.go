@@ -2,6 +2,7 @@ package aggregator
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -9,6 +10,11 @@ import (
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/template"
 )
+
+// fc2NoPPVRegex matches FC2 IDs that are missing the PPV token (e.g. "FC2-2314275").
+// The canonical form used by the FC2 scraper is "FC2-PPV-<digits>".
+// Other scrapers (JavDB, etc.) may omit the PPV segment, so we normalize after aggregation.
+var fc2NoPPVRegex = regexp.MustCompile(`(?i)^FC2-(\d+)$`)
 
 // Aggregate combines multiple scraper results into a single Movie
 func (a *Aggregator) Aggregate(results []*models.ScraperResult) (*models.Movie, string, error) {
@@ -44,6 +50,14 @@ func (a *Aggregator) aggregateWithPriority(results []*models.ScraperResult, prio
 	movie.ContentID = a.getFieldByPriority(resultsBySource, priorityFunc("ContentID"), func(r *models.ScraperResult) string {
 		return r.ContentID
 	})
+
+	// Normalize FC2 IDs: scrapers like JavDB use "FC2-<n>" but the canonical form is "FC2-PPV-<n>".
+	if m := fc2NoPPVRegex.FindStringSubmatch(movie.ID); len(m) > 1 {
+		movie.ID = "FC2-PPV-" + m[1]
+	}
+	if m := fc2NoPPVRegex.FindStringSubmatch(movie.ContentID); len(m) > 1 {
+		movie.ContentID = "FC2-PPV-" + m[1]
+	}
 
 	movie.Title = a.getFieldByPriority(resultsBySource, priorityFunc("Title"), func(r *models.ScraperResult) string {
 		return r.Title

@@ -69,7 +69,7 @@ function getOrganizeEligibleFilePaths(batchJob: BatchJobResponse | null): string
 
 export function createOrganizeController(deps: OrganizeControllerDeps) {
 	const pollIntervalMs = deps.pollIntervalMs ?? 1500;
-	const pollTimeoutMs = deps.pollTimeoutMs ?? 10 * 60 * 1000;
+
 	const completionDelayMs = deps.completionDelayMs ?? 800;
 	const redirectDelayMs = deps.redirectDelayMs ?? 5000;
 
@@ -142,8 +142,8 @@ export function createOrganizeController(deps: OrganizeControllerDeps) {
 
 	function startOrganizeCompletionPolling() {
 		clearOrganizePollTimer();
-		const startedAt = Date.now();
-		let lastPollError: string | null = null;
+		let consecutiveErrors = 0;
+		const maxConsecutiveErrors = 5;
 
 		const pollOnce = async () => {
 			if (deps.getOrganizeStatus() !== 'organizing') {
@@ -154,7 +154,7 @@ export function createOrganizeController(deps: OrganizeControllerDeps) {
 			try {
 				const latestJob = await deps.api.getBatchJob(deps.getJobId(), true);
 				deps.setJob(latestJob);
-				lastPollError = null;
+				consecutiveErrors = 0;
 
 				if (latestJob.status === 'completed' || latestJob.status === 'organized') {
 					const action = deps.getIsUpdateMode() ? 'Update' : 'Organization';
@@ -174,14 +174,13 @@ export function createOrganizeController(deps: OrganizeControllerDeps) {
 					return;
 				}
 			} catch (e) {
-				lastPollError = e instanceof Error ? e.message : String(e);
-			}
-
-			if (Date.now() - startedAt >= pollTimeoutMs) {
-				const action = deps.getIsUpdateMode() ? 'Update' : 'Organization';
-				const detail = lastPollError ? ` Last error: ${lastPollError}` : '';
-				finalizeOrganizeFailure(`${action} timed out while waiting for completion.${detail}`);
-				return;
+				consecutiveErrors++;
+				if (consecutiveErrors >= maxConsecutiveErrors) {
+					const action = deps.getIsUpdateMode() ? 'Update' : 'Organization';
+					const detail = e instanceof Error ? ` Last error: ${e.message}` : '';
+					finalizeOrganizeFailure(`${action} could not be reached after ${consecutiveErrors} retries.${detail}`);
+					return;
+				}
 			}
 
 			organizePollTimer = setTimeout(() => {

@@ -28,6 +28,12 @@
 		onRemoveActress: (actress: Actress) => void;
 		deletePending: boolean;
 	} = $props();
+
+	let imgErrorKeys = $state(new Set<string>());
+
+	function actressKey(actress: Actress, index: number): string {
+		return actress.id != null ? String(actress.id) : `${index}`;
+	}
 </script>
 
 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -45,13 +51,13 @@
 							class="rounded border-input"
 						/>
 					</div>
-					{#if actress.thumb_url}
+					{#if actress.thumb_url && !imgErrorKeys.has(actressKey(actress, index))}
 						<img
 							src={actress.thumb_url}
 							alt={getDisplayName(actress)}
 							class="w-20 h-24 rounded object-cover border"
-							onerror={(event) => {
-								(event.currentTarget as HTMLImageElement).style.display = 'none';
+							onerror={() => {
+								imgErrorKeys = new Set([...imgErrorKeys, actressKey(actress, index)]);
 							}}
 						/>
 					{:else}

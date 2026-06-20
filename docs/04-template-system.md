@@ -11,12 +11,14 @@ Javinizer Go uses a flexible template system for customizing folder and file nam
   - [Date Modifiers](#date-modifiers)
   - [Delimiter Modifiers](#delimiter-modifiers)
   - [Language Modifiers](#language-modifiers)
+  - [Actress Tag Modifiers](#actress-tag-modifiers)
 - [Conditional Logic](#conditional-logic)
 - [Examples](#examples)
 - [Advanced Usage](#advanced-usage)
   - [Handling Missing Data](#handling-missing-data)
   - [Multiple Actresses](#multiple-actresses)
   - [Actress Name Ordering](#actress-name-ordering)
+  - [Actress Language (Japanese Names)](#actress-language-japanese-names)
   - [Group Actress Organization](#group-actress-organization)
   - [Combining Tags](#combining-tags)
   - [NFO Templates](#nfo-templates)
@@ -81,16 +83,18 @@ BEAUTIFUL DAY
 
 | Tag | Description | Example |
 |-----|-------------|---------|
-| `<ACTRESSES>` or `<ACTORS>` | All actresses (comma-separated, or group name when `group_actress` is enabled) | `Sakura Momo, Mikami Yua` |
-| `<ACTRESSES:delimiter>` | Custom delimiter | See [Modifiers](#modifiers) |
+| `<ACTRESSES>` or `<ACTORS>` | All actresses (joined by `actress_delimiter`, or group name when `group_actress` is enabled) | `Sakura Momo, Mikami Yua` |
+| `<ACTRESSES:modifiers>` | Actress tag with modifiers (language, name order, delimiter) | See [Actress Tag Modifiers](#actress-tag-modifiers) |
 | `<ACTRESS>` | First actress name | `Sakura Momo` |
 | `<ACTRESSNAME>` or `<ACTORNAME>` | First actress name (same as `<ACTRESS>`, used for `.actors` image filenames) | `Sakura Momo` |
 | `<FIRSTNAME>` | First actress first name | `Momo` |
 | `<LASTNAME>` | First actress last name | `Sakura` |
 
-> **Name ordering:** By default, actress names are displayed in Japanese naming convention (LastName FirstName, e.g., `Sakura Momo`). Set `output.first_name_order: true` to use Western ordering (FirstName LastName, e.g., `Momo Sakura`). See [Actress Name Ordering](#actress-name-ordering).
+> **Name ordering:** By default, actress names are displayed in Japanese naming convention (LastName FirstName, e.g., `Sakura Momo`). Set `output.first_name_order: true` to use Western ordering (FirstName LastName, e.g., `Momo Sakura`). You can also use the tag-level `:FIRST` modifier (e.g., `<ACTORS:FIRST>`) to override per-tag. See [Actress Name Ordering](#actress-name-ordering).
 
-> **Group actress:** When `output.group_actress` is enabled and a movie has multiple actresses, `<ACTRESSES>` returns the group name (default: `@Group`) instead of listing individual names. This is useful for organizing multi-actress titles into a shared folder. See [Group Actress Organization](#group-actress-organization).
+> **Japanese names:** Set `output.actress_language_ja: true` to prefer Japanese names (e.g., `波多野結衣`) over Latin names (e.g., `Hatano Yui`) for all actress tags. You can also use the tag-level `:JA` modifier (e.g., `<ACTORS:JA>`) to override per-tag. See [Actress Language (Japanese Names)](#actress-language-japanese-names).
+
+> **Group actress:** When `output.group_actress` is enabled and a movie has multiple actresses, `<ACTRESSES>` returns the group name (default: `@Group`) instead of listing individual names. When the actress list is empty or unknown, `<ACTRESSES>` returns the `group_unknown_actress_name` value (default: `@Unknown`). See [Group Actress Organization](#group-actress-organization).
 
 ### Categories
 
@@ -162,21 +166,55 @@ IPX-535 - Beautiful Day (2020/09/13)
 
 ### Delimiter Modifiers
 
-Change how multiple values are joined:
+Change how multiple values are joined.
 
-**Actresses with custom delimiter:**
+**Actress delimiter (config-level):**
+
+The `output.actress_delimiter` setting controls how actress names are joined when using `<ACTORS>` or `<ACTRESSES>` without a tag-level delimiter modifier:
 
 ```yaml
 output:
-  folder_format: "<ACTRESSES: & >"
+  actress_delimiter: " | "
 ```
 
 Result:
 ```
-Sakura Momo & Mikami Yua & Anzai Rara
+Sakura Momo | Mikami Yua | Anzai Rara
 ```
 
+Default: `", "` (comma + space).
+
+> **Legacy `delimiter` key:** If your config uses the old `output.delimiter` key, it will be automatically migrated to `actress_delimiter` on load. Update your config to use `actress_delimiter` to avoid the migration shim.
+
+**Actress delimiter (tag-level `DELIM=` modifier):**
+
+Use `DELIM=<value>` in the actress tag to override the joiner per-tag. This takes precedence over `actress_delimiter`:
+
+```yaml
+output:
+  actress_delimiter: ", "
+  folder_format: "<ACTORS:DELIM= | >"
+```
+
+Result:
+```
+Sakura Momo | Mikami Yua | Anzai Rara
+```
+
+The `DELIM=` value is the literal string after the `=` sign. It can contain spaces, commas, or any other characters:
+
+| Template | Joiner | Result |
+|----------|--------|--------|
+| `<ACTORS:DELIM=\|>` | `\|` | `Sakura Momo\|Mikami Yua` |
+| `<ACTORS:DELIM= & >` | ` & ` | `Sakura Momo & Mikami Yua` |
+| `<ACTORS:DELIM=,>` | `,` | `Sakura Momo,Mikami Yua` |
+| `<ACTORS:DELIM=>` | *(empty)* | `Sakura MomoMikami Yua` |
+
+> **Hard break on legacy delimiter syntax:** The older form `<ACTORS:|>` (where the character after the colon was treated as a delimiter) is no longer supported. Characters after the colon are now interpreted as keywords only. If no recognized keyword or `DELIM=` prefix is found, the modifier is ignored and the configured `actress_delimiter` is used instead. Migrate to `<ACTORS:DELIM=|>` for explicit delimiter control.
+
 **Genres with custom delimiter:**
+
+The `<GENRES>` tag still uses the legacy inline-delimiter syntax:
 
 ```yaml
 output:
@@ -210,6 +248,8 @@ Where `XX` is a 2-letter ISO 639-1 language code (e.g., `en`, `ja`, `zh`, `ko`).
 | `<MAKER:XX>` or `<STUDIO:XX>` | Studio name in specified language |
 | `<LABEL:XX>` | Label name in specified language |
 | `<SERIES:XX>` or `<SET:XX>` | Series name in specified language |
+| `<ACTORS:JA>` | Actress names in Japanese (see [Actress Tag Modifiers](#actress-tag-modifiers)) |
+| `<ACTORS:EN>` | Actress names in Latin script (see [Actress Tag Modifiers](#actress-tag-modifiers)) |
 
 **Examples:**
 
@@ -252,6 +292,43 @@ If a translation in the requested language is not available:
 2. If base field is also empty, returns empty string
 
 **Note:** Language data availability depends on the scraper. Currently, only R18.dev provides both English (`en`) and Japanese (`ja`) translations in a single response. Other scrapers would need multiple requests to fetch different languages.
+
+### Actress Tag Modifiers
+
+The `<ACTORS>` and `<ACTRESSES>` tags support a rich modifier syntax that combines language, name order, and delimiter controls in a single tag. This is more powerful than the general language/case modifiers because it handles the unique multi-value nature of actress lists.
+
+**Syntax:**
+```
+<ACTORS:modifier1,modifier2,modifier3>
+```
+
+Multiple modifiers are comma-separated and can appear in any order (though `DELIM=` must come last if the delimiter value contains commas).
+
+**Available modifiers:**
+
+| Modifier | Description | Example |
+|----------|-------------|--------|
+| `JA` | Prefer Japanese names (e.g., `波多野結衣` instead of `Hatano Yui`) | `<ACTORS:JA>` |
+| `EN` | Prefer Latin-script names (e.g., `Hatano Yui`) | `<ACTORS:EN>` |
+| `JA\|EN` | Japanese with English fallback when Japanese name is unavailable | `<ACTORS:JA\|EN>` |
+| `FIRST` or `FIRSTNAMEORDER` | Force FirstName LastName order | `<ACTORS:FIRST>` |
+| `LAST` or `LASTNAMEORDER` | Force LastName FirstName order (default) | `<ACTORS:LAST>` |
+| `DELIM=<value>` | Override the joiner between actress names | `<ACTORS:DELIM=\|>` |
+
+**Combining modifiers:**
+
+| Template | Result | Explanation |
+|----------|--------|-------------|
+| `<ACTORS>` | `Hatano Yui, Uehara Ai` | Uses `actress_delimiter` config (default `", "`) |
+| `<ACTORS:JA>` | `波多野結衣, 上原亜衣` | Japanese names, default delimiter |
+| `<ACTORS:FIRST>` | `Yui Hatano, Ai Uehara` | First-name order, default delimiter |
+| `<ACTORS:DELIM=\|>` | `Hatano Yui\|Uehara Ai` | Custom delimiter, Latin names |
+| `<ACTORS:JA,DELIM=\|>` | `波多野結衣\|上原亜衣` | Japanese + custom delimiter |
+| `<ACTORS:JA,FIRST>` | `結衣 波多野, 亜衣 上原` | Japanese + first-name order |
+| `<ACTORS:JA,FIRST,DELIM=\|>` | `結衣 波多野\|亜衣 上原` | All three combined |
+| `<ACTORS:DELIM=>` | `Hatano YuiUehara Ai` | Empty delimiter joins with nothing |
+
+> **Tag-level vs config-level:** Tag-level modifiers override the config-level settings (`actress_language_ja`, `first_name_order`, `actress_delimiter`) for that specific tag only. Other tags in the same template are unaffected.
 
 ## Conditional Logic
 
@@ -360,7 +437,7 @@ output:
 ```
 Result: `Sakura Momo/IPX-535 - Beautiful Day/`
 
-> **Note:** Actress names use LastName FirstName order by default. Set `first_name_order: true` for FirstName LastName order.
+> **Note:** Actress names use LastName FirstName order by default. Set `first_name_order: true` for FirstName LastName order, or use the tag-level `:FIRST` modifier.
 
 **Date-based:**
 ```yaml
@@ -383,6 +460,26 @@ output:
 ```
 Result: `IPX-535 - 美しい日 (Beautiful Day)/`
 
+**Japanese actress names:**
+```yaml
+output:
+  actress_language_ja: true
+  folder_format: "<ACTRESSES>/<ID> - <TITLE>"
+```
+Result: `波多野結衣, 上原亜衣/IPX-535 - Beautiful Day/`
+
+**Mixed: Japanese folder, Latin file:**
+```yaml
+output:
+  folder_format: "<ACTORS:JA>/<ID> - <TITLE>"
+  file_format: "<ID> - <ACTORS>"
+```
+Result:
+```
+波多野結衣, 上原亜衣/IPX-535 - Beautiful Day/
+  IPX-535 - Hatano Yui, Uehara Ai.mp4
+```
+
 ### File Formats
 
 **ID Only (Default, Recommended):**
@@ -404,7 +501,14 @@ Result: `IPX-535 - Beautiful Day.mp4`
 output:
   file_format: "<ID> - <ACTRESSES> - <TITLE>"
 ```
-Result: `IPX-535 - Sakura Momo - Beautiful Day.mp4`
+Result: `IPX-535 - Sakura Momo, Mikami Yua - Beautiful Day.mp4`
+
+**With pipe-delimited actresses:**
+```yaml
+output:
+  file_format: "<ID> - <ACTORS:DELIM=|>"
+```
+Result: `IPX-535 - Sakura Momo|Mikami Yua.mp4`
 
 **With Date:**
 ```yaml
@@ -450,14 +554,14 @@ IPX-535 - Beautiful Day/
 **Studio Organization:**
 ```yaml
 output:
-  folder_format: "<STUDIO>/<YEAR>/<ID> - <TITLE> (<ACTRESSES>)"
+  folder_format: "<STUDIO>/<YEAR>/<ID> - <TITLE> (<ACTORS:DELIM= & >)"
   file_format: "<ID> - <TITLE>"
 ```
 Result:
 ```
 Idea Pocket/
   2020/
-    IPX-535 - Beautiful Day (Sakura Momo)/
+    IPX-535 - Beautiful Day (Sakura Momo & Mikami Yua)/
       IPX-535 - Beautiful Day.mp4
 ```
 
@@ -499,9 +603,34 @@ Template:
 <ID> - <ACTRESSES>
 ```
 
-Result:
+Result (with default `actress_delimiter: ", "`):
 ```
 IPX-535 - Sakura Momo, Mikami Yua, Anzai Rara
+```
+
+**Changing the delimiter globally:**
+
+```yaml
+output:
+  actress_delimiter: " & "
+```
+
+Result:
+```
+IPX-535 - Sakura Momo & Mikami Yua & Anzai Rara
+```
+
+**Changing the delimiter per-tag:**
+
+```yaml
+output:
+  folder_format: "<ACTORS:DELIM= & >/<ID> - <TITLE>"
+  file_format: "<ID> - <ACTORS:DELIM=_>"
+```
+
+Result:
+```
+Sakura Momo & Mikami Yua/IPX-535 - Beautiful Day.mp4
 ```
 
 **First actress only:**
@@ -536,17 +665,35 @@ By default, actress names in templates follow the Japanese naming convention (**
 Sakura Momo, Hatano Yui
 ```
 
-To use Western ordering (**FirstName LastName**), enable `first_name_order` in your config:
+**Config-level:** Set `first_name_order` in your config to change the default globally:
 
 ```yaml
 output:
   first_name_order: true
 ```
 
-Result with `first_name_order: true`:
+Result:
 ```
 Momo Sakura, Yui Hatano
 ```
+
+**Tag-level:** Use the `:FIRST` or `:LAST` modifier to override per-tag:
+
+```yaml
+output:
+  first_name_order: false
+  folder_format: "<ACTORS:FIRST>/<ID> - <TITLE>"
+```
+
+Result (even though config says LastName FirstName):
+```
+Momo Sakura, Yui Hatano
+```
+
+| Modifier | Effect |
+|----------|--------|
+| `:FIRST` or `:FIRSTNAMEORDER` | Force FirstName LastName order |
+| `:LAST` or `:LASTNAMEORDER` | Force LastName FirstName order |
 
 This affects all actress-related tags:
 
@@ -555,10 +702,67 @@ This affects all actress-related tags:
 | `<ACTRESSES>` | `Sakura Momo, Hatano Yui` | `Momo Sakura, Yui Hatano` |
 | `<ACTRESS>` | `Sakura Momo` | `Momo Sakura` |
 | `<ACTRESSNAME>` | `Sakura Momo` | `Momo Sakura` |
+| `<ACTRESSES:FIRST>` | `Momo Sakura, Yui Hatano` | `Momo Sakura, Yui Hatano` |
 
 > **Note:** `<FIRSTNAME>` and `<LASTNAME>` always return the raw name components regardless of `first_name_order`. They are not affected by this setting.
 
 > **NFO names are separate:** The `nfo.first_name_order` setting controls actress name formatting inside NFO files independently. It defaults to `true` (FirstName LastName) following the Kodi/Plex convention, while `output.first_name_order` defaults to `false` (LastName FirstName) following the Japanese naming convention.
+
+### Actress Language (Japanese Names)
+
+By default, actress names are displayed in Latin script (e.g., `Hatano Yui`). You can switch to Japanese names (e.g., `波多野結衣`) using the `actress_language_ja` setting or the `:JA` tag modifier.
+
+**Config-level:** Set `actress_language_ja` in your config to prefer Japanese names everywhere:
+
+```yaml
+output:
+  actress_language_ja: true
+```
+
+Result:
+```
+波多野結衣, 上原亜衣
+```
+
+**Tag-level:** Use `:JA` or `:EN` to override per-tag:
+
+```yaml
+output:
+  actress_language_ja: false
+  folder_format: "<ACTORS:JA>/<ID> - <TITLE>"
+```
+
+Result:
+```
+波多野結衣, 上原亜衣
+```
+
+**Fallback:** Use `JA|EN` to prefer Japanese but fall back to Latin when the Japanese name is unavailable:
+
+```yaml
+output:
+  folder_format: "<ACTORS:JA|EN>/<ID> - <TITLE>"
+```
+
+| Modifier | Effect |
+|----------|--------|
+| `:JA` | Prefer Japanese names |
+| `:EN` | Prefer Latin-script names |
+| `:JA\|EN` | Japanese with Latin fallback |
+
+**Combining with other modifiers:**
+
+```yaml
+output:
+  folder_format: "<ACTORS:JA,FIRST,DELIM= | >/<ID>"
+```
+
+Result:
+```
+結衣 波多野 | 亜衣 上原/IPX-535
+```
+
+> **Note:** `actress_language_ja` only affects the `<ACTORS>`/`<ACTRESSES>`/`<ACTRESS>`/`<ACTRESSNAME>` tags. Other fields like `<TITLE>` use the general [language modifiers](#language-modifiers) (e.g., `<TITLE:ja>`).
 
 ### Group Actress Organization
 
@@ -568,6 +772,7 @@ When a movie has multiple actresses, you can organize them into a shared group f
 output:
   group_actress: true
   # group_actress_name: "@Group"  # Custom group folder name (default: @Group)
+  # group_unknown_actress_name: "@Unknown"  # Folder name when actress is unknown (default: @Unknown)
 ```
 
 **How it works:**
@@ -575,6 +780,7 @@ output:
 When `group_actress` is enabled and `<ACTRESSES>` appears in your folder template:
 - **Multiple actresses** → `<ACTRESSES>` resolves to the group name (default: `@Group`)
 - **Single actress** → `<ACTRESSES>` resolves to the actress name as normal
+- **No actress / unknown actress** → `<ACTRESSES>` resolves to the unknown actress name (default: `@Unknown`)
 
 **Example with group_actress enabled:**
 
@@ -591,6 +797,9 @@ Results:
 
 # Movie with single actress:
 Sakura Momo/IPX-535 - Solo Title/
+
+# Movie with no known actress:
+@Unknown/ABP-123 - Unknown Actress Title/
 ```
 
 **Custom group name:**
@@ -606,24 +815,38 @@ Result:
 Multi/IPX-535 - Beautiful Day/
 ```
 
+**Custom unknown actress name:**
+
+```yaml
+output:
+  group_actress: true
+  group_unknown_actress_name: "Various"
+```
+
+Result:
+```
+Various/ABP-123 - Unknown Actress Title/
+```
+
 > **Important:** `group_actress` only affects the `<ACTRESSES>` tag behavior. If your folder template does not contain `<ACTRESSES>`, the group organization will not apply. Files are organized into the destination folder directly.
 
-**Combining with `first_name_order`:**
+**Combining with `first_name_order` and `actress_language_ja`:**
 
 ```yaml
 output:
   group_actress: true
   first_name_order: true
+  actress_language_ja: true
   folder_format: "<ACTRESSES>/<ID> - <TITLE>"
 ```
 
 Results:
 ```
-# Multiple actresses: group name is used (unaffected by first_name_order)
+# Multiple actresses: group name is used (unaffected by first_name_order / actress_language_ja)
 @Group/IPX-535 - Beautiful Day/
 
-# Single actress: name follows first_name_order
-Momo Sakura/IPX-535 - Solo Title/
+# Single actress: name follows first_name_order + actress_language_ja
+結衣 波多野/IPX-535 - Solo Title/
 ```
 
 ### Combining Tags
@@ -773,7 +996,7 @@ output:
 **For Browsing:**
 ```yaml
 output:
-  folder_format: "<ID> [<STUDIO>] - <TITLE> (<ACTRESSES>)"
+  folder_format: "<ID> [<STUDIO>] - <TITLE> (<ACTORS:DELIM= & >)"
   file_format: "<ID>"
 ```
 

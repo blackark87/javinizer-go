@@ -13,7 +13,7 @@
 	import ProgressModal from '$lib/components/ProgressModal.svelte';
 	import { apiClient } from '$lib/api/client';
 	import { websocketStore } from '$lib/stores/websocket';
-	import { getBackgroundJobState, reopenModal, dismiss, closeModal } from '$lib/stores/background-job.svelte';
+	import { getBackgroundJobState, reopenModal, dismiss, closeModal, restoreJob } from '$lib/stores/background-job.svelte';
 	import { getQueryClient } from '$lib/query/client';
 	import { getThemeStore } from '$lib/stores/theme.svelte';
 	import '../app.css';
@@ -57,6 +57,9 @@
 			if (!loginUsername && authUsername) {
 				loginUsername = authUsername;
 			}
+			if (status.authenticated && !getBackgroundJobState().jobId) {
+				restoreRunningJob();
+			}
 		} catch (error) {
 			authUnavailable = true;
 			authAuthenticated = false;
@@ -65,6 +68,17 @@
 		} finally {
 			authLoading = false;
 			syncWebSocketAuthState();
+		}
+	}
+
+	async function restoreRunningJob() {
+		try {
+			const result = await apiClient.listOrganizedJobs({ status: 'running', limit: 1 });
+			if (result.jobs.length > 0 && !getBackgroundJobState().jobId) {
+				restoreJob(result.jobs[0].id);
+			}
+		} catch {
+			// silently ignore — non-critical
 		}
 	}
 

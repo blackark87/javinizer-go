@@ -894,6 +894,7 @@ func (job *BatchJob) MarkStarted() {
 	job.mu.Lock()
 	defer job.mu.Unlock()
 	job.Status = JobStatusRunning
+	job.Progress = 0
 	job.StartedAt = time.Now()
 	job.CompletedAt = nil
 	job.OrganizedAt = nil

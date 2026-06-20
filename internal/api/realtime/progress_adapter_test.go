@@ -159,7 +159,7 @@ func TestUpdateConversion(t *testing.T) {
 	assert.Equal(t, 0, msg.FileIndex)
 	assert.Equal(t, "/path/to/file1.mp4", msg.FilePath)
 	assert.Equal(t, "running", msg.Status)
-	assert.Equal(t, 25.5, msg.Progress)
+	assert.Equal(t, 50.0, msg.Progress) // update.Progress (0.5) * 100
 	assert.Equal(t, "Processing file", msg.Message)
 	assert.Empty(t, msg.Error)
 }

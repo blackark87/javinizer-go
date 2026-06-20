@@ -29,3 +29,8 @@ export function dismiss() {
 	state.jobId = null;
 	state.showModal = false;
 }
+
+export function restoreJob(jobId: string) {
+	state.jobId = jobId;
+	state.showModal = false;
+}

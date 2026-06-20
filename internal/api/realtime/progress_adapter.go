@@ -156,8 +156,8 @@ func (a *ProgressAdapter) handleUpdate(update worker.ProgressUpdate) {
 	// Convert TaskStatus to string for WebSocket message
 	status := string(update.Status)
 
-	// Get overall job progress (lightweight, thread-safe)
-	progress := a.job.GetProgress()
+	// Per-task fraction (0→1) scaled to 0-100; overall job % would inflate computeJobProgress.
+	progress := update.Progress * 100
 
 	// Create WebSocket message
 	wsMsg := &websocket.ProgressMessage{

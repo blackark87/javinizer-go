@@ -110,6 +110,7 @@ func (g *Generator) Generate(movie *models.Movie, outputPath string, partSuffix 
 	ctx.GroupActress = g.config.GroupActress
 	ctx.GroupActressName = g.config.GroupActressName
 	ctx.FirstNameOrder = g.config.ActorFirstNameOrder
+	ctx.ActressLanguageJa = g.config.ActorJapaneseNames
 	filename, err := g.templateEngine.Execute(g.config.NFOFilenameTemplate, ctx)
 	if err != nil {
 		return fmt.Errorf("failed to generate NFO filename: %w", err)

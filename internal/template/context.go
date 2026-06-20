@@ -36,7 +36,7 @@ type Context struct {
 	// People
 	Director       string
 	Actresses      []string        // Pre-formatted actress names (LastName FirstName via FullName). Legacy: use ActressDetails for FirstNameOrder-aware formatting.
-	ActressDetails []ActressDetail // Source of truth for name formatting; formatActressName/formatActressNames uses this first, falls back to Actresses.
+	ActressDetails []ActressDetail // Source of truth for name formatting; formatActressNameLang uses this first, falls back to Actresses.
 	FirstName      string          // For single actress context
 	LastName       string          // For single actress context
 	ActressName    string          // Explicit actress name for .actors image filenames
@@ -82,9 +82,10 @@ type Context struct {
 	DefaultLanguage string
 
 	// Output configuration
-	GroupActress     bool   // Replace multiple actresses with group name
-	GroupActressName string // Folder name when GroupActress is enabled and multiple actresses (default: "@Group")
-	FirstNameOrder   bool   // true = FirstName LastName, false = LastName FirstName (default: false for backward compat)
+	GroupActress      bool   // Replace multiple actresses with group name
+	GroupActressName  string // Folder name when GroupActress is enabled and multiple actresses (default: "@Group")
+	FirstNameOrder    bool   // true = FirstName LastName, false = LastName FirstName (default: false for backward compat)
+	ActressLanguageJa bool   // true = prefer JapaneseName over First/Last when available (mirrors nfo.actress_language_ja)
 }
 
 // NewContextFromMovie creates a template context from a Movie model
@@ -324,7 +325,13 @@ func normalizeLanguageCode(lang string) string {
 	return lang
 }
 
-func (c *Context) formatActressName(detail ActressDetail) string {
+// formatActressNameLang formats a single actress name, allowing callers to
+// override the context-wide ActressLanguageJa preference. The override is
+// used by the <ACTORS:JA> / <ACTRESS:JA> / <ACTORNAME:JA> tag modifiers.
+func (c *Context) formatActressNameLang(detail ActressDetail, preferJa bool) string {
+	if preferJa && detail.JapaneseName != "" {
+		return detail.JapaneseName
+	}
 	if detail.FirstName != "" && detail.LastName != "" {
 		if c.FirstNameOrder {
 			return detail.FirstName + " " + detail.LastName
@@ -340,13 +347,15 @@ func (c *Context) formatActressName(detail ActressDetail) string {
 	return detail.JapaneseName
 }
 
-func (c *Context) formatActressNames() []string {
+// formatActressNamesLang formats all actress names with an explicit override
+// of the Japanese-preference flag. See formatActressNameLang.
+func (c *Context) formatActressNamesLang(preferJa bool) []string {
 	if len(c.ActressDetails) == 0 {
 		return c.Actresses
 	}
 	names := make([]string, len(c.ActressDetails))
 	for i, detail := range c.ActressDetails {
-		names[i] = c.formatActressName(detail)
+		names[i] = c.formatActressNameLang(detail, preferJa)
 	}
 	return names
 }

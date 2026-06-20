@@ -979,6 +979,7 @@ func (t *ProcessFileTask) mergeWithExistingNFO(ctx context.Context, movie *model
 		displayCtx.GroupActress = t.cfg.Output.GroupActress
 		displayCtx.GroupActressName = t.cfg.Output.GroupActressName
 		displayCtx.FirstNameOrder = t.cfg.Output.FirstNameOrder
+		displayCtx.ActressLanguageJa = t.cfg.Output.ActressLanguageJA
 		displayCtx.Title = movie.Title
 		if displayName, err := t.templateEngine.ExecuteWithContext(ctx, t.cfg.Metadata.NFO.DisplayTitle, displayCtx); err == nil {
 			merged.DisplayTitle = displayName

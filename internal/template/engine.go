@@ -393,11 +393,18 @@ func (e *Engine) resolveTag(tagName, modifier string, ctx *Context) (string, err
 				return groupName, nil
 			}
 
+			// A tag-level language modifier (<ACTORS:JA>, <ACTORS:EN>) selects
+			// the actress name language for this tag and takes precedence over
+			// the config-level ActressLanguageJa default. Anything else is the
+			// delimiter between names (e.g. <ACTORS:|>).
+			preferJa := ctx.ActressLanguageJa
 			delimiter := ", "
-			if modifier != "" {
-				delimiter = modifier
+			if parsed.isLanguage {
+				preferJa = languageSpecPrefersJapanese(parsed.languageSpec)
+			} else if parsed.legacyModifier != "" {
+				delimiter = parsed.legacyModifier
 			}
-			names := ctx.formatActressNames()
+			names := ctx.formatActressNamesLang(preferJa)
 			return strings.Join(names, delimiter), nil
 		}
 		return "", nil
@@ -406,8 +413,12 @@ func (e *Engine) resolveTag(tagName, modifier string, ctx *Context) (string, err
 		if ctx.ActressName != "" {
 			return ctx.ActressName, nil
 		}
+		preferJa := ctx.ActressLanguageJa
+		if parsed.isLanguage {
+			preferJa = languageSpecPrefersJapanese(parsed.languageSpec)
+		}
 		if len(ctx.ActressDetails) > 0 {
-			return ctx.formatActressName(ctx.ActressDetails[0]), nil
+			return ctx.formatActressNameLang(ctx.ActressDetails[0], preferJa), nil
 		}
 		if len(ctx.Actresses) > 0 {
 			return ctx.Actresses[0], nil
@@ -451,8 +462,12 @@ func (e *Engine) resolveTag(tagName, modifier string, ctx *Context) (string, err
 		if ctx.ActressName != "" {
 			return ctx.ActressName, nil
 		}
+		preferJa := ctx.ActressLanguageJa
+		if parsed.isLanguage {
+			preferJa = languageSpecPrefersJapanese(parsed.languageSpec)
+		}
 		if len(ctx.ActressDetails) > 0 {
-			return ctx.formatActressName(ctx.ActressDetails[0]), nil
+			return ctx.formatActressNameLang(ctx.ActressDetails[0], preferJa), nil
 		}
 		if len(ctx.Actresses) > 0 {
 			return ctx.Actresses[0], nil
@@ -846,6 +861,19 @@ func (e *Engine) languageCandidates(explicitLang string, ctx *Context) []string 
 	}
 
 	return candidates
+}
+
+// languageSpecPrefersJapanese reports whether the given language spec (which
+// may be a single code like "ja" or a fallback chain like "ja|en") includes
+// Japanese. Used by the <ACTORS:JA> / <ACTRESS:JA> tag modifiers to select
+// actress Japanese-name rendering.
+func languageSpecPrefersJapanese(languageSpec string) bool {
+	for _, lang := range strings.Split(languageSpec, "|") {
+		if strings.EqualFold(strings.TrimSpace(lang), "ja") {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveTranslatedTag resolves a translatable tag using the translation system.

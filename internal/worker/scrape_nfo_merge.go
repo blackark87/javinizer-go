@@ -116,6 +116,7 @@ func mergeScrapedNFO(
 		displayCtx.GroupActress = cfg.Output.GroupActress
 		displayCtx.GroupActressName = cfg.Output.GroupActressName
 		displayCtx.FirstNameOrder = cfg.Output.FirstNameOrder
+		displayCtx.ActressLanguageJa = cfg.Output.ActressLanguageJA
 		displayCtx.Title = preMergeTitle
 		if displayName, err := displayTmplEngine.ExecuteWithContext(ctx, cfg.Metadata.NFO.DisplayTitle, displayCtx); err == nil {
 			movie.DisplayTitle = displayName

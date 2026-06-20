@@ -237,6 +237,7 @@ func DefaultConfig() *Config {
 			GroupActress:        false,    // Don't group actresses by default
 			GroupActressName:    "@Group", // Default group name when group_actress is enabled
 			FirstNameOrder:      false,    // Default to LastName FirstName (Japanese naming convention)
+			ActressLanguageJA:   false,    // Default to First/Last name; <ACTORS:JA> overrides per-tag
 			PosterFormat:        "<ID><IF:MULTIPART>-pt<PART></IF>-poster.jpg",
 			FanartFormat:        "<ID><IF:MULTIPART>-pt<PART></IF>-fanart.jpg",
 			TrailerFormat:       "<ID>-trailer.mp4",

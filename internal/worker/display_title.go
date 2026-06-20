@@ -15,6 +15,7 @@ func applyDisplayTitle(ctx context.Context, job *BatchJob, cfg *config.Config, m
 		displayCtx.GroupActress = cfg.Output.GroupActress
 		displayCtx.GroupActressName = cfg.Output.GroupActressName
 		displayCtx.FirstNameOrder = cfg.Output.FirstNameOrder
+		displayCtx.ActressLanguageJa = cfg.Output.ActressLanguageJA
 		displayCtx.Title = titleSource.Title
 		if displayName, err := displayTmplEngine.ExecuteWithContext(ctx, cfg.Metadata.NFO.DisplayTitle, displayCtx); err == nil {
 			movie.DisplayTitle = displayName

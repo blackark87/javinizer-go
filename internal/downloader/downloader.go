@@ -298,6 +298,7 @@ func (d *Downloader) generateFilename(movie *models.Movie, templateStr string, i
 	ctx.GroupActress = d.config.GroupActress
 	ctx.GroupActressName = d.config.GroupActressName
 	ctx.FirstNameOrder = d.actorFirstNameOrder
+	ctx.ActressLanguageJa = d.actorJapaneseNames
 
 	if multipart != nil {
 		ctx.IsMultiPart = multipart.IsMultiPart
@@ -324,6 +325,7 @@ func (d *Downloader) generateActressFilename(movie *models.Movie, actressName st
 	ctx.GroupActress = d.config.GroupActress
 	ctx.GroupActressName = d.config.GroupActressName
 	ctx.FirstNameOrder = d.actorFirstNameOrder
+	ctx.ActressLanguageJa = d.actorJapaneseNames
 
 	engine := d.templateEngine
 	filename, err := engine.Execute(templateStr, ctx)

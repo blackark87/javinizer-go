@@ -4079,6 +4079,10 @@ const docTemplate = `{
                 "actress_format": {
                     "type": "string"
                 },
+                "actress_language_ja": {
+                    "description": "true = prefer JapaneseName over First/Last for \u003cACTORS\u003e/\u003cACTRESS\u003e in folder/file naming (default: false), mirrors nfo.actress_language_ja; tag-level \u003cACTORS:JA\u003e still takes precedence",
+                    "type": "boolean"
+                },
                 "allow_revert": {
                     "description": "Enable revert operations (default: false — opt-in for safety)",
                     "type": "boolean"

@@ -976,6 +976,121 @@ func TestTemplateEngine_FirstNameOrderFallback(t *testing.T) {
 	}
 }
 
+// TestTemplateEngine_ActorsLanguageModifier covers the tag-level language
+// modifier (<ACTORS:JA>, <ACTORS:EN>) and the config-level ActressLanguageJa
+// default for both <ACTORS> and <ACTRESS> tags. Regression test for issue #32.
+func TestTemplateEngine_ActorsLanguageModifier(t *testing.T) {
+	engine := NewEngine()
+
+	actresses := []ActressDetail{
+		{FirstName: "Yui", LastName: "Hatano", JapaneseName: "波多野結衣"},
+		{FirstName: "Ai", LastName: "Uehara", JapaneseName: "上原亜衣"},
+	}
+	prebuilt := func(details []ActressDetail) []string {
+		out := make([]string, len(details))
+		for i, d := range details {
+			if d.LastName != "" {
+				out[i] = d.LastName + " " + d.FirstName
+			} else {
+				out[i] = d.FirstName
+			}
+		}
+		return out
+	}
+
+	tests := []struct {
+		name              string
+		sliceSingle       bool // true: use only first actress (for <ACTRESS> tests)
+		actressLanguageJa bool
+		template          string
+		want              string
+	}{
+		// Tag-level modifier takes precedence over config default
+		{
+			name:              "explicit JA modifier forces Japanese regardless of config",
+			actressLanguageJa: false,
+			template:          "<ACTORS:JA>",
+			want:              "波多野結衣, 上原亜衣",
+		},
+		{
+			name:              "explicit EN modifier forces English when config prefers Japanese",
+			actressLanguageJa: true,
+			template:          "<ACTORS:EN>",
+			want:              "Hatano Yui, Uehara Ai",
+		},
+		{
+			name:              "JA fallback chain modifier",
+			actressLanguageJa: false,
+			template:          "<ACTORS:JA|EN>",
+			want:              "波多野結衣, 上原亜衣",
+		},
+		// Config-level default
+		{
+			name:              "no modifier honors config default true",
+			actressLanguageJa: true,
+			template:          "<ACTORS>",
+			want:              "波多野結衣, 上原亜衣",
+		},
+		{
+			name:              "no modifier honors config default false",
+			actressLanguageJa: false,
+			template:          "<ACTORS>",
+			want:              "Hatano Yui, Uehara Ai",
+		},
+		// Backward compat: legacy delimiter modifier still works when not a language code
+		{
+			name:              "legacy pipe delimiter preserved",
+			actressLanguageJa: false,
+			template:          "<ACTORS:|>",
+			want:              "Hatano Yui|Uehara Ai",
+		},
+		// Single-actress ACTRESS tag
+		{
+			name:              "ACTRESS JA modifier",
+			sliceSingle:       true,
+			actressLanguageJa: false,
+			template:          "<ACTRESS:JA>",
+			want:              "波多野結衣",
+		},
+		{
+			name:              "ACTRESS config default true",
+			sliceSingle:       true,
+			actressLanguageJa: true,
+			template:          "<ACTRESS>",
+			want:              "波多野結衣",
+		},
+		{
+			name:              "ACTORNAME JA modifier",
+			sliceSingle:       true,
+			actressLanguageJa: false,
+			template:          "<ACTORNAME:JA>",
+			want:              "波多野結衣",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			details := actresses
+			if tt.sliceSingle {
+				details = actresses[:1]
+			}
+			ctx := &Context{
+				ID:                "IPX-535",
+				Actresses:         prebuilt(details),
+				ActressDetails:    details,
+				ActressLanguageJa: tt.actressLanguageJa,
+			}
+			got, err := engine.Execute(tt.template, ctx)
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("Execute() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestTemplateEngine_ResolutionTag(t *testing.T) {
 	engine := NewEngine()
 

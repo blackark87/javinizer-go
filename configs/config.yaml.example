@@ -457,6 +457,11 @@ output:
     # group_actress_name: "@Group"
     # Actress name ordering in templates: true = FirstName LastName, false = LastName FirstName (default: false)
     # first_name_order: false
+    # Actress name language: true = prefer Japanese name (e.g. 桜空もも) for <ACTORS>/<ACTRESS>
+    # in folder/file naming when available; false = use First/Last name (default: false).
+    # A tag-level modifier overrides this per-tag, e.g. <ACTORS:JA> forces Japanese,
+    # <ACTORS:EN> forces English. JA|EN fallback chains are also supported.
+    # actress_language_ja: false
     # Media file naming templates (support placeholders like <ID>, <TITLE>, <INDEX>, etc.)
     poster_format: <ID><IF:MULTIPART>-pt<PART></IF>-poster.jpg    # Vertical poster image (e.g., IPX-535-poster.jpg, IPX-535-pt1-poster.jpg)
     fanart_format: <ID><IF:MULTIPART>-pt<PART></IF>-fanart.jpg    # Horizontal cover/background image (e.g., IPX-535-fanart.jpg, IPX-535-pt1-fanart.jpg)

@@ -150,6 +150,7 @@ func (a *Aggregator) aggregateWithPriority(results []*models.ScraperResult, prio
 		ctx.GroupActress = a.config.Output.GroupActress
 		ctx.GroupActressName = a.config.Output.GroupActressName
 		ctx.FirstNameOrder = a.config.Output.FirstNameOrder
+		ctx.ActressLanguageJa = a.config.Output.ActressLanguageJA
 		displayTitle, err := a.templateEngine.Execute(a.config.Metadata.NFO.DisplayTitle, ctx)
 		if err == nil && displayTitle != "" {
 			movie.DisplayTitle = displayTitle

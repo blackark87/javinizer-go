@@ -228,19 +228,19 @@ func TestReplaceActressName(t *testing.T) {
 		expected   models.Actress
 	}{
 		{
-			name: "japanese name replacement - preserves JapaneseName, stores in FirstName",
+			name: "japanese actress - preserves JapaneseName, splits GivenName FamilyName",
 			actress: &models.Actress{
 				JapaneseName: "田中香",
 			},
 			translated: "Yui Tanaka",
 			expected: models.Actress{
 				JapaneseName: "田中香",
-				FirstName:    "Yui Tanaka",
-				LastName:     "",
+				FirstName:    "Yui",
+				LastName:     "Tanaka",
 			},
 		},
 		{
-			name: "first last name replacement - keeps visible",
+			name: "actress with existing english name - splits translated value",
 			actress: &models.Actress{
 				FirstName: "Yui",
 				LastName:  "Tanaka",
@@ -248,8 +248,8 @@ func TestReplaceActressName(t *testing.T) {
 			translated: "Yui Tanaka",
 			expected: models.Actress{
 				JapaneseName: "",
-				FirstName:    "Yui Tanaka",
-				LastName:     "",
+				FirstName:    "Yui",
+				LastName:     "Tanaka",
 			},
 		},
 		{
@@ -263,48 +263,33 @@ func TestReplaceActressName(t *testing.T) {
 			},
 		},
 		{
-			name:       "empty actress - stores translation in FirstName",
+			name:       "single word name - stored in FirstName only",
 			actress:    &models.Actress{},
-			translated: "Test Name",
+			translated: "Serina",
 			expected: models.Actress{
-				FirstName: "Test Name",
+				FirstName: "Serina",
+				LastName:  "",
 			},
 		},
 		{
-			name: "only first name set - replace in first name",
+			name: "three word name - first word is FirstName, rest is LastName",
 			actress: &models.Actress{
-				FirstName: "Yui",
+				JapaneseName: "田中",
 			},
-			translated: "New Name",
+			translated: "Maria De Niro",
 			expected: models.Actress{
-				JapaneseName: "",
-				FirstName:    "New Name",
-				LastName:     "",
+				JapaneseName: "田中",
+				FirstName:    "Maria",
+				LastName:     "De Niro",
 			},
 		},
 		{
-			name: "only last name set - replace in first name",
-			actress: &models.Actress{
-				LastName: "Tanaka",
-			},
-			translated: "New Name",
+			name: "whitespace trimmed before splitting",
+			actress: &models.Actress{},
+			translated: "  Yui Tanaka  ",
 			expected: models.Actress{
-				JapaneseName: "",
-				FirstName:    "New Name",
-				LastName:     "",
-			},
-		},
-		{
-			name: "whitespace in translated - trimmed",
-			actress: &models.Actress{
 				FirstName: "Yui",
 				LastName:  "Tanaka",
-			},
-			translated: "  New Name  ",
-			expected: models.Actress{
-				JapaneseName: "",
-				FirstName:    "New Name",
-				LastName:     "",
 			},
 		},
 	}

@@ -59,6 +59,7 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 		text       string
 		fieldName  string
 		targetLang string
+		isActress  bool
 		apply      func(string)
 	}
 
@@ -134,7 +135,7 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 		}
 	}
 
-	// Queue actress fields for actressTargetLang — independent of metadata languages
+	// Queue actress fields for actressTargetLang — separate batch with actress-specific prompt
 	if fields.Actresses {
 		actressRecord := getRecord(actressTargetLang)
 		actressRecord.Actresses = make([]string, len(movie.Actresses))
@@ -145,11 +146,22 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 			if name == "" {
 				continue
 			}
-			queueField(actressTargetLang, name, func(v string) {
-				actressRecord.Actresses[idx] = v
-			}, func(v string) {
-				replaceActressName(&movie.Actresses[idx], v)
-			}, fmt.Sprintf("actress[%d]", i))
+			if sourceLang != sourceLangAuto && sourceLang == actressTargetLang {
+				continue
+			}
+			touchedRecords[actressTargetLang] = true
+			requests = append(requests, pendingText{
+				text:      name,
+				fieldName: fmt.Sprintf("actress[%d]", i),
+				targetLang: actressTargetLang,
+				isActress: true,
+				apply: func(translated string) {
+					actressRecord.Actresses[idx] = translated
+					if s.cfg.ApplyToPrimary && actressTargetLang == targetLanguages[0] {
+						replaceActressName(&movie.Actresses[idx], translated)
+					}
+				},
+			})
 		}
 	}
 
@@ -157,20 +169,32 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 		return nil, "", nil
 	}
 
-	// Group requests by target language and execute in batches
-	requestsByTarget := make(map[string][]int)
+	// Group requests by (targetLang, isActress) and execute in separate batches.
+	// Actress names use a specialized romanization prompt; metadata uses the general prompt.
+	type batchKey struct {
+		lang      string
+		isActress bool
+	}
+	requestsByKey := make(map[batchKey][]int)
 	for i := range requests {
-		requestsByTarget[requests[i].targetLang] = append(requestsByTarget[requests[i].targetLang], i)
+		key := batchKey{lang: requests[i].targetLang, isActress: requests[i].isActress}
+		requestsByKey[key] = append(requestsByKey[key], i)
 	}
 
 	var warnings []string
-	for lang, indexes := range requestsByTarget {
+	for key, indexes := range requestsByKey {
 		texts := make([]string, 0, len(indexes))
 		for _, idx := range indexes {
 			texts = append(texts, requests[idx].text)
 		}
 
-		translatedTexts, err := s.translateTexts(ctx, sourceLang, lang, texts)
+		var translatedTexts []string
+		var err error
+		if key.isActress {
+			translatedTexts, err = s.translateActressNames(ctx, sourceLang, key.lang, texts)
+		} else {
+			translatedTexts, err = s.translateTexts(ctx, sourceLang, key.lang, texts)
+		}
 		if err != nil {
 			logging.Debugf("Translation: translateTexts failed: %v", err)
 			warning := sanitizeTranslationWarning(normalizeProvider(s.cfg.Provider), err)
@@ -326,9 +350,18 @@ func replaceActressName(actress *models.Actress, translated string) {
 	if actress == nil || translated == "" {
 		return
 	}
-	// Store translation in FirstName so JapaneseName is preserved for <ACTRESS:ja>
-	actress.FirstName = translated
-	actress.LastName = ""
+	// Split into FirstName + LastName so FormatActressName respects FirstNameOrder.
+	// JapaneseName is preserved for <ACTRESS:ja>.
+	// Prompt instructs LLM to return Western order (GivenName FamilyName),
+	// so parts[0] = given name, parts[1:] = family name.
+	parts := strings.Fields(translated)
+	if len(parts) >= 2 {
+		actress.FirstName = parts[0]
+		actress.LastName = strings.Join(parts[1:], " ")
+	} else {
+		actress.FirstName = translated
+		actress.LastName = ""
+	}
 }
 
 const maxTranslationRetries = 3
@@ -409,6 +442,89 @@ func (s *Service) translateTexts(ctx context.Context, sourceLang, targetLang str
 	return nil, &TranslationError{
 		Kind:    TranslationErrorProvider,
 		Message: fmt.Sprintf("translation failed after %d attempts", maxTranslationRetries),
+	}
+}
+
+// translateActressNames uses a specialized romanization prompt for LLM providers.
+// For non-LLM providers (DeepL, Google), falls back to the standard translateTexts.
+func (s *Service) translateActressNames(ctx context.Context, sourceLang, targetLang string, texts []string) ([]string, error) {
+	provider := normalizeProvider(s.cfg.Provider)
+	switch provider {
+	case providerDeepL, providerGoogle:
+		return s.translateTexts(ctx, sourceLang, targetLang, texts)
+	default:
+		return s.translateActressNamesWithLLM(ctx, sourceLang, targetLang, texts)
+	}
+}
+
+// translateActressNamesWithLLM executes actress name romanization via LLM with retry logic.
+func (s *Service) translateActressNamesWithLLM(ctx context.Context, sourceLang, targetLang string, texts []string) ([]string, error) {
+	provider := normalizeProvider(s.cfg.Provider)
+
+	var lastResult *translationResult
+	var lastErr error
+	expectedCount := len(texts)
+
+	for attempt := 1; attempt <= maxTranslationRetries; attempt++ {
+		var result *translationResult
+		var err error
+
+		switch provider {
+		case providerOpenAI:
+			result, err = s.translateActressNamesWithOpenAI(ctx, sourceLang, targetLang, texts)
+		case providerOpenAICompatible:
+			result, err = s.translateActressNamesWithOpenAICompatible(ctx, sourceLang, targetLang, texts)
+		case providerAnthropic:
+			result, err = s.translateActressNamesWithAnthropic(ctx, sourceLang, targetLang, texts)
+		case providerBedrock:
+			result, err = s.translateActressNamesWithBedrock(ctx, sourceLang, targetLang, texts)
+		default:
+			return nil, fmt.Errorf("unsupported translation provider: %s", provider)
+		}
+
+		if err == nil {
+			if result == nil {
+				err = &TranslationError{Kind: TranslationErrorProvider, Message: "translation provider returned no result"}
+			} else if len(result.texts) != expectedCount {
+				err = &TranslationError{
+					Kind:    TranslationErrorCountMismatch,
+					Message: fmt.Sprintf("translation provider returned %d items for %d inputs", len(result.texts), expectedCount),
+				}
+			}
+		}
+
+		if err == nil && result != nil {
+			return result.texts, nil
+		}
+
+		lastResult = result
+		lastErr = err
+
+		if attempt < maxTranslationRetries {
+			if isRetryableError(err, result) {
+				logging.Debugf("Translation (actress): attempt %d/%d failed (%v), retrying...", attempt, maxTranslationRetries, err)
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(time.Duration(attempt) * 200 * time.Millisecond):
+				}
+			} else {
+				logging.Debugf("Translation (actress): attempt %d/%d failed with non-retryable error (%v), giving up", attempt, maxTranslationRetries, err)
+				break
+			}
+		}
+	}
+
+	if lastResult != nil && lastResult.rawLLM != "" {
+		logging.Debugf("Translation (actress): all %d attempts failed. Last LLM output (length=%d):\n%s", maxTranslationRetries, len(lastResult.rawLLM), lastResult.rawLLM)
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, &TranslationError{
+		Kind:    TranslationErrorProvider,
+		Message: fmt.Sprintf("actress translation failed after %d attempts", maxTranslationRetries),
 	}
 }
 

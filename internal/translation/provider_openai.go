@@ -83,6 +83,39 @@ func translationCompactOutputMarker(i int) string {
 	return fmt.Sprintf("<<<JZ_%d>>>", i)
 }
 
+// buildActressTranslationPrompts builds a specialized romanization prompt for actress names.
+// Unlike the general translation prompt, this instructs the LLM to romanize phonetically,
+// return ASCII-only output, and use Western (GivenName FamilyName) order.
+func buildActressTranslationPrompts(sourceLang, targetLang string, texts []string) (string, string, error) {
+	systemPrompt := fmt.Sprintf(
+		"You are a Japanese actress name romanizer. "+
+			"Romanize each Japanese name (kanji, katakana, or hiragana) to its English/Latin equivalent. "+
+			"Rules: "+
+			"(1) Use ONLY standard ASCII letters (a-z, A-Z), spaces, and hyphens. No diacritics, no accents, no special characters. Write 'u' not 'ū', 'o' not 'ō', 'a' not 'ā'. "+
+			"(2) Return names in Western order: GivenName FamilyName (e.g. 'Yui Hatano', not 'Hatano Yui'). "+
+			"(3) Do NOT translate meaning — romanize phonetically only. "+
+			"(4) Preserve order and return ONLY the indexed output markers in ascending order. Do not add commentary. Do not omit any index. "+
+			"Source language: %s. Target language: %s.",
+		sourceLang, targetLang,
+	)
+
+	payloadBytes, err := json.Marshal(texts)
+	if err != nil {
+		return "", "", err
+	}
+
+	var userPrompt strings.Builder
+	userPrompt.WriteString("Romanize these Japanese actress names: ")
+	userPrompt.Write(payloadBytes)
+	userPrompt.WriteString("\nReturn output in this exact pattern:\n")
+	for i := range texts {
+		userPrompt.WriteString(translationCompactOutputMarker(i))
+		userPrompt.WriteString("\nromanized name\n")
+	}
+
+	return systemPrompt, strings.TrimSpace(userPrompt.String()), nil
+}
+
 func buildOpenAICompatibleThinkingStrategies(baseURL, model string, cfg config.OpenAICompatibleTranslationConfig) []openAICompatibleThinkingStrategy {
 	switch cfg.NormalizedBackendType() {
 	case "vllm":
@@ -321,6 +354,47 @@ func (s *Service) translateWithOpenAI(ctx context.Context, sourceLang, targetLan
 	})
 }
 
+func (s *Service) translateActressNamesWithOpenAI(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
+	baseURL := strings.TrimRight(strings.TrimSpace(s.cfg.OpenAI.BaseURL), "/")
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1"
+	}
+
+	apiKey := strings.TrimSpace(s.cfg.OpenAI.APIKey)
+	if apiKey == "" {
+		return nil, fmt.Errorf("openai api_key is required")
+	}
+
+	model := strings.TrimSpace(s.cfg.OpenAI.Model)
+	if model == "" {
+		model = "gpt-4o-mini"
+	}
+
+	systemPrompt, userPrompt, err := buildActressTranslationPrompts(sourceLang, targetLang, texts)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.executeOpenAIChatTranslation(ctx, openAIChatCallOptions{
+		provider: providerOpenAI,
+		baseURL:  baseURL,
+		endpoint: "/chat/completions",
+		model:    model,
+		headers: map[string]string{
+			"Authorization": "Bearer " + apiKey,
+		},
+		request: openAIChatRequest{
+			Model:       model,
+			Temperature: 0,
+			Messages: []openAIChatMessage{
+				{Role: "system", Content: systemPrompt},
+				{Role: "user", Content: userPrompt},
+			},
+		},
+		textCount: len(texts),
+	})
+}
+
 func extractContentString(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
@@ -390,6 +464,69 @@ func (s *Service) translateWithOpenAICompatible(ctx context.Context, sourceLang,
 		}
 
 		logging.Debugf("Translation (openai-compatible): thinking strategy %q failed (%v), trying fallback", strategy, err)
+	}
+
+	return nil, lastErr
+}
+
+func (s *Service) translateActressNamesWithOpenAICompatible(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
+	baseURL := strings.TrimRight(strings.TrimSpace(s.cfg.OpenAICompatible.BaseURL), "/")
+	if baseURL == "" {
+		baseURL = "http://localhost:11434/v1"
+	}
+
+	apiKey := strings.TrimSpace(s.cfg.OpenAICompatible.APIKey)
+	model := strings.TrimSpace(s.cfg.OpenAICompatible.Model)
+	if model == "" {
+		return nil, fmt.Errorf("openai-compatible model is required")
+	}
+
+	systemPrompt, userPrompt, err := buildActressTranslationPrompts(sourceLang, targetLang, texts)
+	if err != nil {
+		return nil, err
+	}
+
+	headers := map[string]string{}
+	if apiKey != "" {
+		headers["Authorization"] = "Bearer " + apiKey
+	}
+
+	baseRequest := openAIChatRequest{
+		Model:       model,
+		Temperature: 0,
+		Messages: []openAIChatMessage{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: userPrompt},
+		},
+	}
+
+	thinkingEnabled := s.cfg.OpenAICompatible.EffectiveEnableThinking()
+	strategies := buildOpenAICompatibleThinkingStrategies(baseURL, model, s.cfg.OpenAICompatible)
+
+	var lastErr error
+	for _, strategy := range strategies {
+		request := applyOpenAICompatibleThinkingStrategy(baseRequest, strategy, thinkingEnabled)
+		result, err := s.executeOpenAIChatTranslation(ctx, openAIChatCallOptions{
+			provider:  providerOpenAICompatible,
+			baseURL:   baseURL,
+			endpoint:  "/chat/completions",
+			model:     model,
+			headers:   headers,
+			request:   request,
+			textCount: len(texts),
+			logInput:  true,
+			logTiming: true,
+		})
+		if err == nil {
+			return result, nil
+		}
+
+		lastErr = err
+		if strategy == openAICompatibleThinkingStrategyNone || !isRetryableThinkingStrategyError(err) {
+			return nil, err
+		}
+
+		logging.Debugf("Translation (openai-compatible actress): thinking strategy %q failed (%v), trying fallback", strategy, err)
 	}
 
 	return nil, lastErr

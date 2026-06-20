@@ -1520,10 +1520,14 @@ func TestTranslateMovie_FullFlow(t *testing.T) {
 				}
 			}
 
-			// Verify actresses translation if configured
-			// replaceActressName now stores the translation in FirstName, preserving JapaneseName
+			// Verify actresses translation if configured.
+			// replaceActressName splits "GivenName FamilyName" into FirstName + LastName;
+			// JapaneseName is preserved.
 			if tt.cfg.Fields.Actresses && len(tt.movie.Actresses) > 0 && tt.wantPrimarySet {
-				assert.NotEmpty(t, movieCopy.Actresses[0].FirstName, "translated actress name should be stored in FirstName")
+				a := movieCopy.Actresses[0]
+				assert.NotEmpty(t, a.FirstName, "translated actress given name should be in FirstName")
+				assert.NotEmpty(t, a.LastName, "translated actress family name should be in LastName")
+				assert.Equal(t, tt.movie.Actresses[0].JapaneseName, a.JapaneseName, "JapaneseName should be preserved after translation")
 			}
 
 			// Verify genres translation if configured

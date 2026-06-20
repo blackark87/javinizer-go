@@ -143,12 +143,15 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 			idx := i
 			actress := &movie.Actresses[idx]
 
+			logging.Debugf("Translation: actress[%d] before=%q JapaneseName=%q FirstName=%q LastName=%q ThumbURL=%q", idx, actressDisplayTitle(*actress), actress.JapaneseName, actress.FirstName, actress.LastName, actress.ThumbURL)
+
 			// Priority 1: extract romanized name directly from DMM actjpgs thumbnail URL.
 			// This is more reliable than LLM romanization (official DMM naming).
 			if lastName, firstName, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL); ok {
 				displayName := capitalize(lastName) + " " + capitalize(firstName)
+				logging.Debugf("Translation: actress[%d] URL extraction → %q (LastName=%q FirstName=%q)", idx, displayName, capitalize(lastName), capitalize(firstName))
 				actressRecord.Actresses[idx] = displayName
-				if s.cfg.ApplyToPrimary && actressTargetLang == targetLanguages[0] {
+				if s.cfg.ApplyToPrimary {
 					actress.LastName = capitalize(lastName)
 					actress.FirstName = capitalize(firstName)
 				}
@@ -158,6 +161,7 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 
 			// Priority 2: LLM romanization — only if a Japanese source name exists.
 			if strings.TrimSpace(actress.JapaneseName) == "" {
+				logging.Debugf("Translation: actress[%d] skip — no JapaneseName", idx)
 				continue
 			}
 			rawName := actressDisplayTitle(*actress)
@@ -175,16 +179,18 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 				targetLang: actressTargetLang,
 				isActress:  true,
 				apply: func(translated string) {
+					logging.Debugf("Translation: actress[%d] LLM → %q", idx, translated)
 					actressRecord.Actresses[idx] = translated
-					if s.cfg.ApplyToPrimary && actressTargetLang == targetLanguages[0] {
+					if s.cfg.ApplyToPrimary {
 						replaceActressName(actress, translated)
+						logging.Debugf("Translation: actress[%d] after replaceActressName FirstName=%q LastName=%q", idx, actress.FirstName, actress.LastName)
 					}
 				},
 			})
 		}
 	}
 
-	if len(requests) == 0 {
+	if len(requests) == 0 && len(touchedRecords) == 0 {
 		return nil, "", nil
 	}
 
@@ -364,6 +370,18 @@ func actressDisplayTitle(actress models.Actress) string {
 	return full
 }
 
+var longVowelReplacer = strings.NewReplacer(
+	"ā", "a", "Ā", "A",
+	"ū", "u", "Ū", "U",
+	"ō", "o", "Ō", "O",
+	"ē", "e", "Ē", "E",
+	"ī", "i", "Ī", "I",
+)
+
+func normalizeRomanizationToASCII(s string) string {
+	return longVowelReplacer.Replace(s)
+}
+
 func replaceActressName(actress *models.Actress, translated string) {
 	translated = strings.TrimSpace(translated)
 	if actress == nil || translated == "" {
@@ -376,6 +394,7 @@ func replaceActressName(actress *models.Actress, translated string) {
 	if translated == "" {
 		return
 	}
+	translated = normalizeRomanizationToASCII(translated)
 	// Prompt returns Japanese name order: FamilyName GivenName.
 	// parts[0] = family name → LastName; parts[1:] = given name → FirstName.
 	// JapaneseName is preserved for <ACTRESS:ja>.

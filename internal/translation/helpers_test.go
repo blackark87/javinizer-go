@@ -327,6 +327,25 @@ func TestReplaceActressName(t *testing.T) {
 				FirstName: "Mai",
 			},
 		},
+		{
+			name:       "long vowels normalized to ASCII",
+			actress:    &models.Actress{JapaneseName: "波多野結衣"},
+			translated: "Hatano Yūi",
+			expected: models.Actress{
+				JapaneseName: "波多野結衣",
+				LastName:     "Hatano",
+				FirstName:    "Yui",
+			},
+		},
+		{
+			name:       "multiple long vowels normalized",
+			actress:    &models.Actress{},
+			translated: "Ōshima Māi",
+			expected: models.Actress{
+				LastName:  "Oshima",
+				FirstName: "Mai",
+			},
+		},
 	}
 
 	// Test nil actress directly for nil-safety branch

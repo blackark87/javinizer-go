@@ -216,6 +216,91 @@ func TestTranslateMovie_ApplyToPrimary(t *testing.T) {
 }
 
 // =============================================================================
+// TranslateMovie tests - actress URL extraction applies to primary
+// =============================================================================
+
+func TestTranslateMovie_ActressURLExtraction_AppliesPrimaryWhenTargetLangsDiffer(t *testing.T) {
+	// Regression: when actressTargetLang ("en") != targetLanguages[0] ("ko"),
+	// URL extraction must still update primary actress FirstName/LastName when ApplyToPrimary=true.
+	t.Run("url extraction updates primary when actress lang differs from metadata lang", func(t *testing.T) {
+		cfg := config.TranslationConfig{
+			Enabled:               true,
+			Provider:              "openai",
+			TargetLanguage:        "ko",
+			ActressTargetLanguage: "en",
+			ApplyToPrimary:        true,
+			Fields: config.TranslationFieldsConfig{
+				Actresses: true,
+			},
+			OpenAI: config.OpenAITranslationConfig{
+				APIKey: "key",
+			},
+		}
+
+		s := New(cfg)
+		movie := &models.Movie{
+			Actresses: []models.Actress{
+				{
+					JapaneseName: "双葉れぇな",
+					FirstName:    "Futabarena", // wrong single-word value from scraper
+					ThumbURL:     "https://pics.dmm.co.jp/mono/actjpgs/hutaba_reena.jpg",
+				},
+			},
+		}
+
+		result, _, err := s.TranslateMovie(context.Background(), movie, "")
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Primary actress fields must be corrected by URL extraction
+		assert.Equal(t, "Hutaba", movie.Actresses[0].LastName)
+		assert.Equal(t, "Reena", movie.Actresses[0].FirstName)
+
+		// Translation record must also carry the correct display name
+		require.Len(t, result[0].Actresses, 1)
+		assert.Equal(t, "Hutaba Reena", result[0].Actresses[0])
+	})
+
+	t.Run("url extraction does not update primary when ApplyToPrimary is false", func(t *testing.T) {
+		cfg := config.TranslationConfig{
+			Enabled:               true,
+			Provider:              "openai",
+			TargetLanguage:        "ko",
+			ActressTargetLanguage: "en",
+			ApplyToPrimary:        false,
+			Fields: config.TranslationFieldsConfig{
+				Actresses: true,
+			},
+			OpenAI: config.OpenAITranslationConfig{
+				APIKey: "key",
+			},
+		}
+
+		s := New(cfg)
+		movie := &models.Movie{
+			Actresses: []models.Actress{
+				{
+					JapaneseName: "双葉れぇな",
+					FirstName:    "Futabarena",
+					ThumbURL:     "https://pics.dmm.co.jp/mono/actjpgs/hutaba_reena.jpg",
+				},
+			},
+		}
+
+		result, _, err := s.TranslateMovie(context.Background(), movie, "")
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Primary must NOT be modified when ApplyToPrimary is false
+		assert.Equal(t, "Futabarena", movie.Actresses[0].FirstName)
+
+		// Translation record still carries the correct name
+		require.Len(t, result[0].Actresses, 1)
+		assert.Equal(t, "Hutaba Reena", result[0].Actresses[0])
+	})
+}
+
+// =============================================================================
 // translateTexts tests - connection failure handling
 // =============================================================================
 

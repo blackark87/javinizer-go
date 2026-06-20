@@ -391,6 +391,11 @@ definitions:
         type: string
       max_path_length:
         type: integer
+      max_poster_height:
+        description: Max height in px for cropped posters; 0 = no cap (preserve source
+          resolution). When the cropped poster exceeds this height it is downscaled
+          preserving aspect ratio.
+        type: integer
       max_title_length:
         type: integer
       move_subtitles:
@@ -1482,6 +1487,10 @@ definitions:
     properties:
       height:
         minimum: 1
+        type: integer
+      max_poster_height:
+        description: Optional override for the max poster height. 0 = no cap. When
+          omitted, the configured output.max_poster_height is used.
         type: integer
       width:
         minimum: 1

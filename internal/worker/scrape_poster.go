@@ -41,7 +41,7 @@ func generateScrapedPoster(
 	}
 
 	if shouldGeneratePoster {
-		tempPosterURL, err := GenerateTempPoster(ctx, job.ID, movie, httpClient, userAgent, referer, downloader.ResolveMediaReferer, cfg.System.TempDir)
+		tempPosterURL, err := GenerateTempPoster(ctx, job.ID, movie, httpClient, userAgent, referer, downloader.ResolveMediaReferer, cfg.System.TempDir, cfg.Output.MaxPosterHeight)
 		if err != nil {
 			logging.Warnf("[Batch %s] File %d: Failed to create temp poster: %v (continuing anyway)", job.ID, fileIndex, err)
 			errMsg := err.Error()

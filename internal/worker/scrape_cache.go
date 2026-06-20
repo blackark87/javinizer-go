@@ -119,7 +119,7 @@ func generateCachedPoster(
 	}
 
 	if shouldGenerate {
-		tempPosterURL, err := GenerateTempPoster(ctx, job.ID, cached, httpClient, userAgent, referer, downloader.ResolveMediaReferer, cfg.System.TempDir)
+		tempPosterURL, err := GenerateTempPoster(ctx, job.ID, cached, httpClient, userAgent, referer, downloader.ResolveMediaReferer, cfg.System.TempDir, cfg.Output.MaxPosterHeight)
 		if err != nil {
 			logging.Warnf("[Batch %s] File %d: Failed to create temp poster for cached movie: %v", job.ID, fileIndex, err)
 			errMsg := err.Error()
@@ -132,7 +132,7 @@ func generateCachedPoster(
 	tempPosterPath := filepath.Join(cfg.System.TempDir, "posters", job.ID, cached.ID+".jpg")
 	if _, err := os.Stat(tempPosterPath); err != nil {
 		logging.Debugf("[Batch %s] File %d: Temp poster missing for %s, regenerating", job.ID, fileIndex, cached.ID)
-		tempPosterURL, err := GenerateTempPoster(ctx, job.ID, cached, httpClient, userAgent, referer, downloader.ResolveMediaReferer, cfg.System.TempDir)
+		tempPosterURL, err := GenerateTempPoster(ctx, job.ID, cached, httpClient, userAgent, referer, downloader.ResolveMediaReferer, cfg.System.TempDir, cfg.Output.MaxPosterHeight)
 		if err != nil {
 			logging.Warnf("[Batch %s] File %d: Failed to regenerate temp poster: %v", job.ID, fileIndex, err)
 			errMsg := err.Error()

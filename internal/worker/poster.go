@@ -48,6 +48,7 @@ func GenerateTempPoster(
 	referer string,
 	refererResolver RefererResolver,
 	tempDir string,
+	maxPosterHeight int,
 ) (tempRelativeURL string, err error) {
 	// Determine poster URL to download
 	originalPosterURL := movie.PosterURL
@@ -123,7 +124,7 @@ func GenerateTempPoster(
 	}
 
 	// Crop the poster using the smart cropping algorithm
-	if err := imageutil.CropPosterFromCover(afero.NewOsFs(), tempFullPath, tempCroppedPath); err != nil {
+	if err := imageutil.CropPosterFromCover(afero.NewOsFs(), tempFullPath, tempCroppedPath, maxPosterHeight); err != nil {
 		_ = os.Remove(tempFullPath)
 		_ = os.Remove(tempCroppedPath)
 		return "", fmt.Errorf("failed to crop poster: %w", err)
@@ -165,6 +166,7 @@ func GenerateCroppedPoster(
 	userAgent string,
 	referer string,
 	refererResolver RefererResolver,
+	maxPosterHeight int,
 ) (croppedURL string, err error) {
 	// Determine poster URL to download
 	originalPosterURL := movie.PosterURL
@@ -241,7 +243,7 @@ func GenerateCroppedPoster(
 	tempCroppedPath := tmpCropped.Name()
 	_ = tmpCropped.Close() // Close immediately as CropPosterFromCover will create the file
 
-	if err := imageutil.CropPosterFromCover(afero.NewOsFs(), tempDownloadPath, tempCroppedPath); err != nil {
+	if err := imageutil.CropPosterFromCover(afero.NewOsFs(), tempDownloadPath, tempCroppedPath, maxPosterHeight); err != nil {
 		_ = os.Remove(tempDownloadPath)
 		_ = os.Remove(tempCroppedPath)
 		return "", fmt.Errorf("failed to crop poster: %w", err)

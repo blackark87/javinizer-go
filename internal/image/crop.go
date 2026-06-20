@@ -13,24 +13,28 @@ import (
 )
 
 const (
-	// MaxPosterHeight is the maximum height for poster images (optimized for Jellyfin/Plex/Emby)
-	// Reduced from 1000px to 500px for better file sizes and performance
-	MaxPosterHeight = 500
+	// DefaultMaxPosterHeight is the maximum height for poster images when no
+	// explicit value is provided. Set to 0 (no cap) to preserve source
+	// resolution — previous versions hard-capped at 500px, which silently
+	// degraded high-resolution posters (see issue #33).
+	DefaultMaxPosterHeight = 0
 
 	// LandscapeAspectRatioThreshold determines if an image is landscape-oriented
 	// Images with width/height > this value are considered landscape (typical JAV covers are ~1.5)
 	LandscapeAspectRatioThreshold = 1.2
 )
 
-// CropPosterFromCover intelligently crops a cover image to create a poster
+// CropPosterFromCover intelligently crops a cover image to create a poster.
 //
 // Strategy:
 // - Landscape images (aspect ratio > 1.2): Crop right 47.2% (original Javinizer behavior)
 // - Square/Portrait images (aspect ratio <= 1.2): Center crop to 2:3 aspect ratio
-// - If result exceeds MaxPosterHeight, resize maintaining aspect ratio
+// - If maxPosterHeight > 0 and the result exceeds it, resize maintaining aspect ratio
+//
+// Pass maxPosterHeight=0 to preserve the cropped source resolution (no resize).
 //
 // This ensures good results for both wide JAV covers and square promotional images
-func CropPosterFromCover(fs afero.Fs, coverPath, posterPath string) error {
+func CropPosterFromCover(fs afero.Fs, coverPath, posterPath string, maxPosterHeight int) error {
 	img, width, height, err := decodePosterSource(fs, coverPath)
 	if err != nil {
 		return err
@@ -72,12 +76,14 @@ func CropPosterFromCover(fs afero.Fs, coverPath, posterPath string) error {
 		bottom = top + cropHeight
 	}
 
-	return cropAndWritePoster(fs, img, posterPath, left, top, right, bottom)
+	return cropAndWritePoster(fs, img, posterPath, left, top, right, bottom, maxPosterHeight)
 }
 
 // CropPosterWithBounds crops a cover image using explicit pixel bounds.
 // Bounds are in source-image pixels and must be within the image dimensions.
-func CropPosterWithBounds(fs afero.Fs, coverPath, posterPath string, left, top, right, bottom int) error {
+// If maxPosterHeight > 0 and the cropped result exceeds it, the output is
+// downscaled preserving aspect ratio. Pass 0 to preserve the source resolution.
+func CropPosterWithBounds(fs afero.Fs, coverPath, posterPath string, left, top, right, bottom, maxPosterHeight int) error {
 	img, width, height, err := decodePosterSource(fs, coverPath)
 	if err != nil {
 		return err
@@ -92,7 +98,7 @@ func CropPosterWithBounds(fs afero.Fs, coverPath, posterPath string, left, top, 
 			left, top, right, bottom)
 	}
 
-	return cropAndWritePoster(fs, img, posterPath, left, top, right, bottom)
+	return cropAndWritePoster(fs, img, posterPath, left, top, right, bottom, maxPosterHeight)
 }
 
 func decodePosterSource(fs afero.Fs, coverPath string) (image.Image, int, int, error) {
@@ -117,7 +123,7 @@ func decodePosterSource(fs afero.Fs, coverPath string) (image.Image, int, int, e
 	return img, width, height, nil
 }
 
-func cropAndWritePoster(fs afero.Fs, img image.Image, posterPath string, left, top, right, bottom int) error {
+func cropAndWritePoster(fs afero.Fs, img image.Image, posterPath string, left, top, right, bottom, maxPosterHeight int) error {
 	cropRect := image.Rect(left, top, right, bottom)
 	croppedWidth := right - left
 	croppedHeight := bottom - top
@@ -134,10 +140,10 @@ func cropAndWritePoster(fs afero.Fs, img image.Image, posterPath string, left, t
 	}
 
 	var finalImage = cropped
-	if croppedHeight > MaxPosterHeight {
-		scale := float64(MaxPosterHeight) / float64(croppedHeight)
+	if maxPosterHeight > 0 && croppedHeight > maxPosterHeight {
+		scale := float64(maxPosterHeight) / float64(croppedHeight)
 		newWidth := int(float64(croppedWidth) * scale)
-		newHeight := MaxPosterHeight
+		newHeight := maxPosterHeight
 
 		resizedBounds := image.Rect(0, 0, newWidth, newHeight)
 		resized := image.NewRGBA(resizedBounds)

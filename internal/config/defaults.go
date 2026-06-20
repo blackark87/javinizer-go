@@ -229,6 +229,7 @@ func DefaultConfig() *Config {
 			ActressDelimiter:        ", ",
 			MaxTitleLength:          100,
 			MaxPathLength:           240,
+			MaxPosterHeight:         0, // No cap — preserve source resolution
 			MoveSubtitles:           false,
 			SubtitleExtensions:      []string{".srt", ".ass", ".ssa", ".smi", ".vtt"},
 			OperationMode:           "",

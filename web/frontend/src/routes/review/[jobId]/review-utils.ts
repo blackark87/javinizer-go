@@ -99,3 +99,54 @@ export function getDefaultPosterCropBox(sourceWidth: number, sourceHeight: numbe
 		height
 	};
 }
+
+// PreviewOutput describes the final pixel dimensions and aspect-ratio label
+// that the Adjust Crop modal shows for a given crop box + max height cap.
+export interface PreviewOutput {
+	outputWidth: number;
+	outputHeight: number;
+	ratioLabel: string;
+	willResize: boolean;
+}
+
+function gcd(a: number, b: number): number {
+	return b === 0 ? a : gcd(b, a % b);
+}
+
+// computeCropPreview calculates the resulting poster dimensions after applying
+// the optional max height cap (0 = no cap, preserves source resolution).
+// Returns the output pixel dimensions, a simplified ratio label, and whether
+// the source will be downscaled.
+export function computeCropPreview(
+	cropBox: PosterCropBox | null,
+	maxPosterHeight: number
+): PreviewOutput {
+	const empty: PreviewOutput = { outputWidth: 0, outputHeight: 0, ratioLabel: '', willResize: false };
+	if (!cropBox) return empty;
+
+	const sourceWidth = cropBox.width;
+	const sourceHeight = cropBox.height;
+	if (sourceWidth === 0 || sourceHeight === 0) return empty;
+
+	const effectiveMax = maxPosterHeight === 0 ? Infinity : maxPosterHeight;
+	const willResize = sourceHeight > effectiveMax;
+
+	let outputWidth: number;
+	let outputHeight: number;
+	if (willResize) {
+		outputHeight = effectiveMax;
+		outputWidth = Math.round((sourceWidth * effectiveMax) / sourceHeight);
+	} else {
+		outputWidth = sourceWidth;
+		outputHeight = sourceHeight;
+	}
+
+	const d = gcd(outputWidth, outputHeight);
+	const rw = outputWidth / d;
+	const rh = outputHeight / d;
+	const ratioLabel = rw > 20 || rh > 20
+		? `${(outputWidth / outputHeight).toFixed(3)}:1`
+		: `${rw}:${rh}`;
+
+	return { outputWidth, outputHeight, ratioLabel, willResize };
+}

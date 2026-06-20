@@ -192,7 +192,14 @@ func updateBatchMoviePosterCrop(deps *ServerDependencies) gin.HandlerFunc {
 		right := req.X + req.Width
 		bottom := req.Y + req.Height
 
-		if err := imageutil.CropPosterWithBounds(afero.NewOsFs(), sourcePath, croppedPath, left, top, right, bottom); err != nil {
+		// Use the request-level override when provided, otherwise fall back to
+		// the configured default.
+		maxPosterHeight := cfg.Output.MaxPosterHeight
+		if req.MaxPosterHeight != nil {
+			maxPosterHeight = *req.MaxPosterHeight
+		}
+
+		if err := imageutil.CropPosterWithBounds(afero.NewOsFs(), sourcePath, croppedPath, left, top, right, bottom, maxPosterHeight); err != nil {
 			c.JSON(400, ErrorResponse{Error: err.Error()})
 			return
 		}
@@ -350,7 +357,7 @@ func updateBatchMoviePosterFromURL(deps *ServerDependencies) gin.HandlerFunc {
 			return
 		}
 
-		if err := imageutil.CropPosterFromCover(afero.NewOsFs(), tempFullPath, tempCroppedPath); err != nil {
+		if err := imageutil.CropPosterFromCover(afero.NewOsFs(), tempFullPath, tempCroppedPath, cfg.Output.MaxPosterHeight); err != nil {
 			logging.Warnf("Failed to auto-crop poster from URL for %s: %v (using full image as fallback)", posterID, err)
 			_ = os.Remove(tempCroppedPath)
 			if copyErr := copyFile(tempFullPath, tempCroppedPath); copyErr != nil {

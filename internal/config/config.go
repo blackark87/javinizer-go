@@ -164,6 +164,7 @@ type OutputConfig struct {
 	LegacyDelimiter         string              `yaml:"delimiter,omitempty" json:"-"`
 	MaxTitleLength          int                 `yaml:"max_title_length" json:"max_title_length"`
 	MaxPathLength           int                 `yaml:"max_path_length" json:"max_path_length"`
+	MaxPosterHeight         int                 `yaml:"max_poster_height" json:"max_poster_height"` // Max height in px for cropped posters; 0 = no cap (preserve source resolution). When the cropped poster exceeds this height it is downscaled preserving aspect ratio.
 	MoveSubtitles           bool                `yaml:"move_subtitles" json:"move_subtitles"`
 	SubtitleExtensions      []string            `yaml:"subtitle_extensions" json:"subtitle_extensions"`
 	OperationMode           types.OperationMode `yaml:"operation_mode" json:"operation_mode"`

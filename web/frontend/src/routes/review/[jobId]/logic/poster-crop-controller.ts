@@ -31,10 +31,12 @@ interface PosterCropControllerDeps {
 	setCropMetrics: (metrics: PosterCropMetrics | null) => void;
 	getCropBox: () => PosterCropBox | null;
 	setCropBox: (box: PosterCropBox | null) => void;
+	getMaxPosterHeight: () => number | null;
+	setMaxPosterHeight: (height: number | null) => void;
 	getCropDragState: () => PosterCropDragState | null;
 	setCropDragState: (state: PosterCropDragState | null) => void;
 	getPosterCropStates: () => Map<string, PosterCropState>;
-	mutatePosterCrop: (jobId: string, resultId: string, crop: PosterCropBox) => void;
+	mutatePosterCrop: (jobId: string, resultId: string, crop: PosterCropBox, maxPosterHeight?: number) => void;
 	now?: () => number;
 }
 
@@ -129,6 +131,7 @@ export function createPosterCropController(deps: PosterCropControllerDeps) {
 		deps.setPosterCropLoadError(null);
 		deps.setCropMetrics(null);
 		deps.setCropBox(null);
+		deps.setMaxPosterHeight(null);
 		deps.setCropImageElement(null);
 		deps.setCropDragState(null);
 		deps.setShowPosterCropModal(true);
@@ -216,7 +219,8 @@ export function createPosterCropController(deps: PosterCropControllerDeps) {
 		const cropBoxVal = deps.getCropBox();
 		if (!currentMovie || !currentResult || !cropBoxVal) return;
 
-		deps.mutatePosterCrop(deps.getJobId(), currentResult.result_id, cropBoxVal);
+		const maxPosterHeight = deps.getMaxPosterHeight();
+		deps.mutatePosterCrop(deps.getJobId(), currentResult.result_id, cropBoxVal, maxPosterHeight ?? undefined);
 	}
 
 	function handleWindowResize() {

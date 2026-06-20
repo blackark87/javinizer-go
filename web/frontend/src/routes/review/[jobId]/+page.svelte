@@ -371,12 +371,15 @@
 	cropMetrics={s.cropMetrics}
 	cropBox={s.cropBox}
 	overlayStyle={s.posterCropController.getPosterCropOverlayStyle()}
+	configMaxPosterHeight={s.config?.output?.max_poster_height ?? 0}
+	maxPosterHeight={s.maxPosterHeight}
 	onClose={s.posterCropController.closePosterCropModal}
 	onReset={s.posterCropController.resetPosterCropBox}
 	onApply={s.posterCropController.applyPosterCrop}
 	onImageLoad={s.posterCropController.handlePosterCropImageLoad}
 	onImageError={s.posterCropController.handlePosterCropImageError}
 	onCropMouseDown={s.posterCropController.startPosterCropDrag}
+	onMaxPosterHeightChange={(v) => { s.maxPosterHeight = v; }}
 />
 
 <RescrapeModal

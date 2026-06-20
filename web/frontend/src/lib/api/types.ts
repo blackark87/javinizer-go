@@ -80,6 +80,7 @@ export interface PosterCropRequest {
 	y: number;
 	width: number;
 	height: number;
+	max_poster_height?: number;
 }
 
 export interface PosterCropResponse {
@@ -797,6 +798,7 @@ export interface OutputConfig {
 	delimiter: string;
 	max_title_length: number;
 	max_path_length: number;
+	max_poster_height: number;
 	move_subtitles: boolean;
 	subtitle_extensions: string[];
 	operation_mode: OperationMode;

@@ -349,10 +349,11 @@ type UpdateMovieRequest struct {
 
 // PosterCropRequest represents manual poster crop coordinates in source-image pixels.
 type PosterCropRequest struct {
-	X      int `json:"x" binding:"min=0"`
-	Y      int `json:"y" binding:"min=0"`
-	Width  int `json:"width" binding:"min=1"`
-	Height int `json:"height" binding:"min=1"`
+	X               int  `json:"x" binding:"min=0"`
+	Y               int  `json:"y" binding:"min=0"`
+	Width           int  `json:"width" binding:"min=1"`
+	Height          int  `json:"height" binding:"min=1"`
+	MaxPosterHeight *int `json:"max_poster_height,omitempty"` // Optional override for the max poster height. 0 = no cap. When omitted, the configured output.max_poster_height is used.
 }
 
 // PosterCropResponse returns the updated temp cropped poster URL.

@@ -23,7 +23,7 @@ import { normalizeCropBox, type PosterCropBox, type PosterCropState, type Poster
 	updateBatchMoviePosterFromURL: (jobId: string, resultId: string, body: { url: string }) => Promise<PosterFromURLResponse>;
 	excludeBatchMovie: (jobId: string, resultId: string) => Promise<unknown>;
 	updateBatchMovie: (jobId: string, resultId: string, movie: Movie) => Promise<unknown>;
-	updateBatchMoviePosterCrop: (jobId: string, resultId: string, crop: PosterCropBox) => Promise<PosterCropResponse>;
+	updateBatchMoviePosterCrop: (jobId: string, resultId: string, crop: PosterCropBox, maxPosterHeight?: number) => Promise<PosterCropResponse>;
 	batchExcludeMovies: (jobId: string, request: BatchExcludeRequest) => Promise<BatchExcludeResponse>;
 	bulkRescrapeMovies: (jobId: string, request: BulkRescrapeRequest) => Promise<BulkRescrapeResponse>;
 	getSelectedMovieIds: () => Set<string>;
@@ -162,8 +162,8 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 	}));
 
 	const posterCropMutation = createMutation(() => ({
-		mutationFn: async ({ jobId: mutationJobId, resultId, crop }: { jobId: string; resultId: string; crop: PosterCropBox }) => {
-			return deps.updateBatchMoviePosterCrop(mutationJobId, resultId, crop);
+		mutationFn: async ({ jobId: mutationJobId, resultId, crop, maxPosterHeight }: { jobId: string; resultId: string; crop: PosterCropBox; maxPosterHeight?: number }) => {
+			return deps.updateBatchMoviePosterCrop(mutationJobId, resultId, crop, maxPosterHeight);
 		},
 		onSuccess: (response: PosterCropResponse) => {
 			const currentResultVal = deps.getCurrentResult();

@@ -227,10 +227,12 @@ class APIClient {
 		});
 	}
 
-	async updateBatchMoviePosterCrop(jobId: string, resultId: string, crop: PosterCropRequest): Promise<PosterCropResponse> {
+	async updateBatchMoviePosterCrop(jobId: string, resultId: string, crop: PosterCropRequest, maxPosterHeight?: number): Promise<PosterCropResponse> {
+		const body: PosterCropRequest = { ...crop };
+		if (maxPosterHeight !== undefined) body.max_poster_height = maxPosterHeight;
 		return this.request<PosterCropResponse>(`/api/v1/batch/${jobId}/results/${resultId}/poster-crop`, {
 			method: 'POST',
-			body: JSON.stringify(crop)
+			body: JSON.stringify(body)
 		});
 	}
 

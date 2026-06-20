@@ -128,6 +128,7 @@ export function createReviewState(pageStore: Page) {
 	let cropImageElement = $state<HTMLImageElement | null>(null);
 	let cropMetrics = $state<PosterCropMetrics | null>(null);
 	let cropBox = $state<PosterCropBox | null>(null);
+	let maxPosterHeight = $state<number | null>(null);
 	let cropDragState = $state<PosterCropDragState | null>(null);
 	let posterPreviewOverrides = new SvelteMap<string, PosterPreviewOverride>();
 	let posterCropStates = new SvelteMap<string, PosterCropState>();
@@ -360,7 +361,7 @@ export function createReviewState(pageStore: Page) {
 		updateBatchMoviePosterFromURL: (mutationJobId, resultId, body) => apiClient.updateBatchMoviePosterFromURL(mutationJobId, resultId, body),
 		excludeBatchMovie: (mutationJobId, resultId) => apiClient.excludeBatchMovie(mutationJobId, resultId),
 		updateBatchMovie: (mutationJobId, resultId, movie) => apiClient.updateBatchMovie(mutationJobId, resultId, movie),
-		updateBatchMoviePosterCrop: (mutationJobId, resultId, crop) => apiClient.updateBatchMoviePosterCrop(mutationJobId, resultId, crop),
+		updateBatchMoviePosterCrop: (mutationJobId, resultId, crop, maxPosterHeight) => apiClient.updateBatchMoviePosterCrop(mutationJobId, resultId, crop, maxPosterHeight),
 		batchExcludeMovies: (mutationJobId, request) => apiClient.batchExcludeMovies(mutationJobId, request),
 		bulkRescrapeMovies: (mutationJobId, request) => apiClient.bulkRescrapeMovies(mutationJobId, request),
 		getSelectedMovieIds: () => selectedMovieIds,
@@ -643,11 +644,13 @@ export function createReviewState(pageStore: Page) {
 		setCropMetrics: (metrics) => { cropMetrics = metrics; },
 		getCropBox: () => cropBox,
 		setCropBox: (nextBox) => { cropBox = nextBox; },
+		getMaxPosterHeight: () => maxPosterHeight,
+		setMaxPosterHeight: (h) => { maxPosterHeight = h; },
 		getCropDragState: () => cropDragState,
 		setCropDragState: (state) => { cropDragState = state; },
 		getPosterCropStates: () => posterCropStates,
-		mutatePosterCrop: (mutationJobId, resultId, crop) => {
-			mutations.posterCropMutation.mutate({ jobId: mutationJobId, resultId, crop });
+		mutatePosterCrop: (mutationJobId, resultId, crop, maxPosterHeightArg) => {
+			mutations.posterCropMutation.mutate({ jobId: mutationJobId, resultId, crop, maxPosterHeight: maxPosterHeightArg });
 		}
 	});
 
@@ -885,6 +888,8 @@ export function createReviewState(pageStore: Page) {
 		set cropMetrics(v) { cropMetrics = v; },
 		get cropBox() { return cropBox; },
 		set cropBox(v) { cropBox = v; },
+		get maxPosterHeight() { return maxPosterHeight; },
+		set maxPosterHeight(v) { maxPosterHeight = v; },
 		get cropDragState() { return cropDragState; },
 		set cropDragState(v) { cropDragState = v; },
 		get posterPreviewOverrides() { return posterPreviewOverrides; },

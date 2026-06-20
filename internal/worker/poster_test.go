@@ -159,7 +159,7 @@ func TestGenerateCroppedPoster_Success(t *testing.T) {
 
 	// Execute - this will fail with decode error for our minimal JPEG
 	// That's acceptable - we're testing the workflow, not the image library
-	_, err := GenerateCroppedPoster(ctx, movie, httpClient, "test-agent", "test-referer", downloader.ResolveMediaReferer)
+	_, err := GenerateCroppedPoster(ctx, movie, httpClient, "test-agent", "test-referer", downloader.ResolveMediaReferer, 0)
 
 	// We expect an error because our minimal JPEG isn't a real image
 	// The important thing is that it doesn't crash and cleans up properly
@@ -191,7 +191,7 @@ func TestGenerateCroppedPoster_HTTPError(t *testing.T) {
 	httpClient := testServer.Client()
 
 	// Execute
-	_, err := GenerateCroppedPoster(ctx, movie, httpClient, "test-agent", "test-referer", downloader.ResolveMediaReferer)
+	_, err := GenerateCroppedPoster(ctx, movie, httpClient, "test-agent", "test-referer", downloader.ResolveMediaReferer, 0)
 
 	// Verify error is returned
 	if err == nil {
@@ -233,7 +233,7 @@ func TestGenerateCroppedPoster_ContextCancellation(t *testing.T) {
 	cancel()
 
 	// Execute
-	_, err := GenerateCroppedPoster(ctx, movie, httpClient, "test-agent", "test-referer", downloader.ResolveMediaReferer)
+	_, err := GenerateCroppedPoster(ctx, movie, httpClient, "test-agent", "test-referer", downloader.ResolveMediaReferer, 0)
 
 	// Verify error is returned
 	if err == nil {
@@ -262,7 +262,7 @@ func TestGenerateCroppedPoster_NoCoverURL(t *testing.T) {
 	httpClient := &http.Client{}
 
 	// Execute
-	_, err := GenerateCroppedPoster(ctx, movie, httpClient, "test-agent", "test-referer", downloader.ResolveMediaReferer)
+	_, err := GenerateCroppedPoster(ctx, movie, httpClient, "test-agent", "test-referer", downloader.ResolveMediaReferer, 0)
 
 	// Verify error is returned
 	if err == nil {
@@ -284,7 +284,7 @@ func TestGenerateCroppedPoster_ErrorHandling(t *testing.T) {
 	httpClient := &http.Client{}
 
 	// Execute
-	_, err := GenerateCroppedPoster(ctx, movie, httpClient, "test-agent", "test-referer", downloader.ResolveMediaReferer)
+	_, err := GenerateCroppedPoster(ctx, movie, httpClient, "test-agent", "test-referer", downloader.ResolveMediaReferer, 0)
 
 	// Verify error is returned for network failure
 	if err == nil {
@@ -318,6 +318,7 @@ func TestGenerateTempPoster_SuccessAndFallbacks(t *testing.T) {
 		"https://configured.example/",
 		downloader.ResolveMediaReferer,
 		tempDir,
+		0,
 	)
 	require.NoError(t, err)
 	assert.Equal(t, "/api/v1/temp/posters/job-temp-1/TEMP-001.jpg", url)
@@ -334,14 +335,14 @@ func TestGenerateTempPoster_ErrorBranches(t *testing.T) {
 
 	t.Run("missing poster and cover url", func(t *testing.T) {
 		movie := &models.Movie{ID: "TEMP-ERR-1"}
-		_, err := GenerateTempPoster(context.Background(), "job-temp-err", movie, http.DefaultClient, "", "", downloader.ResolveMediaReferer, tempDir)
+		_, err := GenerateTempPoster(context.Background(), "job-temp-err", movie, http.DefaultClient, "", "", downloader.ResolveMediaReferer, tempDir, 0)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "no poster or cover URL")
 	})
 
 	t.Run("invalid url", func(t *testing.T) {
 		movie := &models.Movie{ID: "TEMP-ERR-2", PosterURL: "://bad-url"}
-		_, err := GenerateTempPoster(context.Background(), "job-temp-err", movie, http.DefaultClient, "", "", downloader.ResolveMediaReferer, tempDir)
+		_, err := GenerateTempPoster(context.Background(), "job-temp-err", movie, http.DefaultClient, "", "", downloader.ResolveMediaReferer, tempDir, 0)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to create request")
 	})
@@ -353,7 +354,7 @@ func TestGenerateTempPoster_ErrorBranches(t *testing.T) {
 		defer server.Close()
 
 		movie := &models.Movie{ID: "TEMP-ERR-3", PosterURL: server.URL + "/forbidden.jpg"}
-		_, err := GenerateTempPoster(context.Background(), "job-temp-err", movie, server.Client(), "", "", downloader.ResolveMediaReferer, tempDir)
+		_, err := GenerateTempPoster(context.Background(), "job-temp-err", movie, server.Client(), "", "", downloader.ResolveMediaReferer, tempDir, 0)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "status 403")
 	})
@@ -375,7 +376,7 @@ func TestGenerateCroppedPoster_RealSuccess(t *testing.T) {
 		CoverURL: server.URL + "/cover.jpg",
 	}
 
-	url, err := GenerateCroppedPoster(context.Background(), movie, server.Client(), "ua", "", downloader.ResolveMediaReferer)
+	url, err := GenerateCroppedPoster(context.Background(), movie, server.Client(), "ua", "", downloader.ResolveMediaReferer, 0)
 	require.NoError(t, err)
 	assert.Equal(t, "/api/v1/posters/POSTER-SUCCESS-001.jpg", url)
 	assert.False(t, movie.ShouldCropPoster)

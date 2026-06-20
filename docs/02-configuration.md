@@ -1222,6 +1222,9 @@ output:
   delimiter: ", "
   max_title_length: 100
   max_path_length: 240
+  # Max height in pixels for cropped posters. 0 = no cap (preserve source resolution).
+  # When a cropped poster exceeds this height, it is downscaled preserving aspect ratio.
+  max_poster_height: 0
   move_subtitles: false
   subtitle_extensions:
     - .srt

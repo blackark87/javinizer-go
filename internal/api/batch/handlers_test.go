@@ -376,11 +376,13 @@ func TestUpdateBatchMoviePosterCrop(t *testing.T) {
 	router.POST("/batch/:id/results/:resultId/poster-crop", updateBatchMoviePosterCrop(deps))
 
 	t.Run("successfully updates crop", func(t *testing.T) {
+		maxH := 500
 		body, err := json.Marshal(PosterCropRequest{
-			X:      350,
-			Y:      0,
-			Width:  472,
-			Height: 600,
+			X:               350,
+			Y:               0,
+			Width:           472,
+			Height:          600,
+			MaxPosterHeight: &maxH,
 		})
 		require.NoError(t, err)
 
@@ -428,6 +430,38 @@ func TestUpdateBatchMoviePosterCrop(t *testing.T) {
 
 		assert.Equal(t, 400, w.Code)
 		assert.Contains(t, w.Body.String(), "crop bounds out of range")
+	})
+
+	// Regression test for issue #33: when no max_poster_height override is
+	// provided AND the config default is 0 (no cap), the cropped poster must
+	// preserve the source resolution rather than being downscaled to 500px.
+	t.Run("no cap preserves source resolution", func(t *testing.T) {
+		body, err := json.Marshal(PosterCropRequest{
+			X:      350,
+			Y:      0,
+			Width:  472,
+			Height: 600,
+			// MaxPosterHeight intentionally omitted — falls back to config (0 = no cap)
+		})
+		require.NoError(t, err)
+
+		req := httptest.NewRequest("POST", "/batch/"+job.ID+"/results/"+resultID+"/poster-crop", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		require.Equal(t, 200, w.Code, "Response body: %s", w.Body.String())
+
+		croppedPath := filepath.Join(posterDir, "IPX-535.jpg")
+		out, err := os.Open(croppedPath)
+		require.NoError(t, err)
+		defer func() { _ = out.Close() }()
+		outImg, _, err := image.Decode(out)
+		require.NoError(t, err)
+		b := outImg.Bounds()
+		// Source crop height (600) is preserved — no downscale to 500.
+		assert.Equal(t, 600, b.Dy(), "no-cap crop should preserve source resolution")
+		assert.Equal(t, 472, b.Dx(), "no-cap crop should preserve source width")
 	})
 }
 

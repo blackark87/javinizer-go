@@ -136,27 +136,14 @@ func (b *testBuffer) Bytes() []byte {
 	return b.data
 }
 
-func TestGetOptimalPosterURL_UpgradeCoverResolution(t *testing.T) {
-	highQualityImage := createTestJPEG(t, 1000, 1500)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "image/jpeg")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(highQualityImage)
-	}))
-	defer server.Close()
-
-	testCoverURL := server.URL + "/digital/video/sone00860/sone00860pl.jpg"
-
-	client := &http.Client{Timeout: 5 * time.Second}
-	posterURL, shouldCrop := GetOptimalPosterURL(testCoverURL, client)
-
-	_ = shouldCrop
-
-	if strings.Contains(posterURL, "ps.jpg") {
-		t.Errorf("GetOptimalPosterURL returned ps.jpg poster %q — expected UpgradeCoverResolution to upgrade to pl.jpg", posterURL)
-	}
-}
+// TestGetOptimalPosterURL_UpgradeCoverResolution was removed: the original
+// test asserted GetOptimalPosterURL upgrades ps.jpg -> pl.jpg on the success
+// path, but that behavior is the bug behind issue #31 (pl.jpg is the
+// landscape jacket, not a higher-res portrait poster). The success path now
+// returns the awsimgsrc ps.jpg directly. The network-dependent awsimgsrc
+// fetch can't be reliably exercised here, so the regression is covered by
+// TestScraperResultNormalizeMediaURLs (which deterministically asserts
+// PosterURL is preserved as ps.jpg) plus end-to-end CLI verification.
 
 func TestGetOptimalPosterURL_WithHTTPServer(t *testing.T) {
 	// Create test images with different dimensions

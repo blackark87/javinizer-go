@@ -91,12 +91,16 @@ func TestScraperSearchWithURL_Error(t *testing.T) {
 	}
 }
 
+// TestScraperSearchWithURL_NormalizeMediaURLs verifies that the post-scrape
+// hook upgrades the CoverURL to pl.jpg but leaves the PosterURL as ps.jpg
+// (the portrait poster — see issue #31).
 func TestScraperSearchWithURL_NormalizeMediaURLs(t *testing.T) {
 	result := &models.ScraperResult{
 		Source:    "test",
 		ID:        "TEST-001",
 		Title:     "Test Movie",
 		PosterURL: "https://pics.dmm.co.jp/test/ps.jpg",
+		CoverURL:  "https://pics.dmm.co.jp/test/ps.jpg",
 	}
 
 	scraper := &mockDirectURLScraper{
@@ -113,8 +117,11 @@ func TestScraperSearchWithURL_NormalizeMediaURLs(t *testing.T) {
 		t.Fatalf("expected no error, got: %v", err)
 	}
 
-	if gotResult.PosterURL != "https://pics.dmm.co.jp/test/pl.jpg" {
-		t.Errorf("expected normalized poster URL (pl.jpg), got: %s", gotResult.PosterURL)
+	if gotResult.PosterURL != "https://pics.dmm.co.jp/test/ps.jpg" {
+		t.Errorf("expected PosterURL to be preserved as ps.jpg, got: %s", gotResult.PosterURL)
+	}
+	if gotResult.CoverURL != "https://pics.dmm.co.jp/test/pl.jpg" {
+		t.Errorf("expected CoverURL to be upgraded to pl.jpg, got: %s", gotResult.CoverURL)
 	}
 }
 

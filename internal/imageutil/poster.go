@@ -48,7 +48,11 @@ func GetOptimalPosterURL(coverURL string, client *http.Client) (posterURL string
 	// Check if the poster meets quality requirements
 	if width >= MinPosterWidth && height >= MinPosterHeight {
 		logging.Debugf("ImageUtil: Using high-quality awsimgsrc poster (%dx%d): %s", width, height, awsimgsrcPosterURL)
-		return UpgradeCoverResolution(awsimgsrcPosterURL), false
+		// Note: do NOT UpgradeCoverResolution here. awsimgsrc ps.jpg is the
+		// portrait poster (e.g. 1032x1467); pl.jpg is the landscape jacket
+		// (e.g. 2184x1467). Upgrading ps.jpg -> pl.jpg swaps the poster for
+		// the jacket, which then gets downloaded as poster.jpg on sort.
+		return awsimgsrcPosterURL, false
 	}
 
 	logging.Debugf("ImageUtil: Awsimgsrc poster too small (%dx%d), backend will crop cover", width, height)

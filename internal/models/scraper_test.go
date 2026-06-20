@@ -949,39 +949,46 @@ func TestScraperResultNormalizeMediaURLs(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name   string
-		input  string
-		expect string
+		name       string
+		input      string
+		wantPoster string // PosterURL is left unchanged: ps.jpg is the portrait poster
+		wantCover  string // CoverURL is upgraded to pl.jpg (the landscape jacket)
 	}{
 		{
-			name:   "pics dmm ps to pl",
-			input:  "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560ps.jpg",
-			expect: "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560pl.jpg",
+			name:       "pics dmm ps stays as poster, cover upgraded",
+			input:      "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560ps.jpg",
+			wantPoster: "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560ps.jpg",
+			wantCover:  "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560pl.jpg",
 		},
 		{
-			name:   "awsimgsrc co jp ps to pl",
-			input:  "https://awsimgsrc.dmm.co.jp/pics_dig/video/ipx00535/ipx00535ps.jpg",
-			expect: "https://awsimgsrc.dmm.co.jp/pics_dig/video/ipx00535/ipx00535pl.jpg",
+			name:       "awsimgsrc co jp ps stays as poster, cover upgraded",
+			input:      "https://awsimgsrc.dmm.co.jp/pics_dig/video/ipx00535/ipx00535ps.jpg",
+			wantPoster: "https://awsimgsrc.dmm.co.jp/pics_dig/video/ipx00535/ipx00535ps.jpg",
+			wantCover:  "https://awsimgsrc.dmm.co.jp/pics_dig/video/ipx00535/ipx00535pl.jpg",
 		},
 		{
-			name:   "awsimgsrc com ps to pl",
-			input:  "https://awsimgsrc.dmm.com/dig/video/ipx00535/ipx00535ps.jpg",
-			expect: "https://awsimgsrc.dmm.com/dig/video/ipx00535/ipx00535pl.jpg",
+			name:       "awsimgsrc com ps stays as poster, cover upgraded",
+			input:      "https://awsimgsrc.dmm.com/dig/video/ipx00535/ipx00535ps.jpg",
+			wantPoster: "https://awsimgsrc.dmm.com/dig/video/ipx00535/ipx00535ps.jpg",
+			wantCover:  "https://awsimgsrc.dmm.com/dig/video/ipx00535/ipx00535pl.jpg",
 		},
 		{
-			name:   "keeps query string",
-			input:  "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560ps.jpg?foo=bar",
-			expect: "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560pl.jpg?foo=bar",
+			name:       "keeps query string on cover",
+			input:      "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560ps.jpg?foo=bar",
+			wantPoster: "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560ps.jpg?foo=bar",
+			wantCover:  "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560pl.jpg?foo=bar",
 		},
 		{
-			name:   "non dmm url unchanged",
-			input:  "https://images.example.com/aldn560ps.jpg",
-			expect: "https://images.example.com/aldn560ps.jpg",
+			name:       "non dmm url unchanged",
+			input:      "https://images.example.com/aldn560ps.jpg",
+			wantPoster: "https://images.example.com/aldn560ps.jpg",
+			wantCover:  "https://images.example.com/aldn560ps.jpg",
 		},
 		{
-			name:   "already pl unchanged",
-			input:  "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560pl.jpg",
-			expect: "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560pl.jpg",
+			name:       "already pl unchanged",
+			input:      "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560pl.jpg",
+			wantPoster: "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560pl.jpg",
+			wantCover:  "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560pl.jpg",
 		},
 	}
 
@@ -993,8 +1000,8 @@ func TestScraperResultNormalizeMediaURLs(t *testing.T) {
 				CoverURL:  tt.input,
 			}
 			result.NormalizeMediaURLs()
-			assert.Equal(t, tt.expect, result.PosterURL)
-			assert.Equal(t, tt.expect, result.CoverURL)
+			assert.Equal(t, tt.wantPoster, result.PosterURL)
+			assert.Equal(t, tt.wantCover, result.CoverURL)
 		})
 	}
 }

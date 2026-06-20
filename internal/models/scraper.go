@@ -47,14 +47,19 @@ type ScraperResult struct {
 
 // NormalizeMediaURLs applies post-scrape media URL normalization hooks.
 //
-// This currently upgrades DMM poster URLs ending in "ps.jpg" to "pl.jpg"
-// to use higher-resolution assets when available.
+// The cover (landscape jacket) is upgraded to pl.jpg when available, as that
+// is the highest-resolution cover variant.
+//
+// The poster (PortraitURL) is intentionally NOT upgraded: ps.jpg is the
+// portrait poster (e.g. 1032x1467) and pl.jpg is the landscape jacket
+// (e.g. 2184x1467), so upgrading ps.jpg -> pl.jpg would replace the poster
+// with the jacket and downstream code (e.g. sort) would download the jacket
+// as poster.jpg.
 func (r *ScraperResult) NormalizeMediaURLs() {
 	if r == nil {
 		return
 	}
 
-	r.PosterURL = normalizeDMMPosterURL(r.PosterURL)
 	r.CoverURL = normalizeDMMPosterURL(r.CoverURL)
 }
 

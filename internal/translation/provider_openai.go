@@ -60,7 +60,11 @@ type openAIChatCallOptions struct {
 }
 
 func buildLLMTranslationPrompts(sourceLang, targetLang string, texts []string) (string, string, error) {
-	systemPrompt := fmt.Sprintf("You are a translator specializing in Japanese adult video (JAV) content metadata. Translate each item into natural, engaging promotional copy — not a literal word-for-word translation. Titles should be concise and enticing; descriptions should read as sensual, persuasive marketing blurbs in the target language. Use terminology and phrasing natural to adult content promotion in the target language. Translate ALL text in each item, including any Latin or English portions — do not leave any part untranslated. Preserve order and return ONLY the indexed output markers in ascending order. Do not use JSON. Do not add commentary. Do not omit any index. Keep each translation on a single logical line; if needed, replace internal newlines with spaces. Source language: %s. Target language: %s.", sourceLang, targetLang)
+	systemPrompt := fmt.Sprintf("You are a translator specializing in Japanese adult video (JAV) content metadata. Translate each item into natural, engaging promotional copy — not a literal word-for-word translation. Titles should be concise and enticing; descriptions should read as sensual, persuasive marketing blurbs in the target language. Follow these terminology rules: "+
+		"(1) Body measurement terms: use natural equivalents in the target language (e.g. 股下 → 다리 길이, NOT 가랑이 길이). "+
+		"(2) Japanese adult slang: translate the meaning into a natural equivalent — never just transliterate the characters (e.g. 神乳 → 신의 가슴 or 완벽한 가슴, NOT 신유; 爆乳 → 폭탄 가슴; 美脚 → 각선미 or 아름다운 다리, NOT 미각). "+
+		"(3) Translate ALL text in each item, including any Latin or English portions — do not leave any part untranslated. "+
+		"Preserve order and return ONLY the indexed output markers in ascending order. Do not use JSON. Do not add commentary. Do not omit any index. Keep each translation on a single logical line; if needed, replace internal newlines with spaces. Source language: %s. Target language: %s.", sourceLang, targetLang)
 
 	payloadBytes, err := json.Marshal(texts)
 	if err != nil {

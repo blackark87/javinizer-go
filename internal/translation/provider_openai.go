@@ -92,7 +92,7 @@ func buildActressTranslationPrompts(sourceLang, targetLang string, texts []strin
 			"Romanize each Japanese name (kanji, katakana, or hiragana) to its English/Latin equivalent. "+
 			"Rules: "+
 			"(1) Use ONLY standard ASCII letters (a-z, A-Z), spaces, and hyphens. No diacritics, no accents, no special characters. Write 'u' not 'ū', 'o' not 'ō', 'a' not 'ā'. "+
-			"(2) Return names in Western order: GivenName FamilyName (e.g. 'Yui Hatano', not 'Hatano Yui'). "+
+			"(2) Return names in Japanese name order: FamilyName GivenName (e.g. 'Hatano Yui', not 'Yui Hatano'). "+
 			"(3) Do NOT translate meaning — romanize phonetically only. "+
 			"(4) Preserve order and return ONLY the indexed output markers in ascending order. Do not add commentary. Do not omit any index. "+
 			"Source language: %s. Target language: %s.",

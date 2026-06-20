@@ -228,28 +228,28 @@ func TestReplaceActressName(t *testing.T) {
 		expected   models.Actress
 	}{
 		{
-			name: "japanese actress - preserves JapaneseName, splits GivenName FamilyName",
+			name: "japanese actress - preserves JapaneseName, FamilyName GivenName order",
 			actress: &models.Actress{
 				JapaneseName: "田中香",
 			},
-			translated: "Yui Tanaka",
+			translated: "Tanaka Yui",
 			expected: models.Actress{
 				JapaneseName: "田中香",
-				FirstName:    "Yui",
 				LastName:     "Tanaka",
+				FirstName:    "Yui",
 			},
 		},
 		{
-			name: "actress with existing english name - splits translated value",
+			name: "actress with existing english name - FamilyName GivenName order",
 			actress: &models.Actress{
 				FirstName: "Yui",
 				LastName:  "Tanaka",
 			},
-			translated: "Yui Tanaka",
+			translated: "Tanaka Yui",
 			expected: models.Actress{
 				JapaneseName: "",
-				FirstName:    "Yui",
 				LastName:     "Tanaka",
+				FirstName:    "Yui",
 			},
 		},
 		{
@@ -272,24 +272,59 @@ func TestReplaceActressName(t *testing.T) {
 			},
 		},
 		{
-			name: "three word name - first word is FirstName, rest is LastName",
+			name: "three word name - first word is LastName, rest is FirstName",
 			actress: &models.Actress{
 				JapaneseName: "田中",
 			},
-			translated: "Maria De Niro",
+			translated: "De Niro Maria",
 			expected: models.Actress{
 				JapaneseName: "田中",
-				FirstName:    "Maria",
-				LastName:     "De Niro",
+				LastName:     "De",
+				FirstName:    "Niro Maria",
 			},
 		},
 		{
 			name: "whitespace trimmed before splitting",
 			actress: &models.Actress{},
-			translated: "  Yui Tanaka  ",
+			translated: "  Tanaka Yui  ",
 			expected: models.Actress{
-				FirstName: "Yui",
 				LastName:  "Tanaka",
+				FirstName: "Yui",
+			},
+		},
+		{
+			name: "parenthetical content stripped from output",
+			actress: &models.Actress{
+				JapaneseName: "黒木麻衣",
+			},
+			translated: "Kuroki Mai(Mai",
+			expected: models.Actress{
+				JapaneseName: "黒木麻衣",
+				LastName:     "Kuroki",
+				FirstName:    "Mai",
+			},
+		},
+		{
+			name: "parenthetical-only becomes empty - no change",
+			actress: &models.Actress{
+				JapaneseName: "田中香",
+				FirstName:    "OldFirst",
+				LastName:     "OldLast",
+			},
+			translated: "(Mai",
+			expected: models.Actress{
+				JapaneseName: "田中香",
+				FirstName:    "OldFirst",
+				LastName:     "OldLast",
+			},
+		},
+		{
+			name: "full-width parenthesis stripped",
+			actress: &models.Actress{},
+			translated: "Kuroki Mai（extra",
+			expected: models.Actress{
+				LastName:  "Kuroki",
+				FirstName: "Mai",
 			},
 		},
 	}
@@ -420,6 +455,75 @@ func TestParseStringArrayPayload(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, got)
+		})
+	}
+}
+
+// =============================================================================
+// extractNamesFromDMMActjpgsURL tests
+// =============================================================================
+
+func TestExtractNamesFromDMMActjpgsURL(t *testing.T) {
+	tests := []struct {
+		name          string
+		thumbURL      string
+		wantLastName  string
+		wantFirstName string
+		wantOk        bool
+	}{
+		{
+			name:          "standard format",
+			thumbURL:      "https://pics.dmm.co.jp/mono/actjpgs/miyosi_yuka.jpg",
+			wantLastName:  "miyosi",
+			wantFirstName: "yuka",
+			wantOk:        true,
+		},
+		{
+			name:          "trailing number stripped",
+			thumbURL:      "https://pics.dmm.co.jp/mono/actjpgs/miyasita_rena2.jpg",
+			wantLastName:  "miyasita",
+			wantFirstName: "rena",
+			wantOk:        true,
+		},
+		{
+			name:          "trailing underscore+number stripped",
+			thumbURL:      "https://pics.dmm.co.jp/mono/actjpgs/ito_mayuki_2.jpg",
+			wantLastName:  "ito",
+			wantFirstName: "mayuki",
+			wantOk:        true,
+		},
+		{
+			name:     "no actjpgs prefix - not matched",
+			thumbURL: "https://pics.dmm.co.jp/mono/other/miyosi_yuka.jpg",
+			wantOk:   false,
+		},
+		{
+			name:     "empty url",
+			thumbURL: "",
+			wantOk:   false,
+		},
+		{
+			name:     "single name part - not matched",
+			thumbURL: "https://pics.dmm.co.jp/mono/actjpgs/yuka.jpg",
+			wantOk:   false,
+		},
+		{
+			name:          "query string ignored",
+			thumbURL:      "https://pics.dmm.co.jp/mono/actjpgs/tanaka_yui.jpg?v=123",
+			wantLastName:  "tanaka",
+			wantFirstName: "yui",
+			wantOk:        true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lastName, firstName, ok := extractNamesFromDMMActjpgsURL(tt.thumbURL)
+			assert.Equal(t, tt.wantOk, ok)
+			if tt.wantOk {
+				assert.Equal(t, tt.wantLastName, lastName)
+				assert.Equal(t, tt.wantFirstName, firstName)
+			}
 		})
 	}
 }

@@ -1521,7 +1521,7 @@ func TestTranslateMovie_FullFlow(t *testing.T) {
 			}
 
 			// Verify actresses translation if configured.
-			// replaceActressName splits "GivenName FamilyName" into FirstName + LastName;
+			// replaceActressName splits "FamilyName GivenName" into LastName + FirstName;
 			// JapaneseName is preserved.
 			if tt.cfg.Fields.Actresses && len(tt.movie.Actresses) > 0 && tt.wantPrimarySet {
 				a := movieCopy.Actresses[0]

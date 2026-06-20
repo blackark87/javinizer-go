@@ -141,7 +141,26 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 		actressRecord.Actresses = make([]string, len(movie.Actresses))
 		for i := range movie.Actresses {
 			idx := i
-			rawName := actressDisplayTitle(movie.Actresses[idx])
+			actress := &movie.Actresses[idx]
+
+			// Priority 1: extract romanized name directly from DMM actjpgs thumbnail URL.
+			// This is more reliable than LLM romanization (official DMM naming).
+			if lastName, firstName, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL); ok {
+				displayName := capitalize(lastName) + " " + capitalize(firstName)
+				actressRecord.Actresses[idx] = displayName
+				if s.cfg.ApplyToPrimary && actressTargetLang == targetLanguages[0] {
+					actress.LastName = capitalize(lastName)
+					actress.FirstName = capitalize(firstName)
+				}
+				touchedRecords[actressTargetLang] = true
+				continue
+			}
+
+			// Priority 2: LLM romanization — only if a Japanese source name exists.
+			if strings.TrimSpace(actress.JapaneseName) == "" {
+				continue
+			}
+			rawName := actressDisplayTitle(*actress)
 			name := cleanActressNameForTranslation(rawName)
 			if name == "" {
 				continue
@@ -151,14 +170,14 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 			}
 			touchedRecords[actressTargetLang] = true
 			requests = append(requests, pendingText{
-				text:      name,
-				fieldName: fmt.Sprintf("actress[%d]", i),
+				text:       name,
+				fieldName:  fmt.Sprintf("actress[%d]", i),
 				targetLang: actressTargetLang,
-				isActress: true,
+				isActress:  true,
 				apply: func(translated string) {
 					actressRecord.Actresses[idx] = translated
 					if s.cfg.ApplyToPrimary && actressTargetLang == targetLanguages[0] {
-						replaceActressName(&movie.Actresses[idx], translated)
+						replaceActressName(actress, translated)
 					}
 				},
 			})
@@ -350,18 +369,55 @@ func replaceActressName(actress *models.Actress, translated string) {
 	if actress == nil || translated == "" {
 		return
 	}
-	// Split into FirstName + LastName so FormatActressName respects FirstNameOrder.
+	// Strip parenthetical noise the LLM may append (e.g. "Kuroki(Mai" → "Kuroki").
+	if idx := strings.IndexAny(translated, "([（"); idx >= 0 {
+		translated = strings.TrimSpace(translated[:idx])
+	}
+	if translated == "" {
+		return
+	}
+	// Prompt returns Japanese name order: FamilyName GivenName.
+	// parts[0] = family name → LastName; parts[1:] = given name → FirstName.
 	// JapaneseName is preserved for <ACTRESS:ja>.
-	// Prompt instructs LLM to return Western order (GivenName FamilyName),
-	// so parts[0] = given name, parts[1:] = family name.
 	parts := strings.Fields(translated)
 	if len(parts) >= 2 {
-		actress.FirstName = parts[0]
-		actress.LastName = strings.Join(parts[1:], " ")
+		actress.LastName = parts[0]
+		actress.FirstName = strings.Join(parts[1:], " ")
 	} else {
 		actress.FirstName = translated
 		actress.LastName = ""
 	}
+}
+
+// extractNamesFromDMMActjpgsURL parses lastName and firstName from DMM actjpgs thumbnail URLs.
+// Format: https://pics.dmm.co.jp/mono/actjpgs/lastname_firstname[N].jpg
+func extractNamesFromDMMActjpgsURL(thumbURL string) (lastName, firstName string, ok bool) {
+	const prefix = "actjpgs/"
+	idx := strings.LastIndex(thumbURL, prefix)
+	if idx < 0 {
+		return "", "", false
+	}
+	filename := thumbURL[idx+len(prefix):]
+	if q := strings.IndexByte(filename, '?'); q >= 0 {
+		filename = filename[:q]
+	}
+	if dot := strings.LastIndexByte(filename, '.'); dot >= 0 {
+		filename = filename[:dot]
+	}
+	// Strip trailing digits and underscores (e.g. "rena2" → "rena", "rena_2" → "rena")
+	filename = strings.TrimRight(filename, "0123456789_")
+	parts := strings.SplitN(filename, "_", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
+}
+
+func capitalize(s string) string {
+	if s == "" {
+		return ""
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 const maxTranslationRetries = 3

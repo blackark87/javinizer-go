@@ -6,6 +6,7 @@
 	import Card from '$lib/components/ui/Card.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import type { Actress } from '$lib/api/types';
+	import { apiClient } from '$lib/api/client';
 
 	let {
 		actresses,
@@ -53,7 +54,7 @@
 					</div>
 					{#if actress.thumb_url && !imgErrorKeys.has(actressKey(actress, index))}
 						<img
-							src={actress.thumb_url}
+							src={apiClient.getPreviewImageURL(actress.thumb_url)}
 							alt={getDisplayName(actress)}
 							class="w-20 h-24 rounded object-cover border"
 							onerror={() => {

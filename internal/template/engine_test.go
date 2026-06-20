@@ -1411,6 +1411,26 @@ func TestTemplateEngine_ActorsDelimModifier(t *testing.T) {
 			template:         "<ACTORS: & >",
 			want:             "Hatano Yui, Uehara Ai",
 		},
+		// Empty DELIM= explicitly joins with an empty string (does not fall
+		// back to the configured actress_delimiter).
+		{
+			name:             "empty DELIM= joins with empty string",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:DELIM=>",
+			want:             "Hatano YuiUehara Ai",
+		},
+		{
+			name:             "empty DELIM= overrides non-default ctx delimiter",
+			actressDelimiter: " | ",
+			template:         "<ACTORS:DELIM=>",
+			want:             "Hatano YuiUehara Ai",
+		},
+		{
+			name:             "JA,DELIM= joins Japanese with empty string",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:JA,DELIM=>",
+			want:             "波多野結衣上原亜衣",
+		},
 	}
 
 	for _, tt := range tests {

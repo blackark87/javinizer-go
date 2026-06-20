@@ -29,13 +29,14 @@ func applyDisplayTitle(ctx context.Context, job *BatchJob, cfg *config.Config, m
 	}
 }
 
-func ApplyDisplayTitle(ctx context.Context, movie *models.Movie, titleSource *models.Movie, displayTitleTmpl string, templateEngine *template.Engine, groupActress bool, groupActressName string, groupUnknownActressName string, firstNameOrder bool, actressDelimiter string) {
+func ApplyDisplayTitle(ctx context.Context, movie *models.Movie, titleSource *models.Movie, displayTitleTmpl string, templateEngine *template.Engine, groupActress bool, groupActressName string, groupUnknownActressName string, firstNameOrder bool, actressLanguageJa bool, actressDelimiter string) {
 	if displayTitleTmpl != "" {
 		displayCtx := template.NewContextFromMovie(movie)
 		displayCtx.GroupActress = groupActress
 		displayCtx.GroupActressName = groupActressName
 		displayCtx.GroupUnknownActressName = groupUnknownActressName
 		displayCtx.FirstNameOrder = firstNameOrder
+		displayCtx.ActressLanguageJa = actressLanguageJa
 		displayCtx.ActressDelimiter = actressDelimiter
 		displayCtx.Title = titleSource.Title
 		if displayName, err := templateEngine.ExecuteWithContext(ctx, displayTitleTmpl, displayCtx); err == nil {

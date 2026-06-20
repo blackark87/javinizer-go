@@ -122,6 +122,7 @@ func generatePreview(movie *models.Movie, fileResults []*worker.FileResult, dest
 	previewCtx.GroupUnknownActressName = cfg.Output.GroupUnknownActressName
 	previewCtx.FirstNameOrder = cfg.Output.FirstNameOrder
 	previewCtx.ActressLanguageJa = cfg.Output.ActressLanguageJA
+	previewCtx.ActressDelimiter = cfg.Output.ActressDelimiter
 
 	var nfoPath string
 	var nfoPaths []string
@@ -318,6 +319,7 @@ func generateUNCPreview(movie *models.Movie, fileResults []*worker.FileResult, d
 	previewCtx.GroupUnknownActressName = cfg.Output.GroupUnknownActressName
 	previewCtx.FirstNameOrder = cfg.Output.FirstNameOrder
 	previewCtx.ActressLanguageJa = cfg.Output.ActressLanguageJA
+	previewCtx.ActressDelimiter = cfg.Output.ActressDelimiter
 
 	var nfoPath string
 	var nfoPaths []string

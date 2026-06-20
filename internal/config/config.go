@@ -151,10 +151,17 @@ type MatchingConfig struct {
 
 // OutputConfig holds output/organization settings
 type OutputConfig struct {
-	FolderFormat            string              `yaml:"folder_format" json:"folder_format"`
-	FileFormat              string              `yaml:"file_format" json:"file_format"`
-	SubfolderFormat         []string            `yaml:"subfolder_format" json:"subfolder_format"`
-	ActressDelimiter        string              `yaml:"actress_delimiter" json:"actress_delimiter"` // Delimiter between actress names when joining <ACTORS>/<ACTRESSES> with no in-tag DELIM= modifier (default: ", ")
+	FolderFormat     string   `yaml:"folder_format" json:"folder_format"`
+	FileFormat       string   `yaml:"file_format" json:"file_format"`
+	SubfolderFormat  []string `yaml:"subfolder_format" json:"subfolder_format"`
+	ActressDelimiter string   `yaml:"actress_delimiter" json:"actress_delimiter"` // Delimiter between actress names when joining <ACTORS>/<ACTRESSES> with no in-tag DELIM= modifier (default: ", ")
+	// LegacyDelimiter is a legacy alias for actress_delimiter retained for
+	// backward compatibility with configs written before the rename. It is
+	// omitted from JSON output and copied into ActressDelimiter during
+	// Normalize when the new key is unset and the legacy one is not.
+	// Exported because yaml.v3 cannot decode into unexported fields when
+	// UnmarshalYAML uses a type-alias decode path.
+	LegacyDelimiter         string              `yaml:"delimiter,omitempty" json:"-"`
 	MaxTitleLength          int                 `yaml:"max_title_length" json:"max_title_length"`
 	MaxPathLength           int                 `yaml:"max_path_length" json:"max_path_length"`
 	MoveSubtitles           bool                `yaml:"move_subtitles" json:"move_subtitles"`

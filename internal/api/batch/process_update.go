@@ -209,14 +209,14 @@ func updateFileNFO(fileCtx context.Context, sourceDir string, filePath string, m
 		}
 	}
 
-	nfoPath, legacyPaths := nfo.ResolveNFOPath(sourceDir, movie, cfg.Metadata.NFO.FilenameTemplate, cfg.Output.GroupActress, cfg.Output.GroupActressName, cfg.Output.GroupUnknownActressName, cfg.Output.FirstNameOrder, cfg.Output.ActressDelimiter, cfg.Metadata.NFO.PerFile, isMultiPart, partSuffix, filePath)
+	nfoPath, legacyPaths := nfo.ResolveNFOPath(sourceDir, movie, cfg.Metadata.NFO.FilenameTemplate, cfg.Output.GroupActress, cfg.Output.GroupActressName, cfg.Output.GroupUnknownActressName, cfg.Output.FirstNameOrder, cfg.Output.ActressLanguageJA, cfg.Output.ActressDelimiter, cfg.Metadata.NFO.PerFile, isMultiPart, partSuffix, filePath)
 	res.nfoPath = nfoPath
 
 	movieToWrite, mergeStats, foundPath := resolveNFOAndMerge(movie, sourceDir, filePath, opts, cfg, nfoPath, legacyPaths)
 	res.movieToWrite = movieToWrite
 	res.mergeStats = mergeStats
 
-	worker.ApplyDisplayTitle(fileCtx, movieToWrite, movie, cfg.Metadata.NFO.DisplayTitle, template.NewEngine(), cfg.Output.GroupActress, cfg.Output.GroupActressName, cfg.Output.GroupUnknownActressName, cfg.Output.FirstNameOrder, cfg.Output.ActressDelimiter)
+	worker.ApplyDisplayTitle(fileCtx, movieToWrite, movie, cfg.Metadata.NFO.DisplayTitle, template.NewEngine(), cfg.Output.GroupActress, cfg.Output.GroupActressName, cfg.Output.GroupUnknownActressName, cfg.Output.FirstNameOrder, cfg.Output.ActressLanguageJA, cfg.Output.ActressDelimiter)
 
 	if isMultiPart {
 		res.multipart = &downloader.MultipartInfo{IsMultiPart: isMultiPart, PartNumber: partNum, PartSuffix: partSuffix}

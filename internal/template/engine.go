@@ -39,7 +39,8 @@ type parsedModifier struct {
 	languageSpec     string
 	legacyModifier   string
 	firstNameOrder   *bool  // nil = use ctx.FirstNameOrder; non-nil = tag-level override
-	delimiter        string // non-empty = explicit per-tag joiner from <TAG:DELIM=X>
+	delimiter        string // explicit per-tag joiner from <TAG:DELIM=X> (may be empty)
+	delimSet         bool   // true = DELIM= was present (distinguishes empty value from absent)
 	rejectedLanguage bool
 }
 
@@ -432,13 +433,15 @@ func (e *Engine) resolveTag(tagName, modifier string, ctx *Context) (string, err
 		}
 
 		// Join delimiter precedence: tag-level DELIM= modifier > ctx.ActressDelimiter
-		// (config-level actress_delimiter, default ", ").
-		delimiter := pm.delimiter
+		// (config-level actress_delimiter, default ", "). When DELIM= is
+		// explicitly present (even with an empty value) the empty string is
+		// honored as the joiner, e.g. <ACTORS:DELIM=> produces "Hatano YuiUehara Ai".
+		delimiter := ctx.ActressDelimiter
 		if delimiter == "" {
-			delimiter = ctx.ActressDelimiter
-			if delimiter == "" {
-				delimiter = ", "
-			}
+			delimiter = ", "
+		}
+		if pm.delimSet {
+			delimiter = pm.delimiter
 		}
 		return strings.Join(names, delimiter), nil
 
@@ -796,8 +799,10 @@ func (e *Engine) parseActressModifier(modifier string) parsedModifier {
 	// Extract DELIM=value first so the value can freely contain commas.
 	// The keyword is case-insensitive but the value itself is preserved as-is.
 	var delimited string
+	delimSet := false
 	prefix := modifier
 	if idx := strings.Index(strings.ToUpper(modifier), "DELIM="); idx >= 0 {
+		delimSet = true
 		delimited = modifier[idx+len("DELIM="):]
 		prefix = modifier[:idx]
 		// Trim any trailing comma in prefix so the keyword-split step doesn't
@@ -861,11 +866,11 @@ func (e *Engine) parseActressModifier(modifier string) parsedModifier {
 
 	// No DELIM= and no keyword: hard break — return empty so the resolver
 	// falls back to ctx.ActressDelimiter.
-	if !sawKeyword && delimited == "" {
+	if !sawKeyword && !delimSet {
 		return parsedModifier{}
 	}
 
-	pm := parsedModifier{firstNameOrder: firstNameOrder}
+	pm := parsedModifier{firstNameOrder: firstNameOrder, delimSet: delimSet}
 	if languageSpec != "" {
 		pm.isLanguage = true
 		pm.languageSpec = languageSpec

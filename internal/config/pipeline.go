@@ -86,6 +86,21 @@ func Normalize(cfg *Config) bool {
 
 	changed = normalizeTranslationConfig(&cfg.Metadata.Translation) || changed
 
+	// Backward-compat shim: pre-existing configs may use the legacy
+	// `output.delimiter` key (renamed to `output.actress_delimiter`). Carry the
+	// legacy value over to the renamed field when it differs from what was
+	// already loaded. yaml.v3 doesn't tell us which key was explicitly present,
+	// so the shim is conservative: only carry over when the legacy value is
+	// non-empty AND the new field still holds the default ', '. This preserves
+	// pre-rename user settings without clobbering an explicitly-set new key
+	// that happens to equal the default.
+	defaultDelim := DefaultConfig().Output.ActressDelimiter
+	if cfg.Output.LegacyDelimiter != "" && cfg.Output.ActressDelimiter == defaultDelim && cfg.Output.LegacyDelimiter != defaultDelim {
+		cfg.Output.ActressDelimiter = cfg.Output.LegacyDelimiter
+		cfg.Output.LegacyDelimiter = ""
+		changed = true
+	}
+
 	if cfg.Output.OperationMode == "" {
 		cfg.Output.OperationMode = types.OperationModeOrganize
 		changed = true

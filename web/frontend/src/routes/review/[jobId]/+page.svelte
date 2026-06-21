@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { fade } from 'svelte/transition';
+	import { tick } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import Button from '$lib/components/ui/Button.svelte';
@@ -52,6 +53,22 @@
 		if (!shouldSyncTab(currentParam, activeTab)) return;
 		void goto(buildTabUrl($page.url, activeTab), { replaceState: true, noScroll: true, keepFocus: true });
 	});
+
+	let prevViewMode = $state('');
+	$effect(() => {
+		const current = s.viewMode;
+		if (prevViewMode === 'detail' && (current === 'grid-poster' || current === 'grid-cover')) {
+			const movieId = s.currentMovieGroup?.movieId;
+			if (movieId) {
+				tick().then(() => {
+					const wrapper = document.querySelector(`[data-card-wrapper="${movieId}"]`);
+					wrapper?.firstElementChild?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+				});
+			}
+		}
+		prevViewMode = current;
+	});
+
 </script>
 
 <div class="container mx-auto px-4 py-8">
@@ -188,30 +205,32 @@
 					{#if s.viewMode === 'grid-poster' || s.viewMode === 'grid-cover'}
 						<div class="grid {s.viewMode === 'grid-cover' ? 'grid-cols-3' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'} {s.viewMode === 'grid-cover' ? 'gap-2' : 'gap-4'}">
 							{#each s.filteredMovieGroups as group}
-								<ReviewGridCard
-									movieGroup={group}
-									isSelected={group.primaryResult.result_id === s.currentResult?.result_id}
-									isEdited={s.editedMovies.has(group.primaryResult.file_path)}
-									isBulkSelected={s.selectedMovieIds.has(group.movieId)}
-									selectionMode={s.selectionMode}
-									displayPosterUrl={(() => {
-										const movie = group.primaryResult.data;
-										if (!movie) return undefined;
-										return s.resolvePosterUrl(movie, group.primaryResult.file_path);
-									})()}
-									displayCoverUrl={group.primaryResult.data?.cover_url}
-									displayImageType={s.viewMode === 'grid-cover' ? 'cover' : 'poster'}
-									previewImageURL={s.reviewPageController.previewImageURL}
-									onclick={(e) => {
-										if (s.selectionMode) {
-											s.toggleMovieSelection(group.movieId, e.shiftKey);
-										} else {
-											s.currentMovieIndex = s.movieGroups.findIndex(g => g.movieId === group.movieId);
-											s.viewMode = 'detail';
-										}
-									}}
-									completenessConfig={s.completenessConfig}
-								/>
+								<div style="display:contents" data-card-wrapper={group.movieId}>
+									<ReviewGridCard
+										movieGroup={group}
+										isSelected={group.primaryResult.result_id === s.currentResult?.result_id}
+										isEdited={s.editedMovies.has(group.primaryResult.file_path)}
+										isBulkSelected={s.selectedMovieIds.has(group.movieId)}
+										selectionMode={s.selectionMode}
+										displayPosterUrl={(() => {
+											const movie = group.primaryResult.data;
+											if (!movie) return undefined;
+											return s.resolvePosterUrl(movie, group.primaryResult.file_path);
+										})()}
+										displayCoverUrl={group.primaryResult.data?.cover_url}
+										displayImageType={s.viewMode === 'grid-cover' ? 'cover' : 'poster'}
+										previewImageURL={s.reviewPageController.previewImageURL}
+										onclick={(e) => {
+											if (s.selectionMode) {
+												s.toggleMovieSelection(group.movieId, e.shiftKey);
+											} else {
+												s.currentMovieIndex = s.movieGroups.findIndex(g => g.movieId === group.movieId);
+												s.viewMode = 'detail';
+											}
+										}}
+										completenessConfig={s.completenessConfig}
+									/>
+								</div>
 							{/each}
 						</div>
 					{:else}

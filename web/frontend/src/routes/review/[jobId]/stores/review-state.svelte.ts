@@ -826,6 +826,19 @@ export function createReviewState(pageStore: Page) {
 		return unsubscribe;
 	});
 
+	$effect(() => {
+		const unsubscribe = websocketStore.subscribe((ws) => {
+			if (!bulkRescraping) return;
+			const msg = ws.messages.at(-1);
+			if (!msg || msg.job_id !== jobId || !msg.file_path) return;
+			const idx = bulkRescrapeProgress.findIndex(p => p.movie_id === msg.file_path);
+			if (idx === -1) return;
+			bulkRescrapeProgress[idx] = { movie_id: msg.file_path, status: msg.status, error: msg.error };
+		});
+
+		return unsubscribe;
+	});
+
 	let organizeStateRestored = false;
 	$effect(() => {
 		if (!job || organizeStateRestored) return;

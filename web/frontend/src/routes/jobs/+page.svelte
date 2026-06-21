@@ -480,9 +480,19 @@
 											</Button>
 										{:else if job.status.toLowerCase() === 'completed'}
 											{#if job.completed > 0}
-												<Button variant="default" size="sm" onclick={() => goto(`/review/${job.id}`)}>
-													{job.operation_count > 0 ? 'Resume Organize' : 'Review & Organize'}
-												</Button>
+												{#if job.operation_count > 0}
+													<Button variant="outline" size="sm" onclick={() => goto(`/review/${job.id}`)}>
+														<Eye class="h-4 w-4 mr-1" />
+														Review
+													</Button>
+													<Button variant="default" size="sm" onclick={() => goto(`/review/${job.id}`)}>
+														Resume Organize
+													</Button>
+												{:else}
+													<Button variant="default" size="sm" onclick={() => goto(`/review/${job.id}`)}>
+														Review & Organize
+													</Button>
+												{/if}
 											{/if}
 											{#if job.failed > 0}
 												<Button variant="outline" size="sm" class="min-w-[150px]" onclick={() => goto(`/review/${job.id}?tab=failed`)} title="View failed files in review">

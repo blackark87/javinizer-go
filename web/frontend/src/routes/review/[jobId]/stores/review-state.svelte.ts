@@ -490,9 +490,10 @@ export function createReviewState(pageStore: Page) {
 			return;
 		}
 
-		bulkRescraping = true;
+		websocketStore.clearMessages();
 		bulkRescrapeProgress = bulkRescrapeMovieIds.map(id => ({ movie_id: id, status: 'pending' }));
 		showRescrapeModal = false;
+		bulkRescraping = true;
 
 		try {
 			await mutations.bulkRescrapeMutation.mutateAsync({
@@ -523,8 +524,9 @@ export function createReviewState(pageStore: Page) {
 		const movieIds = Array.from(selectedMovieIds);
 		const enabledScrapers = availableScrapers.filter(s => s.enabled).map(s => s.name);
 
-		bulkRescraping = true;
+		websocketStore.clearMessages();
 		bulkRescrapeProgress = movieIds.map(id => ({ movie_id: id, status: 'pending' }));
+		bulkRescraping = true;
 
 		try {
 			await mutations.bulkRescrapeMutation.mutateAsync({

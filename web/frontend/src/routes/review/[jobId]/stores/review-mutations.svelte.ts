@@ -8,6 +8,9 @@ import { normalizeCropBox, type PosterCropBox, type PosterCropState, type Poster
 	getJob: () => BatchJobResponse | null;
 	setJob: (job: BatchJobResponse) => void;
 	skipJobSync: () => void;
+	clearEditStorage: () => void;
+	clearEditedMovies: () => void;
+	clearPosterPreviewOverrides: () => void;
 	getEditedMovies: () => Map<string, Movie>;
 	getCurrentResult: () => FileResult | undefined;
 	getPosterPreviewOverrides: () => Map<string, PosterPreviewOverride>;
@@ -154,6 +157,9 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 			}
 		},
 		onSuccess: () => {
+			deps.clearEditedMovies();
+			deps.clearPosterPreviewOverrides();
+			deps.clearEditStorage();
 			invalidateJobQueries();
 		},
 		onError: (err: Error) => {

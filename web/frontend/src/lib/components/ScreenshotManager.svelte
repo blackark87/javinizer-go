@@ -50,16 +50,24 @@
 
 	let clearCropState = $state(false);
 
-	function notifyParent() {
+	function notifyParent(clearCrop = false) {
 		onUpdate({
 			...movie,
 			screenshot_urls: screenshots,
 			poster_url: posterUrl,
 			cover_url: coverUrl,
 			trailer_url: trailerUrl,
-			...(clearCropState ? { should_crop_poster: false, cropped_poster_url: '' } : {})
+			...((clearCrop || clearCropState) ? { should_crop_poster: false, cropped_poster_url: '' } : {})
 		});
 		clearCropState = false;
+	}
+
+	function onPosterUrlChange() {
+		notifyParent(true);
+	}
+
+	function onFieldChange() {
+		notifyParent();
 	}
 
 	function addScreenshot() {
@@ -163,7 +171,7 @@
 					id="poster-url"
 					type="url"
 					bind:value={posterUrl}
-					onchange={notifyParent}
+					onchange={onPosterUrlChange}
 					placeholder="https://..."
 					class="w-full px-3 py-2 border rounded-md bg-background focus:ring-2 focus:ring-primary focus:border-primary transition-all font-mono text-sm"
 				/>
@@ -232,7 +240,7 @@
 					id="cover-url"
 					type="url"
 					bind:value={coverUrl}
-					onchange={notifyParent}
+					onchange={onFieldChange}
 					placeholder="https://..."
 					class="w-full px-3 py-2 border rounded-md bg-background focus:ring-2 focus:ring-primary focus:border-primary transition-all font-mono text-sm"
 				/>
@@ -287,7 +295,7 @@
 					id="trailer-url"
 					type="url"
 					bind:value={trailerUrl}
-					onchange={notifyParent}
+					onchange={onFieldChange}
 					placeholder="https://..."
 					class="w-full px-3 py-2 border rounded-md bg-background focus:ring-2 focus:ring-primary focus:border-primary transition-all font-mono text-sm"
 				/>

@@ -95,6 +95,8 @@ export function createReviewState(pageStore: Page) {
 	let viewMode = $state<'detail' | 'grid-poster' | 'grid-cover'>('detail');
 	let viewModeInitialized = $state(false);
 	let posterCropStatesStorageKey = $derived(`javinizer.review.posterCropStates.${jobId}`);
+	let editedMoviesStorageKey = $derived(`javinizer.review.editedMovies.${jobId}`);
+	let posterPreviewOverridesStorageKey = $derived(`javinizer.review.posterPreviewOverrides.${jobId}`);
 
 	let organizeProgress = $state(0);
 	let organizeStatus = $state<'idle' | 'organizing' | 'completed' | 'failed'>('idle');
@@ -214,7 +216,7 @@ export function createReviewState(pageStore: Page) {
 	const tierCounts = $derived.by<Record<CompletenessTier, number>>(() => {
 		const counts: Record<CompletenessTier, number> = { incomplete: 0, partial: 0, complete: 0 };
 		for (const group of movieGroups) {
-			const movie = group.primaryResult.data;
+			const movie = getEffectiveMovie(group.primaryResult.file_path, group.primaryResult.data);
 			if (movie) {
 				const { tier } = calculateCompleteness(movie, completenessConfig);
 				counts[tier]++;
@@ -227,7 +229,7 @@ export function createReviewState(pageStore: Page) {
 		completenessFilter.size === 3
 			? movieGroups
 			: movieGroups.filter(group => {
-				const movie = group.primaryResult.data;
+				const movie = getEffectiveMovie(group.primaryResult.file_path, group.primaryResult.data);
 				if (!movie) return false;
 				const { tier } = calculateCompleteness(movie, completenessConfig);
 				return completenessFilter.has(tier);
@@ -243,6 +245,11 @@ export function createReviewState(pageStore: Page) {
 			? editedMovies.get(currentResult.file_path) || currentResult.data
 			: null
 	);
+
+	function getEffectiveMovie(filePath: string, original: Movie | null | undefined): Movie | null {
+		if (!original) return null;
+		return editedMovies.get(filePath) || original;
+	}
 
 	function resolvePosterUrl(movie: Movie, filePath: string): string | undefined {
 		const override = posterPreviewOverrides.get(filePath);
@@ -369,6 +376,9 @@ export function createReviewState(pageStore: Page) {
 		deleteSelectedMovieId: (movieId: string) => { selectedMovieIds.delete(movieId); if (lastSelectedMovieId === movieId) { lastSelectedMovieId = null; } },
 		toastSuccess: (message, duration) => toastStore.success(message, duration),
 		toastError: (message, duration) => toastStore.error(message, duration),
+		clearEditStorage,
+		clearEditedMovies,
+		clearPosterPreviewOverrides,
 	});
 
 	function updateCurrentMovie(movie: Movie) {
@@ -378,6 +388,11 @@ export function createReviewState(pageStore: Page) {
 
 		if (isActuallyModified) {
 			editedMovies.set(currentResult.file_path, movie);
+
+			if (movie.poster_url !== currentResult.data.poster_url ||
+				movie.cropped_poster_url !== currentResult.data.cropped_poster_url) {
+				posterPreviewOverrides.delete(currentResult.file_path);
+			}
 		} else {
 			editedMovies.delete(currentResult.file_path);
 		}
@@ -560,6 +575,20 @@ export function createReviewState(pageStore: Page) {
 
 		clearPosterPreviewOverride();
 		mutations.applyPosterFromUrl(currentResult!.result_id, url);
+	}
+
+	function clearEditStorage() {
+		if (!browser) return;
+		sessionStorage.removeItem(editedMoviesStorageKey);
+		sessionStorage.removeItem(posterPreviewOverridesStorageKey);
+	}
+
+	function clearEditedMovies() {
+		editedMovies.clear();
+	}
+
+	function clearPosterPreviewOverrides() {
+		posterPreviewOverrides.clear();
 	}
 
 	async function saveAllEdits() {
@@ -764,6 +793,32 @@ export function createReviewState(pageStore: Page) {
 	});
 
 	$effect(() => {
+		if (!browser) return;
+		if (editedMovies.size === 0) {
+			sessionStorage.removeItem(editedMoviesStorageKey);
+			return;
+		}
+		const entries: Record<string, Movie> = {};
+		editedMovies.forEach((v, k) => {
+			entries[k] = v;
+		});
+		sessionStorage.setItem(editedMoviesStorageKey, JSON.stringify(entries));
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		if (posterPreviewOverrides.size === 0) {
+			sessionStorage.removeItem(posterPreviewOverridesStorageKey);
+			return;
+		}
+		const entries: Record<string, PosterPreviewOverride> = {};
+		posterPreviewOverrides.forEach((v, k) => {
+			entries[k] = v;
+		});
+		sessionStorage.setItem(posterPreviewOverridesStorageKey, JSON.stringify(entries));
+	});
+
+	$effect(() => {
 		const unsubscribe = websocketStore.subscribe((ws) => {
 			organizeController.handleWebSocketMessage(ws.messages.at(-1));
 		});
@@ -799,6 +854,34 @@ export function createReviewState(pageStore: Page) {
 					});
 				} catch {
 					localStorage.removeItem(posterCropStatesStorageKey);
+				}
+			}
+
+			const savedEditedMovies = sessionStorage.getItem(editedMoviesStorageKey);
+			if (savedEditedMovies) {
+				try {
+					const parsed = JSON.parse(savedEditedMovies) as Record<string, Movie>;
+					untrack(() => {
+						for (const [k, v] of Object.entries(parsed)) {
+							editedMovies.set(k, v);
+						}
+					});
+				} catch {
+					sessionStorage.removeItem(editedMoviesStorageKey);
+				}
+			}
+
+			const savedOverrides = sessionStorage.getItem(posterPreviewOverridesStorageKey);
+			if (savedOverrides) {
+				try {
+					const parsed = JSON.parse(savedOverrides) as Record<string, PosterPreviewOverride>;
+					untrack(() => {
+						for (const [k, v] of Object.entries(parsed)) {
+							posterPreviewOverrides.set(k, v);
+						}
+					});
+				} catch {
+					sessionStorage.removeItem(posterPreviewOverridesStorageKey);
 				}
 			}
 		}
@@ -928,6 +1011,7 @@ export function createReviewState(pageStore: Page) {
 		bulkExcludeMutation: mutations.bulkExcludeMutation,
 		bulkRescrapeMutation: mutations.bulkRescrapeMutation,
 		resolvePosterUrl,
+		getEffectiveMovie,
 		getEffectiveOperationMode,
 		updateCurrentMovie,
 		resetCurrentMovie,

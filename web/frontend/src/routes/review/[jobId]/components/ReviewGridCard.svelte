@@ -17,6 +17,7 @@
 		isEdited: boolean;
 		isBulkSelected: boolean;
 		selectionMode: boolean;
+		effectiveMovie?: Movie;
 		displayPosterUrl?: string;
 		displayCoverUrl?: string;
 		displayImageType?: 'poster' | 'cover';
@@ -31,6 +32,7 @@
 		isEdited,
 		isBulkSelected,
 		selectionMode,
+		effectiveMovie,
 		displayPosterUrl,
 		displayCoverUrl,
 		displayImageType = 'poster',
@@ -39,7 +41,7 @@
 		completenessConfig
 	}: Props = $props();
 
-	const movie = $derived(movieGroup.primaryResult.data as Movie | undefined);
+	const movie = $derived(effectiveMovie ?? movieGroup.primaryResult.data as Movie | undefined);
 	const imageSrc = $derived(
 		displayImageType === 'cover'
 			? (displayCoverUrl ? previewImageURL(displayCoverUrl) : undefined)

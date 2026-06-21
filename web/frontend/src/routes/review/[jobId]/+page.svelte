@@ -192,12 +192,13 @@
 									isEdited={s.editedMovies.has(group.primaryResult.file_path)}
 									isBulkSelected={s.selectedMovieIds.has(group.movieId)}
 									selectionMode={s.selectionMode}
+									effectiveMovie={s.getEffectiveMovie(group.primaryResult.file_path, group.primaryResult.data) ?? undefined}
 									displayPosterUrl={(() => {
-										const movie = group.primaryResult.data;
+										const movie = s.getEffectiveMovie(group.primaryResult.file_path, group.primaryResult.data);
 										if (!movie) return undefined;
 										return s.resolvePosterUrl(movie, group.primaryResult.file_path);
 									})()}
-									displayCoverUrl={group.primaryResult.data?.cover_url}
+									displayCoverUrl={s.getEffectiveMovie(group.primaryResult.file_path, group.primaryResult.data)?.cover_url}
 									displayImageType={s.viewMode === 'grid-cover' ? 'cover' : 'poster'}
 									previewImageURL={s.reviewPageController.previewImageURL}
 									onclick={(e) => {

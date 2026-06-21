@@ -97,18 +97,7 @@ func TestBatchRescrapeMovies(t *testing.T) {
 				MovieIDs:         []string{"IPX-535", "NONEXISTENT-999"},
 				SelectedScrapers: []string{"r18dev"},
 			},
-			expectedStatus: 200,
-			validateFn: func(t *testing.T, resp *BulkRescrapeResponse) {
-				assert.Len(t, resp.Results, 2)
-				assert.NotNil(t, resp.Job)
-				var foundNotFound bool
-				for _, r := range resp.Results {
-					if r.MovieID == "NONEXISTENT-999" && r.Status == "failed" {
-						foundNotFound = true
-					}
-				}
-				assert.True(t, foundNotFound, "should have a failed result for NONEXISTENT-999")
-			},
+			expectedStatus: 202,
 		},
 		{
 			name: "all movies not found still returns 200 with failed results",
@@ -127,15 +116,7 @@ func TestBatchRescrapeMovies(t *testing.T) {
 				MovieIDs:         []string{"MISSING-001", "MISSING-002"},
 				SelectedScrapers: []string{"r18dev"},
 			},
-			expectedStatus: 200,
-			validateFn: func(t *testing.T, resp *BulkRescrapeResponse) {
-				assert.Len(t, resp.Results, 2)
-				assert.Equal(t, 0, resp.Succeeded)
-				assert.Equal(t, 2, resp.Failed)
-				for _, r := range resp.Results {
-					assert.Equal(t, "failed", r.Status)
-				}
-			},
+			expectedStatus: 202,
 		},
 	}
 

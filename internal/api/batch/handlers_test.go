@@ -1676,7 +1676,7 @@ func TestOrganizeJobRetryWorkflow(t *testing.T) {
 			} else {
 				// Retry should be rejected (job is in Organized state)
 				assert.Equal(t, 400, w.Code, "Retry should be rejected for job in Organized state")
-				assert.Contains(t, w.Body.String(), "Job must be completed before organizing")
+				assert.Contains(t, w.Body.String(), "Job must be in completed or cancelled state before organizing")
 			}
 		})
 	}
@@ -1751,7 +1751,7 @@ func TestJobStateMachineTransitions(t *testing.T) {
 		router.ServeHTTP(w, req)
 
 		assert.Equal(t, 400, w.Code)
-		assert.Contains(t, w.Body.String(), "Job must be completed before organizing")
+		assert.Contains(t, w.Body.String(), "Job must be in completed or cancelled state before organizing")
 	})
 
 	t.Run("completed job can be organized (retry)", func(t *testing.T) {

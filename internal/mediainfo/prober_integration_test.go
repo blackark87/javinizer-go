@@ -22,6 +22,7 @@ func TestProberRegistry_ProbeWithFallback_UnsupportedFormat(t *testing.T) {
 	defer func() { _ = f.Close() }()
 
 	cfg := DefaultMediaInfoConfig()
+	cfg.CLIEnabled = false // disable CLI so unsupported format returns the expected error
 	registry := NewProberRegistry(cfg)
 
 	_, err = registry.ProbeWithFallback(f)

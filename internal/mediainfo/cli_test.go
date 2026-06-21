@@ -79,7 +79,7 @@ func TestNewCLIProber_NilConfig(t *testing.T) {
 	prober := NewCLIProber(nil)
 	assert.NotNil(t, prober)
 	// Should use defaults from DefaultMediaInfoConfig()
-	assert.False(t, prober.enabled) // Default is disabled
+	assert.True(t, prober.enabled) // Default is enabled
 }
 
 func TestParseMediaInfoJSON_ValidVideo(t *testing.T) {
@@ -404,7 +404,7 @@ func TestDefaultMediaInfoConfig(t *testing.T) {
 	cfg := DefaultMediaInfoConfig()
 
 	require.NotNil(t, cfg)
-	assert.False(t, cfg.CLIEnabled)
+	assert.True(t, cfg.CLIEnabled)
 	assert.Equal(t, "mediainfo", cfg.CLIPath)
 	assert.Equal(t, 30, cfg.CLITimeout)
 }
@@ -655,14 +655,14 @@ func TestNewCLIProber_WithConfig(t *testing.T) {
 	assert.Equal(t, 60, prober.timeout)
 }
 
-// TestNewCLIProber_DisabledWithNilConfig tests that disabled CLI uses default config
+// TestNewCLIProber_DisabledWithNilConfig tests that nil config falls back to defaults
 func TestNewCLIProber_DisabledWithNilConfig(t *testing.T) {
 	// Simulate passing nil config (uses defaults)
 	prober := NewCLIProber(nil)
 
 	assert.NotNil(t, prober)
-	// Default config has CLIEnabled: false
-	assert.False(t, prober.enabled)
+	// Default config has CLIEnabled: true
+	assert.True(t, prober.enabled)
 }
 
 // TestParseMediaInfoJSON_StreamDuration tests that Stream type track is skipped

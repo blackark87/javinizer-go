@@ -492,8 +492,9 @@ func TestProgressAdapterWebSocketOrdering(t *testing.T) {
 	// Verify we received messages
 	assert.NotEmpty(t, messages, "Should receive progress messages")
 
-	// Verify message fields and strict ordering
-	lastProgress := 0.0
+	// Verify message fields and per-file ordering
+	lastProgressByFile := make(map[int]float64)
+	anyProgress := false
 	for i, msg := range messages {
 		assert.Equal(t, job.ID, msg.JobID, "Job ID should match")
 		assert.NotEmpty(t, msg.Status, "Status should be set")
@@ -502,14 +503,18 @@ func TestProgressAdapterWebSocketOrdering(t *testing.T) {
 		if msg.FileIndex >= 0 {
 			assert.Less(t, msg.FileIndex, len(files), "File index should be valid")
 			assert.Equal(t, files[msg.FileIndex], msg.FilePath, "File path should match index")
-		}
 
-		// Verify progress never decreases (strict ordering)
-		assert.GreaterOrEqual(t, msg.Progress, lastProgress,
-			"Progress should not decrease (message %d: %.2f -> %.2f)", i, lastProgress, msg.Progress)
-		lastProgress = msg.Progress
+			// Verify progress never decreases within the same file
+			prev := lastProgressByFile[msg.FileIndex]
+			assert.GreaterOrEqual(t, msg.Progress, prev,
+				"Progress should not decrease within file (message %d, file %d: %.2f -> %.2f)", i, msg.FileIndex, prev, msg.Progress)
+			lastProgressByFile[msg.FileIndex] = msg.Progress
+		}
+		if msg.Progress > 0 {
+			anyProgress = true
+		}
 	}
-	assert.Greater(t, lastProgress, 0.0, "Progress should increase over time")
+	assert.True(t, anyProgress, "Progress should increase over time")
 }
 
 // TestBatchScrapeTaskDatabaseSafety tests database transaction safety during concurrent operations

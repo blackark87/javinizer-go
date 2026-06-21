@@ -187,6 +187,7 @@ func TestNewServer_RouteParity(t *testing.T) {
 		"GET /api/v1/words/replacements",
 		"GET /api/v1/words/replacements/export",
 		"GET /api/v1/history/stats",
+		"GET /api/v1/history/stats/dashboard",
 		"GET /api/v1/jobs",
 		"GET /api/v1/jobs/:id",
 		"GET /api/v1/jobs/:id/operations",

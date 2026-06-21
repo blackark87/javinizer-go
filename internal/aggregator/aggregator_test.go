@@ -2458,7 +2458,7 @@ func TestFC2IDNormalization(t *testing.T) {
 					Title:     "Test Title",
 				},
 			}
-			movie, _, err := agg.Aggregate(results)
+			movie, _, err := agg.AggregateWithPriority(results, []string{"javdb"})
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantID, movie.ID)
 			assert.Equal(t, tt.wantContentID, movie.ContentID)

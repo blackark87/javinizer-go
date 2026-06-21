@@ -233,20 +233,7 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 				array_strategy: arrayStrategy as 'merge' | 'replace' | undefined,
 			});
 		},
-		onSuccess: (data) => {
-			if (data.job) {
-				deps.skipJobSync();
-				deps.setJob(data.job);
-			}
-
-			if (data.failed > 0) {
-				deps.toastError(`Failed to rescrape ${data.failed} movie${data.failed !== 1 ? 's' : ''}`);
-			} else {
-				deps.toastSuccess(`Rescraped ${data.succeeded} movie${data.succeeded !== 1 ? 's' : ''}`);
-			}
-
-			invalidateJobQueries();
-		},
+		// API returns 202 (async); completion/stats are delivered via WebSocket.
 		onError: (err: Error) => {
 			deps.toastError(`Failed to rescrape movies: ${err.message}`);
 		}

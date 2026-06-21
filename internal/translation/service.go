@@ -44,6 +44,8 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 		return nil, "", nil
 	}
 
+	movieID := movie.ID
+
 	targetLanguages := s.targetLanguages()
 	if len(targetLanguages) == 0 {
 		return nil, "", fmt.Errorf("target language is required")
@@ -131,7 +133,7 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 	if normTitle := strings.TrimSpace(movie.Title); normTitle != "" {
 		if romanized, ok := actressJaNameToRomanized[normTitle]; ok && romanized != "" {
 			romanizedTitle = romanized
-			logging.Debugf("Translation: title %q matches actress JapaneseName → using romanized %q instead of translating", normTitle, romanized)
+			logging.Debugf("Translation[%s]: title %q matches actress JapaneseName → using romanized %q instead of translating", movieID, normTitle, romanized)
 		}
 	}
 
@@ -182,13 +184,13 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 			idx := i
 			actress := &movie.Actresses[idx]
 
-			logging.Debugf("Translation: actress[%d] before=%q JapaneseName=%q FirstName=%q LastName=%q ThumbURL=%q", idx, actressDisplayTitle(*actress), actress.JapaneseName, actress.FirstName, actress.LastName, actress.ThumbURL)
+			logging.Debugf("Translation[%s]: actress[%d] before=%q JapaneseName=%q FirstName=%q LastName=%q ThumbURL=%q", movieID, idx, actressDisplayTitle(*actress), actress.JapaneseName, actress.FirstName, actress.LastName, actress.ThumbURL)
 
 			// Priority 1: extract romanized name directly from DMM actjpgs thumbnail URL.
 			// This is more reliable than LLM romanization (official DMM naming).
 			if lastName, firstName, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL); ok {
 				displayName := joinName(lastName, firstName)
-				logging.Debugf("Translation: actress[%d] URL extraction → %q (LastName=%q FirstName=%q)", idx, displayName, capitalize(lastName), capitalize(firstName))
+				logging.Debugf("Translation[%s]: actress[%d] URL extraction → %q (LastName=%q FirstName=%q)", movieID, idx, displayName, capitalize(lastName), capitalize(firstName))
 				actressRecord.Actresses[idx] = displayName
 				if s.cfg.ApplyToPrimary {
 					actress.LastName = capitalize(lastName)
@@ -203,7 +205,7 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 			// the scraper already provided a reliable Latin form.
 			if jaName := strings.TrimSpace(actress.JapaneseName); jaName != "" {
 				if romanized, ok := actressJaNameToRomanized[jaName]; ok && romanized != "" {
-					logging.Debugf("Translation: actress[%d] pre-built romanization → %q", idx, romanized)
+					logging.Debugf("Translation[%s]: actress[%d] pre-built romanization → %q", movieID, idx, romanized)
 					actressRecord.Actresses[idx] = romanized
 					if s.cfg.ApplyToPrimary {
 						replaceActressName(actress, romanized)
@@ -215,7 +217,7 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 
 			// Priority 2: LLM romanization — only if a Japanese source name exists.
 			if strings.TrimSpace(actress.JapaneseName) == "" {
-				logging.Debugf("Translation: actress[%d] skip — no JapaneseName", idx)
+				logging.Debugf("Translation[%s]: actress[%d] skip — no JapaneseName", movieID, idx)
 				continue
 			}
 			rawName := actressDisplayTitle(*actress)
@@ -233,11 +235,11 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 				targetLang: actressTargetLang,
 				isActress:  true,
 				apply: func(translated string) {
-					logging.Debugf("Translation: actress[%d] LLM → %q", idx, translated)
+					logging.Debugf("Translation[%s]: actress[%d] LLM → %q", movieID, idx, translated)
 					actressRecord.Actresses[idx] = translated
 					if s.cfg.ApplyToPrimary {
 						replaceActressName(actress, translated)
-						logging.Debugf("Translation: actress[%d] after replaceActressName FirstName=%q LastName=%q", idx, actress.FirstName, actress.LastName)
+						logging.Debugf("Translation[%s]: actress[%d] after replaceActressName FirstName=%q LastName=%q", movieID, idx, actress.FirstName, actress.LastName)
 					}
 				},
 			})
@@ -275,12 +277,12 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 			translatedTexts, err = s.translateTexts(ctx, sourceLang, key.lang, texts)
 		}
 		if err != nil {
-			logging.Debugf("Translation: translateTexts failed: %v", err)
+			logging.Debugf("Translation[%s]: translateTexts failed: %v", movieID, err)
 			warning := sanitizeTranslationWarning(normalizeProvider(s.cfg.Provider), err)
 			return nil, warning, err
 		}
 		if len(translatedTexts) != len(indexes) {
-			logging.Debugf("Translation: count mismatch - got %d, expected %d", len(translatedTexts), len(indexes))
+			logging.Debugf("Translation[%s]: count mismatch - got %d, expected %d", movieID, len(translatedTexts), len(indexes))
 			return nil, "", fmt.Errorf("translation provider returned %d items for %d inputs", len(translatedTexts), len(indexes))
 		}
 
@@ -289,11 +291,11 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 			translated := strings.TrimSpace(raw)
 			if translated == "" {
 				if requests[reqIdx].isActress {
-					logging.Debugf("Translation: empty result for %s (original=%q, raw=%q), non-person name — using Unknown", requests[reqIdx].fieldName, requests[reqIdx].text, raw)
+					logging.Debugf("Translation[%s]: empty result for %s (original=%q, raw=%q), non-person name — using Unknown", movieID, requests[reqIdx].fieldName, requests[reqIdx].text, raw)
 					warnings = append(warnings, fmt.Sprintf("%s: non-person name, set to Unknown", requests[reqIdx].fieldName))
 					translated = "Unknown"
 				} else {
-					logging.Debugf("Translation: empty result for %s (original=%q, raw=%q), falling back to original", requests[reqIdx].fieldName, requests[reqIdx].text, raw)
+					logging.Debugf("Translation[%s]: empty result for %s (original=%q, raw=%q), falling back to original", movieID, requests[reqIdx].fieldName, requests[reqIdx].text, raw)
 					warnings = append(warnings, fmt.Sprintf("%s: empty translation, kept original", requests[reqIdx].fieldName))
 					translated = requests[reqIdx].text
 				}
@@ -305,7 +307,7 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 	var warning string
 	if len(warnings) > 0 {
 		warning = fmt.Sprintf("Translation (%s): %s", normalizeProvider(s.cfg.Provider), strings.Join(warnings, "; "))
-		logging.Warnf("Translation: %s", warning)
+		logging.Warnf("Translation[%s]: %s", movieID, warning)
 	}
 
 	// Collect output records: metadata languages first, then actress language if distinct

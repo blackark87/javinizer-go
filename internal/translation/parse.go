@@ -9,9 +9,9 @@ import (
 	"github.com/javinizer/javinizer-go/internal/logging"
 )
 
-// embeddedMarkerRE matches <<<JZ_N>>> markers that the LLM may echo verbatim
+// embeddedMarkerRE matches <<<...>>> markers that the LLM may echo verbatim
 // from the prompt template. These are never valid translation content.
-var embeddedMarkerRE = regexp.MustCompile(`<<<JZ_\d+>>>`)
+var embeddedMarkerRE = regexp.MustCompile(`<<<[\w\[\]]+>>>`)
 
 func normalizeTranslationPayload(payload string) string {
 	cleaned := strings.TrimSpace(payload)
@@ -21,10 +21,10 @@ func normalizeTranslationPayload(payload string) string {
 	return strings.TrimSpace(cleaned)
 }
 
-func parseLLMTranslationPayload(payload string, expectedCount int) ([]string, error) {
+func parseLLMTranslationPayload(payload string, markers []string) ([]string, error) {
 	cleaned := normalizeTranslationPayload(payload)
-	if expectedCount > 0 && strings.Contains(cleaned, translationCompactOutputMarker(0)) {
-		parsed, err := parseCompactTranslationPayload(cleaned, expectedCount)
+	if len(markers) > 0 && strings.Contains(cleaned, markers[0]) {
+		parsed, err := parseCompactTranslationPayload(cleaned, markers)
 		if err != nil {
 			return nil, err
 		}
@@ -59,12 +59,11 @@ func parseStringArrayPayload(payload string) ([]string, error) {
 	return nil, fmt.Errorf("failed to parse translated output payload as JSON string array")
 }
 
-func parseCompactTranslationPayload(payload string, expectedCount int) ([]string, error) {
+func parseCompactTranslationPayload(payload string, markers []string) ([]string, error) {
 	pos := 0
-	out := make([]string, 0, expectedCount)
+	out := make([]string, 0, len(markers))
 
-	for i := 0; i < expectedCount; i++ {
-		startToken := translationCompactOutputMarker(i)
+	for i, startToken := range markers {
 		start := strings.Index(payload[pos:], startToken)
 		if start < 0 {
 			return nil, fmt.Errorf("failed to parse compact translation payload: missing output marker %d", i)
@@ -72,8 +71,8 @@ func parseCompactTranslationPayload(payload string, expectedCount int) ([]string
 		start += pos + len(startToken)
 
 		end := len(payload)
-		if i+1 < expectedCount {
-			nextToken := translationCompactOutputMarker(i + 1)
+		if i+1 < len(markers) {
+			nextToken := markers[i+1]
 			next := strings.Index(payload[start:], nextToken)
 			if next < 0 {
 				return nil, fmt.Errorf("failed to parse compact translation payload: missing output marker %d", i+1)

@@ -284,8 +284,8 @@ func TestReplaceActressName(t *testing.T) {
 			},
 		},
 		{
-			name: "whitespace trimmed before splitting",
-			actress: &models.Actress{},
+			name:       "whitespace trimmed before splitting",
+			actress:    &models.Actress{},
 			translated: "  Tanaka Yui  ",
 			expected: models.Actress{
 				LastName:  "Tanaka",
@@ -319,8 +319,8 @@ func TestReplaceActressName(t *testing.T) {
 			},
 		},
 		{
-			name: "full-width parenthesis stripped",
-			actress: &models.Actress{},
+			name:       "full-width parenthesis stripped",
+			actress:    &models.Actress{},
 			translated: "Kuroki Mai（extra",
 			expected: models.Actress{
 				LastName:  "Kuroki",
@@ -690,7 +690,7 @@ Karen
 <<<JZ_1>>>
 She says "It's forceful..." but looks happy while being teased.`
 
-		got, err := parseLLMTranslationPayload(input, 2)
+		got, err := parseLLMTranslationPayload(input, []string{"<<<JZ_0>>>", "<<<JZ_1>>>"})
 		require.NoError(t, err)
 		assert.Equal(t, []string{
 			"Karen",
@@ -699,7 +699,7 @@ She says "It's forceful..." but looks happy while being teased.`
 	})
 
 	t.Run("falls back to json array payload", func(t *testing.T) {
-		got, err := parseLLMTranslationPayload(`["hello","world"]`, 2)
+		got, err := parseLLMTranslationPayload(`["hello","world"]`, []string{"<<<JZ_0>>>", "<<<JZ_1>>>"})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"hello", "world"}, got)
 	})

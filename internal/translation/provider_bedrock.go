@@ -18,7 +18,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/logging"
 )
 
-func (s *Service) translateWithBedrock(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
+func (s *Service) translateWithBedrock(ctx context.Context, sourceLang, targetLang string, texts []string, fieldNames []string) (*translationResult, error) {
 	cfg := s.cfg.Bedrock
 	region := strings.TrimSpace(cfg.Region)
 	if region == "" {
@@ -37,7 +37,7 @@ func (s *Service) translateWithBedrock(ctx context.Context, sourceLang, targetLa
 		model = "anthropic.claude-3-5-sonnet-20241022-v2:0"
 	}
 
-	systemPrompt, userPrompt, err := buildLLMTranslationPrompts(sourceLang, targetLang, texts)
+	systemPrompt, userPrompt, markers, err := buildLLMTranslationPrompts(sourceLang, targetLang, texts, fieldNames)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func (s *Service) translateWithBedrock(ctx context.Context, sourceLang, targetLa
 	if len(decoded.Content) == 0 {
 		return nil, fmt.Errorf("bedrock response contained no content blocks")
 	}
-	return buildLLMTranslationResult(strings.TrimSpace(decoded.Content[0].Text), len(texts))
+	return buildLLMTranslationResult(strings.TrimSpace(decoded.Content[0].Text), markers)
 }
 
 func (s *Service) translateActressNamesWithBedrock(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
@@ -165,7 +165,7 @@ func (s *Service) translateActressNamesWithBedrock(ctx context.Context, sourceLa
 	if len(decoded.Content) == 0 {
 		return nil, fmt.Errorf("bedrock response contained no content blocks")
 	}
-	return buildLLMTranslationResult(strings.TrimSpace(decoded.Content[0].Text), len(texts))
+	return buildLLMTranslationResult(strings.TrimSpace(decoded.Content[0].Text), makeJZMarkers(len(texts)))
 }
 
 func signBedrockRequest(req *http.Request, payload []byte, region, accessKeyID, secretAccessKey, sessionToken string, now time.Time) {

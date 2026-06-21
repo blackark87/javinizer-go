@@ -228,7 +228,7 @@ func TestTranslateMovie_TitleIsActressName(t *testing.T) {
 			TargetLanguage: "ko",
 			ApplyToPrimary: true,
 			Fields: config.TranslationFieldsConfig{
-				Title:    true,
+				Title:     true,
 				Actresses: true,
 			},
 			OpenAI: config.OpenAITranslationConfig{
@@ -262,7 +262,7 @@ func TestTranslateMovie_TitleIsActressName(t *testing.T) {
 			TargetLanguage: "ko",
 			ApplyToPrimary: true,
 			Fields: config.TranslationFieldsConfig{
-				Title:    true,
+				Title:     true,
 				Actresses: true,
 			},
 			OpenAI: config.OpenAITranslationConfig{
@@ -306,7 +306,7 @@ func TestTranslateMovie_TitleIsActressName(t *testing.T) {
 			TargetLanguage: "ko",
 			ApplyToPrimary: true,
 			Fields: config.TranslationFieldsConfig{
-				Title:    true,
+				Title:     true,
 				Actresses: true,
 			},
 			OpenAI: config.OpenAITranslationConfig{
@@ -347,7 +347,7 @@ func TestTranslateMovie_TitleIsActressName(t *testing.T) {
 			TargetLanguage: "ko",
 			ApplyToPrimary: true,
 			Fields: config.TranslationFieldsConfig{
-				Title:    true,
+				Title:     true,
 				Actresses: false, // actress field disabled — name map not built
 			},
 			OpenAI: config.OpenAITranslationConfig{
@@ -481,7 +481,7 @@ func TestTranslateTexts_ConnectionFailure(t *testing.T) {
 		}
 
 		s := New(cfg)
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 
 		require.Error(t, err)
 		// Verify it's a connection-related error (not HTTP status error)
@@ -510,7 +510,7 @@ func TestTranslateTexts_ConnectionFailure(t *testing.T) {
 		}
 
 		s := New(cfg)
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 
 		require.Error(t, err)
 		// Verify it's a connection-related error
@@ -636,7 +636,7 @@ func TestTranslateTexts_Dispatch(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := New(tt.cfg)
 
-			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -781,7 +781,7 @@ func TestTranslateWithDeepL(t *testing.T) {
 			if tt.name == "multiple texts translated" {
 				inputTexts = []string{"test1", "test2", "test3"}
 			}
-			result, err := s.translateTexts(context.Background(), "ja", "en", inputTexts)
+			result, err := s.translateTexts(context.Background(), "ja", "en", inputTexts, nil)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -815,7 +815,7 @@ func TestTranslateWithDeepL_MissingAPIKey(t *testing.T) {
 		},
 	})
 
-	_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+	_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "deepl api_key is required")
 }
@@ -852,7 +852,7 @@ func TestTranslateWithDeepL_SourceLanguage(t *testing.T) {
 		},
 	})
 
-	result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+	result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "JA", capturedSourceLang)
 	assert.Len(t, result, 1)
@@ -942,7 +942,7 @@ func TestTranslateWithGoogle(t *testing.T) {
 			}
 
 			s := New(cfg)
-			result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+			result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -995,7 +995,7 @@ func TestTranslateWithOpenAI(t *testing.T) {
 			},
 		})
 
-		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
 		assert.Equal(t, "translated text", result[0])
@@ -1031,7 +1031,7 @@ func TestTranslateWithOpenAI(t *testing.T) {
 			},
 		})
 
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "openai translation failed")
 		assert.Contains(t, err.Error(), "Invalid API key")
@@ -1055,7 +1055,7 @@ func TestTranslateWithOpenAI(t *testing.T) {
 			},
 		})
 
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode openai response")
 	})
@@ -1079,7 +1079,7 @@ func TestTranslateWithOpenAI(t *testing.T) {
 			},
 		})
 
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "openai response contained no choices")
 	})
@@ -1109,7 +1109,7 @@ func TestTranslateWithOpenAI(t *testing.T) {
 			},
 		})
 
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to parse translated output payload")
 	})
@@ -1144,7 +1144,7 @@ func TestTranslateWithOpenAI_DefaultValues(t *testing.T) {
 			},
 		})
 
-		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
 		assert.Equal(t, "gpt-4o-mini", capturedBody["model"])
@@ -1248,7 +1248,7 @@ func TestTranslateWithGooglePaid(t *testing.T) {
 				},
 			})
 
-			result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+			result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -1295,7 +1295,7 @@ func TestTranslateWithGooglePaid_EndpointAndAuth(t *testing.T) {
 		},
 	})
 
-	result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+	result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
 	assert.Equal(t, "translated text", result[0])
@@ -1333,7 +1333,7 @@ func TestTranslateWithGoogleFree(t *testing.T) {
 			},
 		})
 
-		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
 		assert.Equal(t, "translated text", result[0])
@@ -1359,7 +1359,7 @@ func TestTranslateWithGoogleFree(t *testing.T) {
 			},
 		})
 
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "google free translation failed")
 		assert.Contains(t, err.Error(), "Internal Server Error")
@@ -1389,7 +1389,7 @@ func TestTranslateWithGoogleFree(t *testing.T) {
 			},
 		})
 
-		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test1", "test2"})
+		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test1", "test2"}, nil)
 		require.NoError(t, err)
 		assert.Len(t, result, 2)
 	})
@@ -1420,7 +1420,7 @@ func TestTranslateWithGoogleFree(t *testing.T) {
 			},
 		})
 
-		_, err := s.translateTexts(context.Background(), "", "en", []string{"test"})
+		_, err := s.translateTexts(context.Background(), "", "en", []string{"test"}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, "auto", capturedSL)
 	})
@@ -1445,7 +1445,7 @@ func TestTranslateWithGoogleFree(t *testing.T) {
 			},
 		})
 
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "unexpected google free response shape")
 	})
@@ -1472,7 +1472,7 @@ func TestTranslateWithGoogleFree(t *testing.T) {
 			},
 		})
 
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "google free translation returned empty text")
 	})
@@ -1501,7 +1501,7 @@ func TestTranslateWithGoogleFree(t *testing.T) {
 			},
 		})
 
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "google free translation returned empty text")
 	})
@@ -1808,14 +1808,14 @@ func TestTranslateMovie_TranslationCountMismatch(t *testing.T) {
 			inputCount:    3,
 			responseCount: 2,
 			wantErr:       true,
-			errContains:   "returned 2 items for 3 inputs",
+			errContains:   "returned 2 items for 1 inputs",
 		},
 		{
 			name:          "returns_error_when_more_translations_than_inputs",
 			inputCount:    2,
 			responseCount: 4,
 			wantErr:       true,
-			errContains:   "returned 4 items for 2 inputs",
+			errContains:   "returned 4 items for 1 inputs",
 		},
 		{
 			name:          "exact_match_succeeds",
@@ -1924,7 +1924,7 @@ func TestTranslateTexts_RetryOnLLMCountMismatch(t *testing.T) {
 			},
 		})
 
-		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"translated"}, result)
 		assert.Equal(t, 2, requestCount)
@@ -1955,7 +1955,7 @@ func TestTranslateTexts_RetryOnLLMCountMismatch(t *testing.T) {
 			},
 		})
 
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "translation provider returned 2 items for 1 inputs")
 		assert.Equal(t, maxTranslationRetries, requestCount)
@@ -2042,7 +2042,7 @@ func TestTranslateWithOpenAI_MalformedResponses(t *testing.T) {
 				},
 			})
 
-			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -2121,7 +2121,7 @@ func TestTranslateWithOpenAI_HTTPErrorResponses(t *testing.T) {
 				},
 			})
 
-			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 
 			require.Error(t, err)
 			if tt.errContains != "" {
@@ -2279,7 +2279,7 @@ func TestTranslateWithDeepL_ErrorResponses(t *testing.T) {
 				},
 			})
 
-			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 
 			require.Error(t, err)
 			if tt.errContains != "" {
@@ -2336,7 +2336,7 @@ func TestTranslateWithGooglePaid_ErrorResponses(t *testing.T) {
 				},
 			})
 
-			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 
 			require.Error(t, err)
 			if tt.errContains != "" {
@@ -2424,7 +2424,7 @@ func TestParseCompactTranslationPayload_EmbeddedMarkers(t *testing.T) {
 	t.Run("strips extra markers echoed by LLM from last slot", func(t *testing.T) {
 		// LLM outputs description swap + echoes extra markers after last slot
 		payload := "<<<JZ_0>>>\n[Korean description - very long]\n<<<JZ_1>>>\n메이\n<<<JZ_2>>>\n<<<JZ_3>>>\n<<<JZ_4>>>"
-		got, err := parseCompactTranslationPayload(payload, 3)
+		got, err := parseCompactTranslationPayload(payload, []string{"<<<JZ_0>>>", "<<<JZ_1>>>", "<<<JZ_2>>>"})
 		require.NoError(t, err)
 		require.Len(t, got, 3)
 		assert.Equal(t, "[Korean description - very long]", got[0])
@@ -2435,7 +2435,7 @@ func TestParseCompactTranslationPayload_EmbeddedMarkers(t *testing.T) {
 
 	t.Run("strips embedded marker inside slot content", func(t *testing.T) {
 		payload := "<<<JZ_0>>>\nhello <<<JZ_0>>> world\n<<<JZ_1>>>\nbye"
-		got, err := parseCompactTranslationPayload(payload, 2)
+		got, err := parseCompactTranslationPayload(payload, []string{"<<<JZ_0>>>", "<<<JZ_1>>>"})
 		require.NoError(t, err)
 		require.Len(t, got, 2)
 		assert.Equal(t, "hello  world", got[0])
@@ -2444,7 +2444,7 @@ func TestParseCompactTranslationPayload_EmbeddedMarkers(t *testing.T) {
 
 	t.Run("clean output is unchanged", func(t *testing.T) {
 		payload := "<<<JZ_0>>>\ntitle translation\n<<<JZ_1>>>\ndescription translation"
-		got, err := parseCompactTranslationPayload(payload, 2)
+		got, err := parseCompactTranslationPayload(payload, []string{"<<<JZ_0>>>", "<<<JZ_1>>>"})
 		require.NoError(t, err)
 		require.Len(t, got, 2)
 		assert.Equal(t, "title translation", got[0])
@@ -2618,7 +2618,7 @@ func TestTranslateWithOpenAICompatible(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.wantErr && tt.errContains == "openai-compatible model is required" {
 				s := New(tt.cfg)
-				_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+				_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errContains)
 				return
@@ -2630,7 +2630,7 @@ func TestTranslateWithOpenAICompatible(t *testing.T) {
 			tt.cfg.OpenAICompatible.BaseURL = server.URL
 			s := New(tt.cfg)
 
-			result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+			result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -2677,7 +2677,7 @@ She says "It's forceful..." but looks happy while being teased.
 		},
 	})
 
-	result, err := s.translateTexts(context.Background(), "ja", "en", []string{"かれん", "強引って言いながら嬉しそう"})
+	result, err := s.translateTexts(context.Background(), "ja", "en", []string{"かれん", "強引って言いながら嬉しそう"}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, []string{
 		"Karen",
@@ -2729,7 +2729,7 @@ translated
 			},
 		})
 
-		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"translated"}, result)
 
@@ -2771,7 +2771,7 @@ translated
 			},
 		})
 
-		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"translated"}, result)
 
@@ -2811,7 +2811,7 @@ translated
 			},
 		})
 
-		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"translated"}, result)
 
@@ -2862,7 +2862,7 @@ translated
 			},
 		})
 
-		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"translated"}, result)
 		assert.Equal(t, []string{"chat_template_kwargs", "reasoning_effort"}, requestKinds)
@@ -3025,7 +3025,7 @@ func TestTranslateWithAnthropic(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.wantErr && tt.errContains == "anthropic api_key is required" {
 				s := New(tt.cfg)
-				_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+				_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errContains)
 				return
@@ -3037,7 +3037,7 @@ func TestTranslateWithAnthropic(t *testing.T) {
 			tt.cfg.Anthropic.BaseURL = server.URL
 			s := New(tt.cfg)
 
-			result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+			result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -3122,7 +3122,7 @@ func TestTranslateTexts_Dispatch_NewProviders(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := New(tt.cfg)
 
-			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
+			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, nil)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -3424,7 +3424,9 @@ func TestTranslateMovie_CountMismatchWarning(t *testing.T) {
 
 	s := New(cfg)
 	movie := &models.Movie{Title: "テスト", Description: "説明"}
-	_, warning, err := s.TranslateMovie(context.Background(), movie, "")
-	require.Error(t, err)
-	assert.NotEmpty(t, warning, "count mismatch produces a sanitized warning")
+	results, _, err := s.TranslateMovie(context.Background(), movie, "")
+	// With one-by-one fallback, count mismatch on the batch succeeds per-item
+	// (mock returns 1 item for each single-item call → correct count).
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
 }

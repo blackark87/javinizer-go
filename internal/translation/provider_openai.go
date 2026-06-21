@@ -47,6 +47,9 @@ const (
 	openAICompatibleThinkingStrategyNone               openAICompatibleThinkingStrategy = "none"
 )
 
+// translationMovieIDKey is the context key for propagating movie ID to provider log lines.
+type translationMovieIDKey struct{}
+
 type openAIChatCallOptions struct {
 	provider  string
 	baseURL   string
@@ -54,35 +57,80 @@ type openAIChatCallOptions struct {
 	model     string
 	headers   map[string]string
 	request   openAIChatRequest
-	textCount int
+	markers   []string
 	logInput  bool
 	logTiming bool
 }
 
-func buildLLMTranslationPrompts(sourceLang, targetLang string, texts []string) (string, string, error) {
-	systemPrompt := fmt.Sprintf("You are a translator specializing in Japanese adult video (JAV) content metadata. Translate each item into natural, engaging promotional copy — not a literal word-for-word translation. Titles should be concise and enticing; descriptions should read as sensual, persuasive marketing blurbs in the target language. Follow these terminology rules: "+
-		"(1) Body measurements: use natural target-language equivalents (e.g. 股下 → 다리 길이, NOT 가랑이 길이). "+
-		"(2) Kanji adult slang: translate by meaning using vocabulary natural to adult content in the target language — never just read the characters (e.g. 美脚 → 각선미; 爆乳 → 폭유; 神乳 → 신의 가슴). "+
-		"(3) Japanese kana loanwords commonly borrowed into the target language: keep the standard phonetic form (e.g. パパ活 → 파파카츠, NOT 파파활). "+
-		"(4) Translate ALL text in each item, including any Latin or English portions — do not leave any part untranslated. "+
-		"CRITICAL ordering rule: item[0] MUST go under <<<JZ_0>>>, item[1] MUST go under <<<JZ_1>>>, and so on — never swap or reorder items. "+
-		"Return ONLY the output markers with their translations. Do not use JSON. Do not add commentary. Do not repeat the input markers as content. Do not omit any index. Keep each translation on a single logical line; if needed, replace internal newlines with spaces. Source language: %s. Target language: %s.", sourceLang, targetLang)
+// makeJZMarkers generates numbered JZ_N markers for providers that use the legacy format.
+func makeJZMarkers(n int) []string {
+	markers := make([]string, n)
+	for i := range n {
+		markers[i] = translationCompactOutputMarker(i)
+	}
+	return markers
+}
 
-	payloadBytes, err := json.Marshal(texts)
-	if err != nil {
-		return "", "", err
+func buildLLMTranslationPrompts(sourceLang, targetLang string, texts []string, fieldNames []string) (string, string, []string, error) {
+	useNamed := len(fieldNames) == len(texts) && len(texts) > 0
+
+	markers := make([]string, len(texts))
+	if useNamed {
+		for i, fn := range fieldNames {
+			markers[i] = "<<<" + fn + ">>>"
+		}
+	} else {
+		for i := range texts {
+			markers[i] = translationCompactOutputMarker(i)
+		}
 	}
 
+	terminologyRules := "(1) Body measurements: use natural target-language equivalents (e.g. 股下 → 다리 길이, NOT 가랑이 길이). " +
+		"(2) Kanji adult slang: translate by meaning using vocabulary natural to adult content in the target language — never just read the characters (e.g. 美脚 → 각선미; 爆乳 → 폭유; 神乳 → 신의 가슴). " +
+		"(3) Japanese kana loanwords commonly borrowed into the target language: keep the standard phonetic form (e.g. パパ活 → 파파카츠, NOT 파파활). " +
+		"(4) Translate ALL text in each item, including any Latin or English portions — do not leave any part untranslated. "
+
+	var systemPrompt string
 	var userPrompt strings.Builder
-	userPrompt.WriteString("Translate this JSON array of strings: ")
-	userPrompt.Write(payloadBytes)
-	userPrompt.WriteString("\nReturn output in this exact format (replace each placeholder with the actual translation of that numbered item):\n")
-	for i := range texts {
-		userPrompt.WriteString(translationCompactOutputMarker(i))
-		userPrompt.WriteString(fmt.Sprintf("\n[translation of item %d]\n", i))
+
+	if useNamed {
+		systemPrompt = fmt.Sprintf("You are a translator specializing in Japanese adult video (JAV) content metadata. Translate each labeled section into natural, engaging promotional copy — not a literal word-for-word translation. Titles should be concise and enticing; descriptions should read as sensual, persuasive marketing blurbs in the target language. Follow these terminology rules: "+
+			terminologyRules+
+			"CRITICAL labeling rule: translate the text under each <<<label>>> and return it under the SAME <<<label>>> — never merge multiple sections into one label, never omit a label, never swap labels. "+
+			"Return ONLY the labeled output markers with their translations. Do not use JSON. Do not add commentary. Keep each translation on a single logical line; if needed, replace internal newlines with spaces. Source language: %s. Target language: %s.", sourceLang, targetLang)
+
+		userPrompt.WriteString("Translate each labeled section below:\n")
+		for i, text := range texts {
+			userPrompt.WriteString(markers[i])
+			userPrompt.WriteString("\n")
+			userPrompt.WriteString(text)
+			userPrompt.WriteString("\n")
+		}
+		userPrompt.WriteString("\nReturn output in the same labeled format:\n")
+		for i := range texts {
+			userPrompt.WriteString(markers[i])
+			userPrompt.WriteString("\n[translation]\n")
+		}
+	} else {
+		systemPrompt = fmt.Sprintf("You are a translator specializing in Japanese adult video (JAV) content metadata. Translate each item into natural, engaging promotional copy — not a literal word-for-word translation. Titles should be concise and enticing; descriptions should read as sensual, persuasive marketing blurbs in the target language. Follow these terminology rules: "+
+			terminologyRules+
+			"CRITICAL ordering rule: item[0] MUST go under <<<JZ_0>>>, item[1] MUST go under <<<JZ_1>>>, and so on — never swap or reorder items. "+
+			"Return ONLY the output markers with their translations. Do not use JSON. Do not add commentary. Do not repeat the input markers as content. Do not omit any index. Keep each translation on a single logical line; if needed, replace internal newlines with spaces. Source language: %s. Target language: %s.", sourceLang, targetLang)
+
+		payloadBytes, err := json.Marshal(texts)
+		if err != nil {
+			return "", "", nil, err
+		}
+		userPrompt.WriteString("Translate this JSON array of strings: ")
+		userPrompt.Write(payloadBytes)
+		userPrompt.WriteString("\nReturn output in this exact format (replace each placeholder with the actual translation of that numbered item):\n")
+		for i := range texts {
+			userPrompt.WriteString(markers[i])
+			userPrompt.WriteString(fmt.Sprintf("\n[translation of item %d]\n", i))
+		}
 	}
 
-	return systemPrompt, strings.TrimSpace(userPrompt.String()), nil
+	return systemPrompt, strings.TrimSpace(userPrompt.String()), markers, nil
 }
 
 func translationCompactOutputMarker(i int) string {
@@ -242,8 +290,8 @@ func isRetryableThinkingStrategyError(err error) bool {
 	return false
 }
 
-func buildLLMTranslationResult(content string, textCount int) (*translationResult, error) {
-	parsed, err := parseLLMTranslationPayload(content, textCount)
+func buildLLMTranslationResult(content string, markers []string) (*translationResult, error) {
+	parsed, err := parseLLMTranslationPayload(content, markers)
 	if err != nil {
 		return &translationResult{rawLLM: content}, &TranslationError{
 			Kind:    TranslationErrorParse,
@@ -253,7 +301,7 @@ func buildLLMTranslationResult(content string, textCount int) (*translationResul
 	return &translationResult{texts: parsed, rawLLM: content}, nil
 }
 
-func decodeOpenAIChatTranslation(provider string, respBody []byte, textCount int) (*translationResult, error) {
+func decodeOpenAIChatTranslation(provider string, respBody []byte, markers []string) (*translationResult, error) {
 	var decoded openAIChatResponse
 	if err := json.Unmarshal(respBody, &decoded); err != nil {
 		return nil, fmt.Errorf("failed to decode %s response: %w", provider, err)
@@ -262,7 +310,7 @@ func decodeOpenAIChatTranslation(provider string, respBody []byte, textCount int
 		return nil, fmt.Errorf("%s response contained no choices", provider)
 	}
 
-	return buildLLMTranslationResult(extractContentString(decoded.Choices[0].Message.Content), textCount)
+	return buildLLMTranslationResult(extractContentString(decoded.Choices[0].Message.Content), markers)
 }
 
 func (s *Service) executeOpenAIChatTranslation(ctx context.Context, opts openAIChatCallOptions) (*translationResult, error) {
@@ -272,10 +320,14 @@ func (s *Service) executeOpenAIChatTranslation(ctx context.Context, opts openAIC
 	}
 
 	url := opts.baseURL + opts.endpoint
-	logging.Debugf("Translation (%s): POST %s model=%s texts=%d", opts.provider, url, opts.model, opts.textCount)
-	logging.Debugf("Translation (%s): system prompt: %s", opts.provider, opts.request.Messages[0].Content)
+	movieIDTag := ""
+	if mid, ok := ctx.Value(translationMovieIDKey{}).(string); ok && mid != "" {
+		movieIDTag = "[" + mid + "] "
+	}
+	logging.Debugf("Translation %s(%s): POST %s model=%s texts=%d", movieIDTag, opts.provider, url, opts.model, len(opts.markers))
+	logging.Debugf("Translation %s(%s): system prompt: %s", movieIDTag, opts.provider, opts.request.Messages[0].Content)
 	if opts.logInput && len(opts.request.Messages) > 1 {
-		logging.Debugf("Translation (%s): input: %s", opts.provider, opts.request.Messages[1].Content)
+		logging.Debugf("Translation %s(%s): input: %s", movieIDTag, opts.provider, opts.request.Messages[1].Content)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
@@ -289,7 +341,7 @@ func (s *Service) executeOpenAIChatTranslation(ctx context.Context, opts openAIC
 
 	start := time.Time{}
 	if opts.logTiming {
-		logging.Debugf("Translation (%s): sending request...", opts.provider)
+		logging.Debugf("Translation %s(%s): sending request...", movieIDTag, opts.provider)
 		start = time.Now()
 	}
 
@@ -301,7 +353,7 @@ func (s *Service) executeOpenAIChatTranslation(ctx context.Context, opts openAIC
 		return nil, err
 	}
 	if opts.logTiming {
-		logging.Debugf("Translation (%s): response received in %v (status %d)", opts.provider, time.Since(start), resp.StatusCode)
+		logging.Debugf("Translation %s(%s): response received in %v (status %d)", movieIDTag, opts.provider, time.Since(start), resp.StatusCode)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -317,11 +369,11 @@ func (s *Service) executeOpenAIChatTranslation(ctx context.Context, opts openAIC
 		}
 	}
 
-	logging.Debugf("Translation (%s): response: %s", opts.provider, string(respBody))
-	return decodeOpenAIChatTranslation(opts.provider, respBody, opts.textCount)
+	logging.Debugf("Translation %s(%s): response: %s", movieIDTag, opts.provider, string(respBody))
+	return decodeOpenAIChatTranslation(opts.provider, respBody, opts.markers)
 }
 
-func (s *Service) translateWithOpenAI(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
+func (s *Service) translateWithOpenAI(ctx context.Context, sourceLang, targetLang string, texts []string, fieldNames []string) (*translationResult, error) {
 	baseURL := strings.TrimRight(strings.TrimSpace(s.cfg.OpenAI.BaseURL), "/")
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
@@ -337,7 +389,7 @@ func (s *Service) translateWithOpenAI(ctx context.Context, sourceLang, targetLan
 		model = "gpt-4o-mini"
 	}
 
-	systemPrompt, userPrompt, err := buildLLMTranslationPrompts(sourceLang, targetLang, texts)
+	systemPrompt, userPrompt, markers, err := buildLLMTranslationPrompts(sourceLang, targetLang, texts, fieldNames)
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +410,7 @@ func (s *Service) translateWithOpenAI(ctx context.Context, sourceLang, targetLan
 				{Role: "user", Content: userPrompt},
 			},
 		},
-		textCount: len(texts),
+		markers: markers,
 	})
 }
 
@@ -399,7 +451,7 @@ func (s *Service) translateActressNamesWithOpenAI(ctx context.Context, sourceLan
 				{Role: "user", Content: userPrompt},
 			},
 		},
-		textCount: len(texts),
+		markers: makeJZMarkers(len(texts)),
 	})
 }
 
@@ -414,7 +466,7 @@ func extractContentString(raw json.RawMessage) string {
 	return string(raw)
 }
 
-func (s *Service) translateWithOpenAICompatible(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
+func (s *Service) translateWithOpenAICompatible(ctx context.Context, sourceLang, targetLang string, texts []string, fieldNames []string) (*translationResult, error) {
 	baseURL := strings.TrimRight(strings.TrimSpace(s.cfg.OpenAICompatible.BaseURL), "/")
 	if baseURL == "" {
 		baseURL = "http://localhost:11434/v1"
@@ -426,7 +478,7 @@ func (s *Service) translateWithOpenAICompatible(ctx context.Context, sourceLang,
 		return nil, fmt.Errorf("openai-compatible model is required")
 	}
 
-	systemPrompt, userPrompt, err := buildLLMTranslationPrompts(sourceLang, targetLang, texts)
+	systemPrompt, userPrompt, markers, err := buildLLMTranslationPrompts(sourceLang, targetLang, texts, fieldNames)
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +510,7 @@ func (s *Service) translateWithOpenAICompatible(ctx context.Context, sourceLang,
 			model:     model,
 			headers:   headers,
 			request:   request,
-			textCount: len(texts),
+			markers:   markers,
 			logInput:  true,
 			logTiming: true,
 		})
@@ -521,7 +573,7 @@ func (s *Service) translateActressNamesWithOpenAICompatible(ctx context.Context,
 			model:     model,
 			headers:   headers,
 			request:   request,
-			textCount: len(texts),
+			markers:   makeJZMarkers(len(texts)),
 			logInput:  true,
 			logTiming: true,
 		})

@@ -12,7 +12,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/logging"
 )
 
-func (s *Service) translateWithAnthropic(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
+func (s *Service) translateWithAnthropic(ctx context.Context, sourceLang, targetLang string, texts []string, fieldNames []string) (*translationResult, error) {
 	baseURL := strings.TrimRight(strings.TrimSpace(s.cfg.Anthropic.BaseURL), "/")
 	if baseURL == "" {
 		baseURL = "https://api.anthropic.com"
@@ -28,7 +28,7 @@ func (s *Service) translateWithAnthropic(ctx context.Context, sourceLang, target
 		model = "claude-sonnet-4-20250514"
 	}
 
-	systemPrompt, userPrompt, err := buildLLMTranslationPrompts(sourceLang, targetLang, texts)
+	systemPrompt, userPrompt, markers, err := buildLLMTranslationPrompts(sourceLang, targetLang, texts, fieldNames)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func (s *Service) translateWithAnthropic(ctx context.Context, sourceLang, target
 		return nil, fmt.Errorf("anthropic response contained no content blocks")
 	}
 
-	return buildLLMTranslationResult(strings.TrimSpace(decoded.Content[0].Text), len(texts))
+	return buildLLMTranslationResult(strings.TrimSpace(decoded.Content[0].Text), markers)
 }
 
 func (s *Service) translateActressNamesWithAnthropic(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
@@ -176,5 +176,5 @@ func (s *Service) translateActressNamesWithAnthropic(ctx context.Context, source
 		return nil, fmt.Errorf("anthropic response contained no content blocks")
 	}
 
-	return buildLLMTranslationResult(strings.TrimSpace(decoded.Content[0].Text), len(texts))
+	return buildLLMTranslationResult(strings.TrimSpace(decoded.Content[0].Text), makeJZMarkers(len(texts)))
 }

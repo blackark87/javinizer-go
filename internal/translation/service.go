@@ -45,6 +45,7 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 	}
 
 	movieID := movie.ID
+	ctx = context.WithValue(ctx, translationMovieIDKey{}, movieID)
 
 	targetLanguages := s.targetLanguages()
 	if len(targetLanguages) == 0 {
@@ -265,8 +266,10 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 	var warnings []string
 	for key, indexes := range requestsByKey {
 		texts := make([]string, 0, len(indexes))
+		fieldNames := make([]string, 0, len(indexes))
 		for _, idx := range indexes {
 			texts = append(texts, requests[idx].text)
+			fieldNames = append(fieldNames, requests[idx].fieldName)
 		}
 
 		var translatedTexts []string
@@ -274,7 +277,7 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 		if key.isActress {
 			translatedTexts, err = s.translateActressNames(ctx, sourceLang, key.lang, texts)
 		} else {
-			translatedTexts, err = s.translateTexts(ctx, sourceLang, key.lang, texts)
+			translatedTexts, err = s.translateTexts(ctx, sourceLang, key.lang, texts, fieldNames)
 		}
 		if err != nil {
 			logging.Debugf("Translation[%s]: translateTexts failed: %v", movieID, err)
@@ -584,7 +587,7 @@ type translationResult struct {
 	rawLLM string
 }
 
-func (s *Service) translateTexts(ctx context.Context, sourceLang, targetLang string, texts []string) ([]string, error) {
+func (s *Service) translateTexts(ctx context.Context, sourceLang, targetLang string, texts []string, fieldNames []string) ([]string, error) {
 	provider := normalizeProvider(s.cfg.Provider)
 
 	var lastResult *translationResult
@@ -597,17 +600,17 @@ func (s *Service) translateTexts(ctx context.Context, sourceLang, targetLang str
 
 		switch provider {
 		case providerOpenAI:
-			result, err = s.translateWithOpenAI(ctx, sourceLang, targetLang, texts)
+			result, err = s.translateWithOpenAI(ctx, sourceLang, targetLang, texts, fieldNames)
 		case providerDeepL:
 			result, err = s.translateWithDeepL(ctx, sourceLang, targetLang, texts)
 		case providerGoogle:
 			result, err = s.translateWithGoogle(ctx, sourceLang, targetLang, texts)
 		case providerOpenAICompatible:
-			result, err = s.translateWithOpenAICompatible(ctx, sourceLang, targetLang, texts)
+			result, err = s.translateWithOpenAICompatible(ctx, sourceLang, targetLang, texts, fieldNames)
 		case providerAnthropic:
-			result, err = s.translateWithAnthropic(ctx, sourceLang, targetLang, texts)
+			result, err = s.translateWithAnthropic(ctx, sourceLang, targetLang, texts, fieldNames)
 		case providerBedrock:
-			result, err = s.translateWithBedrock(ctx, sourceLang, targetLang, texts)
+			result, err = s.translateWithBedrock(ctx, sourceLang, targetLang, texts, fieldNames)
 		default:
 			return nil, fmt.Errorf("unsupported translation provider: %s", provider)
 		}
@@ -624,6 +627,10 @@ func (s *Service) translateTexts(ctx context.Context, sourceLang, targetLang str
 		}
 
 		if err == nil && result != nil {
+			if len(texts) > 1 && hasSlotWordCountAnomaly(texts, result.texts) {
+				logging.Debugf("Translation: slot word count anomaly detected, falling back to one-by-one")
+				return s.translateTextsOneByOne(ctx, sourceLang, targetLang, texts, fieldNames)
+			}
 			return result.texts, nil
 		}
 
@@ -650,6 +657,11 @@ func (s *Service) translateTexts(ctx context.Context, sourceLang, targetLang str
 	}
 
 	if lastErr != nil {
+		var te *TranslationError
+		if errors.As(lastErr, &te) && (te.Kind == TranslationErrorParse || te.Kind == TranslationErrorCountMismatch) && len(texts) > 1 {
+			logging.Debugf("Translation: all retries failed with parse/count error, falling back to one-by-one")
+			return s.translateTextsOneByOne(ctx, sourceLang, targetLang, texts, fieldNames)
+		}
 		return nil, lastErr
 	}
 	return nil, &TranslationError{
@@ -658,13 +670,47 @@ func (s *Service) translateTexts(ctx context.Context, sourceLang, targetLang str
 	}
 }
 
+// hasSlotWordCountAnomaly detects when an LLM has merged slots: e.g. a short input (title)
+// has been given a very long output (description merged into it). Uses rune-count-based
+// word estimation for Japanese input (no spaces) and whitespace-split count for output.
+func hasSlotWordCountAnomaly(inputs, outputs []string) bool {
+	for i := range inputs {
+		if i >= len(outputs) {
+			return true
+		}
+		estimatedInputWords := max(1, len([]rune(inputs[i]))/3)
+		outputWords := len(strings.Fields(outputs[i]))
+		if outputWords > estimatedInputWords*10 && outputWords > 20 {
+			return true
+		}
+	}
+	return false
+}
+
+// translateTextsOneByOne translates each text individually to avoid LLM slot-merging issues.
+func (s *Service) translateTextsOneByOne(ctx context.Context, sourceLang, targetLang string, texts []string, fieldNames []string) ([]string, error) {
+	results := make([]string, len(texts))
+	for i, text := range texts {
+		var fn []string
+		if i < len(fieldNames) {
+			fn = []string{fieldNames[i]}
+		}
+		single, err := s.translateTexts(ctx, sourceLang, targetLang, []string{text}, fn)
+		if err != nil {
+			return nil, err
+		}
+		results[i] = single[0]
+	}
+	return results, nil
+}
+
 // translateActressNames uses a specialized romanization prompt for LLM providers.
 // For non-LLM providers (DeepL, Google), falls back to the standard translateTexts.
 func (s *Service) translateActressNames(ctx context.Context, sourceLang, targetLang string, texts []string) ([]string, error) {
 	provider := normalizeProvider(s.cfg.Provider)
 	switch provider {
 	case providerDeepL, providerGoogle:
-		return s.translateTexts(ctx, sourceLang, targetLang, texts)
+		return s.translateTexts(ctx, sourceLang, targetLang, texts, nil)
 	default:
 		return s.translateActressNamesWithLLM(ctx, sourceLang, targetLang, texts)
 	}

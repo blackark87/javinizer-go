@@ -285,8 +285,8 @@ func TestTranslateMovie_TitleIsActressName(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
-		assert.Equal(t, "Hutaba Reena", result[0].Title)
-		assert.Equal(t, "Hutaba Reena", movie.Title)
+		assert.Equal(t, "Futaba Reena", result[0].Title)
+		assert.Equal(t, "Futaba Reena", movie.Title)
 	})
 
 	t.Run("title does not match any actress - normal LLM translation path", func(t *testing.T) {
@@ -411,12 +411,12 @@ func TestTranslateMovie_ActressURLExtraction_AppliesPrimaryWhenTargetLangsDiffer
 		require.NotNil(t, result)
 
 		// Primary actress fields must be corrected by URL extraction
-		assert.Equal(t, "Hutaba", movie.Actresses[0].LastName)
+		assert.Equal(t, "Futaba", movie.Actresses[0].LastName)
 		assert.Equal(t, "Reena", movie.Actresses[0].FirstName)
 
 		// Translation record must also carry the correct display name
 		require.Len(t, result[0].Actresses, 1)
-		assert.Equal(t, "Hutaba Reena", result[0].Actresses[0])
+		assert.Equal(t, "Futaba Reena", result[0].Actresses[0])
 	})
 
 	t.Run("url extraction does not update primary when ApplyToPrimary is false", func(t *testing.T) {
@@ -454,7 +454,7 @@ func TestTranslateMovie_ActressURLExtraction_AppliesPrimaryWhenTargetLangsDiffer
 
 		// Translation record still carries the correct name
 		require.Len(t, result[0].Actresses, 1)
-		assert.Equal(t, "Hutaba Reena", result[0].Actresses[0])
+		assert.Equal(t, "Futaba Reena", result[0].Actresses[0])
 	})
 }
 
@@ -2414,6 +2414,42 @@ func TestParseStringArrayPayload_EdgeCases(t *testing.T) {
 			}
 		})
 	}
+}
+
+// =============================================================================
+// parseCompactTranslationPayload embedded-marker stripping
+// =============================================================================
+
+func TestParseCompactTranslationPayload_EmbeddedMarkers(t *testing.T) {
+	t.Run("strips extra markers echoed by LLM from last slot", func(t *testing.T) {
+		// LLM outputs description swap + echoes extra markers after last slot
+		payload := "<<<JZ_0>>>\n[Korean description - very long]\n<<<JZ_1>>>\n메이\n<<<JZ_2>>>\n<<<JZ_3>>>\n<<<JZ_4>>>"
+		got, err := parseCompactTranslationPayload(payload, 3)
+		require.NoError(t, err)
+		require.Len(t, got, 3)
+		assert.Equal(t, "[Korean description - very long]", got[0])
+		assert.Equal(t, "메이", got[1])
+		// slot 2 (last) should be empty after stripping embedded markers
+		assert.Equal(t, "", got[2])
+	})
+
+	t.Run("strips embedded marker inside slot content", func(t *testing.T) {
+		payload := "<<<JZ_0>>>\nhello <<<JZ_0>>> world\n<<<JZ_1>>>\nbye"
+		got, err := parseCompactTranslationPayload(payload, 2)
+		require.NoError(t, err)
+		require.Len(t, got, 2)
+		assert.Equal(t, "hello  world", got[0])
+		assert.Equal(t, "bye", got[1])
+	})
+
+	t.Run("clean output is unchanged", func(t *testing.T) {
+		payload := "<<<JZ_0>>>\ntitle translation\n<<<JZ_1>>>\ndescription translation"
+		got, err := parseCompactTranslationPayload(payload, 2)
+		require.NoError(t, err)
+		require.Len(t, got, 2)
+		assert.Equal(t, "title translation", got[0])
+		assert.Equal(t, "description translation", got[1])
+	})
 }
 
 // =============================================================================

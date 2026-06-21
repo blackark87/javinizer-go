@@ -714,14 +714,17 @@ func (e *Engine) resolveActressName(explicitLang string, index int, ctx *Context
 		if name := ctx.formatActressNameForLanguage(detail, primaryLang); name != "" {
 			return name
 		}
-		// No translation available — fall back to raw name regardless of script
-		if rawName := ctx.formatActressName(detail); rawName != "" {
+		// No translation — only fall back to raw name if it passes the language filter
+		if rawName := ctx.formatActressName(detail); e.isAcceptableActressTranslation(primaryLang, rawName) {
 			return rawName
 		}
 	}
 	// Fall back to raw Actresses slice (covers case where ActressDetails is absent)
 	if index < len(ctx.Actresses) {
-		return ctx.Actresses[index]
+		rawName := ctx.Actresses[index]
+		if e.isAcceptableActressTranslation(primaryLang, rawName) {
+			return rawName
+		}
 	}
 	return ""
 }

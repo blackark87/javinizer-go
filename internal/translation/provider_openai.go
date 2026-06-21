@@ -65,7 +65,8 @@ func buildLLMTranslationPrompts(sourceLang, targetLang string, texts []string) (
 		"(2) Kanji adult slang: translate by meaning using vocabulary natural to adult content in the target language — never just read the characters (e.g. 美脚 → 각선미; 爆乳 → 폭유; 神乳 → 신의 가슴). "+
 		"(3) Japanese kana loanwords commonly borrowed into the target language: keep the standard phonetic form (e.g. パパ活 → 파파카츠, NOT 파파활). "+
 		"(4) Translate ALL text in each item, including any Latin or English portions — do not leave any part untranslated. "+
-		"Preserve order and return ONLY the indexed output markers in ascending order. Do not use JSON. Do not add commentary. Do not omit any index. Keep each translation on a single logical line; if needed, replace internal newlines with spaces. Source language: %s. Target language: %s.", sourceLang, targetLang)
+		"CRITICAL ordering rule: item[0] MUST go under <<<JZ_0>>>, item[1] MUST go under <<<JZ_1>>>, and so on — never swap or reorder items. "+
+		"Return ONLY the output markers with their translations. Do not use JSON. Do not add commentary. Do not repeat the input markers as content. Do not omit any index. Keep each translation on a single logical line; if needed, replace internal newlines with spaces. Source language: %s. Target language: %s.", sourceLang, targetLang)
 
 	payloadBytes, err := json.Marshal(texts)
 	if err != nil {
@@ -75,10 +76,10 @@ func buildLLMTranslationPrompts(sourceLang, targetLang string, texts []string) (
 	var userPrompt strings.Builder
 	userPrompt.WriteString("Translate this JSON array of strings: ")
 	userPrompt.Write(payloadBytes)
-	userPrompt.WriteString("\nReturn output in this exact pattern:\n")
+	userPrompt.WriteString("\nReturn output in this exact format (replace each placeholder with the actual translation of that numbered item):\n")
 	for i := range texts {
 		userPrompt.WriteString(translationCompactOutputMarker(i))
-		userPrompt.WriteString("\ntranslated text\n")
+		userPrompt.WriteString(fmt.Sprintf("\n[translation of item %d]\n", i))
 	}
 
 	return systemPrompt, strings.TrimSpace(userPrompt.String()), nil

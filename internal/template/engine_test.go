@@ -704,7 +704,7 @@ func TestTemplateEngine_Conditionals(t *testing.T) {
 			want: "Hatano Yui",
 		},
 		{
-			name:     "Language-qualified IF - Japanese-only actress uses Japanese fallback",
+			name:     "Language-qualified IF - Japanese-only actress uses ELSE when no English name",
 			template: "<IF:ACTRESS:en><ACTRESS:en><ELSE>Unknown</IF>",
 			ctx: &Context{
 				Actresses: []string{"波多野結衣"},
@@ -712,7 +712,7 @@ func TestTemplateEngine_Conditionals(t *testing.T) {
 					{JapaneseName: "波多野結衣"},
 				},
 			},
-			want: "波多野結衣",
+			want: "Unknown",
 		},
 		{
 			name:     "Language-qualified IF - no actress falls back to ELSE",
@@ -732,7 +732,7 @@ func TestTemplateEngine_Conditionals(t *testing.T) {
 			want: "Hatano Yui",
 		},
 		{
-			name:     "ACTRESS:en priority - Japanese fallback when no English name",
+			name:     "ACTRESS:en priority - empty when no English name and only CJK available",
 			template: "<ACTRESS:en>",
 			ctx: &Context{
 				Actresses: []string{"波多野結衣"},
@@ -740,7 +740,7 @@ func TestTemplateEngine_Conditionals(t *testing.T) {
 					{JapaneseName: "波多野結衣"},
 				},
 			},
-			want: "波多野結衣",
+			want: "",
 		},
 		{
 			name:     "IF:ACTRESS with ACTRESS:en - Unknown only when no actress",
@@ -749,7 +749,7 @@ func TestTemplateEngine_Conditionals(t *testing.T) {
 			want:     "Unknown",
 		},
 		{
-			name:     "IF:ACTRESS with ACTRESS:en - Japanese name when no English",
+			name:     "IF:ACTRESS with ACTRESS:en - empty when only CJK name exists",
 			template: "<IF:ACTRESS><ACTRESS:en><ELSE>Unknown</IF>",
 			ctx: &Context{
 				Actresses: []string{"波多野結衣"},
@@ -757,7 +757,7 @@ func TestTemplateEngine_Conditionals(t *testing.T) {
 					{JapaneseName: "波多野結衣"},
 				},
 			},
-			want: "波多野結衣",
+			want: "",
 		},
 		{
 			name:     "Unqualified IF still true for Japanese-only actress (backward compat)",

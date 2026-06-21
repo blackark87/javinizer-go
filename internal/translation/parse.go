@@ -3,10 +3,15 @@ package translation
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/javinizer/javinizer-go/internal/logging"
 )
+
+// embeddedMarkerRE matches <<<JZ_N>>> markers that the LLM may echo verbatim
+// from the prompt template. These are never valid translation content.
+var embeddedMarkerRE = regexp.MustCompile(`<<<JZ_\d+>>>`)
 
 func normalizeTranslationPayload(payload string) string {
 	cleaned := strings.TrimSpace(payload)
@@ -76,7 +81,12 @@ func parseCompactTranslationPayload(payload string, expectedCount int) ([]string
 			end = start + next
 		}
 
-		out = append(out, strings.TrimSpace(payload[start:end]))
+		raw := payload[start:end]
+		content := embeddedMarkerRE.ReplaceAllString(raw, "")
+		if content != raw {
+			logging.Debugf("Translation: stripped embedded markers from slot %d (had: %q, now: %q)", i, strings.TrimSpace(raw), strings.TrimSpace(content))
+		}
+		out = append(out, strings.TrimSpace(content))
 		pos = end
 	}
 

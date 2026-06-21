@@ -198,6 +198,21 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 				continue
 			}
 
+			// Priority 1.5: use romanization already known from actress.FirstName
+			// (e.g. r18dev name_romaji field). Avoids an unnecessary LLM call when
+			// the scraper already provided a reliable Latin form.
+			if jaName := strings.TrimSpace(actress.JapaneseName); jaName != "" {
+				if romanized, ok := actressJaNameToRomanized[jaName]; ok && romanized != "" {
+					logging.Debugf("Translation: actress[%d] pre-built romanization → %q", idx, romanized)
+					actressRecord.Actresses[idx] = romanized
+					if s.cfg.ApplyToPrimary {
+						replaceActressName(actress, romanized)
+					}
+					touchedRecords[actressTargetLang] = true
+					continue
+				}
+			}
+
 			// Priority 2: LLM romanization — only if a Japanese source name exists.
 			if strings.TrimSpace(actress.JapaneseName) == "" {
 				logging.Debugf("Translation: actress[%d] skip — no JapaneseName", idx)

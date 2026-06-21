@@ -116,7 +116,7 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 				continue
 			}
 			if lastName, firstName, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL); ok {
-				actressJaNameToRomanized[jaName] = capitalize(lastName) + " " + capitalize(firstName)
+				actressJaNameToRomanized[jaName] = joinName(lastName, firstName)
 			} else if actress.FirstName != "" && isLikelyRomanized(actress.FirstName) {
 				name := strings.TrimSpace(actress.FirstName)
 				if actress.LastName != "" && isLikelyRomanized(actress.LastName) {
@@ -187,7 +187,7 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 			// Priority 1: extract romanized name directly from DMM actjpgs thumbnail URL.
 			// This is more reliable than LLM romanization (official DMM naming).
 			if lastName, firstName, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL); ok {
-				displayName := capitalize(lastName) + " " + capitalize(firstName)
+				displayName := joinName(lastName, firstName)
 				logging.Debugf("Translation: actress[%d] URL extraction → %q (LastName=%q FirstName=%q)", idx, displayName, capitalize(lastName), capitalize(firstName))
 				actressRecord.Actresses[idx] = displayName
 				if s.cfg.ApplyToPrimary {
@@ -273,9 +273,15 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 			raw := translatedTexts[i]
 			translated := strings.TrimSpace(raw)
 			if translated == "" {
-				logging.Debugf("Translation: empty result for %s (original=%q, raw=%q), falling back to original", requests[reqIdx].fieldName, requests[reqIdx].text, raw)
-				warnings = append(warnings, fmt.Sprintf("%s: empty translation, kept original", requests[reqIdx].fieldName))
-				translated = requests[reqIdx].text
+				if requests[reqIdx].isActress {
+					logging.Debugf("Translation: empty result for %s (original=%q, raw=%q), non-person name — using Unknown", requests[reqIdx].fieldName, requests[reqIdx].text, raw)
+					warnings = append(warnings, fmt.Sprintf("%s: non-person name, set to Unknown", requests[reqIdx].fieldName))
+					translated = "Unknown"
+				} else {
+					logging.Debugf("Translation: empty result for %s (original=%q, raw=%q), falling back to original", requests[reqIdx].fieldName, requests[reqIdx].text, raw)
+					warnings = append(warnings, fmt.Sprintf("%s: empty translation, kept original", requests[reqIdx].fieldName))
+					translated = requests[reqIdx].text
+				}
 			}
 			requests[reqIdx].apply(translated)
 		}
@@ -508,6 +514,7 @@ func replaceActressName(actress *models.Actress, translated string) {
 
 // extractNamesFromDMMActjpgsURL parses lastName and firstName from DMM actjpgs thumbnail URLs.
 // Format: https://pics.dmm.co.jp/mono/actjpgs/lastname_firstname[N].jpg
+// Single-name format: https://pics.dmm.co.jp/mono/actjpgs/firstname[N].jpg
 func extractNamesFromDMMActjpgsURL(thumbURL string) (lastName, firstName string, ok bool) {
 	const prefix = "actjpgs/"
 	idx := strings.LastIndex(thumbURL, prefix)
@@ -521,10 +528,17 @@ func extractNamesFromDMMActjpgsURL(thumbURL string) (lastName, firstName string,
 	if dot := strings.LastIndexByte(filename, '.'); dot >= 0 {
 		filename = filename[:dot]
 	}
-	// Strip trailing digits and underscores (e.g. "rena2" → "rena", "rena_2" → "rena")
+	// Strip trailing digits and underscores (e.g. "rena2" → "rena", "rena_2" → "rena", "reimi21" → "reimi")
 	filename = strings.TrimRight(filename, "0123456789_")
+	if filename == "" {
+		return "", "", false
+	}
 	parts := strings.SplitN(filename, "_", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+	if len(parts) == 1 {
+		// Single name (no family/given split) — return as first name with empty last name
+		return "", nihonshikiToHepburn.Replace(parts[0]), true
+	}
+	if parts[0] == "" || parts[1] == "" {
 		return "", "", false
 	}
 	return nihonshikiToHepburn.Replace(parts[0]), nihonshikiToHepburn.Replace(parts[1]), true
@@ -535,6 +549,15 @@ func capitalize(s string) string {
 		return ""
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+func joinName(lastName, firstName string) string {
+	l := strings.TrimSpace(capitalize(lastName))
+	f := strings.TrimSpace(capitalize(firstName))
+	if l == "" {
+		return f
+	}
+	return l + " " + f
 }
 
 const maxTranslationRetries = 3

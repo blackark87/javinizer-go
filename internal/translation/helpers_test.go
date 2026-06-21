@@ -621,9 +621,18 @@ func TestExtractNamesFromDMMActjpgsURL(t *testing.T) {
 			wantOk:   false,
 		},
 		{
-			name:     "single name part - not matched",
-			thumbURL: "https://pics.dmm.co.jp/mono/actjpgs/yuka.jpg",
-			wantOk:   false,
+			name:          "single name part - matched as first name only",
+			thumbURL:      "https://pics.dmm.co.jp/mono/actjpgs/yuka.jpg",
+			wantLastName:  "",
+			wantFirstName: "yuka",
+			wantOk:        true,
+		},
+		{
+			name:          "single name with trailing digits stripped",
+			thumbURL:      "https://pics.dmm.co.jp/mono/actjpgs/reimi21.jpg",
+			wantLastName:  "",
+			wantFirstName: "reimi",
+			wantOk:        true,
 		},
 		{
 			name:          "query string ignored",

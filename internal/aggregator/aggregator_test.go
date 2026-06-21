@@ -2416,8 +2416,7 @@ func TestApplyActressAlias(t *testing.T) {
 
 func TestFC2IDNormalization(t *testing.T) {
 	cfg := &config.Config{}
-	agg, err := New(cfg, nil)
-	require.NoError(t, err)
+	agg := New(cfg)
 
 	tests := []struct {
 		name          string

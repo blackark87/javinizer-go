@@ -183,7 +183,7 @@ func TestProcessOrganizeJob_InvalidLinkModeMarksFailed(t *testing.T) {
 	deps := createTestDeps(t, cfg, "")
 	job := deps.JobQueue.CreateJob(nil)
 
-	processOrganizeJob(context.Background(), job, deps.JobQueue, t.TempDir(), false, "not-a-valid-link-mode", false, false, deps.DB, cfg, deps.Registry, nil)
+	processOrganizeJob(context.Background(), job, deps.JobQueue, t.TempDir(), false, "not-a-valid-link-mode", false, false, deps.DB, cfg, deps.Registry, nil, false)
 
 	status := job.GetStatus()
 	assert.Equal(t, worker.JobStatusFailed, status.Status)

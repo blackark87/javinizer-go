@@ -191,7 +191,7 @@ func TestProcessOrganizeJob_CopiesFileAndGeneratesNFO(t *testing.T) {
 		},
 	})
 
-	processOrganizeJob(context.Background(), job, deps.JobQueue, destDir, true, "", false, false, deps.DB, cfg, deps.Registry, nil)
+	processOrganizeJob(context.Background(), job, deps.JobQueue, destDir, true, "", false, false, deps.DB, cfg, deps.Registry, nil, false)
 
 	status := job.GetStatus()
 	if status.Status != worker.JobStatusOrganized {
@@ -240,7 +240,7 @@ func TestProcessOrganizeJob_CancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	processOrganizeJob(ctx, job, deps.JobQueue, t.TempDir(), false, "", false, false, deps.DB, cfg, deps.Registry, nil)
+	processOrganizeJob(ctx, job, deps.JobQueue, t.TempDir(), false, "", false, false, deps.DB, cfg, deps.Registry, nil, false)
 
 	status := job.GetStatus()
 	if status.Status != worker.JobStatusCancelled {

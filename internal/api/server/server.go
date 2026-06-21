@@ -14,11 +14,6 @@ import (
 	"github.com/javinizer/javinizer-go/internal/logging"
 )
 
-// isSameOrigin checks if the origin matches the request host (same-origin).
-func isSameOrigin(origin string, r *http.Request) bool {
-	return isSameOriginWithConfig(origin, r, nil)
-}
-
 // isSameOriginWithConfig checks same-origin using trusted proxy headers when configured.
 // X-Forwarded-Proto, X-Forwarded-Host, and Forwarded are only trusted when
 // the direct client IP (RemoteAddr) matches api.security.trusted_proxies.

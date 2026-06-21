@@ -15,6 +15,13 @@ const (
 	actressMergeStepInput    = "input"
 	actressMergeStepConflict = "conflicts"
 	actressMergeStepResult   = "result"
+
+	keyEsc   = "esc"
+	keyDown  = "down"
+	keyEnter = "enter"
+	keySpace = "space"
+
+	resolutionSource = "source"
 )
 
 // SetActressRepo sets the actress repository used by the merge modal.
@@ -183,17 +190,17 @@ func handleActressMergeInput(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func handleActressMergeInputStep(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "q":
+	case keyEsc, "q":
 		m.closeActressMergeModal()
 		return m, nil
-	case "tab", "up", "down":
+	case "tab", "up", keyDown:
 		if m.actressMergeFocus == 0 {
 			m.setActressMergeFocus(1)
 		} else {
 			m.setActressMergeFocus(0)
 		}
 		return m, nil
-	case "enter":
+	case keyEnter:
 		if m.actressMergeFocus == 0 {
 			m.setActressMergeFocus(1)
 			return m, nil
@@ -216,7 +223,7 @@ func handleActressMergeInputStep(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 
 func handleActressMergeConflictStep(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "q":
+	case keyEsc, "q":
 		m.closeActressMergeModal()
 		return m, nil
 	case "r":
@@ -231,7 +238,7 @@ func handleActressMergeConflictStep(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cm
 			m.actressMergeConflictCursor--
 		}
 		return m, nil
-	case "down", "j":
+	case keyDown, "j":
 		if m.actressMergePreview != nil && m.actressMergeConflictCursor < len(m.actressMergePreview.Conflicts)-1 {
 			m.actressMergeConflictCursor++
 		}
@@ -243,20 +250,20 @@ func handleActressMergeConflictStep(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cm
 		return m, nil
 	case "s", "l", "right":
 		if conflict := m.getCurrentMergeConflict(); conflict != nil {
-			m.actressMergeResolutions[conflict.Field] = "source"
+			m.actressMergeResolutions[conflict.Field] = resolutionSource
 		}
 		return m, nil
-	case " ", "space":
+	case " ", keySpace:
 		if conflict := m.getCurrentMergeConflict(); conflict != nil {
 			current := m.actressMergeResolutions[conflict.Field]
-			if current == "source" {
+			if current == resolutionSource {
 				m.actressMergeResolutions[conflict.Field] = "target"
 			} else {
-				m.actressMergeResolutions[conflict.Field] = "source"
+				m.actressMergeResolutions[conflict.Field] = resolutionSource
 			}
 		}
 		return m, nil
-	case "enter":
+	case keyEnter:
 		if err := m.applyActressMerge(); err != nil {
 			m.actressMergeError = normalizeActressMergeError(err)
 			m.AddLog("warn", "Actress merge failed: "+err.Error())
@@ -269,7 +276,7 @@ func handleActressMergeConflictStep(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cm
 
 func handleActressMergeResultStep(m *Model, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "q", "enter":
+	case keyEsc, "q", keyEnter:
 		m.closeActressMergeModal()
 		return m, nil
 	case "r":

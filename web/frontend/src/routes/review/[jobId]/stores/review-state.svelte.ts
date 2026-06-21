@@ -495,30 +495,17 @@ export function createReviewState(pageStore: Page) {
 		showRescrapeModal = false;
 
 		try {
-			const result = await mutations.bulkRescrapeMutation.mutateAsync({
+			await mutations.bulkRescrapeMutation.mutateAsync({
 				movieIds: bulkRescrapeMovieIds,
 				selectedScrapers,
 				preset: rescrapePreset,
 				scalarStrategy: rescrapeScalarStrategy || undefined,
 				arrayStrategy: rescrapeArrayStrategy || undefined,
 			});
-
-			bulkRescrapeProgress = result.results.map(r => ({
-				movie_id: r.movie_id,
-				status: r.status,
-				error: r.error,
-			}));
-
-			if (result.job) {
-				skipJobSync = true;
-				job = JSON.parse(JSON.stringify(result.job));
-			}
-
-			void queryClient.invalidateQueries({ queryKey: ['batch-job', jobId] });
+			// Progress and completion handled via WebSocket messages
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : String(error);
 			toastStore.error(`Bulk rescrape failed: ${errorMessage}`);
-		} finally {
 			bulkRescraping = false;
 		}
 	}
@@ -540,28 +527,15 @@ export function createReviewState(pageStore: Page) {
 		bulkRescrapeProgress = movieIds.map(id => ({ movie_id: id, status: 'pending' }));
 
 		try {
-			const result = await mutations.bulkRescrapeMutation.mutateAsync({
+			await mutations.bulkRescrapeMutation.mutateAsync({
 				movieIds,
 				selectedScrapers: enabledScrapers,
 				force: true,
 			});
-
-			bulkRescrapeProgress = result.results.map(r => ({
-				movie_id: r.movie_id,
-				status: r.status,
-				error: r.error,
-			}));
-
-			if (result.job) {
-				skipJobSync = true;
-				job = JSON.parse(JSON.stringify(result.job));
-			}
-
-			void queryClient.invalidateQueries({ queryKey: ['batch-job', jobId] });
+			// Progress and completion handled via WebSocket messages
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : String(error);
 			toastStore.error(`Force refresh failed: ${errorMessage}`);
-		} finally {
 			bulkRescraping = false;
 		}
 	}
@@ -834,6 +808,10 @@ export function createReviewState(pageStore: Page) {
 			const idx = bulkRescrapeProgress.findIndex(p => p.movie_id === msg.file_path);
 			if (idx === -1) return;
 			bulkRescrapeProgress[idx] = { movie_id: msg.file_path, status: msg.status, error: msg.error };
+			if (bulkRescrapeProgress.every(p => p.status !== 'pending')) {
+				bulkRescraping = false;
+				void queryClient.invalidateQueries({ queryKey: ['batch-job', jobId] });
+			}
 		});
 
 		return unsubscribe;

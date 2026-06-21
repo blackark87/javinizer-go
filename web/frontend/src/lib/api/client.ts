@@ -255,8 +255,8 @@ class APIClient {
 		});
 	}
 
-	async bulkRescrapeMovies(jobId: string, request: BulkRescrapeRequest): Promise<BulkRescrapeResponse> {
-		return this.request<BulkRescrapeResponse>(`/api/v1/batch/${jobId}/movies/batch-rescrape`, {
+	async bulkRescrapeMovies(jobId: string, request: BulkRescrapeRequest): Promise<void> {
+		await this.request<unknown>(`/api/v1/batch/${jobId}/movies/batch-rescrape`, {
 			method: 'POST',
 			body: JSON.stringify(request)
 		});

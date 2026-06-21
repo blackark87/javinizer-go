@@ -1,6 +1,7 @@
 package batch
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sync"
@@ -73,88 +74,84 @@ func batchRescrapeMovies(deps *ServerDependencies) gin.HandlerFunc {
 		logging.Infof("Bulk rescrape request for job %s: %d movies, scrapers=%v, force=%v",
 			jobID, len(req.MovieIDs), req.SelectedScrapers, req.Force)
 
-		type movieResult struct {
-			movieID string
-			result  *BulkRescrapeMovieResult
-		}
+		// Return immediately — actual work runs in background to avoid broken-pipe
+		// errors when proxies time out long-running HTTP connections.
+		c.JSON(http.StatusAccepted, gin.H{"message": "Bulk rescrape started"})
 
-		var mu sync.Mutex
-		var completedCount int
-		results := make([]BulkRescrapeMovieResult, 0, len(req.MovieIDs))
-
-		movieChan := make(chan string, len(req.MovieIDs))
-		resultChan := make(chan movieResult, len(req.MovieIDs))
-
-		workerCount := bulkRescrapeWorkers
-		if workerCount > len(req.MovieIDs) {
-			workerCount = len(req.MovieIDs)
-		}
-
-		var wg sync.WaitGroup
-		for i := 0; i < workerCount; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for movieID := range movieChan {
-					r := processBulkRescrapeMovie(c, jobID, movieID, job, rescrapeReq, deps, cfg)
-					resultChan <- movieResult{movieID: movieID, result: r}
-				}
-			}()
-		}
-
-		for _, movieID := range req.MovieIDs {
-			movieChan <- movieID
-		}
-		close(movieChan)
+		// Copy values that the goroutine needs; do NOT capture c (Gin recycles it).
+		movieIDs := make([]string, len(req.MovieIDs))
+		copy(movieIDs, req.MovieIDs)
+		rescrapeReqCopy := *rescrapeReq
 
 		go func() {
-			wg.Wait()
-			close(resultChan)
-		}()
+			ctx := context.Background()
 
-		for mr := range resultChan {
-			mu.Lock()
-			results = append(results, *mr.result)
-			completedCount++
-
-			broadcastProgress(&ws.ProgressMessage{
-				JobID:    jobID,
-				FilePath: mr.movieID,
-				Status:   mr.result.Status,
-				Message:  fmt.Sprintf("Rescrape %s: %s", mr.movieID, mr.result.Status),
-				Error:    mr.result.Error,
-				Progress: float64(completedCount) / float64(len(req.MovieIDs)) * 100,
-			})
-			mu.Unlock()
-		}
-
-		deps.JobQueue.PersistJob(job)
-
-		succeeded := 0
-		failed := 0
-		for _, r := range results {
-			if r.Status == "success" {
-				succeeded++
-			} else {
-				failed++
+			type movieResult struct {
+				movieID string
+				result  *BulkRescrapeMovieResult
 			}
-		}
 
-		updatedStatus := job.GetStatus()
-		jobResponse := buildBatchJobResponse(updatedStatus)
+			var mu sync.Mutex
+			var completedCount int
 
-		logging.Infof("Bulk rescrape complete for job %s: %d succeeded, %d failed", jobID, succeeded, failed)
+			movieChan := make(chan string, len(movieIDs))
+			resultChan := make(chan movieResult, len(movieIDs))
 
-		c.JSON(http.StatusOK, BulkRescrapeResponse{
-			Results:   results,
-			Succeeded: succeeded,
-			Failed:    failed,
-			Job:       jobResponse,
-		})
+			workerCount := bulkRescrapeWorkers
+			if workerCount > len(movieIDs) {
+				workerCount = len(movieIDs)
+			}
+
+			var wg sync.WaitGroup
+			for i := 0; i < workerCount; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					for movieID := range movieChan {
+						r := processBulkRescrapeMovie(ctx, jobID, movieID, job, &rescrapeReqCopy, deps, cfg)
+						resultChan <- movieResult{movieID: movieID, result: r}
+					}
+				}()
+			}
+
+			for _, id := range movieIDs {
+				movieChan <- id
+			}
+			close(movieChan)
+
+			go func() {
+				wg.Wait()
+				close(resultChan)
+			}()
+
+			succeeded := 0
+			failed := 0
+			for mr := range resultChan {
+				mu.Lock()
+				completedCount++
+				if mr.result.Status == "success" {
+					succeeded++
+				} else {
+					failed++
+				}
+				broadcastProgress(&ws.ProgressMessage{
+					JobID:    jobID,
+					FilePath: mr.movieID,
+					Status:   mr.result.Status,
+					Message:  fmt.Sprintf("Rescrape %s: %s", mr.movieID, mr.result.Status),
+					Error:    mr.result.Error,
+					Progress: float64(completedCount) / float64(len(movieIDs)) * 100,
+				})
+				mu.Unlock()
+			}
+
+			deps.JobQueue.PersistJob(job)
+			logging.Infof("Bulk rescrape complete for job %s: %d succeeded, %d failed", jobID, succeeded, failed)
+		}()
 	}
 }
 
-func processBulkRescrapeMovie(c *gin.Context, jobID string, movieID string, job *worker.BatchJob, req *BatchRescrapeRequest, deps *ServerDependencies, cfg *config.Config) *BulkRescrapeMovieResult {
+func processBulkRescrapeMovie(ctx context.Context, jobID string, movieID string, job *worker.BatchJob, req *BatchRescrapeRequest, deps *ServerDependencies, cfg *config.Config) *BulkRescrapeMovieResult {
 	lookup, httpStatus, errMsg := findFileForMovieID(job, movieID)
 	if errMsg != "" {
 		return &BulkRescrapeMovieResult{
@@ -166,7 +163,7 @@ func processBulkRescrapeMovie(c *gin.Context, jobID string, movieID string, job 
 
 	params, _ := resolveScrapeParams(req, movieID, deps)
 
-	result, err := executeRescrape(c.Request.Context(), params, job, lookup.foundFilePath, deps, req, cfg)
+	result, err := executeRescrape(ctx, params, job, lookup.foundFilePath, deps, req, cfg)
 	if err != nil {
 		return &BulkRescrapeMovieResult{
 			MovieID: movieID,

@@ -16,7 +16,7 @@ func NewJobRepository(db *DB) *JobRepository {
 		BaseRepository: NewBaseRepository[models.Job, string](
 			db, "job",
 			func(j models.Job) string { return j.ID },
-			WithDefaultOrder[models.Job, string]("started_at DESC"),
+			WithDefaultOrder[models.Job, string]("started_at DESC, id DESC"),
 			WithNewEntity[models.Job, string](func() models.Job { return models.Job{} }),
 		),
 	}

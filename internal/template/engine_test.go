@@ -1653,6 +1653,11 @@ func TestTemplateEngine_AllTags(t *testing.T) {
 		{
 			name:     "FILENAME tag",
 			template: "<FILENAME>",
+			want:     "original_file",
+		},
+		{
+			name:     "FILENAME_EXT tag includes extension",
+			template: "<FILENAME_EXT>",
 			want:     "original_file.mp4",
 		},
 		{
@@ -1693,6 +1698,134 @@ func TestTemplateEngine_AllTags(t *testing.T) {
 			if err != nil {
 				t.Errorf("Execute() error = %v", err)
 				return
+			}
+			if got != tt.want {
+				t.Errorf("Execute() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTemplateEngine_FilenameTokens(t *testing.T) {
+	engine := NewEngine()
+
+	tests := []struct {
+		name     string
+		filename string
+		template string
+		want     string
+	}{
+		{
+			name:     "FILENAME strips single extension",
+			filename: "STARS-136.mp4",
+			template: "<FILENAME>.nfo",
+			want:     "STARS-136.nfo",
+		},
+		{
+			name:     "FILENAME strips uppercase extension",
+			filename: "STARS-136.MP4",
+			template: "<FILENAME>",
+			want:     "STARS-136",
+		},
+		{
+			name:     "FILENAME strips mkv extension",
+			filename: "IPX-535.mkv",
+			template: "<FILENAME>.nfo",
+			want:     "IPX-535.nfo",
+		},
+		{
+			name:     "FILENAME strips only final extension on multi-dot name",
+			filename: "SSIS-123.pt1.mp4",
+			template: "<FILENAME>",
+			want:     "SSIS-123.pt1",
+		},
+		{
+			name:     "FILENAME strips only final extension on double-ext name",
+			filename: "archive.tar.gz",
+			template: "<FILENAME>",
+			want:     "archive.tar",
+		},
+		{
+			name:     "FILENAME no extension returned as-is",
+			filename: "STARS-136",
+			template: "<FILENAME>.nfo",
+			want:     "STARS-136.nfo",
+		},
+		{
+			name:     "FILENAME empty yields empty",
+			filename: "",
+			template: "<FILENAME>.nfo",
+			want:     ".nfo",
+		},
+		{
+			name:     "FILENAME dotfile keeps leading dot (no ext to strip)",
+			filename: ".hidden",
+			template: "<FILENAME>",
+			want:     ".hidden",
+		},
+		{
+			name:     "FILENAME preserves directory component",
+			filename: "videos/STARS-136.mp4",
+			template: "<FILENAME>.nfo",
+			want:     "videos/STARS-136.nfo",
+		},
+
+		{
+			name:     "FILENAME_EXT keeps extension",
+			filename: "STARS-136.mp4",
+			template: "<FILENAME_EXT>",
+			want:     "STARS-136.mp4",
+		},
+		{
+			name:     "FILENAME_EXT keeps uppercase extension",
+			filename: "STARS-136.MP4",
+			template: "<FILENAME_EXT>",
+			want:     "STARS-136.MP4",
+		},
+		{
+			name:     "FILENAME_EXT no extension returned as-is",
+			filename: "STARS-136",
+			template: "<FILENAME_EXT>.bak",
+			want:     "STARS-136.bak",
+		},
+		{
+			name:     "FILENAME_EXT empty yields empty",
+			filename: "",
+			template: "<FILENAME_EXT>.nfo",
+			want:     ".nfo",
+		},
+		{
+			name:     "FILENAME_EXT dotfile returned as-is",
+			filename: ".hidden",
+			template: "<FILENAME_EXT>",
+			want:     ".hidden",
+		},
+		{
+			name:     "FILENAMEEXT alias works (no underscore)",
+			filename: "STARS-136.mp4",
+			template: "<FILENAMEEXT>",
+			want:     "STARS-136.mp4",
+		},
+		{
+			name:     "FILENAME numeric modifier ignored (returns full stem)",
+			filename: "STARS-136.mp4",
+			template: "<FILENAME:10>",
+			want:     "STARS-136",
+		},
+		{
+			name:     "FILENAME_EXT numeric modifier ignored (returns full name)",
+			filename: "STARS-136.mp4",
+			template: "<FILENAME_EXT:10>",
+			want:     "STARS-136.mp4",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &Context{OriginalFilename: tt.filename}
+			got, err := engine.Execute(tt.template, ctx)
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
 			}
 			if got != tt.want {
 				t.Errorf("Execute() = %q, want %q", got, tt.want)

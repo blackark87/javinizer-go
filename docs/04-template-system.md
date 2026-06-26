@@ -111,6 +111,7 @@ BEAUTIFUL DAY
 | `<RATING>` | Rating score (one decimal) | `7.5` |
 | `<RESOLUTION>` | Video resolution (e.g., 1080p, 720p) | `1080p` |
 | `<FILENAME>` | Original filename (without extension) | `IPX-535` |
+| `<FILENAME_EXT>` (alias `<FILENAMEEXT>`) | Original filename (with extension) | `IPX-535.mp4` |
 
 ### Multipart
 

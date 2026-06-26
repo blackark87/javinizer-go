@@ -3,6 +3,7 @@ package template
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -473,6 +474,13 @@ func (e *Engine) resolveTag(tagName, modifier string, ctx *Context) (string, err
 		return "", nil
 
 	case "FILENAME":
+		name := ctx.OriginalFilename
+		if ext := filepath.Ext(name); ext != "" && len(ext) < len(name) {
+			name = strings.TrimSuffix(name, ext)
+		}
+		return name, nil
+
+	case "FILENAME_EXT", "FILENAMEEXT":
 		return ctx.OriginalFilename, nil
 
 	case "INDEX":

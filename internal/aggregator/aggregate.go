@@ -24,6 +24,30 @@ func (a *Aggregator) AggregateWithPriority(results []*models.ScraperResult, cust
 		return nil, nil, fmt.Errorf("AggregateWithPriority called on nil Aggregator")
 	}
 	return a.aggregateWithPriority(results, func(field string) []string {
+		// Pure exclusivity — identical semantics to resolvePriorities, so a
+		// per-field override is honored consistently in BOTH scrape paths
+		// (Aggregate and AggregateWithPriority). This is the v1 (original
+		// PowerShell Javinizer) behavior (#50): a per-field list means "only these
+		// scrapers are consulted for this field," with NO fallback.
+		//
+		// Consistency between the paths matters: scrape.go calls
+		// AggregateWithPriority(results, cmd.SelectedScrapers) when the user
+		// selects scrapers (--scrapers / batch UI). customPriority replaces the
+		// GLOBAL priority as the fallback for fields without a per-field override
+		// (the user chose which scrapers to run); but a per-field override still
+		// wins exclusively — so `series: [dmm]` still routes Series to dmm even
+		// when scraping with `--scrapers r18dev`, and `series: [tokyohot]` still
+		// leaves Series empty (tokyohot didn't run / lacks it). There is no skip
+		// sentinel; suppression is emergent from exclusivity.
+		// empty slice (`series: []`) still wins here as a deliberate empty field
+		// ("consult no scrapers"): PerFieldOverride returns a non-nil empty slice
+		// for a present `[]`, so `fp != nil` honors it; an absent key returns nil
+		// and falls through to customPriority below.
+		if a.cfg != nil && a.cfg.Metadata != nil {
+			if fp := a.cfg.Metadata.Priority.PerFieldOverride(toSnakeCase(field)); fp != nil {
+				return fp
+			}
+		}
 		return customPriority
 	})
 }

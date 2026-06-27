@@ -12,20 +12,29 @@ env:
 
 permissions:
   contents: read
-  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # Job 1: Fast unit tests and coverage
   test:
     name: Unit Tests & Coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      with:
+        persist-credentials: false
 
     - name: Set up Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
       with:
         go-version-file: ${{ env.GO_VERSION_FILE }}
         cache: true
@@ -55,7 +64,7 @@ jobs:
 
     - name: Upload coverage to Codecov
       if: steps.detect.outputs.running_in_act != 'true'
-      uses: codecov/codecov-action@v7
+      uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7
       with:
         files: ./coverage.out
         flags: unittests
@@ -65,7 +74,7 @@ jobs:
 
     - name: Archive coverage report
       if: steps.detect.outputs.running_in_act != 'true'
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
       with:
         name: coverage-report
         path: coverage.out
@@ -81,13 +90,16 @@ jobs:
   race-tests:
     name: Race Detector Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      with:
+        persist-credentials: false
 
     - name: Set up Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
       with:
         go-version-file: ${{ env.GO_VERSION_FILE }}
         cache: true
@@ -102,13 +114,16 @@ jobs:
   lint:
     name: Linting & Code Quality
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      with:
+        persist-credentials: false
 
     - name: Set up Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
       with:
         go-version-file: ${{ env.GO_VERSION_FILE }}
         cache: true
@@ -120,7 +135,7 @@ jobs:
       run: ./scripts/check_api_file_size.sh 700 internal/api
 
     - name: Run golangci-lint
-      uses: golangci/golangci-lint-action@v9
+      uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9
       with:
         # Go 1.26 in go.mod requires a golangci-lint binary built with Go 1.26+.
         # v2.9.0+ satisfies this; pin to avoid version skew.
@@ -138,19 +153,22 @@ jobs:
   vuln:
     name: Vulnerability Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      with:
+        persist-credentials: false
 
     - name: Set up Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
       with:
         go-version-file: ${{ env.GO_VERSION_FILE }}
         cache: true
 
     - name: Install govulncheck
-      run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      run: go install golang.org/x/vuln/cmd/govulncheck@v1.5.0
 
     - name: Run govulncheck
       run: govulncheck ./...
@@ -160,13 +178,16 @@ jobs:
   test-windows:
     name: Unit Tests (Windows)
     runs-on: windows-latest
+    timeout-minutes: 25
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      with:
+        persist-credentials: false
 
     - name: Set up Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
       with:
         go-version-file: ${{ env.GO_VERSION_FILE }}
         cache: true
@@ -181,13 +202,16 @@ jobs:
   frontend-tests:
     name: Frontend Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      with:
+        persist-credentials: false
 
     - name: Set up Node.js
-      uses: actions/setup-node@v6
+      uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
       with:
         node-version: '22'
         cache: npm
@@ -203,21 +227,23 @@ jobs:
   build:
     name: Build Verification
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       with:
+        persist-credentials: false
         fetch-depth: 0
 
     - name: Set up Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
       with:
         go-version-file: ${{ env.GO_VERSION_FILE }}
         cache: true
 
     - name: Set up Node.js
-      uses: actions/setup-node@v6
+      uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
       with:
         node-version: '22'
         cache: npm
@@ -247,6 +273,10 @@ jobs:
           git status docs/swagger/
           exit 1
         fi
+      shell: bash
+
+    - name: Verify mockery mocks are up to date
+      run: make check-mocks
       shell: bash
 
     - name: Verify binary
@@ -284,11 +314,13 @@ jobs:
   docker-build:
     name: Docker Build Verification
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v5
+      uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       with:
+        persist-credentials: false
         fetch-depth: 0
 
     - name: Resolve version
@@ -306,10 +338,9 @@ jobs:
       run: echo "value=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v4
-
+      uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
     - name: Build Docker image
-      uses: docker/build-push-action@v7
+      uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
       with:
         context: .
         file: ./Dockerfile
@@ -330,3 +361,58 @@ jobs:
           echo "Docker image label version mismatch: $image_version"
           exit 1
         fi
+
+  # Job: Fullstack E2E — real browser → real SvelteKit frontend → real HTTP
+  # transport → real Go API server (cmd/javinizer-e2e with the deterministic
+  # e2emock scraper substituted at the scraper seam) → real worker pipeline →
+  # real :memory: SQLite. Hermetic + deterministic: no real network scraping.
+  # Playwright's webServer spawns both `go run ./cmd/javinizer-e2e` (on :18080)
+  # and the Vite dev server (on :5175), killing both on teardown.
+  # Gate merge: set this job as a required status check in branch protection.
+  fullstack-e2e:
+    name: Fullstack E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      with:
+        persist-credentials: false
+
+    - name: Set up Go
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      with:
+        go-version-file: ${{ env.GO_VERSION_FILE }}
+        cache: true
+
+    - name: Set up Node.js
+      uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      with:
+        node-version: '22'
+        cache: npm
+        cache-dependency-path: web/frontend/package-lock.json
+
+    - name: Install frontend dependencies
+      run: npm ci --prefix web/frontend
+
+    - name: Download Go dependencies
+      run: go mod download
+
+    - name: Install Playwright browsers
+      working-directory: web/frontend
+      run: npx playwright install --with-deps chromium
+
+    - name: Run fullstack E2E suite
+      run: make test-e2e-fullstack
+
+    - name: Upload Playwright artifacts
+      if: failure()
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+      with:
+        name: fullstack-e2e-artifacts
+        path: |
+          web/frontend/test-results/
+          web/frontend/playwright-report/
+        if-no-files-found: ignore
+        retention-days: 30

@@ -1,0 +1,146 @@
+# CodeRabbit configuration for javinizer-go
+#
+# Durable repo-level review policy. Production source is in scope; tests,
+# generated code (mocks, swagger), and lockfiles are excluded to keep focus
+# within the per-review file limit.
+#
+# path_instructions encode forward-looking guardrails (invariants that must
+# hold on future changes), not reminders of already-fixed bugs.
+
+reviews:
+  # Auto-review PRs; skip drafts.
+  auto_review:
+    enabled: true
+    drafts: false
+
+  high_level_summary: true
+  poem: false
+  # Post review-completion status to the PR (informational; does not fail
+  # the commit — failing on status is a separate pre-merge-checks feature).
+  review_status: true
+
+  path_filters:
+    # --- Excludes (tests, generated code, lockfiles, config noise) ---
+    - "!**/*_test.go"
+    - "!internal/mocks/**"
+    - "!docs/swagger/**"
+    - "!**/*.test.ts"
+    - "!**/*.test.tsx"
+    - "!**/*.spec.ts"
+    - "!**/*.spec.tsx"
+    - "!web/frontend/tests/**"
+    - "!.gitignore"
+    - "!.golangci.yml"
+    - "!.mockery.yaml"
+    - "!**/*.sum"
+    - "!**/*.lock"
+    - "!**/package.json"
+    - "!**/package-lock.json"
+
+  path_instructions:
+    # --- Worker / orchestration guardrails ---
+    - path: "internal/worker/job_store_persist.go"
+      instructions: >
+        Guardrail: wireJobDeps and reconstructBatchJob (job reconstruction
+        after server restart) must fully restore MovieRepo, BatchCfg,
+        PosterGen, and Matcher so post-restart apply/rescrape and movie-edit
+        persistence work.
+    - path: "internal/worker/job_store.go"
+      instructions: >
+        Guardrail: SetReconstructionDeps re-hydrates infrastructure
+        dependencies on jobs loaded from the database at startup; the
+        re-hydration loop must be thread-safe.
+    - path: "internal/worker/apply_phase.go"
+      instructions: >
+        Guardrail: applyFile's deferred withFileRecovery(rc, &outcome) must
+        propagate a recovered panic as Failed/Panic to trackApplyResults —
+        never silently mark a panicked file as organized.
+    - path: "internal/worker/batch_job.go"
+      instructions: >
+        Guardrail: excludeFile may only cancel Pending/Running jobs — never
+        clobber a terminal-success (Completed/Organized) job when its last
+        file is excluded.
+    - path: "internal/api/system/config.go"
+      instructions: >
+        Guardrail: HashProxyConfig failures must fail closed (return error)
+        at both validation and the ConfigUpdateMu save flow — never discard
+        a hash failure, or a token can be validated against the wrong proxy.
+    - path: "internal/api/system/translation.go"
+      instructions: >
+        Guardrail: DeepL base_url must be validated as a valid http(s) URL
+        before forwarding to fetchDeepLUsage, mirroring getTranslationModels;
+        reject with 400 to avoid 502 misclassification and SSRF.
+    - path: "internal/api/core/runtime_manager.go"
+      instructions: >
+        Guardrail: buildBatchJobFactory must call SetReconstructionDeps after
+        factory dependencies are available, so reconstructed jobs get the
+        correct BatchCfg/PosterGen/Matcher.
+    - path: "internal/api/core/config_narrowing.go"
+      instructions: >
+        Guardrail: APIConfig must surface download-proxy profiles
+        (cfg.Output.Download.DownloadProxy) so scrapers.go can offer
+        download_proxy.profile choices. Keep the Config-bridge reads comment
+        and bridges_doc.go reverse index in sync.
+    - path: "internal/workflow/compare_diff.go"
+      instructions: >
+        Guardrail: release_date must compare date-only formatted values
+        (formatTimePtr), not raw time.Time, to avoid timezone/time-of-day
+        false mismatches.
+
+    # --- Frontend ---
+    - path: "web/frontend/src/lib/api/**"
+      instructions: >
+        Focus: API client correctness (request/response typing, error handling, no silent fetch failures), query key stability across operation modes, no leaked API tokens in client code. Flag unhandled non-2xx responses or untyped any casts.
+    - path: "web/frontend/src/lib/stores/**"
+      instructions: >
+        Focus: Svelte store correctness (no cross-session/jobId state leak, reactive invariants, cleanup on unmount). Flag stores that retain stale state across navigations or fail to reset on jobId change.
+    - path: "web/frontend/src/routes/review/[jobId]/**"
+      instructions: >
+        Focus: review flow correctness (jobId-scoped state, monotonic progress bars driven by WS events, no race between WS updates and REST polling, preview/query keys include operation mode). Flag progress-bar regressions and session-state leaks.
+    - path: "web/frontend/src/lib/components/**"
+      instructions: >
+        Focus: component prop correctness (no unbounded reactivity loops, accessible labels, deterministic rendering from props). Flag components that mutate parent state without events.
+    - path: "web/frontend/src/**"
+      instructions: >
+        Focus: SvelteKit SPA correctness (no SSR leakage in adapter-static, import ordering, no unused exports), TypeScript type-safety (no any in public APIs). Flag unhandled promise rejections or missing loading/error states.
+    - path: "web/frontend/*.config.*"
+      instructions: >
+        Focus: build/test config correctness (vite, vitest, playwright, tailwind, svelte config) — no broken aliases, no disabled type-checking, E2E config targets real endpoints. Flag configs that silently skip tests or widen CSP unsafely.
+
+    # --- TUI + utils ---
+    - path: "internal/tui/**"
+      instructions: >
+        Focus: Bubble Tea model/view/handlers correctness (no goroutine leaks in event loop, clean program teardown, Update returns consistent model+cmd, no unbounded message buffer). Flag panics in view rendering or missing quit handling.
+    - path: "internal/models/**"
+      instructions: >
+        Focus: domain model correctness (GORM tags match schema, no nil-deref on optional pointer fields, JSON (de)serialization stable across versions). Flag models with unexported fields relied on by JSON or missing omitempty on optionals.
+    - path: "internal/commandutil/**"
+      instructions: >
+        Focus: Dependencies struct / DI wiring correctness (no nil dependencies reaching commands, interface contracts honored, options overrides applied). Flag commands that bypass DependenciesInterface or construct real deps in tests.
+    - path: "internal/update/**"
+      instructions: >
+        Focus: self-update correctness (download over HTTPS only, checksum/signature verification, atomic binary replace, no partial binary left on failure). Flag unverified downloads or insecure replace paths.
+    - path: "internal/configutil/**"
+      instructions: >
+        Focus: config helper correctness (env override precedence, no silent config drops, validation errors surfaced). Flag swallowed config-load errors or insecure default values.
+    - path: "internal/testutil/**"
+      instructions: >
+        Focus: test helper correctness (no production logic in helpers, helpers do not mask real failures, golden data loaded deterministically). Flag helpers that depend on filesystem state outside the test.
+    - path: "internal/logging/**"
+      instructions: >
+        Focus: logger correctness (atomic config reload, no cached logger references that miss reloads, no credential leakage in formatted output, rotation handles closed cleanly). Flag logger state races or unclosed file handles.
+    - path: "internal/operationmode/**"
+      instructions: >
+        Focus: operation mode enum correctness (no stringly-typed comparisons outside the package, all modes covered in switches). Flag missing default cases or modes referenced as raw strings.
+    - path: "internal/version/**"
+      instructions: >
+        Focus: version metadata correctness (ldflags-injectable vars, no hardcoded dev values in release paths). Flag vars that cannot be overridden at build time.
+    - path: "internal/panicutil/**"
+      instructions: >
+        Focus: panic recovery helper correctness (recovered value captured, stack not leaked to end users, re-panic semantics documented). Flag recover handlers that swallow panics silently.
+    - path: "internal/enumutil/**"
+      instructions: >
+        Focus: enum helper correctness (deterministic ordering, no panics on unknown values). Flag reflection-based lookups without bounded input.
+    - path: "internal/coverage/**"
+      instructions: >
+        Focus: coverage enforcement tool correctness (threshold computation, no false pass on missing packages). Flag coverage checks that ignore test build failures.

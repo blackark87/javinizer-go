@@ -55,7 +55,12 @@ export interface ScrapeRequest {
 	selected_scrapers?: string[];
 }
 
-export type OperationMode = 'organize' | 'in-place' | 'in-place-norenamefolder' | 'metadata-artwork' | 'preview';
+export type OperationMode =
+	| 'organize'
+	| 'in-place'
+	| 'in-place-norenamefolder'
+	| 'metadata-artwork'
+	| 'preview';
 
 export interface BatchScrapeRequest {
 	files: string[];
@@ -65,7 +70,12 @@ export interface BatchScrapeRequest {
 	update?: boolean;
 	selected_scrapers?: string[];
 	preset?: 'conservative' | 'gap-fill' | 'aggressive'; // Merge strategy preset (overrides scalar/array)
-	scalar_strategy?: 'prefer-nfo' | 'prefer-scraper' | 'preserve-existing' | 'fill-missing-only';
+	scalar_strategy?:
+		| 'prefer-nfo'
+		| 'prefer-scraper'
+		| 'preserve-existing'
+		| 'fill-missing-only'
+		| 'merge-arrays';
 	array_strategy?: 'merge' | 'replace';
 	operation_mode?: OperationMode; // Per-request override of config operation_mode
 }
@@ -101,7 +111,12 @@ export interface BatchRescrapeRequest {
 	selected_scrapers?: string[];
 	manual_search_input?: string;
 	preset?: 'conservative' | 'gap-fill' | 'aggressive'; // Merge strategy preset (overrides scalar/array)
-	scalar_strategy?: 'prefer-nfo' | 'prefer-scraper' | 'preserve-existing' | 'fill-missing-only';
+	scalar_strategy?:
+		| 'prefer-nfo'
+		| 'prefer-scraper'
+		| 'preserve-existing'
+		| 'fill-missing-only'
+		| 'merge-arrays';
 	array_strategy?: 'merge' | 'replace';
 }
 
@@ -116,7 +131,12 @@ export interface BulkRescrapeRequest {
 	selected_scrapers?: string[];
 	force?: boolean;
 	preset?: 'conservative' | 'gap-fill' | 'aggressive';
-	scalar_strategy?: 'prefer-nfo' | 'prefer-scraper' | 'preserve-existing' | 'fill-missing-only';
+	scalar_strategy?:
+		| 'prefer-nfo'
+		| 'prefer-scraper'
+		| 'preserve-existing'
+		| 'fill-missing-only'
+		| 'merge-arrays';
 	array_strategy?: 'merge' | 'replace';
 }
 
@@ -160,7 +180,12 @@ export interface FieldDifference {
 export interface NFOComparisonRequest {
 	nfo_path?: string;
 	preset?: 'conservative' | 'gap-fill' | 'aggressive';
-	scalar_strategy?: 'prefer-nfo' | 'prefer-scraper' | 'preserve-existing' | 'fill-missing-only';
+	scalar_strategy?:
+		| 'prefer-nfo'
+		| 'prefer-scraper'
+		| 'preserve-existing'
+		| 'fill-missing-only'
+		| 'merge-arrays';
 	array_strategy?: 'merge' | 'replace';
 	selected_scrapers?: string[];
 }
@@ -187,16 +212,14 @@ export interface FileResult {
 	movie_id: string;
 	status: string;
 	error?: string;
-	poster_error?: string;
-	translation_warning?: string;
 	field_sources?: Record<string, string>;
 	actress_sources?: Record<string, string>;
-	data?: Movie;
+	movie?: Movie;
 	started_at: string;
 	ended_at?: string;
-	is_multi_part?: boolean;
-	part_number?: number;
-	part_suffix?: string;
+	is_multi_part: boolean;
+	part_number: number;
+	part_suffix: string;
 }
 
 export interface BatchJobResponse {
@@ -216,6 +239,7 @@ export interface BatchJobResponse {
 	completed_at?: string;
 	operation_mode_override?: string;
 	update: boolean;
+	persist_error?: string;
 }
 
 export interface ProgressMessage {
@@ -226,6 +250,14 @@ export interface ProgressMessage {
 	progress: number;
 	message: string;
 	error?: string;
+	// Authoritative job-level counts stamped by the backend (see
+	// batch.stampJobCounts) on every emitted message, so frontend consumers can
+	// compute monotonic progress WITHOUT inferring totals from message counts
+	// (the iter-6 MAJOR regression, revert 30e6e53f). Optional/omitted on the
+	// wire before the job snapshot is available; consumers fall back to REST.
+	total_files?: number;
+	completed?: number;
+	failed?: number;
 }
 
 export interface Genre {
@@ -287,7 +319,7 @@ export interface WordReplacementUpdateRequest {
 
 export interface Movie {
 	id: string;
-	content_id?: string;
+	code?: string;
 	title: string;
 	display_title?: string;
 	original_title?: string;
@@ -436,7 +468,12 @@ export interface UpdateRequest {
 	force_overwrite?: boolean;
 	preserve_nfo?: boolean;
 	preset?: 'conservative' | 'gap-fill' | 'aggressive';
-	scalar_strategy?: 'prefer-scraper' | 'prefer-nfo' | 'preserve-existing' | 'fill-missing-only';
+	scalar_strategy?:
+		| 'prefer-nfo'
+		| 'prefer-scraper'
+		| 'preserve-existing'
+		| 'fill-missing-only'
+		| 'merge-arrays';
 	array_strategy?: 'merge' | 'replace';
 	skip_nfo?: boolean;
 	skip_download?: boolean;
@@ -755,19 +792,19 @@ export interface WordReplacementConfig {
 }
 
 export interface CompletenessTierDefinition {
-    weight: number;
-    fields: string[];
+	weight: number;
+	fields: string[];
 }
 
 export interface CompletenessTierConfig {
-    essential: CompletenessTierDefinition;
-    important: CompletenessTierDefinition;
-    nice_to_have: CompletenessTierDefinition;
+	essential: CompletenessTierDefinition;
+	important: CompletenessTierDefinition;
+	nice_to_have: CompletenessTierDefinition;
 }
 
 export interface CompletenessConfig {
-    enabled: boolean;
-    tiers: CompletenessTierConfig;
+	enabled: boolean;
+	tiers: CompletenessTierConfig;
 }
 
 export interface MetadataConfig {
@@ -849,7 +886,17 @@ export interface ScrapersConfig {
 	scrape_actress?: boolean;
 	browser?: BrowserConfig;
 	proxy?: ProxyConfig;
-	[key: string]: ScraperSettings | string | number | boolean | null | string[] | FlareSolverrConfig | BrowserConfig | ProxyConfig | undefined;
+	[key: string]:
+		| ScraperSettings
+		| string
+		| number
+		| boolean
+		| null
+		| string[]
+		| FlareSolverrConfig
+		| BrowserConfig
+		| ProxyConfig
+		| undefined;
 }
 
 // Config types
@@ -1000,6 +1047,7 @@ export interface RevertResultResponse {
 	total: number;
 	succeeded: number;
 	failed: number;
+	skipped: number;
 	errors?: RevertFileError[];
 }
 
@@ -1009,6 +1057,8 @@ export interface RevertFileError {
 	original_path: string;
 	new_path: string;
 	error: string;
+	outcome?: string;
+	reason?: string;
 }
 
 // Event types (Logs page)

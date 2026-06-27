@@ -10,6 +10,7 @@ import (
 	tuicmd "github.com/javinizer/javinizer-go/cmd/javinizer/commands/tui"
 	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/logging"
+	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/version"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -136,7 +137,7 @@ func TestInitConfig_EnvironmentOverride(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "env-config.yaml")
 
 	// Create a valid config file
-	testCfg := config.DefaultConfig()
+	testCfg := config.DefaultConfig(nil, nil)
 	testCfg.Database.DSN = filepath.Join(tmpDir, "test.db")
 	testCfg.Logging.Output = filepath.Join(tmpDir, "logs")
 	err := config.Save(testCfg, configPath)
@@ -150,8 +151,8 @@ func TestInitConfig_EnvironmentOverride(t *testing.T) {
 
 	// Call initConfig - it should use JAVINIZER_CONFIG
 	// We need to ensure the logger can be initialized
-	defer logging.CloseLogger()
 	initConfig()
+	defer logging.InitLogger(&logging.Config{Level: "info", Format: "text", Output: "stdout"})
 
 	// Verify cfgFile was set from environment variable
 	assert.Equal(t, configPath, cfgFile, "cfgFile should be set from JAVINIZER_CONFIG env var")
@@ -162,7 +163,7 @@ func TestInitConfig_VerboseFlagSetsDebug(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "verbose-config.yaml")
 
-	testCfg := config.DefaultConfig()
+	testCfg := config.DefaultConfig(nil, nil)
 	testCfg.Database.DSN = filepath.Join(tmpDir, "test.db")
 	testCfg.Logging.Output = filepath.Join(tmpDir, "logs")
 	testCfg.Logging.Level = "info" // Start with info level
@@ -182,8 +183,8 @@ func TestInitConfig_VerboseFlagSetsDebug(t *testing.T) {
 	verboseFlag = true
 
 	// Call initConfig
-	defer logging.CloseLogger()
 	initConfig()
+	defer logging.InitLogger(&logging.Config{Level: "info", Format: "text", Output: "stdout"})
 
 	// The verbose flag should cause debug logging
 	// We verify this indirectly by checking the flag was processed
@@ -195,14 +196,14 @@ func TestInitConfig_ProxyValidation_EmptyURL(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "proxy-empty-config.yaml")
 
-	testCfg := config.DefaultConfig()
+	testCfg := config.DefaultConfig(nil, nil)
 	testCfg.Database.DSN = filepath.Join(tmpDir, "test.db")
 	testCfg.Logging.Output = filepath.Join(tmpDir, "logs")
 
 	// Enable proxy with empty profile URL - initConfig should disable it
 	testCfg.Scrapers.Proxy.Enabled = true
 	testCfg.Scrapers.Proxy.DefaultProfile = "main"
-	testCfg.Scrapers.Proxy.Profiles = map[string]config.ProxyProfile{
+	testCfg.Scrapers.Proxy.Profiles = map[string]models.ProxyProfile{
 		"main": {URL: ""},
 	}
 
@@ -216,8 +217,8 @@ func TestInitConfig_ProxyValidation_EmptyURL(t *testing.T) {
 	cfgFile = configPath
 
 	// Call initConfig - it should warn and disable the proxy
-	defer logging.CloseLogger()
 	initConfig()
+	defer logging.InitLogger(&logging.Config{Level: "info", Format: "text", Output: "stdout"})
 
 	// Test passes if initConfig doesn't panic or exit
 	// The proxy disabled logic is tested by the fact that initConfig completes
@@ -228,14 +229,14 @@ func TestInitConfig_ProxyValidation_ValidURL(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "proxy-valid-config.yaml")
 
-	testCfg := config.DefaultConfig()
+	testCfg := config.DefaultConfig(nil, nil)
 	testCfg.Database.DSN = filepath.Join(tmpDir, "test.db")
 	testCfg.Logging.Output = filepath.Join(tmpDir, "logs")
 
 	// Enable proxy with valid profile URL
 	testCfg.Scrapers.Proxy.Enabled = true
 	testCfg.Scrapers.Proxy.DefaultProfile = "main"
-	testCfg.Scrapers.Proxy.Profiles = map[string]config.ProxyProfile{
+	testCfg.Scrapers.Proxy.Profiles = map[string]models.ProxyProfile{
 		"main": {URL: "http://proxy.example.com:8080"},
 	}
 
@@ -249,8 +250,8 @@ func TestInitConfig_ProxyValidation_ValidURL(t *testing.T) {
 	cfgFile = configPath
 
 	// Call initConfig - it should accept the valid proxy
-	defer logging.CloseLogger()
 	initConfig()
+	defer logging.InitLogger(&logging.Config{Level: "info", Format: "text", Output: "stdout"})
 
 	// Test passes if initConfig doesn't panic or exit
 }
@@ -260,19 +261,19 @@ func TestInitConfig_DownloadProxyValidation(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "download-proxy-config.yaml")
 
-	testCfg := config.DefaultConfig()
+	testCfg := config.DefaultConfig(nil, nil)
 	testCfg.Database.DSN = filepath.Join(tmpDir, "test.db")
 	testCfg.Logging.Output = filepath.Join(tmpDir, "logs")
 
 	// Test valid profile case
 	testCfg.Scrapers.Proxy.Enabled = true
 	testCfg.Scrapers.Proxy.DefaultProfile = "main"
-	testCfg.Scrapers.Proxy.Profiles = map[string]config.ProxyProfile{
+	testCfg.Scrapers.Proxy.Profiles = map[string]models.ProxyProfile{
 		"main":     {URL: "http://proxy.example.com:8080"},
 		"download": {URL: "socks5://localhost:1080"},
 	}
-	testCfg.Output.DownloadProxy.Enabled = true
-	testCfg.Output.DownloadProxy.Profile = "download"
+	testCfg.Output.Download.DownloadProxy.Enabled = true
+	testCfg.Output.Download.DownloadProxy.Profile = "download"
 
 	err := config.Save(testCfg, configPath)
 	require.NoError(t, err, "Failed to save test config")
@@ -284,8 +285,8 @@ func TestInitConfig_DownloadProxyValidation(t *testing.T) {
 	cfgFile = configPath
 
 	// Call initConfig
-	defer logging.CloseLogger()
 	initConfig()
+	defer logging.InitLogger(&logging.Config{Level: "info", Format: "text", Output: "stdout"})
 
 	// Test passes if initConfig doesn't panic
 }
@@ -295,7 +296,7 @@ func TestInitConfig_UmaskValid(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "umask-config.yaml")
 
-	testCfg := config.DefaultConfig()
+	testCfg := config.DefaultConfig(nil, nil)
 	testCfg.Database.DSN = filepath.Join(tmpDir, "test.db")
 	testCfg.Logging.Output = filepath.Join(tmpDir, "logs")
 	testCfg.System.Umask = "0022"
@@ -310,8 +311,8 @@ func TestInitConfig_UmaskValid(t *testing.T) {
 	cfgFile = configPath
 
 	// Call initConfig - should apply umask without error
-	defer logging.CloseLogger()
 	initConfig()
+	defer logging.InitLogger(&logging.Config{Level: "info", Format: "text", Output: "stdout"})
 
 	// Test passes if initConfig doesn't panic
 }
@@ -321,7 +322,7 @@ func TestInitConfig_UmaskInvalid(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "umask-invalid-config.yaml")
 
-	testCfg := config.DefaultConfig()
+	testCfg := config.DefaultConfig(nil, nil)
 	testCfg.Database.DSN = filepath.Join(tmpDir, "test.db")
 	testCfg.Logging.Output = filepath.Join(tmpDir, "logs")
 	testCfg.System.Umask = "invalid" // Invalid umask
@@ -336,8 +337,8 @@ func TestInitConfig_UmaskInvalid(t *testing.T) {
 	cfgFile = configPath
 
 	// Call initConfig - should warn but not fail
-	defer logging.CloseLogger()
 	initConfig()
+	defer logging.InitLogger(&logging.Config{Level: "info", Format: "text", Output: "stdout"})
 
 	// Test passes if initConfig doesn't panic (it should warn but continue)
 }
@@ -350,7 +351,7 @@ func TestInitConfig_MultipleEnvironmentVariables(t *testing.T) {
 	logDir := filepath.Join(tmpDir, "logs")
 
 	// Create a valid config file
-	testCfg := config.DefaultConfig()
+	testCfg := config.DefaultConfig(nil, nil)
 	testCfg.Database.DSN = dbPath
 	testCfg.Logging.Output = logDir
 	err := config.Save(testCfg, configPath)
@@ -370,8 +371,8 @@ func TestInitConfig_MultipleEnvironmentVariables(t *testing.T) {
 	cfgFile = ""
 
 	// Call initConfig with all env vars set
-	defer logging.CloseLogger()
 	initConfig()
+	defer logging.InitLogger(&logging.Config{Level: "info", Format: "text", Output: "stdout"})
 
 	// Test passes if initConfig doesn't panic with multiple env vars
 }
@@ -448,7 +449,7 @@ func TestInitConfig_TUICommandStripsStdoutFromStartup(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "tui-startup.yaml")
 	logFile := filepath.Join(tmpDir, "tui-startup.log")
 
-	testCfg := config.DefaultConfig()
+	testCfg := config.DefaultConfig(nil, nil)
 	testCfg.Database.DSN = filepath.Join(tmpDir, "test.db")
 	testCfg.Logging.Output = "stdout," + logFile // dual output — would leak without the fix
 	require.NoError(t, config.Save(testCfg, configPath))
@@ -506,7 +507,7 @@ func TestInitConfig_TUICommandWithJavinizerLogDir_PreservesRelocation(t *testing
 	configPath := filepath.Join(tmpDir, "logdir.yaml")
 	logDir := filepath.Join(tmpDir, "customlogs")
 
-	testCfg := config.DefaultConfig()
+	testCfg := config.DefaultConfig(nil, nil)
 	testCfg.Database.DSN = filepath.Join(tmpDir, "test.db")
 	testCfg.Logging.Output = "stdout,data/logs/javinizer.log"
 	require.NoError(t, config.Save(testCfg, configPath))
@@ -559,7 +560,7 @@ func TestInitConfig_TUICommandPureStdoutWithLogDir(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "purestdout.yaml")
 	logDir := filepath.Join(tmpDir, "envlogs")
 
-	testCfg := config.DefaultConfig()
+	testCfg := config.DefaultConfig(nil, nil)
 	testCfg.Database.DSN = filepath.Join(tmpDir, "test.db")
 	testCfg.Logging.Output = "stdout" // no file target at all
 	require.NoError(t, config.Save(testCfg, configPath))
@@ -614,7 +615,7 @@ func TestInitConfig_TUICommandWithVerbose_DebugLevelFileOnly(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "verbose.yaml")
 	logFile := filepath.Join(tmpDir, "verbose.log")
 
-	testCfg := config.DefaultConfig()
+	testCfg := config.DefaultConfig(nil, nil)
 	testCfg.Database.DSN = filepath.Join(tmpDir, "test.db")
 	testCfg.Logging.Output = "stdout," + logFile
 	testCfg.Logging.Level = "info"
@@ -666,7 +667,7 @@ func TestInitConfig_TUICommandStripsStderr(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "stderr.yaml")
 	logFile := filepath.Join(tmpDir, "stderr.log")
 
-	testCfg := config.DefaultConfig()
+	testCfg := config.DefaultConfig(nil, nil)
 	testCfg.Database.DSN = filepath.Join(tmpDir, "test.db")
 	testCfg.Logging.Output = "stdout,stderr," + logFile
 	require.NoError(t, config.Save(testCfg, configPath))
@@ -727,7 +728,7 @@ func TestInitConfig_NonTUICommand_KeepsStdoutOutput(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "nontui.yaml")
 	logFile := filepath.Join(tmpDir, "nontui.log")
 
-	testCfg := config.DefaultConfig()
+	testCfg := config.DefaultConfig(nil, nil)
 	testCfg.Database.DSN = filepath.Join(tmpDir, "test.db")
 	testCfg.Logging.Output = "stdout," + logFile
 	require.NoError(t, config.Save(testCfg, configPath))

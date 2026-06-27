@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/javinizer/javinizer-go/internal/scraperutil"
-	"github.com/javinizer/javinizer-go/internal/types"
+	"github.com/javinizer/javinizer-go/internal/models"
+	"github.com/javinizer/javinizer-go/internal/operationmode"
 )
 
 func normalizeField(value *string, defaultValue string, toLower bool) bool {
@@ -26,19 +26,36 @@ func normalizeField(value *string, defaultValue string, toLower bool) bool {
 	return true
 }
 
+// normalizeTranslationMode normalizes a typed mode field (DeepLMode or GoogleMode).
+// It trims whitespace, lowercases, and sets a default if empty.
+func normalizeTranslationMode[T ~string](value *T, defaultValue T) bool {
+	if value == nil {
+		return false
+	}
+	normalized := T(strings.ToLower(strings.TrimSpace(string(*value))))
+	if normalized == "" {
+		normalized = defaultValue
+	}
+	if *value == normalized {
+		return false
+	}
+	*value = normalized
+	return true
+}
+
 func normalizeTranslationConfig(t *TranslationConfig) bool {
 	if t == nil {
 		return false
 	}
 
 	changed := false
-	changed = normalizeField(&t.Provider, "openai", true) || changed
+	changed = normalizeField(&t.Provider, translationProviderOpenAI, true) || changed
 	changed = normalizeField(&t.SourceLanguage, "auto", false) || changed
 	changed = normalizeField(&t.TargetLanguage, "ja", false) || changed
 	changed = normalizeField(&t.OpenAI.BaseURL, "https://api.openai.com/v1", false) || changed
 	changed = normalizeField(&t.OpenAI.Model, "gpt-4o-mini", false) || changed
-	changed = normalizeField(&t.DeepL.Mode, "free", true) || changed
-	changed = normalizeField(&t.Google.Mode, "free", true) || changed
+	changed = normalizeTranslationMode(&t.DeepL.Mode, models.DeepLModeFree) || changed
+	changed = normalizeTranslationMode(&t.Google.Mode, models.GoogleModeFree) || changed
 
 	if t.TimeoutSeconds <= 0 {
 		t.TimeoutSeconds = 60
@@ -48,16 +65,14 @@ func normalizeTranslationConfig(t *TranslationConfig) bool {
 	return changed
 }
 
-// Normalize applies idempotent value normalization to config data.
-func Normalize(cfg *Config) bool {
+// normalize applies idempotent value normalization to config data.
+func normalize(cfg *Config) bool {
 	if cfg == nil {
 		return false
 	}
 
 	// Ensure Overrides is populated before accessing it.
-	// This handles the case where a config was loaded via JSON (which doesn't
-	// call NormalizeScraperConfigs like Load() does for YAML).
-	cfg.Scrapers.NormalizeScraperConfigs()
+	cfg.Scrapers.Normalize()
 
 	changed := false
 	changed = normalizeField(&cfg.Database.Type, "sqlite", true) || changed
@@ -67,7 +82,7 @@ func Normalize(cfg *Config) bool {
 	// InitLogger with no valid targets, which now errors instead of silently
 	// falling back to stdout.
 	if strings.TrimSpace(cfg.Logging.Output) == "" {
-		cfg.Logging.Output = DefaultConfig().Logging.Output
+		cfg.Logging.Output = DefaultConfig(nil, nil).Logging.Output
 		changed = true
 	}
 
@@ -81,13 +96,17 @@ func Normalize(cfg *Config) bool {
 	}
 
 	for name, defaultLang := range languageDefaults {
-		if _, registered := scraperutil.GetDefaultScraperSettings()[name]; registered {
-			if scraper, ok := cfg.Scrapers.Overrides[name]; ok && scraper != nil {
-				changed = normalizeField(&scraper.Language, defaultLang, true) || changed
+		if _, ok := cfg.Scrapers.Overrides[name]; ok {
+			if scraper := cfg.Scrapers.Overrides[name]; scraper != nil {
+				// Only set default when empty — trim/lowercase happens in Validate(),
+				// not normalize(), so the original value (including whitespace) is preserved.
+				if strings.TrimSpace(scraper.Language) == "" {
+					scraper.Language = defaultLang
+					changed = true
+				}
 			}
 		}
 	}
-
 	if strings.TrimSpace(cfg.Scrapers.Referer) == "" {
 		cfg.Scrapers.Referer = "https://www.dmm.co.jp/"
 		changed = true
@@ -103,15 +122,15 @@ func Normalize(cfg *Config) bool {
 	// non-empty AND the new field still holds the default ', '. This preserves
 	// pre-rename user settings without clobbering an explicitly-set new key
 	// that happens to equal the default.
-	defaultDelim := DefaultConfig().Output.ActressDelimiter
-	if cfg.Output.LegacyDelimiter != "" && cfg.Output.ActressDelimiter == defaultDelim && cfg.Output.LegacyDelimiter != defaultDelim {
-		cfg.Output.ActressDelimiter = cfg.Output.LegacyDelimiter
-		cfg.Output.LegacyDelimiter = ""
+	defaultDelim := ", " // matches defaultOutputConfig().Output.Template.ActressDelimiter
+	if cfg.Output.Template.LegacyDelimiter != "" && cfg.Output.Template.ActressDelimiter == defaultDelim && cfg.Output.Template.LegacyDelimiter != defaultDelim {
+		cfg.Output.Template.ActressDelimiter = cfg.Output.Template.LegacyDelimiter
+		cfg.Output.Template.LegacyDelimiter = ""
 		changed = true
 	}
 
-	if cfg.Output.OperationMode == "" {
-		cfg.Output.OperationMode = types.OperationModeOrganize
+	if cfg.Output.Operation.OperationMode == "" {
+		cfg.Output.Operation.OperationMode = operationmode.OperationModeOrganize
 		changed = true
 	}
 
@@ -133,7 +152,21 @@ func Prepare(cfg *Config) (bool, error) {
 		)
 	}
 
-	normalized := Normalize(cfg)
+	normalized := normalize(cfg)
+
+	// An explicitly empty scrapers.priority (yaml `priority: []` or `priority:
+	// null`) means the user configured no scrapers. DefaultConfig seeds the
+	// 14-scraper default before user values overlay during Load, so by the time
+	// Prepare runs an empty slice uniquely identifies that explicit intent (a
+	// missing key keeps the default). Without this guard the aggregator's
+	// resolved priorities would be empty and every assign* loop would iterate
+	// nothing -> a blank movie (silent data loss). Surface it as a config error.
+	// (Cycle-1 MINOR-8.) This lives in Prepare (not ValidateConfig) so pure
+	// validation tests that build minimal Config structs for unrelated fields
+	// (e.g. FlareSolverr) are not forced to set a priority.
+	if len(cfg.Scrapers.Priority) == 0 {
+		return normalized, fmt.Errorf("scrapers.priority must list at least one scraper (it is empty — set it to a scraper name or remove the key to use the default order)")
+	}
 
 	if err := cfg.Validate(); err != nil {
 		return normalized, fmt.Errorf("invalid configuration: %w", err)

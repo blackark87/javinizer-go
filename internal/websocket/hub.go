@@ -9,21 +9,37 @@ import (
 	"github.com/javinizer/javinizer-go/internal/logging"
 )
 
-// ProgressMessage represents a progress update message
+// ProgressMessage represents a progress update message.
+//
+// TotalFiles/Completed/Failed carry AUTHORITATIVE job-level counts (read from
+// job.GetStatus() under the status lock by the broadcast layer — see
+// batch.stampJobCounts). They are stamped on every emitted message so any
+// latest-message read has them. Frontend consumers (Home "Current Activity"
+// bar, BackgroundJobIndicator, ProgressModal) MUST use these instead of
+// inferring totals from message counts (msgs.length / Object.values(files).
+// length) — that proxy was the iter-6 MAJOR regression (revert 30e6e53f): for
+// organize, messagesByFile holds only terminal per-file 'organized'/'updated'
+// messages (Progress:100), so finished/total pegged at 100% after the first
+// file. The omitempty keeps the wire compact for older/tests paths that don't
+// stamp them.
 type ProgressMessage struct {
-	JobID     string  `json:"job_id"`
-	FileIndex int     `json:"file_index"`
-	FilePath  string  `json:"file_path"`
-	Status    string  `json:"status"`
-	Progress  float64 `json:"progress"`
-	Message   string  `json:"message"`
-	Error     string  `json:"error,omitempty"`
+	JobID      string         `json:"job_id"`
+	FileIndex  int            `json:"file_index"`
+	FilePath   string         `json:"file_path"`
+	Status     ProgressStatus `json:"status"`
+	Progress   float64        `json:"progress"`
+	Message    string         `json:"message"`
+	Error      string         `json:"error,omitempty"`
+	TotalFiles int            `json:"total_files"`
+	Completed  int            `json:"completed"`
+	Failed     int            `json:"failed"`
 }
 
 // Client represents a websocket client
 type Client struct {
-	conn *websocket.Conn
-	send chan []byte
+	conn      *websocket.Conn
+	send      chan []byte
+	closeSend sync.Once
 }
 
 // Hub maintains the set of active clients and broadcasts messages to them
@@ -42,8 +58,8 @@ func NewHub() *Hub {
 	return &Hub{
 		clients:    make(map[*Client]bool),
 		broadcast:  make(chan []byte, 256),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
+		register:   make(chan *Client, 8),
+		unregister: make(chan *Client, 8),
 		done:       make(chan struct{}),
 	}
 }
@@ -67,7 +83,7 @@ func (h *Hub) Run(ctx context.Context) {
 
 			// Clean up clients without holding lock
 			for _, client := range clients {
-				close(client.send)
+				client.closeSendChan()
 			}
 			logging.Infof("WebSocket hub stopped")
 			return
@@ -82,7 +98,7 @@ func (h *Hub) Run(ctx context.Context) {
 			h.mu.Lock()
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
-				close(client.send)
+				client.closeSendChan()
 			}
 			h.mu.Unlock()
 			logging.Infof("WebSocket client disconnected. Total clients: %d", len(h.clients))
@@ -103,8 +119,7 @@ func (h *Hub) Run(ctx context.Context) {
 				case client.send <- message:
 					// Message sent successfully
 				default:
-					// Client's send channel is full, mark for removal
-					close(client.send)
+					client.closeSendChan()
 					toRemove = append(toRemove, client)
 				}
 			}
@@ -152,7 +167,7 @@ func (h *Hub) Unregister(client *Client) {
 }
 
 // Broadcast sends a message to all connected clients
-func (h *Hub) Broadcast(message interface{}) error {
+func (h *Hub) Broadcast(message any) error {
 	// Handle nil hub (can occur during cleanup in tests when hub is being replaced)
 	if h == nil {
 		return nil // Silently ignore broadcasts to nil hub
@@ -168,7 +183,10 @@ func (h *Hub) Broadcast(message interface{}) error {
 	case h.broadcast <- data:
 		return nil
 	default:
-		// Hub is busy or shutting down, drop the message to avoid blocking
+		// Hub is busy or shutting down, drop the message to avoid blocking.
+		// Logged at debug (not warn) because a saturated hub can drop frames at a
+		// high rate under load; warning per-drop would flood the logs.
+		logging.Debugf("WebSocket hub: broadcast message dropped (channel full)")
 		return nil
 	}
 }
@@ -184,6 +202,12 @@ func NewClient(conn *websocket.Conn) *Client {
 		conn: conn,
 		send: make(chan []byte, 256),
 	}
+}
+
+func (c *Client) closeSendChan() {
+	c.closeSend.Do(func() {
+		close(c.send)
+	})
 }
 
 // WritePump pumps messages from the hub to the websocket connection

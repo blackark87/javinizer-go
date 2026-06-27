@@ -114,15 +114,20 @@ func acceptsHTML(c *gin.Context) bool {
 }
 
 // NewServer creates and configures the Gin router with all API endpoints.
-func NewServer(deps *core.ServerDependencies) *gin.Engine {
-	runtime := deps.EnsureRuntime()
-	core.SetDefaultRuntimeState(runtime)
+// NewServer builds the Gin engine from an APIRuntime. The runtime must be
+// initialized (InitAPIConfig called) — BootstrapAPI handles this. Callers
+// that construct APIDeps directly (e.g. tests) should create the APIRuntime
+// via NewAPIRuntime and call InitAPIConfig before passing it here.
+func NewServer(rt *core.APIRuntime) *gin.Engine {
+	rt.InitAPIConfig()
+
+	runtime := rt.EnsureRuntime()
 	runtime.ResetWebSocketHub()
 
 	runtime.SetWebSocketUpgrader(websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			origin := r.Header.Get("Origin")
-			allowedOrigins := deps.GetConfig().API.Security.AllowedOrigins
+			allowedOrigins := rt.GetAPIConfig().AllowedOrigins
 			if origin != "" && isSameOrigin(origin, r) {
 				return true
 			}
@@ -137,17 +142,17 @@ func NewServer(deps *core.ServerDependencies) *gin.Engine {
 		},
 	})
 
-	if deps.GetConfig().Logging.Level != "debug" {
+	if rt.GetAPIConfig().LogLevel != "debug" {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
 	router := gin.Default()
 	webAssets := loadWebUIAssets()
 
-	registerCORSMiddleware(router, deps)
+	registerCORSMiddleware(router, rt)
 	registerDocumentationRoutes(router)
-	registerCoreRoutes(router, deps)
-	registerAPIV1Routes(router, deps)
+	registerCoreRoutes(router, rt)
+	registerAPIV1Routes(router, rt)
 	registerStaticWebRoutes(router, webAssets)
 	registerNoRouteHandler(router, webAssets)
 	logRegisteredRoutes(router)

@@ -11,8 +11,10 @@
 # Output of the go build
 /bin/
 /dist/
+/tmp/
 javinizer-go
 /javinizer
+/javinizer-e2e
 
 # Web build artifacts
 /web/frontend/node_modules/
@@ -20,6 +22,9 @@ javinizer-go
 /web/frontend/build/
 /web/frontend/test-results/
 /web/frontend/tests/e2e/auth-state.json
+/web/frontend/playwright-report/
+/web/frontend/blob-report/
+/web/frontend/playwright/.cache/
 /web/dist/*
 !/web/dist/robots.txt
 !/web/dist/index.html
@@ -44,8 +49,11 @@ Thumbs.db
 
 # Application
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
+*.log
 *.migration.lock
 /data/
 /downloads/
@@ -55,6 +63,7 @@ Thumbs.db
 config.local.yaml
 configs/config.yaml
 configs/auth.credentials.json
+/auth.credentials.json
 auth.sessions.json
 
 # Docker configuration
@@ -63,10 +72,16 @@ auth.sessions.json
 # Test files
 /test-videos/
 /cli
+cmd/javinizer/commands/update/*.jpg
+cmd/javinizer/commands/update/*.mp4
+cmd/javinizer/commands/update/*.nfo
+cmd/javinizer/commands/update/.actors/
+cmd/javinizer/commands/update/extrafanart/
 
 # Coverage files
 *.out
 coverage*.out
+coveragecheck
 coverage.html
 *.coverprofile
 COVERAGE_REPORT.md
@@ -106,3 +121,6 @@ graphify-out/
 
 # Pi project-local packages (if using pi install -l)
 .pi/npm/
+
+# Agent scratch files
+.scratch/

@@ -212,34 +212,71 @@
 			<DatabaseSettingsSection config={settings.settingsConfig} inputClass={settings.inputClass} />
 			<ApiTokensSection onTokenDisplay={handleTokenDisplay} />
 			<SettingsSection title="Genre Replacements" description="Manage genre name replacements applied during scraping" defaultExpanded={false}>
-				<div class="flex items-center justify-between">
-					<p class="text-sm text-muted-foreground">
-						Manage genre name replacements that are applied during scraping.
-					</p>
-					<a href="/genres">
-						<Button variant="outline" size="sm">
-							{#snippet children()}
-								<Tags class="h-4 w-4 mr-1" />
-								Manage Genres
-							{/snippet}
-						</Button>
-					</a>
+				<div class="space-y-4">
+					<FormToggle
+						label="Enable genre replacement"
+						description="Normalize genre names using exact-match mappings from the database"
+						checked={settings.settingsConfig.metadata.genre_replacement?.enabled ?? false}
+						onchange={(val) => {
+							const cfg = settings.settingsConfig;
+							if (!cfg) return;
+							if (!cfg.metadata.genre_replacement) cfg.metadata.genre_replacement = {};
+							cfg.metadata.genre_replacement.enabled = val;
+						}}
+					/>
+					<FormToggle
+						label="Auto-add genres"
+						description="Automatically add new genre replacements to the database with identity mapping"
+						checked={settings.settingsConfig.metadata.genre_replacement?.auto_add ?? false}
+						onchange={(val) => {
+							const cfg = settings.settingsConfig;
+							if (!cfg) return;
+							if (!cfg.metadata.genre_replacement) cfg.metadata.genre_replacement = {};
+							cfg.metadata.genre_replacement.auto_add = val;
+						}}
+					/>
+					<div class="flex items-center justify-between pt-2 border-t border-border">
+						<p class="text-sm text-muted-foreground">
+							Manage individual genre replacement rules.
+						</p>
+						<a href="/genres">
+							<Button variant="outline" size="sm">
+								{#snippet children()}
+									<Tags class="h-4 w-4 mr-1" />
+									Manage Genres
+								{/snippet}
+							</Button>
+						</a>
+					</div>
 				</div>
 			</SettingsSection>
 
 			<SettingsSection title="Word Replacements" description="Manage word uncensor rules applied during scraping" defaultExpanded={false}>
-				<div class="flex items-center justify-between">
-					<p class="text-sm text-muted-foreground">
-						Manage word replacements that uncensor asterisked text in scraped metadata.
-					</p>
-					<a href="/words">
-						<Button variant="outline" size="sm">
-							{#snippet children()}
-								<Type class="h-4 w-4 mr-1" />
-								Manage Words
-							{/snippet}
-						</Button>
-					</a>
+				<div class="space-y-4">
+					<FormToggle
+						label="Enable word replacement"
+						description="De-censor and replace words in all text fields (title, description, genres, etc.) using database mappings. Default censored-to-clean pairs (e.g. S******n -> Shotacon) are seeded on startup."
+						checked={settings.settingsConfig.metadata.word_replacement?.enabled ?? false}
+						onchange={(val) => {
+							const cfg = settings.settingsConfig;
+							if (!cfg) return;
+							if (!cfg.metadata.word_replacement) cfg.metadata.word_replacement = {};
+							cfg.metadata.word_replacement.enabled = val;
+						}}
+					/>
+					<div class="flex items-center justify-between pt-2 border-t border-border">
+						<p class="text-sm text-muted-foreground">
+							Manage individual word replacement rules.
+						</p>
+						<a href="/words">
+							<Button variant="outline" size="sm">
+								{#snippet children()}
+									<Type class="h-4 w-4 mr-1" />
+									Manage Words
+								{/snippet}
+							</Button>
+						</a>
+					</div>
 				</div>
 			</SettingsSection>
 

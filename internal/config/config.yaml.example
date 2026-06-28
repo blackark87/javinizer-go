@@ -310,6 +310,15 @@ metadata:
         enabled: true
         auto_add: true  # Automatically add new genres with identity mapping (genre -> genre)
 
+    # Word uncensor/text replacement database (SQLite-backed)
+    # Applies substring search-and-replace (longest-match-first) to all text
+    # fields, including title, description, director, maker, label, series,
+    # translations, and each genre token. Default censored->clean pairs (e.g.
+    # S******n -> Shotacon) are seeded into the database on startup.
+    # Opt-in: disabled by default since it rewrites all text fields.
+    word_replacement:
+        enabled: false
+
     # Per-movie tag database (SQLite-backed)
     # Allows adding custom tags to individual movies (appears in NFO files)
     tag_database:

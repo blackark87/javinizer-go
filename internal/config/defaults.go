@@ -162,6 +162,9 @@ func defaultMetadataConfig() MetadataConfig {
 			Enabled: true,
 			AutoAdd: true,
 		},
+		WordReplacement: WordReplacementConfig{
+			Enabled: false, // Opt-in: rewrites all text fields
+		},
 		TagDatabase: tagDatabaseConfig{
 			Enabled: false, // Opt-in feature for per-movie custom tags
 		},

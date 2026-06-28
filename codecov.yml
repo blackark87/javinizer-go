@@ -1,0 +1,19 @@
+coverage:
+  status:
+    project:
+      default:
+        # Allow small fluctuations without failing the status check.
+        # target: auto sets the target to the current coverage; the
+        # threshold gives a small tolerance so a 0.02% blip (e.g. from
+        # adding config defaults) doesn't break the check.
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: auto
+        threshold: 5%
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: false

@@ -711,6 +711,7 @@ jobs:
           generate_release_notes: ${{ steps.changelog.outputs.notes == '' }}
           draft: ${{ needs.prepare-release.outputs.draft == 'true' }}
           prerelease: ${{ needs.prepare-release.outputs.prerelease == 'true' }}
+          make_latest: ${{ needs.prepare-release.outputs.prerelease != 'true' }}
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

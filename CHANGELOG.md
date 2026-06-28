@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [v1.0.0-rc1] - 2026-06-28
 
 ### Changed
 
@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Word replacement toggle + opt-in default**: added `metadata.word_replacement` (opt-in, `enabled: false`) to the example configs and `defaultMetadataConfig()`, and moved the genre/word replacement enable toggles into the dedicated `/settings` sections with null-safe handlers.
+- **Update-available UI**: surface update availability in the web UI and harden the checker against GitHub rate limits.
+- **CI release hardening**: explicit `make_latest` on the GitHub release step so stable releases deterministically become "Latest" and prereleases never steal it.
 - **Web frontend (SvelteKit SPA)**: review flow with jobId-scoped state and monotonic WebSocket-driven progress bars; fullstack E2E suite + vitest unit tests.
 - **Mockery freshness gate**: pinned mockery v3.7.1; added a `make check-mocks` target + `test.yml` step that fails CI if mocks drift from their interfaces (caught a real portability bug — `sed -i` macOS-only — on its first run).
 - **`.gitignore` hardening**: `tmp/`, `web/frontend/playwright-report/`, `blob-report/`, `playwright/.cache/`, `*.db-shm`, `*.db-wal`, `*.log`.
@@ -30,6 +33,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Rescrape merge strategies**: the API previously accepted + validated `preset` / `scalar_strategy` / `array_strategy` then silently dropped them; `RescrapeCmd` now carries `MergeOptions` and `CompleteRescrape` applies the merge (reusing the apply-path logic).
 - **Theme toggle**: rendered as a component, fixing an unknown-element regression in the web UI.
 - **Test coverage** raised to meet the 75% CI threshold; race-clean.
+- **DMM director + rating extraction** restored after the upstream DMM markup migration.
+- **Image previews** refetch on URL change via a reactive error state, eliminating stale thumbnails.
+- **Per-field metadata.priority (consolidated)**: `[]` now inherits global; the `["__skip__"]` skip sentinel is honored, with YAML persistence fixed across the priority editor.
+- **Aggregator per-field priority exclusivity**: per-field `metadata.priority` is now exclusive (not merged with global) consistently across both the default and `--scrapers` paths.
+- **Update checker**: background update checker + startup check wired up.
+- **History pagination**: filtered history API endpoints now paginate correctly.
+- **Poster crop**: preserve `ShouldCropPoster` through `GeneratePoster` so the apply-phase crop runs after rescrape.
+- **Web rescrape modal**: removed stray `}` in the title; pass `movie_id` (not `result_id`) to `openRescrapeModal`; show feedback when "Reload Config" is pressed.
+- **Filename template**: strip the extension from the `<FILENAME>` token and add `<FILENAME_EXT>`.
+- **Vulnerability scan**: bump `x/image` + Go toolchain to clear 10 govulncheck findings; gate the Vulnerability Scan job on token presence. Codecov upload now supplies a token and fails loud on upload error.
 
 ### Tooling
 

@@ -77,12 +77,71 @@ func mergeYAMLNode(dst, src *yaml.Node) {
 			return
 		}
 		mergeYAMLNode(dst.Content[0], src.Content[0])
+		pruneMetadataPriorityFields(dst, src)
 		return
 	}
 
 	replacement := cloneYAMLNode(src)
 	applyNodeMetadataPreservingComments(dst, replacement)
 	*dst = *replacement
+}
+
+func navigateToMapping(root *yaml.Node, keys ...string) *yaml.Node {
+	if root == nil {
+		return nil
+	}
+	cur := root
+	if cur.Kind == yaml.DocumentNode {
+		if len(cur.Content) == 0 {
+			return nil
+		}
+		cur = cur.Content[0]
+	}
+	for _, key := range keys {
+		if cur == nil || cur.Kind != yaml.MappingNode {
+			return nil
+		}
+		idx := findMappingValueIndex(cur, key)
+		if idx == -1 {
+			return nil
+		}
+		cur = cur.Content[idx]
+	}
+	return cur
+}
+
+func pruneMetadataPriorityFields(dst, src *yaml.Node) {
+	dstMetadata := navigateToMapping(dst, "metadata")
+	if dstMetadata == nil || dstMetadata.Kind != yaml.MappingNode {
+		return
+	}
+	dstPriorityIdx := findMappingValueIndex(dstMetadata, "priority")
+	if dstPriorityIdx == -1 {
+		return
+	}
+	dstPriority := dstMetadata.Content[dstPriorityIdx]
+	if dstPriority.Kind != yaml.MappingNode {
+		return
+	}
+	srcPriority := navigateToMapping(src, "metadata", "priority")
+	if srcPriority == nil || srcPriority.Kind != yaml.MappingNode {
+		keyIdx := dstPriorityIdx - 1
+		dstMetadata.Content = append(dstMetadata.Content[:keyIdx], dstMetadata.Content[dstPriorityIdx+1:]...)
+		return
+	}
+	srcKeys := make(map[string]bool, len(srcPriority.Content)/2)
+	for i := 0; i+1 < len(srcPriority.Content); i += 2 {
+		srcKeys[srcPriority.Content[i].Value] = true
+	}
+	kept := make([]*yaml.Node, 0, len(dstPriority.Content))
+	for i := 0; i+1 < len(dstPriority.Content); i += 2 {
+		keyNode := dstPriority.Content[i]
+		valNode := dstPriority.Content[i+1]
+		if srcKeys[keyNode.Value] {
+			kept = append(kept, keyNode, valNode)
+		}
+	}
+	dstPriority.Content = kept
 }
 
 func configToYAMLDocument(cfg *Config) (*yaml.Node, error) {

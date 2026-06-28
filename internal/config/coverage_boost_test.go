@@ -605,11 +605,12 @@ func TestPriorityConfig_GetFieldPriority_EmptyOverride(t *testing.T) {
 		Fields:   map[string][]string{"title": {}},
 	}
 	result := p.GetFieldPriority("title")
-	// A PRESENT empty override ([]string{}) is a deliberate empty field — it must
-	// NOT fall back to global. This is the pure-exclusivity contract: a present []
-	// means "consult no scrapers", distinct from an absent key (inherit global).
-	assert.Equal(t, []string{}, result)
-	assert.NotNil(t, result, "present [] must be a non-nil empty slice, not nil (nil ⇒ inherit)")
+	// A PRESENT empty override ([]string{}) inherits the global priority list —
+	// it is NOT a deliberate empty field. This matches commit 9f882f22's
+	// documented intent ("[] still means 'inherit global'") and keeps configs
+	// carrying [] (common from the merge era) upgrade-safe. Deliberate
+	// suppression uses the ["__skip__"] sentinel (matches no scraper) instead.
+	assert.Equal(t, []string{"dmm", "r18dev"}, result)
 }
 
 func TestPriorityConfig_GetFieldPriority_NilOverride(t *testing.T) {
@@ -1344,4 +1345,23 @@ func TestPrepare_EmptyScrapersPriorityErrors(t *testing.T) {
 	cfg.Scrapers.Priority = []string{"r18dev"}
 	_, err = Prepare(cfg)
 	assert.NoError(t, err)
+}
+
+// TestPriorityConfig_UnmarshalJSON_PriorityNonArrayValue covers decodeFromMap's
+// priority-key non-array branch (value present but not a []any).
+func TestPriorityConfig_UnmarshalJSON_PriorityNonArrayValue(t *testing.T) {
+	var p PriorityConfig
+	err := json.Unmarshal([]byte(`{"priority": "notanarray"}`), &p)
+	assert.NoError(t, err)
+	assert.Nil(t, p.Priority, "non-array priority value must be skipped")
+}
+
+// TestPriorityConfig_UnmarshalJSON_FieldNonStringElement covers decodeFromMap's
+// per-field non-string-element branch (array contains a non-string entry).
+func TestPriorityConfig_UnmarshalJSON_FieldNonStringElement(t *testing.T) {
+	var p PriorityConfig
+	err := json.Unmarshal([]byte(`{"series": [123, "r18dev"]}`), &p)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"r18dev"}, p.Fields["series"],
+		"non-string element must be skipped, string element kept")
 }

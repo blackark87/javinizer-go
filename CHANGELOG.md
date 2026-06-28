@@ -22,7 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Word replacement toggle + opt-in default**: added `metadata.word_replacement` (opt-in, `enabled: false`) to the example configs and `defaultMetadataConfig()`, and moved the genre/word replacement enable toggles into the dedicated `/settings` sections with null-safe handlers.
 - **Update-available UI**: surface update availability in the web UI and harden the checker against GitHub rate limits.
+- **JavDB actress avatars**: construct actress thumbnail URLs from the actor ID in the movie-page link (`https://c0.jdbstatic.com/avatars/<pp>/<ID>.jpg`), populating `ActressInfo.ThumbURL` without extra HTTP fetches.
 - **CI release hardening**: explicit `make_latest` on the GitHub release step so stable releases deterministically become "Latest" and prereleases never steal it.
+- **Docker CI**: build arm64 natively via a per-arch matrix (free `ubuntu-24.04-arm` runner) + `merge-manifest` job instead of QEMU emulation, cutting the docker job from ~15min to ~5min.
 - **Web frontend (SvelteKit SPA)**: review flow with jobId-scoped state and monotonic WebSocket-driven progress bars; fullstack E2E suite + vitest unit tests.
 - **Mockery freshness gate**: pinned mockery v3.7.1; added a `make check-mocks` target + `test.yml` step that fails CI if mocks drift from their interfaces (caught a real portability bug — `sed -i` macOS-only — on its first run).
 - **`.gitignore` hardening**: `tmp/`, `web/frontend/playwright-report/`, `blob-report/`, `playwright/.cache/`, `*.db-shm`, `*.db-wal`, `*.log`.

@@ -118,7 +118,19 @@ type stubWorkflow struct {
 }
 
 func (s *stubWorkflow) Scrape(_ context.Context, _ scrape.ScrapeCmd, _ scrape.ProgressFunc) (*scrape.ScrapeResult, *workflow.OrchestrationMeta, error) {
-	return s.scrapeResult, nil, s.scrapeErr
+	if s.scrapeResult == nil {
+		return nil, nil, s.scrapeErr
+	}
+	// Return a fresh copy per call so concurrent scrape workers (MaxWorkers>1)
+	// don't share a Movie pointer — establishScrapedBaseline writes to
+	// fileResult.Movie's Original* fields and would race under -race if two
+	// goroutines received the same pointer.
+	clone := *s.scrapeResult
+	if s.scrapeResult.Movie != nil {
+		movieClone := *s.scrapeResult.Movie
+		clone.Movie = &movieClone
+	}
+	return &clone, nil, s.scrapeErr
 }
 
 func (s *stubWorkflow) Apply(_ context.Context, _ workflow.ApplyCmd, _ scrape.ProgressFunc) (*workflow.ApplyResult, error) {
@@ -157,6 +169,100 @@ func makeInputs(wf *stubWorkflow) scrapePhaseInputs {
 		Lifecycle:           &stubLifecycle{},
 		persister:           nil,
 	}
+}
+
+func TestBuildScrapeCmd_ManualInputTrimmedForMovieIDAndRawInput(t *testing.T) {
+	const file = "/videos/ABC-001.mp4"
+	inputs := scrapePhaseInputs{Matcher: &stubMatcher{result: "ABC-001"}}
+
+	cmd := buildScrapeCmd(file, inputs, ScrapePhaseConfig{RawInputOverride: map[string]string{file: "  IPX-123  "}})
+
+	assert.Equal(t, "IPX-123", cmd.MovieID, "MovieID is trimmed so failure JobEvents + row-identity identify the row, not '  IPX-123  '")
+	assert.Equal(t, "IPX-123", cmd.RawInput, "RawInput is trimmed (mirrors rescrape_phase.go:203 queryOverride = TrimSpace(ManualSearchInput))")
+}
+
+func TestBuildScrapeCmd_EmptyOrWhitespaceManualInputIsNoOverride(t *testing.T) {
+	const file = "/videos/ABC-001.mp4"
+	inputs := scrapePhaseInputs{Matcher: &stubMatcher{result: "ABC-001"}}
+
+	for _, raw := range []string{"", "   ", "\t\n"} {
+		cmd := buildScrapeCmd(file, inputs, ScrapePhaseConfig{RawInputOverride: map[string]string{file: raw}})
+		assert.Equal(t, "ABC-001", cmd.MovieID, "empty/whitespace input %q should be no override (auto-ID from matcher)", raw)
+		assert.Equal(t, "", cmd.RawInput, "empty/whitespace input %q should not set RawInput", raw)
+	}
+}
+
+func TestBuildScrapeCmd_URLInputBypassesBatchGlobalScrapers_IDInputKeepsThem(t *testing.T) {
+	const file = "/videos/ABC-001.mp4"
+	batchGlobal := []string{"r18dev", "dmm"}
+	inputs := scrapePhaseInputs{Matcher: &stubMatcher{result: "ABC-001"}}
+
+	urlCmd := buildScrapeCmd(file, inputs, ScrapePhaseConfig{
+		SelectedScrapers: batchGlobal,
+		RawInputOverride: map[string]string{file: "https://www.javbus.com/ABC-001"},
+	})
+	assert.Equal(t, "https://www.javbus.com/ABC-001", urlCmd.RawInput)
+	assert.Empty(t, urlCmd.SelectedScrapers, "URL rows bypass the batch-global scraper picker so resolveScrapeInput sets PriorityOverride")
+
+	idCmd := buildScrapeCmd(file, inputs, ScrapePhaseConfig{
+		SelectedScrapers: batchGlobal,
+		RawInputOverride: map[string]string{file: "ABC-001"},
+	})
+	assert.Equal(t, "ABC-001", idCmd.RawInput)
+	assert.Equal(t, batchGlobal, idCmd.SelectedScrapers, "ID rows keep the batch-global scrapers so resolveScrapeInput reorders them")
+}
+
+// A manual URL input carrying a query token must be redacted from cmd.MovieID
+// (which surfaces in persisted job state, WebSocket events, and progress
+// messages) while cmd.RawInput keeps the raw URL so resolveScrapeInput/ScrapeURL
+// still see it. Regression guard for the buildScrapeCmd redaction seam.
+func TestBuildScrapeCmd_ManualURLInput_RedactsQueryFromMovieID(t *testing.T) {
+	const file = "/videos/ABC-001.mp4"
+	inputs := scrapePhaseInputs{Matcher: &stubMatcher{result: "ABC-001"}}
+
+	cmd := buildScrapeCmd(file, inputs, ScrapePhaseConfig{
+		RawInputOverride: map[string]string{file: "https://www.javbus.com/ABC-001?token=secret&sig=abc"},
+	})
+
+	assert.Equal(t, "https://www.javbus.com/ABC-001", cmd.MovieID, "MovieID must strip the query/fragment so tokens don't leak to persisted state/events")
+	assert.Equal(t, "https://www.javbus.com/ABC-001?token=secret&sig=abc", cmd.RawInput, "RawInput must stay unredacted so the scraper receives the real URL")
+	assert.Empty(t, cmd.SelectedScrapers, "URL rows bypass the batch-global scraper picker")
+}
+
+// A manual ID input is unaffected by redaction — RedactURLQuery passes plain
+// IDs (no scheme/host) through unchanged.
+func TestBuildScrapeCmd_ManualIDInput_RedactionIsNoOp(t *testing.T) {
+	const file = "/videos/ABC-001.mp4"
+	inputs := scrapePhaseInputs{Matcher: &stubMatcher{result: "ABC-001"}}
+
+	cmd := buildScrapeCmd(file, inputs, ScrapePhaseConfig{
+		RawInputOverride: map[string]string{file: "IPX-123"},
+	})
+	assert.Equal(t, "IPX-123", cmd.MovieID)
+	assert.Equal(t, "IPX-123", cmd.RawInput)
+}
+
+func TestBuildScrapeCmd_NoManualInputAutoIDsFromMatcher(t *testing.T) {
+	const file = "/videos/ABC-001.mp4"
+	inputs := scrapePhaseInputs{Matcher: &stubMatcher{result: "ABC-001"}}
+	cfg := ScrapePhaseConfig{}
+
+	cmd := buildScrapeCmd(file, inputs, cfg)
+
+	assert.Equal(t, "ABC-001", cmd.MovieID, "no manual input: the matcher result is used as the MovieID")
+	assert.Equal(t, "", cmd.RawInput, "no manual input: RawInput stays empty so resolveScrapeInput is a no-op")
+}
+
+func TestBuildScrapeCmd_ManualInputUsedAsIDBypassingMatcher(t *testing.T) {
+	const file = "/videos/MANUAL-123.mp4"
+	inputs := scrapePhaseInputs{Matcher: &stubMatcher{result: "MATCHED-001"}}
+	cfg := ScrapePhaseConfig{RawInputOverride: map[string]string{file: "MANUAL-123"}}
+
+	cmd := buildScrapeCmd(file, inputs, cfg)
+
+	assert.Equal(t, "MANUAL-123", cmd.MovieID, "manual input is used as the MovieID, not the matcher result")
+	assert.Equal(t, "MANUAL-123", cmd.RawInput, "RawInput carries the manual input so resolveScrapeInput parses it downstream")
+	assert.NotEqual(t, "MATCHED-001", cmd.MovieID, "the filename matcher is bypassed when a manual input is present")
 }
 
 func TestScrapePhase_Run_Success(t *testing.T) {

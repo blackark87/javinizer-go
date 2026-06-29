@@ -11,8 +11,8 @@ type MergeWithExistingOptions struct {
 	Match          models.FileMatchInfo
 	ForceOverwrite bool
 	PreserveNFO    bool
-	ScalarStrategy MergeStrategy // Per ADR-0030: resolved at boundary (includes preset application)
-	ArrayStrategy  bool          // Per ADR-0030: true=merge, false=replace. Resolved at boundary
+	ScalarStrategy MergeStrategy // resolved at boundary (includes preset application)
+	ArrayStrategy  bool          // true=merge, false=replace. Resolved at boundary
 }
 
 type MergeWithExistingResult struct {
@@ -28,7 +28,7 @@ func (n nfoImplementor) MergeWithExistingNFO(movie *models.Movie, opts MergeWith
 		return result
 	}
 
-	// Per ADR-0033: use struct-held infrastructure dependencies.
+	// use struct-held infrastructure dependencies.
 	// Fall back to safe defaults for zero-value implementor (nil fs/nfoConfig/templateEngine).
 	fs := n.fs
 	if fs == nil {
@@ -64,7 +64,7 @@ func (n nfoImplementor) MergeWithExistingNFO(movie *models.Movie, opts MergeWith
 	}
 	scalarStrategy := opts.ScalarStrategy
 	mergeArrays := opts.ArrayStrategy
-	// Per ADR-0030: preset is resolved at the boundary before constructing
+	// preset is resolved at the boundary before constructing
 	// MergeWithExistingOptions. No ApplyPreset call here.
 	if opts.PreserveNFO {
 		scalarStrategy = PreserveExisting

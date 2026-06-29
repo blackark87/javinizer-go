@@ -91,7 +91,7 @@ func (o *RescrapeOrchestrator) Rescrape(ctx context.Context, jobID, movieID, fil
 	// Per DEEP-6: set WF on the job's deps before calling Rescrape.
 	job.SetWorkflow(wf)
 
-	// Per ADR-0030 + CodeRabbit review: propagate the client's merge strategy
+	// propagate the client's merge strategy
 	// (preset/scalar_strategy/array_strategy) into the rescrape command instead
 	// of dropping it. resolveRescrapeMergeOptions resolves the seam strings at
 	// this boundary; MergeEnabled gates whether CompleteRescrape applies the

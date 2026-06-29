@@ -72,7 +72,7 @@ func compareNFO(deps MovieDeps) gin.HandlerFunc {
 			return
 		}
 
-		// Per ADR-0030: resolve strategy seam strings at the boundary through
+		// resolve strategy seam strings at the boundary through
 		// the shared workflow.ResolveSeamStrings — same path as batch and TUI handlers.
 		resolved, resolveErr := workflow.ResolveSeamStrings(workflow.SeamStringsInput{
 			Preset:         req.Preset,
@@ -121,7 +121,7 @@ func compareNFO(deps MovieDeps) gin.HandlerFunc {
 		}
 
 		// Derive provenance from Differences — the merged value tells us which source won.
-		// Per ADR-0037: MergeProvenance zombie removed; field-level source is derived from
+		// MergeProvenance zombie removed; field-level source is derived from
 		// Differences (NFOValue/ScrapedValue vs MergedValue).
 		if len(result.Differences) > 0 {
 			apiProvenance := make(map[string]contracts.DataSource, len(result.Differences))

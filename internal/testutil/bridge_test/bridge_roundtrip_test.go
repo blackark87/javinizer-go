@@ -16,10 +16,10 @@ import (
 )
 
 // TestConfigBridgeRoundTrips verifies that each ConfigFromAppConfig bridge
-// correctly extracts the relevant fields from *config.Config. Per ADR-0045:
-// these tests catch drift when a new config field is added but the bridge
-// isn't updated. The test sets specific values on the monolith config,
-// runs the bridge, and checks that the narrow config has those values.
+// correctly extracts the relevant fields from *config.Config. These tests
+// catch drift when a new config field is added but the bridge isn't updated.
+// The test sets specific values on the monolith config, runs the bridge, and
+// checks that the narrow config has those values.
 
 func TestMatcherConfigFromAppConfig(t *testing.T) {
 	cfg := config.DefaultConfig(nil, nil)

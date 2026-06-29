@@ -1,7 +1,7 @@
 package models
 
 // GeneratedFilesJSON is the JSON structure stored in BatchFileOperation.GeneratedFiles.
-// Per ADR-0034: moved from both workflow/revert_log.go and history/reverter.go to
+// Moved from both workflow/revert_log.go and history/reverter.go to
 // eliminate duplicate type definitions with drift risk. The JSON schema is a
 // persistence contract — one source of truth.
 type GeneratedFilesJSON struct {

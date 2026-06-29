@@ -89,7 +89,7 @@ type NFOFieldMerger interface {
 	ResolveNFOFilename(movie *models.Movie, cfg NFONameConfig) string
 
 	// ResolveNFOPath builds the expected NFO file path and a list of legacy
-	// paths to check for backward compatibility. Per ADR-0045: this method
+	// paths to check for backward compatibility. this method
 	// exists on NFOFieldMerger so that revert callers resolve NFO paths
 	// through the seam instead of reaching into the nfo package directly.
 	ResolveNFOPath(baseDir string, movie *models.Movie, cfg NFONameConfig, videoFilePath string) (nfoPath string, legacyPaths []string)
@@ -126,7 +126,7 @@ type nfoImplementor struct {
 var _ NFOInterface = (*nfoImplementor)(nil)
 
 // ResolveNFOFilename resolves the NFO filename for a movie using the implementor's
-// template engine. Per ADR-0045: this method exists on NFOFieldMerger so that
+// template engine. this method exists on NFOFieldMerger so that
 // preview and revert callers resolve NFO paths through the seam instead of
 // reaching into the nfo package directly.
 func (n nfoImplementor) ResolveNFOFilename(movie *models.Movie, cfg NFONameConfig) string {
@@ -134,7 +134,7 @@ func (n nfoImplementor) ResolveNFOFilename(movie *models.Movie, cfg NFONameConfi
 }
 
 // ResolveNFOPath builds the expected NFO file path and legacy paths using the
-// implementor's template engine. Per ADR-0045: this method exists on
+// implementor's template engine. this method exists on
 // NFOFieldMerger so that revert callers resolve NFO paths through the seam
 // instead of reaching into the nfo package directly.
 func (n nfoImplementor) ResolveNFOPath(baseDir string, movie *models.Movie, cfg NFONameConfig, videoFilePath string) (string, []string) {
@@ -142,7 +142,7 @@ func (n nfoImplementor) ResolveNFOPath(baseDir string, movie *models.Movie, cfg 
 }
 
 // NewNFOImplementor creates the canonical NFOInterface implementation with
-// infrastructure dependencies. Per ADR-0033: fs, nfoConfig, and templateEngine
+// infrastructure dependencies. fs, nfoConfig, and templateEngine
 // are owned by the implementor, not threaded through per-call.
 func NewNFOImplementor(fs afero.Fs, nfoConfig *Config, templateEngine template.EngineInterface) NFOInterface {
 	return nfoImplementor{fs: fs, nfoConfig: nfoConfig, templateEngine: templateEngine}

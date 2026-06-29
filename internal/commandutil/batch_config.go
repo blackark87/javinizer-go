@@ -21,7 +21,7 @@ func BatchJobConfigFromAppConfig(cfg *config.Config) worker.BatchJobConfig {
 }
 
 // CLIApplyOptions holds the resolved CLI flags for the apply phase.
-// Per ADR-0033: extracted from sort/update commands to centralize the mapping.
+// Extracted from sort/update commands to centralize the mapping.
 type CLIApplyOptions struct {
 	DryRun              bool
 	MoveFiles           bool

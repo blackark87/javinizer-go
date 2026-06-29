@@ -14,8 +14,8 @@ import (
 // Kept for backward compatibility during DB reconstruction of legacy FileResult JSON.
 const DataTypeMovie = "movie"
 
-// JobResultsEnvelope wraps domain results and provenance data for persistence
-// per ADR-0027. The Results text column stores this envelope instead of
+// JobResultsEnvelope wraps domain results and provenance data for persistence.
+// The Results text column stores this envelope instead of
 // a raw map[string]*MovieResult.
 type JobResultsEnvelope struct {
 	Domain     map[string]*MovieResult    `json:"domain"`

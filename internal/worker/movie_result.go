@@ -10,7 +10,7 @@ import (
 )
 
 // ProvenanceData holds per-file provenance (field and actress source attribution)
-// separated from MovieResult per ADR-0027. Provenance is an API-presentation concern;
+// separated from MovieResult. Provenance is an API-presentation concern;
 // the apply phase never reads it.
 type ProvenanceData struct {
 	FieldSources   map[string]string `json:"field_sources,omitempty"`
@@ -44,8 +44,8 @@ func (p *ProvenanceData) Clone() *ProvenanceData {
 // MovieResult represents the result of processing a single file.
 // It replaces the legacy FileResult, using a typed *models.Movie field
 // instead of the untyped Data any field.
-// Provenance (FieldSources/ActressSources) has been moved to ProvenanceData
-// per ADR-0027 — use ResultTracker.Provenance to look up provenance by file path.
+// Provenance (FieldSources/ActressSources) has been moved to ProvenanceData —
+// use ResultTracker.Provenance to look up provenance by file path.
 type MovieResult struct {
 	ResultID      string               `json:"result_id"` // Stable UUID — survives movie_id changes from rescrape/edit
 	FileMatchInfo models.FileMatchInfo `json:"file_match_info"`
@@ -56,7 +56,7 @@ type MovieResult struct {
 	StartedAt     time.Time            `json:"started_at"`
 	EndedAt       *time.Time           `json:"ended_at,omitempty"`
 
-	// Orchestration metadata propagated from ScrapeResult (ADR-0015).
+	// Orchestration metadata propagated from ScrapeResult.
 	// Embedded with json:",inline" so the serialized shape is unchanged for
 	// backward-compatible job persistence deserialization.
 	models.OrchestrationState `json:",inline"`
@@ -65,7 +65,7 @@ type MovieResult struct {
 // scrapeResultToMovieResult converts a scrape.ScrapeResult and its OrchestrationMeta
 // to a MovieResult. This is the canonical conversion — all ScrapeResult→MovieResult
 // paths should use this function to ensure consistent field mapping.
-// Provenance is returned separately per ADR-0027.
+// Provenance is returned separately.
 func scrapeResultToMovieResult(fmi models.FileMatchInfo, result *scrape.ScrapeResult, meta *workflow.OrchestrationMeta) (*MovieResult, *ProvenanceData) {
 	if result == nil {
 		return nil, nil

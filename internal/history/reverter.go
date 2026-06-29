@@ -16,7 +16,7 @@ import (
 	"github.com/spf13/afero"
 )
 
-// Per ADR-0034: generatedFilesJSON and fileMove moved to internal/models/revert_types.go.
+// GeneratedFilesJSON and fileMove moved to internal/models/revert_types.go.
 // The history package imports models.GeneratedFilesJSON and models.FileMove instead of
 // defining duplicate types.
 

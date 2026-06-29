@@ -344,8 +344,8 @@ func (pc *processingCoordinator) runBatchJob(ctx context.Context, filePaths []st
 	}
 
 	// Resolve all seam strings through the shared function.
-	// Per ADR-0030: resolution happens at the boundary — downstream code
-	// receives fully-resolved typed values.
+	// Resolution happens at the boundary — downstream code receives
+	// fully-resolved typed values.
 	resolved, resolveErr := workflow.ResolveSeamStrings(workflow.SeamStringsInput{
 		LinkMode:       opts.LinkMode,
 		ScalarStrategy: opts.ScalarStrategy,

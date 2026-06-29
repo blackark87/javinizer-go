@@ -53,7 +53,7 @@ func trackSkipped(result *ScanResult, path string) {
 	}
 }
 
-// Per ADR-0034: fileInfo was eliminated — ScanResult.Files is now []models.FileMatchInfo.
+// FileInfo was eliminated — ScanResult.Files is now []models.FileMatchInfo.
 // The scanner populates FileMatchInfo directly, removing the need for ToFileMatchInfo().
 
 // ScanResult contains the results of a directory scan

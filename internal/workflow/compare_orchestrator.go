@@ -105,7 +105,7 @@ func (o *compareOrchImpl) Execute(ctx context.Context, cmd CompareCmd) (*Compare
 	}
 
 	// Step 4: Merge using pre-resolved strategies.
-	// Per ADR-0030: preset resolution happens at the factory boundary.
+	// preset resolution happens at the factory boundary.
 	// By the time we reach the orchestrator, ScalarStrategy and ArrayStrategy
 	// are fully resolved — no Parse* or ApplyPreset calls here.
 	scalarStrategy := cmd.ScalarStrategy

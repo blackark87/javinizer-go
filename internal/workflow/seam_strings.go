@@ -11,7 +11,7 @@ import (
 
 // ResolvePreset validates and normalizes a preset string. Returns the
 // lowercase normalized preset, or an error for invalid values. Returns
-// ("", nil) for empty input. Per ADR-0045: validation and resolution are
+// ("", nil) for empty input. validation and resolution are
 // a single pass — callers use this instead of ValidatePreset.
 func ResolvePreset(preset string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(preset))
@@ -25,7 +25,7 @@ func ResolvePreset(preset string) (string, error) {
 
 // ResolveOperationMode parses an operation mode string into an OperationMode.
 // Returns OperationModeOrganize for empty input (default). Returns error for invalid values.
-// Per ADR-0030: callers resolve at the factory boundary before constructing commands.
+// callers resolve at the factory boundary before constructing commands.
 func ResolveOperationMode(mode string) (operationmode.OperationMode, error) {
 	if mode == "" {
 		return operationmode.OperationModeOrganize, nil
@@ -39,13 +39,13 @@ func ResolveOperationMode(mode string) (operationmode.OperationMode, error) {
 
 // ResolveLinkMode parses a link mode string and returns the validated organizer.LinkMode.
 // Returns LinkModeNone for empty input (no override). Returns error for invalid values.
-// Per ADR-0030: callers resolve at the factory boundary before constructing commands.
+// callers resolve at the factory boundary before constructing commands.
 func ResolveLinkMode(mode string) (organizer.LinkMode, error) {
 	return organizer.ParseLinkMode(mode)
 }
 
 // ResolvedSeamStrings holds the typed, validated results of resolving all
-// string-typed seam parameters. Per ADR-0030: Preset is resolved at the
+// string-typed seam parameters. Preset is resolved at the
 // boundary — downstream code receives fully-resolved typed values with no
 // preset field remaining.
 type ResolvedSeamStrings struct {
@@ -72,7 +72,7 @@ type SeamStringsInput struct {
 // all boundaries (API, TUI, CLI) should call instead of calling individual
 // Resolve* functions inline.
 //
-// Per ADR-0045: validation and resolution are now a single pass. The Resolve*
+// validation and resolution are now a single pass. The Resolve*
 // and Parse* functions already return errors for invalid input, so a separate
 // validation pass was redundant — it validated every field twice on the happy
 // path. Errors are accumulated and returned as a single combined error.
@@ -115,7 +115,7 @@ func ResolveSeamStrings(in SeamStringsInput) (*ResolvedSeamStrings, error) {
 		return nil, fmt.Errorf("%s", strings.Join(errs, "; "))
 	}
 
-	// Per ADR-0030: resolve preset at the boundary. If preset is specified,
+	// resolve preset at the boundary. If preset is specified,
 	// it overrides the individual strategy values.
 	if in.Preset != "" {
 		resolvedScalar, resolvedArray, err = nfo.ApplyPresetTyped(in.Preset, resolvedScalar, resolvedArray)

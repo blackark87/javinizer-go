@@ -89,7 +89,7 @@ func (o *scanAndMatchOrchImpl) Execute(ctx context.Context, cmd ScanAndMatchCmd)
 	// Match results using the orchestrator's matcher.
 	var matchResults []matcher.MatchResult
 	if o.matcher != nil {
-		// Per ADR-0034: scanResult.Files is already []models.FileMatchInfo
+		// scanResult.Files is already []models.FileMatchInfo
 		matchResults = o.matcher.Match(scanResult.Files)
 		matchResults = matcher.ValidateMultipartInDirectory(matchResults)
 	} else {

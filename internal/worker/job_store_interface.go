@@ -11,7 +11,7 @@ import (
 // API handlers depend on this interface rather than the concrete *JobStore,
 // enabling test mocks without requiring a real database.
 //
-// Per ADR-0032: GetMutableJob and GetLifecycleJob are replaced with
+// GetMutableJob and GetLifecycleJob are replaced with
 // purpose-named getters (GetJobForEdit, GetJobForControl) that return
 // the appropriate handler-oriented composite.
 //
@@ -27,13 +27,13 @@ type JobStoreInterface interface {
 	GetJob(id string) (*BatchJobStatus, bool)
 
 	// GetJobForEdit retrieves an EditableJob for movie editing operations.
-	// Per ADR-0032: returns the narrow composite (15 methods) for movie_edit,
+	// returns the narrow composite (15 methods) for movie_edit,
 	// exclude, and similar handlers. The compiler enforces that callers cannot
 	// access phase control or rescrape methods through this interface.
 	GetJobForEdit(id string) (EditableJob, bool)
 
 	// GetJobForControl retrieves a ControlledJob for phase execution operations.
-	// Per ADR-0032: returns the narrow composite (15 methods) for rescrape,
+	// returns the narrow composite (15 methods) for rescrape,
 	// organize, scrape, cancel, and revert handlers.
 	// For the unified seam, prefer GetBatchJob which returns BatchJobInterface.
 	GetJobForControl(id string) (ControlledJob, bool)

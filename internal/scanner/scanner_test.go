@@ -459,7 +459,7 @@ func TestScanner_fileInfo(t *testing.T) {
 		t.Errorf("Expected size %d, got %d", len(content), info.Size)
 	}
 
-	// Per ADR-0034: Dir field removed from FileMatchInfo. Path contains full path.
+	// Dir field removed from FileMatchInfo. Path contains full path.
 
 	if info.Path != filepath {
 		t.Errorf("Expected path %s, got %s", filepath, info.Path)
@@ -1527,5 +1527,5 @@ func TestScanner_EmptyExtensionSet(t *testing.T) {
 	}
 }
 
-// Per ADR-0034: fileInfo type and ToFileMatchInfo() method removed.
+// FileInfo type and ToFileMatchInfo() method removed.
 // ScanResult.Files is now []models.FileMatchInfo directly.

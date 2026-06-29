@@ -83,7 +83,7 @@ type BatchJobFactoryInterface interface {
 	// NewRescrapeCmd builds a RescrapeCmd with the factory's defaults.
 	// Per DEEP-6: WF/PosterGen/BatchCfg overrides removed. API handlers must call
 	// SetWorkflow on the job before calling Rescrape if deps.WF is nil.
-	// mergeOpts carries the resolved NFO merge policy (per ADR-0030); callers
+	// mergeOpts carries the resolved NFO merge policy; callers
 	// that accept preset/scalar_strategy/array_strategy should resolve them via
 	// workflow.ResolveSeamStrings and pass the resulting MergeOptions here so
 	// CompleteRescrape honors the requested merge behavior.

@@ -302,7 +302,7 @@ func (s *JobStore) GetJob(id string) (*BatchJobStatus, bool) {
 }
 
 // GetJobForEdit retrieves an EditableJob for movie editing operations.
-// Per ADR-0041: returns an editableJobAdapter composing jobReaderImpl +
+// returns an editableJobAdapter composing jobReaderImpl +
 // ResultTracker + jobEditorImpl. This decouples the edit path from *BatchJob.
 func (s *JobStore) GetJobForEdit(id string) (EditableJob, bool) {
 	s.mu.RLock()
@@ -320,7 +320,7 @@ func (s *JobStore) GetJobForEdit(id string) (EditableJob, bool) {
 }
 
 // GetJobForControl retrieves a ControlledJob for phase execution operations.
-// Per ADR-0041: returns a controlledJobAdapter composing jobReaderImpl +
+// returns a controlledJobAdapter composing jobReaderImpl +
 // ResultTracker + *BatchJob (for PhaseController) + JobLifecycle.
 // For the unified seam, prefer GetBatchJob which returns BatchJobInterface.
 func (s *JobStore) GetJobForControl(id string) (ControlledJob, bool) {
@@ -436,7 +436,7 @@ func (s *JobStore) DeleteJob(id string) error {
 }
 
 // PersistJob saves a job to the database.
-// Per ADR-0032: this is the public persistence method. The former PersistManagedJob
+// this is the public persistence method. The former PersistManagedJob
 // is removed because it type-asserted to *BatchJob internally — callers that hold
 // a composite should use PersistJobByID instead.
 func (s *JobStore) PersistJob(job *BatchJob) {
@@ -444,7 +444,7 @@ func (s *JobStore) PersistJob(job *BatchJob) {
 }
 
 // PersistJobByID persists a job by its ID.
-// Per ADR-0032: callers that hold a composite (EditableJob, ControlledJob)
+// callers that hold a composite (EditableJob, ControlledJob)
 // use this instead of PersistJob — no type assertion needed. The store holds
 // the concrete *BatchJob internally. No-op if the job is not found.
 func (s *JobStore) PersistJobByID(id string) {

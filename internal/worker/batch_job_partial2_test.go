@@ -370,7 +370,7 @@ func TestBatchJob_FindFileForMovieID_NotFound_Partial2(t *testing.T) {
 
 // --- findFileForRescrape: result with Movie.ID set ---
 
-// Per ADR-0041: FindFileForMovieID moved from BatchJob to ResultTracker.
+// FindFileForMovieID moved from BatchJob to ResultTracker.
 // Pre-resolved FilePath handling moved to RescrapePhase.Rescrape.
 func TestResultTracker_FindFileForMovieID_WithMovieID_Partial2(t *testing.T) {
 	job := newBatchJob([]string{"file1.mp4"}, &JobConfig{

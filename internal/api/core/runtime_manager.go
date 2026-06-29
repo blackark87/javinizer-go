@@ -81,7 +81,7 @@ func (lv *lazyValue) Invalidate() {
 // It holds a reference to APIDeps and is the only type authorized to mutate
 // config-coupled state (APIConfig snapshots, workflow factories, runtime state).
 //
-// Per ADR-0045: the mutable state that was previously on APIDeps has been moved
+// the mutable state that was previously on APIDeps has been moved
 // here so that APIDeps is truly read-only after construction. All mutations go
 // through APIRuntime methods.
 //
@@ -100,7 +100,7 @@ type APIRuntime struct {
 	// workflowFactory caches the shared dependency sub-graph (scraper, matcher,
 	// organizer, downloader, NFO generator, template engine, scanner, poster
 	// generator). Nil until first access; niled on config reload so the next
-	// call rebuilds from fresh config/registry. Per ADR-0023.
+	// call rebuilds from fresh config/registry.
 	//
 	// Per DEEP-8: a single cached factory replaces the former triple cache.
 	// The factory supports all workflow modes (NewWorkflow, NewScrapeOnlyWorkflow,
@@ -185,7 +185,6 @@ func (r *APIRuntime) GetRuntime() *RuntimeState {
 }
 
 // getWorkflowFactory returns the cached WorkflowFactory, constructing it on first access.
-// Per ADR-0023: the factory caches the shared sub-graph so that per-request Workflow
 // buildWorkflowFactory constructs a new WorkflowFactory from the current config.
 // Used as the build function for the lazy workflowFactory value.
 func (r *APIRuntime) buildWorkflowFactory() any {
@@ -210,7 +209,7 @@ func (r *APIRuntime) buildWorkflowFactory() any {
 }
 
 // getWorkflowFactory returns the cached WorkflowFactory, constructing it on first access.
-// Per ADR-0023: the factory caches the shared sub-graph so that per-request Workflow
+// the factory caches the shared sub-graph so that per-request Workflow
 // construction only creates a fresh RevertLog (varying by JobID).
 //
 // Per DEEP-8: a single cached factory replaces the former triple cache. The factory

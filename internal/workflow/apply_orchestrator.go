@@ -22,7 +22,7 @@ type applyOrchestrator interface {
 }
 
 // applyOrchImpl owns the 6-step Apply sequence: revert begin, organize, merge, DisplayTitle,
-// download, NFO, revert complete. Per ADR-0017: runDownload/runNFO nil-check wrappers are
+// download, NFO, revert complete. runDownload/runNFO nil-check wrappers are
 // eliminated — the orchestrator always receives real dependencies (or no-ops), so nil-checks
 // are honest checks for optional features, not defensive nil guards.
 type applyOrchImpl struct {
@@ -447,7 +447,7 @@ func (o *applyOrchImpl) completeRevertLogWithState(ctx context.Context, opID Ope
 
 // beginRevertLog starts a revert log entry before filesystem mutation.
 // Per CONTEXT.md: Begin must be called BEFORE any filesystem mutation.
-// Per ADR-0033: Begin is a pure DB write; CaptureSnapshot reads NFO separately.
+// Begin is a pure DB write; CaptureSnapshot reads NFO separately.
 // Returns empty OperationID if revertLog is nil or Begin fails.
 func (o *applyOrchImpl) beginRevertLog(ctx context.Context, cmd ApplyCmd) OperationID {
 	if o.revertLog == nil {
@@ -462,7 +462,7 @@ func (o *applyOrchImpl) beginRevertLog(ctx context.Context, cmd ApplyCmd) Operat
 		}
 		return opID // may be partial — still return it
 	}
-	// Per ADR-0033: snapshot is optional enrichment — failure doesn't block Apply.
+	// snapshot is optional enrichment — failure doesn't block Apply.
 	o.revertLog.CaptureSnapshot(ctx, opID, cmd)
 	return opID
 }

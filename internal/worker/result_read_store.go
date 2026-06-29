@@ -18,7 +18,7 @@ type ResultSnapshot struct {
 }
 
 // ProgressSnapshot holds the progress counters from ResultTracker.
-// Per ADR-0041/0042: BatchJob consumes its own sub-manager interfaces
+// BatchJob consumes its own sub-manager interfaces
 // instead of reaching into internals.
 type ProgressSnapshot struct {
 	TotalFiles int

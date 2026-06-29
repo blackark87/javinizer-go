@@ -1149,7 +1149,7 @@ func TestJobStore_PersistToDatabase_AtomicSnapshot(t *testing.T) {
 			}),
 		}
 		job.controller = newJobController(job)
-		// Per ADR-0042: use consolidated attachLifecycleCallback
+		// use consolidated attachLifecycleCallback
 		job.attachLifecycleCallback()
 		// Populate 3 completed + 2 pending results
 		for i := 1; i <= 3; i++ {
@@ -1355,7 +1355,7 @@ func TestBatchJob_GettersSetters(t *testing.T) {
 }
 
 func TestBatchJob_GetStatusSlim(t *testing.T) {
-	t.Skip("GetStatusSlim removed per ADR-0041")
+	t.Skip("GetStatusSlim removed")
 	t.Run("slim snapshot has correct status fields", func(t *testing.T) {
 		jq := NewJobStore(nil, nil, nil, "", nil, nil)
 		job := jq.CreateJobBatch([]string{"file1.mp4", "file2.mkv"})
@@ -1524,7 +1524,7 @@ func TestJobStore_PersistToDatabase_DeletedJob(t *testing.T) {
 }
 
 func TestGetStatusSlim_NilResultEntry(t *testing.T) {
-	t.Skip("GetStatusSlim removed per ADR-0041")
+	t.Skip("GetStatusSlim removed")
 	jq := NewJobStore(nil, nil, nil, "", nil, nil)
 	job := jq.CreateJobBatch([]string{"file1.mp4"})
 	job.results.Results["file1.mp4"] = nil
@@ -1536,7 +1536,7 @@ func TestGetStatusSlim_NilResultEntry(t *testing.T) {
 }
 
 func TestGetStatusSlim_ProvenanceData(t *testing.T) {
-	t.Skip("GetStatusSlim removed per ADR-0041")
+	t.Skip("GetStatusSlim removed")
 	jq := NewJobStore(nil, nil, nil, "", nil, nil)
 	job := jq.CreateJobBatch([]string{"file1.mp4"})
 	job.results.Results["file1.mp4"] = &MovieResult{
@@ -1559,7 +1559,7 @@ func TestGetStatusSlim_ProvenanceData(t *testing.T) {
 }
 
 func TestGetStatusSlim_DeepCopyTimestamps(t *testing.T) {
-	t.Skip("GetStatusSlim removed per ADR-0041")
+	t.Skip("GetStatusSlim removed")
 	jq := NewJobStore(nil, nil, nil, "", nil, nil)
 	job := jq.CreateJobBatch([]string{"file1.mp4"})
 	now := time.Now()

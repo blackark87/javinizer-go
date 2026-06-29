@@ -76,7 +76,7 @@ func (r *APIRuntime) ReloadConfig(cfg *config.Config) error {
 // caches are mutated (e.g., genre/word replacement CRUD) and the next operation
 // must see the updated mappings.
 //
-// Per ADR-0023: the factory's shared sub-graph (scraper, matcher, organizer,
+// the factory's shared sub-graph (scraper, matcher, organizer,
 // downloader, NFO generator, poster, scanner) is read-only after construction.
 // Only the aggregator's replacement caches need to be reloaded — not the entire
 // dependency graph. This avoids the cold-start penalty that would result from

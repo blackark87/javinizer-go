@@ -73,7 +73,7 @@ func NewBatchJobDeps(wf workflow.WorkflowInterface, m matcher.MatcherInterface, 
 type JobConfig struct {
 	ID                    string                      // Pre-generated job ID (if empty, UUID is auto-generated)
 	Destination           string                      // Target directory for organized files (persisted on job for UI retrieval)
-	OperationModeOverride operationmode.OperationMode // Resolved operation mode (set at API boundary per ADR-0030)
+	OperationModeOverride operationmode.OperationMode // Resolved operation mode (set at API boundary)
 	Update                *bool                       // Update mode: nil = don't change, true/false = set explicitly
 	BatchJobDeps                                      // Embedded deps — all 9 infrastructure fields promoted
 }
@@ -88,7 +88,7 @@ type JobConfig struct {
 type jobConfig struct {
 	destination   string                      // Target directory for organized files
 	tempDir       string                      // Temp directory for poster paths
-	operationMode operationmode.OperationMode // Resolved operation mode (set at API boundary per ADR-0030)
+	operationMode operationmode.OperationMode // Resolved operation mode (set at API boundary)
 	update        bool                        // Update mode (in-place, no file organization)
 }
 
@@ -206,7 +206,7 @@ func isJobTransitioned(status models.JobStatus) bool {
 // attachLifecycleCallback sets the markCompletedFn callback on JobLifecycle
 // so that MarkCompleted can handle the cross-boundary progress recalculation.
 // Also sets the goneChecker callback on ResultTracker so it can satisfy
-// ResultMapAccessor.IsGone(). Per ADR-0042: consolidated from 3 construction
+// ResultMapAccessor.IsGone(). consolidated from 3 construction
 // paths into a single method.
 // getAdapters returns the cached jobAdapters for this BatchJob, constructing them
 // on first call. Per D-6: buildAdapters was called 4 times per job (CreateJob,
@@ -243,7 +243,7 @@ func (job *BatchJob) attachLifecycleCallback() {
 }
 
 // batchJobSnapshot is a consistent point-in-time view of all BatchJob state.
-// Per ADR-0025: the shared base eliminates the field-fan-out across GetStatus,
+// the shared base eliminates the field-fan-out across GetStatus,
 // snapshotForPersist — adding a new field changes
 // batchJobBase + batchJobSnapshot, not three separate methods.
 type batchJobSnapshot struct {
@@ -256,7 +256,7 @@ type batchJobSnapshot struct {
 
 // snapshotFull acquires lifecycle.mu → results.mu → job.mu before reading any
 // fields, then copies a consistent point-in-time view of all job state.
-// Per ADR-0041/0042: uses StatusSnapshot() and SnapshotForStatus() instead of
+// uses StatusSnapshot() and SnapshotForStatus() instead of
 // reaching into sub-manager internals.
 func (job *BatchJob) snapshotFull() batchJobSnapshot {
 	job.lifecycle.mu.RLock()

@@ -247,11 +247,11 @@ func TestIntegration_CallbackInterfaces_Satisfied(t *testing.T) {
 	// Verify that BatchJob methods used by the phases exist and are callable
 	job := newBatchJob(nil)
 
-	// ResultUpdater methods (moved to ResultTracker per ADR-0041)
+	// ResultUpdater methods (moved to ResultTracker)
 	assert.NotNil(t, job.results.UpdateFileResult, "ResultTracker should have UpdateFileResult")
 	assert.NotNil(t, job.results.AtomicUpdateFileResult, "ResultTracker should have AtomicUpdateFileResult")
 
-	// PhaseLifecycle methods (moved to JobLifecycle per ADR-0041)
+	// PhaseLifecycle methods (moved to JobLifecycle)
 	assert.NotNil(t, job.lifecycle.MarkCompleted, "JobLifecycle should have MarkCompleted")
 	assert.NotNil(t, job.lifecycle.MarkFailed, "JobLifecycle should have MarkFailed")
 	assert.NotNil(t, job.lifecycle.MarkCancelled, "JobLifecycle should have MarkCancelled")

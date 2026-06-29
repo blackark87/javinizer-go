@@ -779,8 +779,7 @@ func TestBatchJob_GetFileMatchInfosForMovieID(t *testing.T) {
 }
 
 // TestResultTracker_FindFileForMovieID tests the MovieLookup method moved from
-// BatchJob per ADR-0041 Decision 1. Pre-resolved FilePath handling moved to
-// RescrapePhase.Rescrape per Decision 3.
+// BatchJob. Pre-resolved FilePath handling moved to RescrapePhase.Rescrape.
 func TestResultTracker_FindFileForMovieID(t *testing.T) {
 	t.Run("finds file by movie ID", func(t *testing.T) {
 		job := newBatchJob([]string{"file1.mp4"})

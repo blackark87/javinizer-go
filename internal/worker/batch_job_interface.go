@@ -89,13 +89,13 @@ type RescrapeCmd struct {
 	Force             bool     // Force refresh
 
 	// FilePath is the pre-resolved file path for the movie being rescraped.
-	// Per ADR-0032: when set by the caller, BatchJob.Rescrape uses it directly
+	// when set by the caller, BatchJob.Rescrape uses it directly
 	// instead of calling FindFileForMovieID internally. When empty, falls back
 	// to FindFileForMovieID for backward compatibility.
 	FilePath string
 
 	// Merge controls how the freshly scraped metadata is merged into the
-	// existing MovieResult before commit. Per ADR-0030: Preset/ScalarStrategy/
+	// existing MovieResult before commit. Preset/ScalarStrategy/
 	// ArrayStrategy are resolved at the factory boundary (via
 	// workflow.ResolveSeamStrings) before being placed here.
 	//
@@ -130,7 +130,7 @@ type FileLookupResult struct {
 }
 
 // ---------------------------------------------------------------------------
-// Atomic sub-interfaces (per ADR-0032)
+// Atomic sub-interfaces
 // ---------------------------------------------------------------------------
 
 // JobReader provides read-only access to job state.
@@ -146,7 +146,7 @@ type JobReader interface {
 }
 
 // MovieLookup provides methods to find movies within a job.
-// Per ADR-0032: extracted from the former Rescraper interface — lookup is a
+// extracted from the former Rescraper interface — lookup is a
 // separate concern from rescrape action.
 type MovieLookup interface {
 	FindFilePathsForMovieID(movieID string) []string
@@ -170,7 +170,7 @@ type JobEditor interface {
 }
 
 // PhaseController provides phase execution and dependency-wiring operations
-// on a job. Per ADR-0032: Rescrape is grouped with StartScrape/StartApply/Wait
+// on a job. Rescrape is grouped with StartScrape/StartApply/Wait
 // because rescraping is re-scraping — the same execution-lifecycle concern.
 // Per DEEP-1: mutation methods (SetWorkflow, SetBatchCfg, SetJobStatus,
 // SetOperationModeOverride, SetPersistError) are on the controller because
@@ -226,12 +226,12 @@ type JobCanceller interface {
 }
 
 // ---------------------------------------------------------------------------
-// Handler-oriented composites (per ADR-0032)
+// Handler-oriented composites
 // ---------------------------------------------------------------------------
 
 // EditableJob is the composite interface for movie editing handlers.
-// Per ADR-0032: returned by JobStore.GetJobForEdit for movie_edit and exclude handlers.
-// Per ADR-0045: movie persistence is routed through UpdateMovie, which persists
+// returned by JobStore.GetJobForEdit for movie_edit and exclude handlers.
+// movie persistence is routed through UpdateMovie, which persists
 // to DB before updating in-memory state — callers no longer call MovieRepo directly.
 type EditableJob interface {
 	JobReader
@@ -240,7 +240,7 @@ type EditableJob interface {
 }
 
 // ControlledJob is the composite interface for phase execution handlers.
-// Per ADR-0032: returned by JobStore.GetJobForControl for rescrape, organize,
+// returned by JobStore.GetJobForControl for rescrape, organize,
 // scrape, cancel, and revert handlers.
 // Per DEEP-1: PhaseController now includes SetWorkflow/SetBatchCfg/SetJobStatus/
 // SetOperationModeOverride/SetPersistError (controller mutation methods that
@@ -315,13 +315,13 @@ type StandaloneJob interface {
 }
 
 // ---------------------------------------------------------------------------
-// Adapter structs (ADR-0041 Decision 5)
+// Adapter structs
 // ---------------------------------------------------------------------------
 
 // jobReaderImpl satisfies JobReader by composing closures and extracted types.
 // No single extracted type satisfies JobReader — GetID reads from BatchJob,
 // GetStatus requires a 3-lock snapshot, and Subscribe reads from eventBroadcaster.
-// Per ADR-0041: this struct does NOT embed *BatchJob.
+// this struct does NOT embed *BatchJob.
 type jobReaderImpl struct {
 	id          string
 	lifecycle   *JobLifecycle
@@ -346,7 +346,7 @@ func (jr *jobReaderImpl) Subscribe() JobEventSubscriber { return jr.subscribeFn(
 // single embedded type.
 // Per DEEP-5: resultExcluder merged into ResultUpdater (MarkExcluded exported),
 // exclusionChecker merged into ResultMapAccessor (IsAllExcluded exported).
-// Per ADR-0045: poster DB persistence is handled by PosterEditor, not by this adapter.
+// poster DB persistence is handled by PosterEditor, not by this adapter.
 type jobEditorImpl struct {
 	updater      ResultUpdater
 	accessor     ResultMapAccessor
@@ -365,7 +365,7 @@ func (je *jobEditorImpl) UpdateMovie(ctx context.Context, filePath string, movie
 		return current, nil
 	})
 
-	// Per ADR-0045: persist to DB first, then update in-memory. If DB persist
+	// persist to DB first, then update in-memory. If DB persist
 	// fails, the in-memory state is not updated — no divergence. If DB persist
 	// succeeds but in-memory update fails, the job's state is stale but the
 	// DB is authoritative.
@@ -412,7 +412,7 @@ func (je *jobEditorImpl) UpdatePosterFromURL(ctx context.Context, movieID string
 }
 
 // editableJobAdapter satisfies EditableJob by composing jobReaderImpl,
-// ResultTracker, and jobEditorImpl. Per ADR-0041: genuinely decomposed —
+// ResultTracker, and jobEditorImpl. genuinely decomposed —
 // no *BatchJob embedding.
 type editableJobAdapter struct {
 	JobReader
@@ -421,7 +421,7 @@ type editableJobAdapter struct {
 }
 
 // phaseControllerImpl satisfies PhaseController using closures from BatchJob.
-// Per ADR-0042: replaces *BatchJob embedding in controlledJobAdapter,
+// replaces *BatchJob embedding in controlledJobAdapter,
 // eliminating the direct dependency on *BatchJob for the control path.
 type phaseControllerImpl struct {
 	startScrape      func(ctx context.Context, files []string, cfg ScrapePhaseConfig) error
@@ -455,7 +455,7 @@ func (pc *phaseControllerImpl) SetPersistError(msg string) { pc.setPersistError(
 
 // controlledJobAdapter satisfies ControlledJob by composing jobReaderImpl,
 // ResultTracker, phaseControllerImpl, and JobLifecycle.
-// Per ADR-0042: fully decomposed — no *BatchJob embedding.
+// fully decomposed — no *BatchJob embedding.
 // Per DEEP-1: PhaseController now includes SetWorkflow/SetBatchCfg/SetJobStatus/etc.
 type controlledJobAdapter struct {
 	JobReader
@@ -586,7 +586,7 @@ type ApplyPhaseConfig struct {
 	DryRun              bool                     // Dry-run mode: preview without making changes
 
 	// Job-level config applied before apply starts
-	OperationModeOverride operationmode.OperationMode // Per ADR-0030: resolved at factory boundary
+	OperationModeOverride operationmode.OperationMode // resolved at factory boundary
 	Update                *bool                       // Update mode (in-place, no file organization); nil = don't change, true/false = set explicitly
 	TempDir               string                      // Temp directory for poster paths (from job infrastructure)
 

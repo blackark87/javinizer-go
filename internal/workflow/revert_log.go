@@ -18,12 +18,12 @@ import (
 	"github.com/spf13/afero"
 )
 
-// generatedFilesJSON and fileMove moved to internal/models/revert_types.go per ADR-0034.
+// generatedFilesJSON and fileMove moved to internal/models/revert_types.go.
 // The workflow package imports models.GeneratedFilesJSON and models.FileMove instead of
 // defining duplicate types.
 //
 // generatedFilesJSON mirrors the history package structure so workflow stays dependency-free.
-// Per ADR-0034: no longer mirrors — both import from models.
+// no longer mirrors — both import from models.
 
 // nfoSnapshotResult holds the result of reading an NFO snapshot.
 type nfoSnapshotResult struct {
@@ -40,7 +40,7 @@ type OperationID = string
 // Complete is called after Apply succeeds (records the outcome for undo).
 // Disabled by default — enabled via config.Output.AllowRevert.
 //
-// Per ADR-0033: Begin writes a database record with movie ID, original path, and operation
+// Begin writes a database record with movie ID, original path, and operation
 // type — no filesystem access. CaptureSnapshot reads the NFO and updates the record.
 // If CaptureSnapshot fails, Begin's record still exists — Apply proceeds with partial revert
 // safety. The NFO snapshot is optional enrichment, not a precondition.
@@ -48,13 +48,13 @@ type RevertLog interface {
 	// Begin persists a pre-mutation record before Apply starts filesystem changes.
 	// Returns an OperationID for correlating with the revert record.
 	// Must be called BEFORE any filesystem mutation.
-	// Per ADR-0033: pure database write — no filesystem I/O.
+	// pure database write — no filesystem I/O.
 	Begin(ctx context.Context, cmd ApplyCmd) (OperationID, error)
 
 	// CaptureSnapshot reads the existing NFO file and updates the revert record
 	// with the snapshot content. Call after Begin, before filesystem mutation.
 	// If snapshot fails, the revert record still exists — partial safety is better
-	// than none. Per ADR-0033: filesystem I/O separated from Begin's DB write.
+	// than none. filesystem I/O separated from Begin's DB write.
 	CaptureSnapshot(ctx context.Context, opID OperationID, cmd ApplyCmd)
 
 	// Complete records the outcome after Apply finishes — success or failure.
@@ -242,7 +242,7 @@ func updatePostOrganize(op *models.BatchFileOperation, newPath string, inPlaceRe
 }
 
 // ctx is accepted for future use when repository methods support context propagation
-// Per ADR-0033: Begin is a pure database write — no filesystem I/O.
+// Begin is a pure database write — no filesystem I/O.
 func (l *dbRevertLog) Begin(ctx context.Context, cmd ApplyCmd) (OperationID, error) {
 	if cmd.Movie == nil {
 		return "", nil
@@ -253,7 +253,7 @@ func (l *dbRevertLog) Begin(ctx context.Context, cmd ApplyCmd) (OperationID, err
 
 	sourceDir := filepath.Dir(cmd.Match.Path)
 
-	// Per ADR-0033: write the DB record without NFO snapshot.
+	// write the DB record without NFO snapshot.
 	// CaptureSnapshot will fill in the snapshot content separately.
 	preRecord := newPreOrganizeRecord(
 		l.jobID, cmd.Movie.ID, cmd.Match.Path,
@@ -268,7 +268,7 @@ func (l *dbRevertLog) Begin(ctx context.Context, cmd ApplyCmd) (OperationID, err
 }
 
 // CaptureSnapshot reads the existing NFO file and updates the revert record
-// with the snapshot content. Per ADR-0033: filesystem I/O separated from Begin's
+// with the snapshot content. filesystem I/O separated from Begin's
 // DB write. If the snapshot fails, the revert record still exists — partial safety
 // is better than none.
 func (l *dbRevertLog) CaptureSnapshot(ctx context.Context, opID OperationID, cmd ApplyCmd) {
@@ -309,7 +309,7 @@ func (l *dbRevertLog) CaptureSnapshot(ctx context.Context, opID OperationID, cmd
 		}
 	}
 
-	// Per ADR-0045: resolve NFO paths through the NFOFieldMerger seam instead of
+	// resolve NFO paths through the NFOFieldMerger seam instead of
 	// reaching into the nfo package directly.
 	var nfoPath string
 	var legacyPaths []string

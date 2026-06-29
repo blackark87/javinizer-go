@@ -1038,7 +1038,7 @@ func TestCompareOrchestrator_NilContext(t *testing.T) {
 // ============================================================
 // preview_orchestrator.go: Path encoding (moved to organizer package)
 // ============================================================
-// Per ADR-0036: UNC path reconstruction was deepened into
+// UNC path reconstruction was deepened into
 // OrganizePlan.EncodePaths(). These tests now exercise the
 // EncodePaths API instead of the removed rebuildUNCTargetDir.
 

@@ -37,7 +37,7 @@ type ScraperResolver interface {
 }
 
 // workflowFactoryConfig holds constructed domain objects for WorkflowFactory.
-// Per ADR-0036: replaces the former factoryConfig grab-bag of raw configs with
+// replaces the former factoryConfig grab-bag of raw configs with
 // a struct that accepts already-constructed domain objects. Callers that have
 // a *config.Config and want the convenience of auto-wiring should use
 // NewFactoryConfigFromRepos, which calls ConfigFromAppConfig bridges and
@@ -392,7 +392,7 @@ func NewFactoryConfigFromRepos(cfg *config.Config, registry ScraperResolver, rep
 }
 
 // WorkflowFactory caches the shared dependency sub-graph and produces per-call Workflow
-// instances. Per ADR-0023: the shared sub-graph (scraper, matcher, organizer, downloader,
+// instances. the shared sub-graph (scraper, matcher, organizer, downloader,
 // NFO generator, template engine, scanner, poster generator) is read-only after construction.
 // Only the RevertLog varies per call (it depends on JobID), so caching is safe.
 //
@@ -407,7 +407,7 @@ type WorkflowFactory struct {
 	fc workflowFactoryConfig
 
 	// Cached sub-orchestrators — assembled once, reused per NewWorkflow call.
-	// Per ADR-0023: only the apply orchestrator's RevertLog varies per call;
+	// only the apply orchestrator's RevertLog varies per call;
 	// all others are identical across invocations.
 	cachedScrape    scrapeOrchestrator
 	cachedCompare   compareOrchestrator
@@ -503,7 +503,7 @@ func (f *WorkflowFactory) NewWorkflow(jobID string) (WorkflowInterface, error) {
 	revertLog := NewRevertLogFromConfig(f.fc.BatchFileOpRepo, &revertLogCfg, jobID, f.fc.Fs, f.fc.TemplateEngine, f.fc.NFOIface, f.fc.Logger)
 
 	// Construct a fresh apply orchestrator per workflow with the revert log
-	// already wired in. Per ADR-0023: the apply orchestrator is not cached
+	// already wired in. the apply orchestrator is not cached
 	// because RevertLog depends on JobID — each workflow gets its own instance.
 	apply := newApplyOrchestrator(f.fc.Fs, f.fc.Organizer, f.fc.Downloader, f.fc.NFOGenerator, f.fc.NFOIface, f.fc.ApplyCfg, f.fc.TemplateEngine, revertLog, f.fc.MovieTagRepo, f.fc.Logger)
 

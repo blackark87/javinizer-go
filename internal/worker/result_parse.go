@@ -18,7 +18,7 @@ type ParsedJobResults struct {
 // ParseJobResultsJSON parses the Results JSON column from the database,
 // handling all three persistence formats:
 //
-//  1. New envelope format {"domain": ..., "provenance": ...} — ADR-0027
+//  1. New envelope format {"domain": ..., "provenance": ...}
 //  2. Legacy FileResult format with "data_type" key and "data" field
 //  3. Old MovieResult format with nested "file_match_info"
 //
@@ -71,7 +71,7 @@ func ParseJobResultsJSON(raw []byte) (*ParsedJobResults, error) {
 	return parseOldMovieResultFormat(raw)
 }
 
-// parseEnvelopeFormat parses the new envelope format {"domain": ..., "provenance": ...} (ADR-0027).
+// parseEnvelopeFormat parses the new envelope format {"domain": ..., "provenance": ...}.
 func parseEnvelopeFormat(raw []byte) (*ParsedJobResults, error) {
 	var envelope JobResultsEnvelope
 	if err := json.Unmarshal(raw, &envelope); err != nil {

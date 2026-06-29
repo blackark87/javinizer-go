@@ -29,7 +29,7 @@ type previewOrchestrator interface {
 }
 
 // Path encoding has been deepened into OrganizePlan.EncodePaths().
-// Per ADR-0036: the pathEncoder interface was removed because path encoding
+// the pathEncoder interface was removed because path encoding
 // is a property of the organize plan, not a separate strategy. The organizer
 // package owns the encoding logic; the preview orchestrator reads the results.
 
@@ -216,7 +216,7 @@ func (o *previewOrchImpl) resolveMediaPaths(
 }
 
 // executePreview is the unified pipeline for both UNC and non-UNC paths.
-// Path encoding is delegated to OrganizePlan.EncodePaths() per ADR-0036.
+// Path encoding is delegated to OrganizePlan.EncodePaths().
 //
 // Per W-4: the pipeline is now a 3-step orchestrator:
 //  1. Compute plans (strategy.Plan for each file result)

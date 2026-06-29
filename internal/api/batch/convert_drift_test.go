@@ -32,7 +32,7 @@ func TestMovieResultToBatchFileResultDriftGuard(t *testing.T) {
 		// OrchestrationState is embedded — its sub-fields are checked separately below.
 		// The OrchestrationState itself (DisplayTitleApplied, PosterGenerated, Persisted,
 		// PosterError, TranslationWarning) is internal orchestration metadata not exposed
-		// in the API response per ADR-0027.
+		// in the API response.
 	}
 
 	// Fields intentionally omitted from the slim variant (in addition to full unmapped).

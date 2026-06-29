@@ -175,7 +175,7 @@ func TestUpdatePosterCrop_Miss_NoFilePaths(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// --- FindFileForMovieID: movie not found (moved to ResultTracker per ADR-0041) ---
+// --- FindFileForMovieID: movie not found (moved to ResultTracker) ---
 
 func TestFindFileForMovieID_Miss_NoResult(t *testing.T) {
 	jq := NewJobStore(nil, nil, nil, "", nil, nil)

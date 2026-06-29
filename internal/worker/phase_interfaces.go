@@ -93,7 +93,7 @@ func (p persistFunc) Persist() {
 }
 
 // ResultMapAccessor provides read-only and atomic-commit access to the result map.
-// *ResultTracker satisfies this interface (per ADR-0042).
+// *ResultTracker satisfies this interface.
 //
 // Callers that only need to read results or atomically commit rescrape outcomes
 // should accept ResultMapAccessor instead of the broader *ResultTracker.
@@ -132,13 +132,13 @@ type ResultMapAccessor interface {
 }
 
 // FileFinder provides the FindFileForMovieID method for resolving a movie ID
-// to its primary file path and revision. Per ADR-0041: this is separate from
+// to its primary file path and revision. This is separate from
 // MovieLookup because FindFileForMovieID has a different return type.
 // *ResultTracker satisfies this interface.
 type FileFinder interface {
 	FindFileForMovieID(movieID string) (*FileLookupResult, error)
 	// GetRevision returns the current revision for a file's result.
-	// Per ADR-0041: moved from ResultMapAccessor to ResultTracker/FileFinder.
+	// moved from ResultMapAccessor to ResultTracker/FileFinder.
 	GetRevision(filePath string) uint64
 }
 
@@ -205,7 +205,7 @@ type rescrapePhaseInputs struct {
 	Lifecycle PhaseLifecycle
 	persister persister
 
-	// ADR-0041 Decision 3: additional dependencies for full rescrape sequence
+	// additional dependencies for full rescrape sequence
 	Lookup      MovieLookup  // for FindFilePathsForMovieID etc.
 	Finder      FileFinder   // for FindFileForMovieID (not on MovieLookup interface)
 	Fs          afero.Fs     // for poster cleanup

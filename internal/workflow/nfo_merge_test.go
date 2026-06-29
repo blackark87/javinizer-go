@@ -22,7 +22,7 @@ func TestMergeWithExistingNFO_ForceOverwrite_SkipsMerge(t *testing.T) {
 	movie := &models.Movie{ID: "ABC-123", Title: "Scraped Title"}
 	match := models.FileMatchInfo{Path: "/source/ABC-123.mp4", MovieID: "ABC-123"}
 
-	// Per ADR-0033: NFOInterface carries its own infrastructure deps.
+	// NFOInterface carries its own infrastructure deps.
 	nfoIface := nfo.NewNFOImplementor(fs, nfoConfig, template.NewEngine())
 	result := nfoIface.MergeWithExistingNFO(movie, nfo.MergeWithExistingOptions{
 		Match:          match,

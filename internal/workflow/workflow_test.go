@@ -136,7 +136,7 @@ func (f *testFixture) build() *Workflow {
 	translator := scrape.NewTranslatorFromApp(&f.cfg.Metadata.Translation)
 	scraper, _, _ := buildScraper(scrapeCfg, aggCfg, translator, f.registry, f.httpClient, f.fs, f.db.Repositories().ContentRepos, f.db.Repositories().ReplacementRepos)
 
-	// Per ADR-0033: NFOInterface carries its own infrastructure deps.
+	// NFOInterface carries its own infrastructure deps.
 	nfoIface := nfo.NewNFOImplementor(f.fs, nfoCfg, sharedEngine)
 
 	return &Workflow{
@@ -1244,7 +1244,7 @@ func TestScrape_ForceRefreshDeletesCache(t *testing.T) {
 	assert.Equal(t, "TEST-001", result2.Movie.ID)
 }
 
-// --- Visibility field tests (Phase 80, ADR-0015) ---
+// --- Visibility field tests (Phase 80) ---
 
 func TestScrape_VisibilityFields_SetOnSuccess(t *testing.T) {
 	// When Workflow.Scrape succeeds, DisplayTitleApplied and Persisted should be true.

@@ -21,7 +21,7 @@ type JobLifecycle struct {
 	cancelled   bool // prevents double-invocation of cancelFunc in cancelAndMarkCancelled
 
 	// markCompletedFn is a callback set by BatchJob during construction.
-	// Per ADR-0041: MarkCompleted crosses the lifecycle/results boundary
+	// MarkCompleted crosses the lifecycle/results boundary
 	// (it sets status AND recalculates progress). The callback lets
 	// JobLifecycle satisfy PhaseLifecycle without knowing about ResultTracker.
 	//
@@ -31,7 +31,7 @@ type JobLifecycle struct {
 	//	lifecycle.mu → results.mu → job.mu
 	//
 	// Any callback assigned here MUST NOT acquire locks in the reverse order,
-	// or a deadlock will result. See ADR-0041 for the full rationale.
+	// or a deadlock will result.
 	markCompletedFn func()
 }
 
@@ -176,7 +176,7 @@ func (lc *JobLifecycle) SetDeleted(deleted bool) {
 
 // MarkCompleted transitions the job to completed state and invokes the
 // markCompletedFn callback (set by BatchJob) for cross-boundary operations
-// like progress recalculation. Per ADR-0041: this lets JobLifecycle satisfy
+// like progress recalculation. this lets JobLifecycle satisfy
 // PhaseLifecycle while keeping the results-aware logic in the callback.
 func (lc *JobLifecycle) MarkCompleted() {
 	lc.mu.Lock()
@@ -197,7 +197,7 @@ func (lc *JobLifecycle) MarkCompleted() {
 }
 
 // LifecycleSnapshot holds a point-in-time copy of the lifecycle fields
-// needed for batch job status snapshots. Per ADR-0041/0042: BatchJob consumes
+// needed for batch job status snapshots. BatchJob consumes
 // its own sub-manager interfaces instead of reaching into internals.
 type LifecycleSnapshot struct {
 	Status      models.JobStatus

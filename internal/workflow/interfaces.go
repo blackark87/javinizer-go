@@ -12,30 +12,30 @@ import (
 
 // OrganizeOptions controls the file organization step within Apply.
 // Per AD-09: grouped by step, not flat flags.
-// Per ADR-0030: LinkMode is resolved at the factory boundary — callers
+// LinkMode is resolved at the factory boundary — callers
 // pass a validated link mode, not raw CLI input.
 type OrganizeOptions struct {
 	Skip        bool
 	MoveFiles   bool
-	LinkMode    organizer.LinkMode // Per ADR-0030: resolved at factory boundary, not inside orchestrator
+	LinkMode    organizer.LinkMode // resolved at factory boundary, not inside orchestrator
 	ForceUpdate bool
 }
 
 // MergeOptions controls the NFO merge step within Apply.
 // Per AD-09: grouped by step. Priority chain: ForceOverwrite > PreserveNFO > Preset > ScalarStrategy/ArrayStrategy.
-// Per ADR-0030: Preset is resolved at the factory boundary — ScalarStrategy and ArrayStrategy
+// Preset is resolved at the factory boundary — ScalarStrategy and ArrayStrategy
 // reflect the final resolved values (after preset application).
 type MergeOptions struct {
 	ForceOverwrite bool
 	PreserveNFO    bool
-	ScalarStrategy nfo.MergeStrategy // Per ADR-0030: resolved at factory boundary (includes preset application)
-	ArrayStrategy  bool              // Per ADR-0030: true=merge, false=replace. Resolved at factory boundary
+	ScalarStrategy nfo.MergeStrategy // resolved at factory boundary (includes preset application)
+	ArrayStrategy  bool              // true=merge, false=replace. Resolved at factory boundary
 }
 
 // ApplyCmd is the command struct that crosses the Apply seam.
 // Per CONTEXT.md: contains inputs (Movie, Match, DestPath), global DryRun flag,
 // and step-control options grouped by step (Organize, Merge).
-// Per ADR-0030: OperationMode is resolved at the factory boundary.
+// OperationMode is resolved at the factory boundary.
 type ApplyCmd struct {
 	Movie               *models.Movie
 	Match               models.FileMatchInfo
@@ -47,7 +47,7 @@ type ApplyCmd struct {
 	GenerateNFO         bool
 	DisplayTitleSrc     *models.Movie
 	DownloadExtrafanart *bool                       // Optional override for extrafanart downloads; nil = use config default
-	OperationMode       operationmode.OperationMode // Per ADR-0030: resolved at factory boundary
+	OperationMode       operationmode.OperationMode // resolved at factory boundary
 }
 
 // stepCompletion records which Apply steps completed successfully.
@@ -82,18 +82,18 @@ type ApplyResult struct {
 	Steps          stepCompletion // Per-step completion tracking
 
 	// FailedStep is the step that caused the error (e.g. "organize", "download",
-	// "nfo_generation"). Empty on success. Per ADR-0033: callers can identify
+	// "nfo_generation"). Empty on success. callers can identify
 	// which step failed without parsing error strings.
 	FailedStep string
 }
 
 // PreviewCmd is the command struct that crosses the Preview seam (ADR-0004).
-// Per ADR-0030: OperationMode is resolved at the factory boundary.
+// OperationMode is resolved at the factory boundary.
 type PreviewCmd struct {
 	Movie         *models.Movie
 	FileResults   []models.FileMatchInfo
 	Destination   string
-	OperationMode operationmode.OperationMode // Per ADR-0030: resolved at factory boundary
+	OperationMode operationmode.OperationMode // resolved at factory boundary
 	SkipNFO       bool
 	SkipDownload  bool
 }
@@ -127,12 +127,12 @@ type WorkflowInterface interface {
 // CompareCmd is the command struct that crosses the Compare seam.
 // The seam handles the full scrape-aggregate-merge pipeline internally,
 // so the API layer never imports nfo, aggregator, or matcher directly.
-// Per ADR-0030: ScalarStrategy and ArrayStrategy are resolved at the factory boundary.
+// ScalarStrategy and ArrayStrategy are resolved at the factory boundary.
 type CompareCmd struct {
 	MovieID          string            // The movie ID to compare
 	NFOPath          string            // Path to existing NFO file
-	ScalarStrategy   nfo.MergeStrategy // Per ADR-0030: resolved at factory boundary (including preset application)
-	ArrayStrategy    bool              // Per ADR-0030: true=merge, false=replace. Resolved at factory boundary
+	ScalarStrategy   nfo.MergeStrategy // resolved at factory boundary (including preset application)
+	ArrayStrategy    bool              // true=merge, false=replace. Resolved at factory boundary
 	SelectedScrapers []string          // Optional scraper filter
 }
 

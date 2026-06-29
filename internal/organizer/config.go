@@ -7,8 +7,8 @@ import (
 )
 
 // Config holds the subset of application configuration needed by the Organizer.
-// Per ADR-0033: fields are grouped into named sub-categories for locality —
-// adding a template field doesn't touch download or subtitle code.
+// Fields are grouped into named sub-categories for locality — adding a
+// template field doesn't touch download or subtitle code.
 // OperationMode is pre-resolved from the config type by the bridge function
 // so the organizer never imports config types.
 type Config struct {

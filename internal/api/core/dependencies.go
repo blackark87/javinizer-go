@@ -53,7 +53,7 @@ type ScraperLister = scraperutil.ScraperListerInterface
 // APIDeps contains only immutable deps that are set once at construction and
 // never mutated. All mutable config-coupled state (APIConfig snapshots,
 // cached workflow factories, server lifecycle) is owned by APIRuntime.
-// Per ADR-0045: the former mutable state has been extracted to APIRuntime
+// the former mutable state has been extracted to APIRuntime
 // so that APIDeps is truly read-only after construction.
 type APIDeps struct {
 	CoreDeps *commandutil.CoreDeps

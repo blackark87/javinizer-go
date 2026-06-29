@@ -48,7 +48,7 @@ func validateRescrapeRequest(req *contracts.BatchRescrapeRequest) (int, string) 
 }
 
 // resolveRescrapeMergeOptions resolves the merge-strategy seam strings from a
-// BatchRescrapeRequest into a workflow.MergeOptions (per ADR-0030: preset is
+// BatchRescrapeRequest into a workflow.MergeOptions (preset is
 // resolved at this boundary and overrides scalar/array). Returns the resolved
 // MergeOptions and a bool indicating whether the caller actually supplied any
 // merge options (preset/scalar/array non-empty), so RescrapeCmd.MergeEnabled

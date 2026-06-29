@@ -19,8 +19,8 @@ import (
 // is faithfully propagated through the ConfigFromAppConfig bridge to the
 // downstream config struct. These tests catch missing field mappings.
 //
-// Per ADR-0036: round-trip tests provide test-time guarantees that bridge
-// functions stay in sync with the source config.
+// Round-trip tests provide test-time guarantees that bridge functions stay
+// in sync with the source config.
 
 func TestScannerConfigFromAppConfig_RoundTrip(t *testing.T) {
 	cfg := config.DefaultConfig(nil, nil)

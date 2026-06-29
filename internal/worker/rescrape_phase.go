@@ -15,13 +15,13 @@ import (
 )
 
 // RescrapePhase handles single-file rescrape operations.
-// Per ADR-0041: Rescrape owns the full rescrape sequence (scrape + poster gen +
+// Rescrape owns the full rescrape sequence (scrape + poster gen +
 // commit + cleanup). ScrapeSingle and CompleteRescrape remain for backward compat.
 type RescrapePhase interface {
 	ScrapeSingle(ctx context.Context, inputs rescrapePhaseInputs, filePath string, cmd scrape.ScrapeCmd) (*scrape.ScrapeResult, *workflow.OrchestrationMeta, error)
 	CompleteRescrape(inputs rescrapePhaseInputs, filePath string, result *MovieResult, capturedRevision uint64, movieID string, oldMovieID string) (*RescrapeResult, error)
 	// Rescrape performs the full rescrape lifecycle: file lookup, scrape, poster generation,
-	// result commit, and cleanup. Per ADR-0041 Decision 3.
+	// result commit, and cleanup.
 	Rescrape(ctx context.Context, inputs rescrapePhaseInputs, cmd RescrapeCmd) (*RescrapeResult, error)
 }
 
@@ -38,7 +38,7 @@ func (p *rescrapePhase) ScrapeSingle(ctx context.Context, inputs rescrapePhaseIn
 		return nil, nil, fmt.Errorf("job %s: cannot scrape — workflow not configured", inputs.JobID.String())
 	}
 
-	// Per ADR-0033: direct scrape call with panic recovery, replacing the
+	// direct scrape call with panic recovery, replacing the
 	// errgroup+callback+mutex pattern. Same recovery semantics as scrape phase.
 	timeout := inputs.Concurrency.WorkerTimeout
 	taskCtx := ctx
@@ -120,7 +120,7 @@ func (p *rescrapePhase) CompleteRescrape(inputs rescrapePhaseInputs, filePath st
 	return &RescrapeResult{OrphanedMovieIDs: orphanedIDs, Status: models.RescrapeStatusSuccess}, nil
 }
 
-// singleScrapeWork was removed per ADR-0033. ScrapeSingle now calls
+// singleScrapeWork was removed. ScrapeSingle now calls
 // wf.Scrape directly with panic recovery, eliminating the callback pattern.
 
 // rescrapeLifecycle holds the cleanup context for a rescrape operation,
@@ -176,8 +176,8 @@ func replaceRescrapeResult(outcome *RescrapeResult, filePath string, movieResult
 	outcome.FilePath = filePath
 }
 
-// Rescrape performs the full rescrape lifecycle. Per ADR-0041 Decision 3:
-// owns file lookup, scrape, poster generation, result commit, and cleanup.
+// Rescrape performs the full rescrape lifecycle: file lookup, scrape,
+// poster generation, result commit, and cleanup.
 func (p *rescrapePhase) Rescrape(ctx context.Context, inputs rescrapePhaseInputs, cmd RescrapeCmd) (*RescrapeResult, error) {
 	var queryOverride string
 	var rawInput string
@@ -263,9 +263,9 @@ func (p *rescrapePhase) Rescrape(ctx context.Context, inputs rescrapePhaseInputs
 			}, nil, nil
 		}
 
-		// Construct the post-rescrape MovieResult. Per ADR-0041 Decision 3, the
-		// authoritative FileMatchInfo is the tracker's stored entry (the scanner
-		// output), which CompleteRescrape.CommitResult restores onto this result.
+		// Construct the post-rescrape MovieResult. The authoritative FileMatchInfo
+		// is the tracker's stored entry (the scanner output), which
+		// CompleteRescrape.CommitResult restores onto this result.
 		// Build a fallback here that carries Name + Extension so a tracker map-miss
 		// (nil map or path-normalization mismatch) doesn't leak a MovieResult
 		// with empty Extension — which would make the organize preview render the
@@ -312,7 +312,7 @@ func (p *rescrapePhase) Rescrape(ctx context.Context, inputs rescrapePhaseInputs
 		// default for callers that supply no merge options), behavior is
 		// unchanged: the scraped Movie replaces the existing one on commit.
 		// Merge the scraped Movie into the existing one when requested AND an
-		// existing result is present. Per ADR-0030: MergeEnabled gates whether
+		// existing result is present. MergeEnabled gates whether
 		// merging is applied at all; when false (the default for callers that
 		// supply no merge options), behavior is unchanged: the scraped Movie
 		// replaces the existing one on commit. The image-URL reconciliation and

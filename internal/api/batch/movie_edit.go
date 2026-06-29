@@ -69,7 +69,7 @@ func updateBatchMovie(rt *core.APIRuntime) gin.HandlerFunc {
 			return
 		}
 
-		// Per ADR-0045: UpdateMovie now handles both DB persistence and in-memory
+		// UpdateMovie now handles both DB persistence and in-memory
 		// update atomically. No need to call MovieRepo directly.
 
 		// Update ALL file parts for this movie ID (handles multi-part files like CD1, CD2, etc.)
@@ -218,7 +218,7 @@ func updateBatchMoviePosterFromURL(rt *core.APIRuntime) gin.HandlerFunc {
 		}
 		croppedURL := posterResult.CroppedURL
 
-		// Per ADR-0045: UpdatePosterFromURL handles both DB persistence and
+		// UpdatePosterFromURL handles both DB persistence and
 		// in-memory update. No need to call MovieRepo directly.
 		if err := job.UpdatePosterFromURL(c.Request.Context(), movieID, req.URL, croppedURL); err != nil {
 			logging.Errorf("Failed to update poster from URL in job state for %s: %v", movieID, err)

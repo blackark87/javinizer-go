@@ -451,7 +451,7 @@ func TestCompareNFO_ErrorCases(t *testing.T) {
 func TestCompareNFO_ProvenanceTracking(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	// Per ADR-0037: MergeProvenance zombie removed. Provenance is now derived
+	// MergeProvenance zombie removed. Provenance is now derived
 	// from Differences. This test verifies that the derived provenance correctly
 	// classifies each field's source based on which value the merge chose.
 
@@ -522,7 +522,7 @@ func TestCompareNFO_ProvenanceTracking(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
 
-	// Per ADR-0037: provenance is now derived from Differences.
+	// provenance is now derived from Differences.
 	// With prefer-scraper strategy, fields where scraped data differs from NFO
 	// should have source="scraper".
 	if len(resp.Differences) > 0 {

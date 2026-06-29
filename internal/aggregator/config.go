@@ -86,7 +86,6 @@ type Config struct {
 	Metadata         *MetadataConfig
 	ScrapersPriority []string
 	// Scrapers was removed — priority resolution uses ScrapersPriority exclusively.
-	// See ADR-0042 for rationale.
 	TemplateEngine template.EngineInterface // Optional: override template engine
 }
 

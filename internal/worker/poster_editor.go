@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"strings"
 
 	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/logging"
@@ -129,4 +130,45 @@ func backupCoverOriginal(current, next *models.Movie) {
 	if current.Poster.CoverURL != "" && current.Poster.CoverURL != next.Poster.CoverURL {
 		next.Poster.OriginalCoverURL = current.Poster.CoverURL
 	}
+}
+
+// establishScrapedBaseline sets the poster-original revert group on target
+// from source's current poster fields, establishing the scraper's value as
+// the Reset baseline. Called by both the initial scrape phase and the
+// rescrape phase (merge + non-merge paths) so the review UI's Reset always
+// returns to what the scraper produced — never a stale prior-content value
+// carried across a content-id change. The baseline may legitimately be empty
+// when the scraper found no image; the frontend falls back to the current
+// field, so an empty baseline makes Reset a no-op rather than wiping a valid
+// image.
+//
+// URL fields are trimmed so the baseline matches the display field's
+// trimming in mergeRescrapeMovie (a whitespace-only scraper value should
+// not become a non-empty baseline that falsely enables the Reset button).
+//
+// This is the eager counterpart to backupPosterOriginals: backupPosterOriginals
+// snapshots the pre-edit state lazily on the first manual edit, while
+// establishScrapedBaseline snapshots the scraped state eagerly at scrape time.
+// Mirrors backupPosterOriginals' field grouping (PosterURL/CroppedPosterURL/
+// ShouldCropPoster) and extends it to CoverURL, which the lazy backup handles
+// separately via backupCoverOriginal.
+func establishScrapedBaseline(target, source *models.Movie) {
+	if target == nil || source == nil {
+		return
+	}
+	posterURL := strings.TrimSpace(source.Poster.PosterURL)
+	croppedURL := strings.TrimSpace(source.Poster.CroppedPosterURL)
+	target.Poster.OriginalPosterURL = posterURL
+	target.Poster.OriginalCroppedPosterURL = croppedURL
+	// Only anchor the crop baseline when there's a real poster baseline. When
+	// the scraper found no image, leave OriginalShouldCropPoster nil so the
+	// frontend falls back to the current field (matching the empty-URL
+	// fallback) instead of a non-nil false that could spuriously enable Reset.
+	if posterURL != "" || croppedURL != "" {
+		shouldCrop := source.Poster.ShouldCropPoster
+		target.Poster.OriginalShouldCropPoster = &shouldCrop
+	} else {
+		target.Poster.OriginalShouldCropPoster = nil
+	}
+	target.Poster.OriginalCoverURL = strings.TrimSpace(source.Poster.CoverURL)
 }

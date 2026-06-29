@@ -97,11 +97,6 @@ export function createReviewState(pageStore: Page) {
 	let lastSelectedMovieId = $state<string | null>(null);
 	let completenessFilter = new SvelteSet<CompletenessTier>(['incomplete', 'partial', 'complete']);
 	let selectionMode = $state(false);
-	let originalPosterState = new SvelteMap<
-		string,
-		{ poster_url: string; cropped_poster_url: string; should_crop_poster: boolean }
-	>();
-	let originalCoverState = new SvelteMap<string, string>();
 	let organizing = $state(false);
 	let destinationPath = $state('');
 	let organizeOperation = $state<OrganizeOperation>('move');
@@ -165,22 +160,6 @@ export function createReviewState(pageStore: Page) {
 			untrack(() => {
 				if (jobData.destination && !destinationPath) {
 					destinationPath = jobData.destination;
-				}
-				if (originalPosterState.size === 0) {
-					for (const result of Object.values(jobData.results) as FileResult[]) {
-						if (result.movie) {
-							originalPosterState.set(result.file_path, {
-								poster_url: result.movie.original_poster_url || result.movie.poster_url || '',
-								cropped_poster_url:
-									result.movie.original_cropped_poster_url || result.movie.cropped_poster_url || '',
-								should_crop_poster:
-									result.movie.original_should_crop_poster ??
-									result.movie.should_crop_poster ??
-									false,
-							});
-							originalCoverState.set(result.file_path, result.movie.original_cover_url || result.movie.cover_url || '');
-						}
-					}
 				}
 			});
 		}
@@ -647,10 +626,61 @@ export function createReviewState(pageStore: Page) {
 		posterPreviewOverrides.delete(currentResult.file_path);
 	}
 
+	// The scraped-image revert baseline. The backend populates the
+	// poster-original group (OriginalPosterURL/OriginalCroppedPosterURL/
+	// OriginalShouldCropPoster/OriginalCoverURL) at scrape + rescrape time, so
+	// the authoritative baseline lives on the movie itself — reading it from
+	// the movie (not a one-shot snapshot map) means it stays correct across an
+	// in-review rescrape, where the snapshot maps would go stale and Reset
+	// would restore the *prior* content's image. The `|| current` fallback
+	// covers older movies persisted before the baseline was eagerly set.
+	//
+	// The fallback reads from the unedited loaded movie (`currentResult.movie`)
+	// — NOT `currentMovie`, which may already be an `editedMovies` override.
+	// Anchoring the fallback to the edited movie would make the baseline drift
+	// with the edit, so Reset (which compares the edited `currentMovie` against
+	// this baseline) would no-op incorrectly for legacy rows.
+	const posterBaseline = $derived.by(() => {
+		if (!currentResult || !currentResult.movie) return undefined;
+		const loaded = currentResult.movie;
+		return {
+			poster_url: loaded.original_poster_url || loaded.poster_url || '',
+			cropped_poster_url: loaded.original_cropped_poster_url || loaded.cropped_poster_url || '',
+			should_crop_poster: loaded.original_should_crop_poster ?? loaded.should_crop_poster ?? false,
+		};
+	});
+
+	const coverBaseline = $derived.by(() => {
+		if (!currentResult || !currentResult.movie) return undefined;
+		const loaded = currentResult.movie;
+		return loaded.original_cover_url || loaded.cover_url || '';
+	});
+
+	// Whether the current movie has drifted from its scraped baseline — mirrors
+	// resetPoster/resetCover's no-op guards so the Reset button is disabled
+	// exactly when Reset would do nothing (UX: no "reset" when already at baseline).
+	const canResetPoster = $derived.by(() => {
+		if (!currentResult || !currentMovie) return false;
+		const original = posterBaseline;
+		if (!original || !original.poster_url) return false;
+		return (
+			currentMovie.poster_url !== original.poster_url ||
+			currentMovie.cropped_poster_url !== original.cropped_poster_url ||
+			currentMovie.should_crop_poster !== original.should_crop_poster
+		);
+	});
+
+	const canResetCover = $derived.by(() => {
+		if (!currentResult || !currentMovie) return false;
+		const original = coverBaseline;
+		if (original === undefined || original === '') return false;
+		return currentMovie.cover_url !== original;
+	});
+
 	function resetPoster() {
 		if (!currentResult || !currentMovie) return;
 
-		const original = originalPosterState.get(currentResult.file_path);
+		const original = posterBaseline;
 		if (!original || !original.poster_url) return;
 
 		const posterChanged =
@@ -674,8 +704,8 @@ export function createReviewState(pageStore: Page) {
 	function resetCover() {
 		if (!currentResult || !currentMovie) return;
 
-		const original = originalCoverState.get(currentResult.file_path);
-		if (original === undefined) return;
+		const original = coverBaseline;
+		if (original === undefined || original === '') return;
 
 		if (currentMovie.cover_url === original) return;
 
@@ -1470,6 +1500,12 @@ export function createReviewState(pageStore: Page) {
 		},
 		get currentResult() {
 			return currentResult;
+		},
+		get canResetPoster() {
+			return canResetPoster;
+		},
+		get canResetCover() {
+			return canResetCover;
 		},
 		get currentMovie() {
 			return currentMovie;

@@ -7,6 +7,7 @@
 	import Button from './ui/Button.svelte';
 	import Card from './ui/Card.svelte';
 	import ImageViewer from './ImageViewer.svelte';
+import { tooltip } from '$lib/actions/tooltip';
 	import VideoModal from './VideoModal.svelte';
 	import { Plus, Trash2, Image as ImageIcon, ImagePlus, Play, RotateCcw, Info, ChevronDown } from 'lucide-svelte';
 
@@ -15,11 +16,12 @@
 		displayPosterUrl?: string;
 		onUpdate: (movie: Movie) => void;
 		onUseScreenshotAsPoster?: (url: string) => void;
+		onUseScreenshotAsCover?: (url: string) => void;
 		fieldSources?: Record<string, string>;
 		showFieldSources?: boolean;
 	}
 
-	let { movie, displayPosterUrl, onUpdate, onUseScreenshotAsPoster, fieldSources, showFieldSources = false }: Props = $props();
+	let { movie, displayPosterUrl, onUpdate, onUseScreenshotAsPoster, onUseScreenshotAsCover, fieldSources, showFieldSources = false }: Props = $props();
 
 	let screenshots = $state<string[]>([]);
 	let posterUrl = $state('');
@@ -132,6 +134,18 @@
 
 		clearCropState = true;
 		posterUrl = url;
+		notifyParent();
+	}
+
+	async function useScreenshotAsCover(url: string) {
+		if (onUseScreenshotAsCover) {
+			onUseScreenshotAsCover(url);
+			return;
+		}
+
+		if (!(await confirmDialog('Use as Cover/Fanart', 'Use this screenshot as the cover/fanart? This will replace the current cover image.', { confirmLabel: 'Use as Cover/Fanart' }))) return;
+
+		coverUrl = url;
 		notifyParent();
 	}
 
@@ -430,17 +444,30 @@
 							<p class="text-xs text-muted-foreground truncate flex-1" title={url}>
 								Screenshot {index + 1}
 							</p>
-							<Button
-								variant="ghost"
-								size="sm"
-								onclick={() => useScreenshotAsPoster(url)}
-								title="Use as Poster"
-								class="p-1 h-auto"
-							>
-								{#snippet children()}
-									<ImagePlus class="h-3 w-3" />
-								{/snippet}
-							</Button>
+							<span class="inline-flex" use:tooltip={"Use as Poster"}>
+								<Button
+										variant="ghost"
+										size="sm"
+										onclick={() => useScreenshotAsPoster(url)}
+										class="p-1 h-auto"
+								>
+										{#snippet children()}
+												<ImagePlus class="h-3 w-3" />
+										{/snippet}
+								</Button>
+							</span>
+							<span class="inline-flex" use:tooltip={"Use as Cover/Fanart"}>
+								<Button
+										variant="ghost"
+										size="sm"
+										onclick={() => useScreenshotAsCover(url)}
+										class="p-1 h-auto"
+								>
+										{#snippet children()}
+												<ImageIcon class="h-3 w-3" />
+										{/snippet}
+								</Button>
+							</span>
 							<Button
 								variant="ghost"
 								size="sm"

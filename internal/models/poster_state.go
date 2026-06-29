@@ -13,6 +13,7 @@ type PosterState struct {
 	OriginalPosterURL        string `json:"original_poster_url"`
 	OriginalCroppedPosterURL string `json:"original_cropped_poster_url"`
 	OriginalShouldCropPoster *bool  `json:"original_should_crop_poster"`
+	OriginalCoverURL         string `json:"original_cover_url"`
 }
 
 // Clone returns a deep copy of the PosterState.

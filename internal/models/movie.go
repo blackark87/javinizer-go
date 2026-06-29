@@ -288,6 +288,7 @@ func (m Movie) MarshalJSON() ([]byte, error) {
 		OriginalPosterURL        string `json:"original_poster_url"`
 		OriginalCroppedPosterURL string `json:"original_cropped_poster_url"`
 		OriginalShouldCropPoster *bool  `json:"original_should_crop_poster"`
+		OriginalCoverURL         string `json:"original_cover_url"`
 		*Alias
 	}{
 		PosterURL:                m.Poster.PosterURL,
@@ -297,6 +298,7 @@ func (m Movie) MarshalJSON() ([]byte, error) {
 		OriginalPosterURL:        m.Poster.OriginalPosterURL,
 		OriginalCroppedPosterURL: m.Poster.OriginalCroppedPosterURL,
 		OriginalShouldCropPoster: m.Poster.OriginalShouldCropPoster,
+		OriginalCoverURL:         m.Poster.OriginalCoverURL,
 		Alias:                    (*Alias)(&m),
 	}
 	return json.Marshal(aux)
@@ -314,6 +316,7 @@ func (m *Movie) UnmarshalJSON(data []byte) error {
 		OriginalPosterURL        string `json:"original_poster_url"`
 		OriginalCroppedPosterURL string `json:"original_cropped_poster_url"`
 		OriginalShouldCropPoster *bool  `json:"original_should_crop_poster"`
+		OriginalCoverURL         string `json:"original_cover_url"`
 		*Alias
 	}{
 		Alias: (*Alias)(m),
@@ -329,6 +332,7 @@ func (m *Movie) UnmarshalJSON(data []byte) error {
 		OriginalPosterURL:        aux.OriginalPosterURL,
 		OriginalCroppedPosterURL: aux.OriginalCroppedPosterURL,
 		OriginalShouldCropPoster: aux.OriginalShouldCropPoster,
+		OriginalCoverURL:         aux.OriginalCoverURL,
 	}
 	return nil
 }

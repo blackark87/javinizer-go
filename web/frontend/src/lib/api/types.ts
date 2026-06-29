@@ -342,6 +342,7 @@ export interface Movie {
 	original_poster_url?: string;
 	original_cropped_poster_url?: string;
 	original_should_crop_poster?: boolean | null;
+	original_cover_url?: string;
 	screenshot_urls?: string[];
 	trailer_url?: string;
 	original_filename?: string;

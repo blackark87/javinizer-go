@@ -356,6 +356,15 @@ type jobEditorImpl struct {
 }
 
 func (je *jobEditorImpl) UpdateMovie(ctx context.Context, filePath string, movie *models.Movie) error {
+	// Preserve the original cover snapshot from the existing in-memory movie
+	// before persisting, so the cover/fanart reset survives server restarts
+	// and the DB/in-memory states stay in sync. Read-only pass: does not mutate
+	// the in-memory result, only populates movie.Poster.OriginalCoverURL.
+	_ = je.updater.AtomicUpdateFileResult(filePath, func(current *MovieResult) (*MovieResult, error) {
+		backupCoverOriginal(current.Movie, movie)
+		return current, nil
+	})
+
 	// Per ADR-0045: persist to DB first, then update in-memory. If DB persist
 	// fails, the in-memory state is not updated — no divergence. If DB persist
 	// succeeds but in-memory update fails, the job's state is stale but the

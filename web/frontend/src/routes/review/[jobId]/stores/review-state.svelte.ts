@@ -101,6 +101,7 @@ export function createReviewState(pageStore: Page) {
 		string,
 		{ poster_url: string; cropped_poster_url: string; should_crop_poster: boolean }
 	>();
+	let originalCoverState = new SvelteMap<string, string>();
 	let organizing = $state(false);
 	let destinationPath = $state('');
 	let organizeOperation = $state<OrganizeOperation>('move');
@@ -177,6 +178,7 @@ export function createReviewState(pageStore: Page) {
 									result.movie.should_crop_poster ??
 									false,
 							});
+							originalCoverState.set(result.file_path, result.movie.original_cover_url || result.movie.cover_url || '');
 						}
 					}
 				}
@@ -669,6 +671,17 @@ export function createReviewState(pageStore: Page) {
 		}
 	}
 
+	function resetCover() {
+		if (!currentResult || !currentMovie) return;
+
+		const original = originalCoverState.get(currentResult.file_path);
+		if (original === undefined) return;
+
+		if (currentMovie.cover_url === original) return;
+
+		updateCurrentMovie({ ...currentMovie, cover_url: original });
+	}
+
 	async function useScreenshotAsPoster(url: string) {
 		if (!currentMovie || !currentResult) return;
 
@@ -681,6 +694,19 @@ export function createReviewState(pageStore: Page) {
 
 		clearPosterPreviewOverride();
 		mutations.applyPosterFromUrl(currentResult!.result_id, url);
+	}
+
+	async function useScreenshotAsCover(url: string) {
+		if (!currentMovie || !currentResult) return;
+
+		const confirmed = await confirmDialog(
+			'Set as Cover/Fanart',
+			'Use this screenshot as the cover/fanart? This will replace the current cover image.',
+		);
+
+		if (!confirmed) return;
+
+		updateCurrentMovie({ ...currentMovie, cover_url: url });
 	}
 
 	function clearEditStorage() {
@@ -1471,7 +1497,9 @@ export function createReviewState(pageStore: Page) {
 		updateCurrentMovie,
 		resetCurrentMovie,
 		resetPoster,
+		resetCover,
 		useScreenshotAsPoster,
+		useScreenshotAsCover,
 		saveAllEdits,
 		get selectedMovieIds() {
 			return selectedMovieIds;

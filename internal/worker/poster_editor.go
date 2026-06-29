@@ -111,3 +111,22 @@ func backupPosterOriginals(movie *models.Movie) {
 		movie.Poster.OriginalShouldCropPoster = &shouldCrop
 	}
 }
+
+// backupCoverOriginal preserves the original cover URL so the cover/fanart
+// reset survives server restarts. The existing movie (current) holds the
+// authoritative original snapshot; the incoming movie (next) is what the
+// client wants to persist. If an original was already captured on the
+// existing movie, carry it forward. Otherwise, if the cover is changing,
+// snapshot the existing cover as the original.
+func backupCoverOriginal(current, next *models.Movie) {
+	if current == nil || next == nil {
+		return
+	}
+	if orig := current.Poster.OriginalCoverURL; orig != "" {
+		next.Poster.OriginalCoverURL = orig
+		return
+	}
+	if current.Poster.CoverURL != "" && current.Poster.CoverURL != next.Poster.CoverURL {
+		next.Poster.OriginalCoverURL = current.Poster.CoverURL
+	}
+}

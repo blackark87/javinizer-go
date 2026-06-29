@@ -229,7 +229,9 @@
 								onOpenCoverViewer={s.reviewPageController.openCoverViewer}
 								onOpenScreenshotViewer={s.reviewPageController.openScreenshotViewer}
 								onUseScreenshotAsPoster={s.useScreenshotAsPoster}
+								onUseScreenshotAsCover={s.useScreenshotAsCover}
 								onResetPoster={s.resetPoster}
+							onResetCover={s.resetCover}
 								previewImageURL={s.reviewPageController.previewImageURL}
 							/>
 
@@ -290,6 +292,7 @@
 								showFieldScraperSources={s.showFieldScraperSources}
 								onUpdateCurrentMovie={s.updateCurrentMovie}
 								onUseScreenshotAsPoster={s.useScreenshotAsPoster}
+								onUseScreenshotAsCover={s.useScreenshotAsCover}
 							/>
 
 							{#if s.canOrganize}

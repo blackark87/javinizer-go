@@ -152,6 +152,7 @@ var stringMergeSpecs = []stringMergeSpec{
 	{"CroppedPosterURL", func(m *models.Movie) string { return m.Poster.CroppedPosterURL }, func(m *models.Movie) string { return m.Poster.CroppedPosterURL }, func(m *models.Movie, v string) { m.Poster.CroppedPosterURL = v }},
 	{"OriginalPosterURL", func(m *models.Movie) string { return m.Poster.OriginalPosterURL }, func(m *models.Movie) string { return m.Poster.OriginalPosterURL }, func(m *models.Movie, v string) { m.Poster.OriginalPosterURL = v }},
 	{"OriginalCroppedPosterURL", func(m *models.Movie) string { return m.Poster.OriginalCroppedPosterURL }, func(m *models.Movie) string { return m.Poster.OriginalCroppedPosterURL }, func(m *models.Movie, v string) { m.Poster.OriginalCroppedPosterURL = v }},
+	{"OriginalCoverURL", func(m *models.Movie) string { return m.Poster.OriginalCoverURL }, func(m *models.Movie) string { return m.Poster.OriginalCoverURL }, func(m *models.Movie, v string) { m.Poster.OriginalCoverURL = v }},
 }
 
 // intMergeSpecs lists all int scalar fields to merge.

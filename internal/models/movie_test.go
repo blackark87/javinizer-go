@@ -442,6 +442,32 @@ func TestMovieJSONMarshaling(t *testing.T) {
 		assert.True(t, ok, "genres should be an array")
 		assert.Len(t, genres, 2)
 	})
+
+	t.Run("original_cover_url round-trips through JSON", func(t *testing.T) {
+		t.Parallel()
+		movie := &Movie{
+			ContentID: "ipx00123",
+			Title:     "Test Movie",
+			Poster: PosterState{
+				CoverURL:         "https://example.com/cover.jpg",
+				OriginalCoverURL: "https://example.com/scraped-cover.jpg",
+			},
+		}
+
+		jsonData, err := json.Marshal(movie)
+		require.NoError(t, err)
+
+		var raw map[string]interface{}
+		require.NoError(t, json.Unmarshal(jsonData, &raw))
+		assert.Equal(t, "https://example.com/cover.jpg", raw["cover_url"])
+		assert.Equal(t, "https://example.com/scraped-cover.jpg", raw["original_cover_url"],
+			"original_cover_url must be present in the flat wire format")
+
+		var unmarshaled Movie
+		require.NoError(t, json.Unmarshal(jsonData, &unmarshaled))
+		assert.Equal(t, "https://example.com/scraped-cover.jpg", unmarshaled.Poster.OriginalCoverURL,
+			"original_cover_url must survive a marshal/unmarshal round-trip")
+	})
 }
 
 // TestGORMTags tests GORM struct tag validation using reflection (AC-2.3.4)

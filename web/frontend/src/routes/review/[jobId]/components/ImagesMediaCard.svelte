@@ -15,6 +15,7 @@
 		showFieldScraperSources: boolean;
 		onUpdateCurrentMovie: (movie: Movie) => void;
 		onUseScreenshotAsPoster?: (url: string) => void;
+		onUseScreenshotAsCover?: (url: string) => void;
 	}
 
 	let {
@@ -25,7 +26,8 @@
 		displayPosterUrl,
 		showFieldScraperSources,
 		onUpdateCurrentMovie,
-		onUseScreenshotAsPoster
+		onUseScreenshotAsPoster,
+		onUseScreenshotAsCover
 	}: Props = $props();
 </script>
 
@@ -51,6 +53,7 @@
 						displayPosterUrl={displayPosterUrl}
 						onUpdate={onUpdateCurrentMovie}
 						onUseScreenshotAsPoster={onUseScreenshotAsPoster}
+						onUseScreenshotAsCover={onUseScreenshotAsCover}
 						fieldSources={currentResult.field_sources}
 						showFieldSources={showFieldScraperSources}
 					/>

@@ -49,6 +49,7 @@ type MovieView struct {
 	OriginalPosterURL        string `json:"original_poster_url"`
 	OriginalCroppedPosterURL string `json:"original_cropped_poster_url"`
 	OriginalShouldCropPoster *bool  `json:"original_should_crop_poster"`
+	OriginalCoverURL         string `json:"original_cover_url"`
 
 	// Media
 	TrailerURL       string   `json:"trailer_url"`
@@ -102,6 +103,7 @@ func MovieViewFromModel(m *models.Movie) *MovieView {
 		OriginalPosterURL:        m.Poster.OriginalPosterURL,
 		OriginalCroppedPosterURL: m.Poster.OriginalCroppedPosterURL,
 		OriginalShouldCropPoster: m.Poster.OriginalShouldCropPoster,
+		OriginalCoverURL:         m.Poster.OriginalCoverURL,
 		TrailerURL:               m.TrailerURL,
 		OriginalFileName:         m.OriginalFileName,
 		Screenshots:              m.Screenshots,
@@ -160,6 +162,7 @@ func MovieViewToModel(v *MovieView) *models.Movie {
 		OriginalPosterURL:        v.OriginalPosterURL,
 		OriginalCroppedPosterURL: v.OriginalCroppedPosterURL,
 		OriginalShouldCropPoster: v.OriginalShouldCropPoster,
+		OriginalCoverURL:         v.OriginalCoverURL,
 	}
 	return m
 }

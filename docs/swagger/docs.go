@@ -3925,6 +3925,9 @@ const docTemplate = `{
                     "description": "Studio/maker",
                     "type": "string"
                 },
+                "original_cover_url": {
+                    "type": "string"
+                },
                 "original_cropped_poster_url": {
                     "type": "string"
                 },

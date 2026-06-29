@@ -76,6 +76,7 @@ func rejectUnknownProxyFields(node *yaml.Node, context string) error {
 // ScraperProxyMode represents how a scraper should use proxy
 type ScraperProxyMode string
 
+// ScraperProxyMode values selecting how a scraper resolves its proxy.
 const (
 	ScraperProxyModeDirect   ScraperProxyMode = "direct"
 	ScraperProxyModeInherit  ScraperProxyMode = "inherit"

@@ -67,10 +67,19 @@ func (p *defaultBatchCommandPresenter) OnSummary(w io.Writer, opts BatchCommandO
 // want CLI output.
 type SilentBatchCommandPresenter struct{}
 
+// OnHeader implements BatchCommandPresenter.OnHeader as a no-op.
 func (p *SilentBatchCommandPresenter) OnHeader(_ io.Writer, _ BatchCommandOptions) {}
-func (p *SilentBatchCommandPresenter) OnScanStart(_ io.Writer)                     {}
-func (p *SilentBatchCommandPresenter) OnNoFiles(_ io.Writer)                       {}
-func (p *SilentBatchCommandPresenter) OnProcessingStart(_ io.Writer, _ string)     {}
+
+// OnScanStart implements BatchCommandPresenter.OnScanStart as a no-op.
+func (p *SilentBatchCommandPresenter) OnScanStart(_ io.Writer) {}
+
+// OnNoFiles implements BatchCommandPresenter.OnNoFiles as a no-op.
+func (p *SilentBatchCommandPresenter) OnNoFiles(_ io.Writer) {}
+
+// OnProcessingStart implements BatchCommandPresenter.OnProcessingStart as a no-op.
+func (p *SilentBatchCommandPresenter) OnProcessingStart(_ io.Writer, _ string) {}
+
+// OnSummary implements BatchCommandPresenter.OnSummary as a no-op.
 func (p *SilentBatchCommandPresenter) OnSummary(_ io.Writer, _ BatchCommandOptions, _ BatchCommandResult) {
 }
 

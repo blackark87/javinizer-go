@@ -15,6 +15,7 @@ import (
 // OperationMode classifies how files should be organized.
 type OperationMode string
 
+// OperationMode values for the supported file-organization strategies.
 const (
 	OperationModeOrganize              OperationMode = "organize"
 	OperationModeInPlace               OperationMode = "in-place"
@@ -25,11 +26,18 @@ const (
 
 func (m OperationMode) String() string { return string(m) }
 
+// MarshalJSON implements json.Marshaler for OperationMode.
 func (m OperationMode) MarshalJSON() ([]byte, error) { return enumutil.MarshalStringEnum(string(m)) }
+
+// UnmarshalJSON implements json.Unmarshaler for OperationMode.
 func (m *OperationMode) UnmarshalJSON(b []byte) error {
 	return enumutil.UnmarshalStringEnum((*string)(m), b)
 }
-func (m *OperationMode) Scan(value any) error        { return enumutil.ScanStringEnum((*string)(m), value) }
+
+// Scan implements sql.Scanner for OperationMode.
+func (m *OperationMode) Scan(value any) error { return enumutil.ScanStringEnum((*string)(m), value) }
+
+// Value implements driver.Valuer for OperationMode.
 func (m OperationMode) Value() (driver.Value, error) { return enumutil.StringEnumValue(string(m)) }
 
 // ParseOperationMode parses a string into an OperationMode.

@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// NewCommand creates the token CLI command and its create, revoke, and list subcommands.
 func NewCommand() *cobra.Command {
 	tokenCmd := &cobra.Command{
 		Use:   "token",
@@ -72,6 +73,7 @@ func newListCommand() *cobra.Command {
 	return cmd
 }
 
+// RunCreate creates a new API token and returns the result with the full token value.
 func RunCreate(cmd *cobra.Command, args []string, configFile string) (*tokenCreateResult, error) {
 	name, _ := cmd.Flags().GetString("name")
 
@@ -156,6 +158,7 @@ func runCreate(cmd *cobra.Command, configFile string) error {
 	return nil
 }
 
+// RunRevoke revokes an API token by its UUID or prefix and returns the result.
 func RunRevoke(cmd *cobra.Command, args []string, configFile string) (*tokenRevokeResult, error) {
 	idOrPrefix := args[0]
 
@@ -244,6 +247,7 @@ func runRevoke(cmd *cobra.Command, configFile string, idOrPrefix string) error {
 	return nil
 }
 
+// RunList returns all active (non-revoked) API tokens as list entries.
 func RunList(cmd *cobra.Command, args []string, configFile string) ([]tokenListEntry, error) {
 	cfg, err := config.LoadOrCreate(configFile)
 	if err != nil {

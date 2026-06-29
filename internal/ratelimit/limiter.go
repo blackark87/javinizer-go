@@ -6,16 +6,19 @@ import (
 	"time"
 )
 
+// Limiter enforces a minimum delay between successive Wait calls using a sliding-slot queue.
 type Limiter struct {
 	mu              sync.Mutex
 	nextAllowedTime time.Time
 	delay           time.Duration
 }
 
+// NewLimiter returns a Limiter that enforces the given delay between calls.
 func NewLimiter(delay time.Duration) *Limiter {
 	return &Limiter{delay: delay}
 }
 
+// Wait blocks until the next allowed slot, respecting ctx cancellation.
 func (l *Limiter) Wait(ctx context.Context) error {
 	if l.delay <= 0 {
 		return nil

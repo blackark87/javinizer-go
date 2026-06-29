@@ -7,6 +7,7 @@ import (
 
 type errorCode string
 
+// errorCode values identify each path-validation failure returned to API callers.
 const (
 	CodeAllowedDirsEmpty   errorCode = "ALLOWED_DIRS_EMPTY"
 	CodePathOutsideAllowed errorCode = "PATH_OUTSIDE_ALLOWED_DIRS"
@@ -20,6 +21,7 @@ const (
 	CodeReservedDeviceName errorCode = "RESERVED_DEVICE_NAME"
 )
 
+// PathError describes a filesystem path error returned to API callers, carrying a stable code and HTTP status.
 type PathError struct {
 	Code            errorCode
 	Message         string
@@ -31,6 +33,7 @@ type PathError struct {
 
 func (e *PathError) Error() string { return e.Message }
 
+// Is reports whether target is a PathError with the same error code.
 func (e *PathError) Is(target error) bool {
 	t, ok := target.(*PathError)
 	if !ok {
@@ -39,6 +42,7 @@ func (e *PathError) Is(target error) bool {
 	return e.Code == t.Code
 }
 
+// Sentinel errors returned by path validation and file identity checks.
 var (
 	// ErrInodeExtraction is returned when file identity cannot be extracted
 	ErrInodeExtraction = errors.New("cannot extract file identity")
@@ -133,6 +137,7 @@ var (
 	}
 )
 
+// NewPathError returns a copy of base with the offending path attached.
 func NewPathError(base *PathError, path string) *PathError {
 	return &PathError{
 		Code:            base.Code,

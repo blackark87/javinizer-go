@@ -81,13 +81,6 @@ func NormalizeDMMScreenshotURL(raw string) string {
 	return u.String()
 }
 
-// UpgradeCoverResolution upgrades cover image URLs to their highest-resolution
-// variant. It applies two transformations:
-//   - ps.jpg → pl.jpg (for all URLs, including amateur)
-//   - jp.jpg → pl.jpg (for non-amateur URLs only)
-//
-// Screenshot-style filenames (e.g., ipx00535jp-1.jpg) are left unchanged
-// because the suffix check uses HasSuffix rather than Contains.
 // DiscoverScreenshots probes pics.dmm.co.jp for screenshot URLs based on a cover URL pattern.
 // When the r18.dev API returns an empty gallery, this fallback discovers screenshots by
 // trying the standard DMM screenshot URL pattern: {base}/{content_id}jp-{N}.jpg
@@ -217,6 +210,13 @@ func probeScreenshots(dir, contentID string, client *http.Client) []string {
 	return screenshots
 }
 
+// UpgradeCoverResolution upgrades cover image URLs to their highest-resolution
+// variant. It applies two transformations:
+//   - ps.jpg → pl.jpg (for all URLs, including amateur)
+//   - jp.jpg → pl.jpg (for non-amateur URLs only)
+//
+// Screenshot-style filenames (e.g., ipx00535jp-1.jpg) are left unchanged
+// because the suffix check uses HasSuffix rather than Contains.
 func UpgradeCoverResolution(rawURL string) string {
 	if strings.HasSuffix(rawURL, "ps.jpg") {
 		rawURL = rawURL[:len(rawURL)-len("ps.jpg")] + "pl.jpg"

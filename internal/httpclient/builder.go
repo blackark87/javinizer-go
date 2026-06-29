@@ -11,17 +11,20 @@ import (
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
+// DefaultTimeout and DefaultRetryCount define the default HTTP client timeout and retry count for scrapers.
 const (
 	DefaultTimeout    = 30 * time.Second
 	DefaultRetryCount = 3
 )
 
+// ScraperClient holds the configured resty HTTP client and optional FlareSolverr or proxy profile.
 type ScraperClient struct {
 	Client       *resty.Client
 	FlareSolverr *FlareSolverr
 	ProxyProfile *models.ProxyProfile
 }
 
+// ScraperOption is a functional option for configuring a scraper HTTP client.
 type ScraperOption func(*scraperConfig)
 
 type scraperConfig struct {
@@ -56,6 +59,7 @@ func newScraperClientBuilder() *ScraperClientBuilder {
 	}
 }
 
+// ScraperClientBuilder configures and builds a ScraperClient from scraper and global settings.
 type ScraperClientBuilder struct {
 	config scraperConfig
 }
@@ -96,6 +100,7 @@ func withFlareSolverr(enabled bool) ScraperOption {
 	}
 }
 
+// WithHeaders returns a ScraperOption that merges the given headers into the client configuration.
 func WithHeaders(headers map[string]string) ScraperOption {
 	return func(c *scraperConfig) {
 		for k, v := range headers {
@@ -110,6 +115,7 @@ func withCookies(cookies map[string]string) ScraperOption {
 	}
 }
 
+// Apply applies the given scraper options to the builder and returns it for chaining.
 func (b *ScraperClientBuilder) Apply(opts ...ScraperOption) *ScraperClientBuilder {
 	for _, opt := range opts {
 		opt(&b.config)
@@ -117,6 +123,7 @@ func (b *ScraperClientBuilder) Apply(opts ...ScraperOption) *ScraperClientBuilde
 	return b
 }
 
+// BuildClient builds the configured resty client and returns it.
 func (b *ScraperClientBuilder) BuildClient() (*resty.Client, error) {
 	sc, err := b.build(false)
 	if err != nil {
@@ -125,6 +132,7 @@ func (b *ScraperClientBuilder) BuildClient() (*resty.Client, error) {
 	return sc.Client, nil
 }
 
+// BuildWithFlareSolverr builds the client and returns it along with the FlareSolverr handle when configured.
 func (b *ScraperClientBuilder) BuildWithFlareSolverr() (*resty.Client, *FlareSolverr, error) {
 	sc, err := b.build(false)
 	if err != nil {
@@ -133,6 +141,7 @@ func (b *ScraperClientBuilder) BuildWithFlareSolverr() (*resty.Client, *FlareSol
 	return sc.Client, sc.FlareSolverr, nil
 }
 
+// BuildWithProxy builds the client and returns it along with the resolved proxy profile.
 func (b *ScraperClientBuilder) BuildWithProxy() (*resty.Client, *models.ProxyProfile, error) {
 	sc, err := b.build(true)
 	if err != nil {
@@ -255,6 +264,7 @@ func sanitizeCookieValue(value string) string {
 	}, value)
 }
 
+// FromScraperSettings returns a ScraperClientBuilder configured from scraper settings, global proxy, and FlareSolverr config.
 func FromScraperSettings(settings *models.ScraperSettings, globalProxy *models.ProxyConfig, globalFlareSolverr models.FlareSolverrConfig, opts ...ScraperOption) *ScraperClientBuilder {
 	builder := newScraperClientBuilder()
 

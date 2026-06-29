@@ -8,6 +8,7 @@ import (
 // RescrapeStatus classifies the final result of a rescrape operation.
 type RescrapeStatus string
 
+// RescrapeStatus values classify the final outcome of a rescrape operation.
 const (
 	RescrapeStatusSuccess  RescrapeStatus = "success"  // Scrape succeeded, result committed
 	RescrapeStatusFailed   RescrapeStatus = "failed"   // Scrape failed or produced no result

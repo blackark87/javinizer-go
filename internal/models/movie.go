@@ -13,6 +13,7 @@ import (
 // HistoryOperation represents the type of operation recorded in history.
 type HistoryOperation string
 
+// HistoryOp values are the kinds of operations recorded in history.
 const (
 	HistoryOpScrape   HistoryOperation = "scrape"
 	HistoryOpOrganize HistoryOperation = "organize"
@@ -22,15 +23,22 @@ const (
 
 func (e HistoryOperation) String() string { return string(e) }
 
-func (e HistoryOperation) MarshalJSON() ([]byte, error)  { return MarshalStringEnum(string(e)) }
+// MarshalJSON implements json.Marshaler for HistoryOperation.
+func (e HistoryOperation) MarshalJSON() ([]byte, error) { return MarshalStringEnum(string(e)) }
+
+// UnmarshalJSON implements json.Unmarshaler for HistoryOperation.
 func (e *HistoryOperation) UnmarshalJSON(b []byte) error { return UnmarshalStringEnum((*string)(e), b) }
 
-func (e *HistoryOperation) Scan(value any) error        { return ScanStringEnum((*string)(e), value) }
+// Scan implements sql.Scanner for HistoryOperation.
+func (e *HistoryOperation) Scan(value any) error { return ScanStringEnum((*string)(e), value) }
+
+// Value implements driver.Valuer for HistoryOperation.
 func (e HistoryOperation) Value() (driver.Value, error) { return StringEnumValue(string(e)) }
 
 // HistoryStatus represents the outcome status of a history record.
 type HistoryStatus string
 
+// HistoryStatus values are the outcome statuses of a history record.
 const (
 	HistoryStatusSuccess  HistoryStatus = "success"
 	HistoryStatusFailed   HistoryStatus = "failed"
@@ -39,10 +47,16 @@ const (
 
 func (e HistoryStatus) String() string { return string(e) }
 
-func (e HistoryStatus) MarshalJSON() ([]byte, error)  { return MarshalStringEnum(string(e)) }
+// MarshalJSON implements json.Marshaler for HistoryStatus.
+func (e HistoryStatus) MarshalJSON() ([]byte, error) { return MarshalStringEnum(string(e)) }
+
+// UnmarshalJSON implements json.Unmarshaler for HistoryStatus.
 func (e *HistoryStatus) UnmarshalJSON(b []byte) error { return UnmarshalStringEnum((*string)(e), b) }
 
-func (e *HistoryStatus) Scan(value any) error        { return ScanStringEnum((*string)(e), value) }
+// Scan implements sql.Scanner for HistoryStatus.
+func (e *HistoryStatus) Scan(value any) error { return ScanStringEnum((*string)(e), value) }
+
+// Value implements driver.Valuer for HistoryStatus.
 func (e HistoryStatus) Value() (driver.Value, error) { return StringEnumValue(string(e)) }
 
 // Movie represents the aggregated metadata for a JAV movie

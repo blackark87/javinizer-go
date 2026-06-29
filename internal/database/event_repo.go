@@ -8,10 +8,12 @@ import (
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
+// EventRepository persists event log records.
 type EventRepository struct {
 	*BaseRepository[models.Event, uint]
 }
 
+// NewEventRepository returns an event repository backed by db, defaulting to newest-first ordering.
 func NewEventRepository(db *DB) *EventRepository {
 	return &EventRepository{
 		BaseRepository: NewBaseRepository[models.Event, uint](
@@ -23,14 +25,17 @@ func NewEventRepository(db *DB) *EventRepository {
 	}
 }
 
+// Create inserts a single event record.
 func (r *EventRepository) Create(ctx context.Context, event *models.Event) error {
 	return r.BaseRepository.Create(ctx, event)
 }
 
+// FindByID returns the event with the given primary key.
 func (r *EventRepository) FindByID(ctx context.Context, id uint) (*models.Event, error) {
 	return r.BaseRepository.FindByID(ctx, id)
 }
 
+// FindFiltered returns events matching the filter, ordered newest-first with limit/offset paging.
 func (r *EventRepository) FindFiltered(ctx context.Context, filter EventFilter, limit, offset int) ([]models.Event, error) {
 	query := r.GetDB().WithContext(ctx).Order("created_at DESC").Limit(limit).Offset(offset)
 	if filter.EventType != "" {
@@ -56,6 +61,7 @@ func (r *EventRepository) FindFiltered(ctx context.Context, filter EventFilter, 
 	return events, nil
 }
 
+// CountFiltered returns the number of events matching the filter.
 func (r *EventRepository) CountFiltered(ctx context.Context, filter EventFilter) (int64, error) {
 	query := r.GetDB().WithContext(ctx).Model(&models.Event{})
 	if filter.EventType != "" {
@@ -81,14 +87,17 @@ func (r *EventRepository) CountFiltered(ctx context.Context, filter EventFilter)
 	return count, nil
 }
 
+// List returns events ordered newest-first with limit/offset paging.
 func (r *EventRepository) List(ctx context.Context, limit, offset int) ([]models.Event, error) {
 	return r.BaseRepository.List(ctx, limit, offset)
 }
 
+// Count returns the total number of event records.
 func (r *EventRepository) Count(ctx context.Context) (int64, error) {
 	return r.BaseRepository.Count(ctx)
 }
 
+// CountGroupBySource returns a map of event source to event count.
 func (r *EventRepository) CountGroupBySource(ctx context.Context) (map[string]int64, error) {
 	type result struct {
 		Source string
@@ -106,6 +115,7 @@ func (r *EventRepository) CountGroupBySource(ctx context.Context) (map[string]in
 	return bySource, nil
 }
 
+// DeleteOlderThan deletes events created before date and returns the number removed.
 func (r *EventRepository) DeleteOlderThan(ctx context.Context, date time.Time) (int64, error) {
 	result := r.GetDB().WithContext(ctx).Where("datetime(created_at) < datetime(?)", date.UTC().Format(sqliteTimeFormat)).Delete(&models.Event{})
 	if result.Error != nil {

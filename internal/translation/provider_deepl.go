@@ -22,17 +22,21 @@ type deepLTranslateResponse struct {
 	} `json:"translations"`
 }
 
+// DeepLProvider translates text via the DeepL API.
 type DeepLProvider struct {
 	cfg        Config
 	httpClient httpclient.HTTPClient
 }
 
+// NewDeepLProvider returns a DeepL translation provider using cfg and httpClient.
 func NewDeepLProvider(cfg Config, httpClient httpclient.HTTPClient) *DeepLProvider {
 	return &DeepLProvider{cfg: cfg, httpClient: httpClient}
 }
 
+// Name returns the provider identifier "deepl".
 func (p *DeepLProvider) Name() string { return "deepl" }
 
+// Translate sends texts to the DeepL translate API and returns the translated strings.
 func (p *DeepLProvider) Translate(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
 	if p == nil {
 		return nil, fmt.Errorf("nil receiver: *DeepLProvider")

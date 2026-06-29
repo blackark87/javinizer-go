@@ -18,6 +18,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/scraperutil"
 )
 
+// RegisterAll registers every built-in scraper with the given registrar.
 func RegisterAll(reg scraperutil.ScraperRegistrar) {
 	r18dev.Register(reg)
 	dmm.Register(reg)

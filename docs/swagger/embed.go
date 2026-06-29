@@ -17,6 +17,7 @@ func init() {
 	}
 }
 
+// SwaggerJSON returns a copy of the embedded OpenAPI specification.
 func SwaggerJSON() []byte {
 	cp := make([]byte, len(swaggerJSON))
 	copy(cp, swaggerJSON)

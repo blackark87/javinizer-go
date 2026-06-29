@@ -123,6 +123,7 @@ func streamAndHash(r io.Reader, h hash.Hash) (int64, error) {
 	return total, nil
 }
 
+// FilterURLs returns the URLs that are not placeholder images, along with the count of placeholders removed.
 func FilterURLs(ctx context.Context, client *resty.Client, urls []string, cfg Config) ([]string, int, error) {
 	if len(urls) == 0 {
 		return urls, 0, nil

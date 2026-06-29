@@ -28,6 +28,7 @@ func computeMigrationHash(content []byte) string {
 	return hex.EncodeToString(hash[:])
 }
 
+// StoreMigrationHash records or replaces the content hash for the named migration.
 func StoreMigrationHash(db *sql.DB, name, hash string) error {
 	_, err := db.Exec(fmt.Sprintf(`
 		INSERT OR REPLACE INTO %s (migration_name, content_hash)
@@ -39,6 +40,7 @@ func StoreMigrationHash(db *sql.DB, name, hash string) error {
 	return nil
 }
 
+// GetStoredHash returns the stored content hash for the named migration, or an empty string when no entry exists.
 func GetStoredHash(db *sql.DB, name string) (string, error) {
 	var hash string
 	err := db.QueryRow(fmt.Sprintf(`

@@ -4,6 +4,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/operationmode"
 )
 
+// GetOperationMode parses mode into an OperationMode, defaulting to organize on empty or invalid input.
 func GetOperationMode(mode string) operationmode.OperationMode {
 	if mode == "" {
 		return operationmode.OperationModeOrganize
@@ -15,6 +16,7 @@ func GetOperationMode(mode string) operationmode.OperationMode {
 	return parsed
 }
 
+// GetOperationMode resolves the configured output operation mode, defaulting on empty or invalid input.
 func (o *OutputOperationConfig) GetOperationMode() operationmode.OperationMode {
 	return GetOperationMode(string(o.OperationMode))
 }

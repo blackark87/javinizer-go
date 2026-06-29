@@ -116,6 +116,7 @@ type PreviewResult struct {
 	OperationMode   operationmode.OperationMode
 }
 
+// WorkflowInterface exposes the high-level scrape, apply, preview, compare, and scan workflows.
 type WorkflowInterface interface {
 	Scrape(ctx context.Context, cmd scrape.ScrapeCmd, progress scrape.ProgressFunc) (*scrape.ScrapeResult, *OrchestrationMeta, error)
 	Apply(ctx context.Context, cmd ApplyCmd, progress scrape.ProgressFunc) (*ApplyResult, error)

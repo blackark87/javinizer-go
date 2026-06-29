@@ -5,6 +5,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/scraperutil"
 )
 
+// Register registers the JavDB scraper with the given registrar.
 func Register(reg scraperutil.ScraperRegistrar) {
 	reg.Register(scraperutil.ScraperRegistration{
 		Name:        "javdb",

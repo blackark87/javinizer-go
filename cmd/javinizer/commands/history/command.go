@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// NewCommand creates the history CLI command and its subcommands.
 func NewCommand() *cobra.Command {
 	historyCmd := &cobra.Command{
 		Use:   "history",

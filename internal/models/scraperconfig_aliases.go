@@ -8,11 +8,22 @@ package models
 
 import "github.com/javinizer/javinizer-go/internal/scraperconfig"
 
+// ScraperSettings aliases the scraperconfig.ScraperSettings type for backward compatibility.
 type ScraperSettings = scraperconfig.ScraperSettings
+
+// ProxyConfig aliases the scraperconfig.ProxyConfig type for backward compatibility.
 type ProxyConfig = scraperconfig.ProxyConfig
+
+// ProxyProfile aliases the scraperconfig.ProxyProfile type for backward compatibility.
 type ProxyProfile = scraperconfig.ProxyProfile
+
+// ScraperProxyMode aliases the scraperconfig.ScraperProxyMode type for backward compatibility.
 type ScraperProxyMode = scraperconfig.ScraperProxyMode
+
+// BrowserConfig aliases the scraperconfig.BrowserConfig type for backward compatibility.
 type BrowserConfig = scraperconfig.BrowserConfig
+
+// FlareSolverrConfig aliases the scraperconfig.FlareSolverrConfig type for backward compatibility.
 type FlareSolverrConfig = scraperconfig.FlareSolverrConfig
 
 // Constant aliases — these let existing code use models.ScraperProxyModeDirect etc.

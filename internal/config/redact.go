@@ -4,6 +4,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
+// Redact returns a deep copy of the config with secrets replaced by redaction markers, safe for logging.
 func (c *Config) Redact() *Config {
 	if c == nil {
 		return nil

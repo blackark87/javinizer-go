@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// NewCommand creates the sort CLI subcommand.
 func NewCommand() *cobra.Command {
 	sortCmd := &cobra.Command{
 		Use:   "sort [path]",
@@ -37,6 +38,7 @@ func NewCommand() *cobra.Command {
 	return sortCmd
 }
 
+// Run executes the sort command: it scans a path, scrapes metadata, and organizes the files.
 func Run(cmd *cobra.Command, args []string, configFile string) error {
 	w := cmd.OutOrStdout()
 	sourcePath := args[0]

@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// RegisterRoutes registers the movie API endpoints on the given protected router group.
 func RegisterRoutes(protected *gin.RouterGroup, deps MovieDeps) {
 	protected.POST("/scrape", scrapeMovie(deps))
 	protected.GET("/movies/:id", getMovie(deps))

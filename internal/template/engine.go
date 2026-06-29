@@ -16,6 +16,7 @@ var (
 	conditionalTokenRegex = regexp.MustCompile(`(?i)<IF:[A-Z_]+>|</IF>`)
 )
 
+// DefaultMaxTemplateBytes, DefaultMaxOutputBytes, and DefaultMaxConditionalDepth are the default size and depth limits for template rendering.
 const (
 	DefaultMaxTemplateBytes    = 64 * 1024
 	DefaultMaxOutputBytes      = 10 * 1024 * 1024
@@ -72,6 +73,7 @@ type Engine struct {
 	translationResolver *translationResolver
 }
 
+// EngineInterface is the contract for template rendering and path validation operations.
 type EngineInterface interface {
 	Execute(template string, ctx *Context) (string, error)
 	ExecuteWithContext(execCtx context.Context, template string, ctx *Context) (string, error)
@@ -123,6 +125,7 @@ func (e *Engine) Execute(template string, ctx *Context) (string, error) {
 	return e.ExecuteWithContext(context.Background(), template, ctx)
 }
 
+// ExecuteWithMaxBytes renders tmpl so the rendered output stays within maxBytes, truncating the title when needed.
 func (e *Engine) ExecuteWithMaxBytes(tmpl string, ctx *Context, maxBytes int) (string, error) {
 	sentinel := "\x00MAXBYTES\x00"
 	frameCtx := ctx.Clone()
@@ -772,6 +775,7 @@ func (e *Engine) TruncateTitleBytes(title string, maxBytes int) string {
 	return truncated + marker
 }
 
+// ValidatePathLength returns an error if the length of path exceeds maxLen.
 func (e *Engine) ValidatePathLength(path string, maxLen int) error {
 	if maxLen <= 0 {
 		return nil

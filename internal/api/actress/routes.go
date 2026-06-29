@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// RegisterRoutes registers the actress CRUD, search, merge, and import/export routes on the given protected router group.
 func RegisterRoutes(protected *gin.RouterGroup, deps ActressDeps) {
 	protected.GET("/actresses", listActresses(deps))
 	protected.GET("/actresses/:id", getActress(deps))

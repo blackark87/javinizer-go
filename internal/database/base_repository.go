@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// BaseRepository provides generic CRUD operations for a GORM-backed entity type.
 type BaseRepository[T any, ID string | uint] struct {
 	db           *DB
 	entityName   string
@@ -16,16 +17,19 @@ type BaseRepository[T any, ID string | uint] struct {
 	newEntity    func() T
 }
 
+// BaseRepoOption configures a BaseRepository during construction.
 type BaseRepoOption[T any, ID string | uint] func(*BaseRepository[T, ID])
 
 func withDefaultOrder[T any, ID string | uint](order string) BaseRepoOption[T, ID] {
 	return func(br *BaseRepository[T, ID]) { br.defaultOrder = order }
 }
 
+// WithNewEntity sets the factory used to produce a fresh zero-value entity, needed for Delete and Count queries.
 func WithNewEntity[T any, ID string | uint](fn func() T) BaseRepoOption[T, ID] {
 	return func(br *BaseRepository[T, ID]) { br.newEntity = fn }
 }
 
+// NewBaseRepository constructs a generic BaseRepository bound to the given DB, entity name, label function, and options.
 func NewBaseRepository[T any, ID string | uint](
 	db *DB,
 	entityName string,
@@ -44,6 +48,7 @@ func NewBaseRepository[T any, ID string | uint](
 	return br
 }
 
+// Create inserts a new entity row, wrapping GORM errors with the entity name and label.
 func (r *BaseRepository[T, ID]) Create(ctx context.Context, entity *T) error {
 	if entity == nil {
 		return fmt.Errorf("create %s: entity must not be nil", r.entityName)
@@ -54,6 +59,7 @@ func (r *BaseRepository[T, ID]) Create(ctx context.Context, entity *T) error {
 	return nil
 }
 
+// FindByID loads a single entity by its primary key, returning ErrNotFound when the row is missing.
 func (r *BaseRepository[T, ID]) FindByID(ctx context.Context, id ID) (*T, error) {
 	var entity T
 	var err error
@@ -72,6 +78,7 @@ func (r *BaseRepository[T, ID]) FindByID(ctx context.Context, id ID) (*T, error)
 	return &entity, nil
 }
 
+// Delete removes the entity with the given primary key from the database.
 func (r *BaseRepository[T, ID]) Delete(ctx context.Context, id ID) error {
 	var err error
 	switch any(id).(type) {
@@ -86,6 +93,7 @@ func (r *BaseRepository[T, ID]) Delete(ctx context.Context, id ID) error {
 	return nil
 }
 
+// List returns a page of entities ordered by the configured default order.
 func (r *BaseRepository[T, ID]) List(ctx context.Context, limit, offset int) ([]T, error) {
 	var entities []T
 	query := r.db.WithContext(ctx).Session(&gorm.Session{})
@@ -102,6 +110,7 @@ func (r *BaseRepository[T, ID]) List(ctx context.Context, limit, offset int) ([]
 	return entities, nil
 }
 
+// ListAll returns every entity ordered by the configured default order.
 func (r *BaseRepository[T, ID]) ListAll(ctx context.Context) ([]T, error) {
 	var entities []T
 	query := r.db.WithContext(ctx).Session(&gorm.Session{})
@@ -115,6 +124,7 @@ func (r *BaseRepository[T, ID]) ListAll(ctx context.Context) ([]T, error) {
 	return entities, nil
 }
 
+// Count returns the total number of entity rows.
 func (r *BaseRepository[T, ID]) Count(ctx context.Context) (int64, error) {
 	var count int64
 	zero := r.newEntity()
@@ -125,6 +135,7 @@ func (r *BaseRepository[T, ID]) Count(ctx context.Context) (int64, error) {
 	return count, nil
 }
 
+// GetDB returns the underlying database handle.
 func (r *BaseRepository[T, ID]) GetDB() *DB {
 	return r.db
 }

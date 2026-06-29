@@ -19,6 +19,7 @@ func (a *Aggregator) Aggregate(results []*models.ScraperResult) (*models.Movie, 
 	})
 }
 
+// AggregateWithPriority combines scraper results into a Movie using a custom scraper priority override.
 func (a *Aggregator) AggregateWithPriority(results []*models.ScraperResult, customPriority []string) (*models.Movie, *AggregateResult, error) {
 	if a == nil {
 		return nil, nil, fmt.Errorf("AggregateWithPriority called on nil Aggregator")

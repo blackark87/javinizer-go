@@ -16,12 +16,14 @@ import (
 	"github.com/javinizer/javinizer-go/internal/workflow"
 )
 
+// ScrapePhase runs the batch scrape step across a set of files.
 type ScrapePhase interface {
 	Run(ctx context.Context, inputs scrapePhaseInputs, files []string, cfg ScrapePhaseConfig)
 }
 
 type scrapePhase struct{}
 
+// NewScrapePhase returns the default ScrapePhase implementation.
 func NewScrapePhase() ScrapePhase {
 	return &scrapePhase{}
 }

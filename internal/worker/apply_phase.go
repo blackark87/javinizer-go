@@ -14,12 +14,14 @@ import (
 	"github.com/javinizer/javinizer-go/internal/workflow"
 )
 
+// ApplyPhase runs the apply (organize) step over a batch job's scraped files.
 type ApplyPhase interface {
 	Run(ctx context.Context, inputs applyPhaseInputs, cfg ApplyPhaseConfig)
 }
 
 type applyPhase struct{}
 
+// NewApplyPhase returns the default ApplyPhase implementation.
 func NewApplyPhase() ApplyPhase {
 	return &applyPhase{}
 }

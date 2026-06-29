@@ -12,6 +12,7 @@ import (
 // OperationTypeEnum represents the type of file operation performed.
 type OperationTypeEnum string
 
+// OperationType values are the supported file operation kinds for a batch entry.
 const (
 	OperationTypeMove     OperationTypeEnum = "move"
 	OperationTypeCopy     OperationTypeEnum = "copy"
@@ -22,17 +23,24 @@ const (
 
 func (e OperationTypeEnum) String() string { return string(e) }
 
+// MarshalJSON implements json.Marshaler for OperationTypeEnum.
 func (e OperationTypeEnum) MarshalJSON() ([]byte, error) { return MarshalStringEnum(string(e)) }
+
+// UnmarshalJSON implements json.Unmarshaler for OperationTypeEnum.
 func (e *OperationTypeEnum) UnmarshalJSON(b []byte) error {
 	return UnmarshalStringEnum((*string)(e), b)
 }
 
-func (e *OperationTypeEnum) Scan(value any) error        { return ScanStringEnum((*string)(e), value) }
+// Scan implements sql.Scanner for OperationTypeEnum.
+func (e *OperationTypeEnum) Scan(value any) error { return ScanStringEnum((*string)(e), value) }
+
+// Value implements driver.Valuer for OperationTypeEnum.
 func (e OperationTypeEnum) Value() (driver.Value, error) { return StringEnumValue(string(e)) }
 
 // RevertStatusEnum represents the revert status of a batch file operation.
 type RevertStatusEnum string
 
+// RevertStatus values are the revert states of a batch file operation.
 const (
 	RevertStatusApplied  RevertStatusEnum = "applied" // Renamed from "pending" — D-01
 	RevertStatusReverted RevertStatusEnum = "reverted"
@@ -41,15 +49,22 @@ const (
 
 func (e RevertStatusEnum) String() string { return string(e) }
 
-func (e RevertStatusEnum) MarshalJSON() ([]byte, error)  { return MarshalStringEnum(string(e)) }
+// MarshalJSON implements json.Marshaler for RevertStatusEnum.
+func (e RevertStatusEnum) MarshalJSON() ([]byte, error) { return MarshalStringEnum(string(e)) }
+
+// UnmarshalJSON implements json.Unmarshaler for RevertStatusEnum.
 func (e *RevertStatusEnum) UnmarshalJSON(b []byte) error { return UnmarshalStringEnum((*string)(e), b) }
 
-func (e *RevertStatusEnum) Scan(value any) error        { return ScanStringEnum((*string)(e), value) }
+// Scan implements sql.Scanner for RevertStatusEnum.
+func (e *RevertStatusEnum) Scan(value any) error { return ScanStringEnum((*string)(e), value) }
+
+// Value implements driver.Valuer for RevertStatusEnum.
 func (e RevertStatusEnum) Value() (driver.Value, error) { return StringEnumValue(string(e)) }
 
 // RevertOutcomeEnum represents the per-operation result of a revert attempt.
 type RevertOutcomeEnum string
 
+// RevertOutcome values are the per-operation results of a revert attempt.
 const (
 	RevertOutcomeReverted RevertOutcomeEnum = "reverted" // Successfully reverted
 	RevertOutcomeSkipped  RevertOutcomeEnum = "skipped"  // Skipped (e.g., anchor missing)
@@ -58,17 +73,24 @@ const (
 
 func (e RevertOutcomeEnum) String() string { return string(e) }
 
+// MarshalJSON implements json.Marshaler for RevertOutcomeEnum.
 func (e RevertOutcomeEnum) MarshalJSON() ([]byte, error) { return MarshalStringEnum(string(e)) }
+
+// UnmarshalJSON implements json.Unmarshaler for RevertOutcomeEnum.
 func (e *RevertOutcomeEnum) UnmarshalJSON(b []byte) error {
 	return UnmarshalStringEnum((*string)(e), b)
 }
 
-func (e *RevertOutcomeEnum) Scan(value any) error        { return ScanStringEnum((*string)(e), value) }
+// Scan implements sql.Scanner for RevertOutcomeEnum.
+func (e *RevertOutcomeEnum) Scan(value any) error { return ScanStringEnum((*string)(e), value) }
+
+// Value implements driver.Valuer for RevertOutcomeEnum.
 func (e RevertOutcomeEnum) Value() (driver.Value, error) { return StringEnumValue(string(e)) }
 
 // RevertReasonEnum represents the reason a revert had a specific outcome.
 type RevertReasonEnum string
 
+// RevertReason values are the reasons a revert produced a specific outcome.
 const (
 	RevertReasonAnchorMissing          RevertReasonEnum = "anchor_missing"           // Video file missing at expected path
 	RevertReasonDestinationConflict    RevertReasonEnum = "destination_conflict"     // Original path already occupied
@@ -80,10 +102,16 @@ const (
 
 func (e RevertReasonEnum) String() string { return string(e) }
 
-func (e RevertReasonEnum) MarshalJSON() ([]byte, error)  { return MarshalStringEnum(string(e)) }
+// MarshalJSON implements json.Marshaler for RevertReasonEnum.
+func (e RevertReasonEnum) MarshalJSON() ([]byte, error) { return MarshalStringEnum(string(e)) }
+
+// UnmarshalJSON implements json.Unmarshaler for RevertReasonEnum.
 func (e *RevertReasonEnum) UnmarshalJSON(b []byte) error { return UnmarshalStringEnum((*string)(e), b) }
 
-func (e *RevertReasonEnum) Scan(value any) error        { return ScanStringEnum((*string)(e), value) }
+// Scan implements sql.Scanner for RevertReasonEnum.
+func (e *RevertReasonEnum) Scan(value any) error { return ScanStringEnum((*string)(e), value) }
+
+// Value implements driver.Valuer for RevertReasonEnum.
 func (e RevertReasonEnum) Value() (driver.Value, error) { return StringEnumValue(string(e)) }
 
 // BatchFileOperation represents per-file organize details for revert support

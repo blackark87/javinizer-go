@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// NewCommand creates the logs CLI subcommand for viewing structured event logs.
 func NewCommand() *cobra.Command {
 	logsCmd := &cobra.Command{
 		Use:   "logs",

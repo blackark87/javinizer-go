@@ -9,6 +9,7 @@ import (
 // ScraperErrorKind classifies scraper failures in a structured way.
 type ScraperErrorKind string
 
+// ScraperErrorKind values classifying categories of scraper failures.
 const (
 	ScraperErrorKindUnknown     ScraperErrorKind = "unknown"
 	ScraperErrorKindNotFound    ScraperErrorKind = "not_found"

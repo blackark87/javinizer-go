@@ -12,12 +12,14 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// MergeResolution values select which side of an actress merge a field conflict resolves to.
 const (
 	MergeResolutionTarget = "target"
 	MergeResolutionSource = "source"
 	resolutionTarget      = "target"
 )
 
+// Errors returned by actress merge operations for invalid or conflicting inputs.
 var (
 	ErrActressMergeSameID           = errors.New("target_id and source_id must be different")
 	ErrActressMergeInvalidID        = errors.New("target_id and source_id must be greater than 0")

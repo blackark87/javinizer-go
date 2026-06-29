@@ -18,6 +18,7 @@ type Logger struct {
 	repo database.HistoryRepositoryInterface
 }
 
+// NewLogger creates a Logger backed by the given history repository.
 func NewLogger(repo database.HistoryRepositoryInterface) *Logger {
 	return &Logger{
 		repo: repo,

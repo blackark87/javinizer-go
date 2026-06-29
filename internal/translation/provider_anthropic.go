@@ -11,17 +11,21 @@ import (
 	"github.com/javinizer/javinizer-go/internal/httpclient"
 )
 
+// AnthropicProvider translates text via the Anthropic Messages API.
 type AnthropicProvider struct {
 	cfg        Config
 	httpClient httpclient.HTTPClient
 }
 
+// NewAnthropicProvider constructs an AnthropicProvider from config and an HTTP client.
 func NewAnthropicProvider(cfg Config, httpClient httpclient.HTTPClient) *AnthropicProvider {
 	return &AnthropicProvider{cfg: cfg, httpClient: httpClient}
 }
 
+// Name returns "anthropic".
 func (p *AnthropicProvider) Name() string { return "anthropic" }
 
+// Translate sends the given texts to the Anthropic API and returns the translated result.
 func (p *AnthropicProvider) Translate(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
 	if p == nil {
 		return nil, fmt.Errorf("nil receiver: *AnthropicProvider")

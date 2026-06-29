@@ -8,10 +8,12 @@ import (
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
+// WordReplacementRepository persists word replacement records.
 type WordReplacementRepository struct {
 	*BaseRepository[models.WordReplacement, uint]
 }
 
+// NewWordReplacementRepository creates a word replacement repository backed by the given database.
 func NewWordReplacementRepository(db *DB) *WordReplacementRepository {
 	return &WordReplacementRepository{
 		BaseRepository: NewBaseRepository[models.WordReplacement, uint](
@@ -22,10 +24,12 @@ func NewWordReplacementRepository(db *DB) *WordReplacementRepository {
 	}
 }
 
+// Create inserts a new word replacement record.
 func (r *WordReplacementRepository) Create(ctx context.Context, replacement *models.WordReplacement) error {
 	return r.BaseRepository.Create(ctx, replacement)
 }
 
+// Upsert inserts the word replacement or updates the existing record matched by its original text.
 func (r *WordReplacementRepository) Upsert(ctx context.Context, replacement *models.WordReplacement) error {
 	existing, err := r.FindByOriginal(ctx, replacement.Original)
 	if err != nil {
@@ -43,6 +47,7 @@ func (r *WordReplacementRepository) Upsert(ctx context.Context, replacement *mod
 	return nil
 }
 
+// FindByOriginal returns the word replacement matching the given original text.
 func (r *WordReplacementRepository) FindByOriginal(ctx context.Context, original string) (*models.WordReplacement, error) {
 	var replacement models.WordReplacement
 	err := r.GetDB().WithContext(ctx).First(&replacement, "original = ?", original).Error
@@ -52,18 +57,22 @@ func (r *WordReplacementRepository) FindByOriginal(ctx context.Context, original
 	return &replacement, nil
 }
 
+// List returns all stored word replacements.
 func (r *WordReplacementRepository) List(ctx context.Context) ([]models.WordReplacement, error) {
 	return r.ListAll(ctx)
 }
 
+// FindByID returns the word replacement with the given identifier.
 func (r *WordReplacementRepository) FindByID(ctx context.Context, id uint) (*models.WordReplacement, error) {
 	return r.BaseRepository.FindByID(ctx, id)
 }
 
+// DeleteByID removes the word replacement with the given identifier.
 func (r *WordReplacementRepository) DeleteByID(ctx context.Context, id uint) error {
 	return r.BaseRepository.Delete(ctx, id)
 }
 
+// Delete removes the word replacement matching the given original text.
 func (r *WordReplacementRepository) Delete(ctx context.Context, original string) error {
 	if err := r.GetDB().WithContext(ctx).Delete(&models.WordReplacement{}, "original = ?", original).Error; err != nil {
 		return wrapDBErr("delete", fmt.Sprintf("word replacement %s", original), err)
@@ -71,6 +80,7 @@ func (r *WordReplacementRepository) Delete(ctx context.Context, original string)
 	return nil
 }
 
+// GetReplacementMap returns a map of original text to replacement text for all stored entries.
 func (r *WordReplacementRepository) GetReplacementMap(ctx context.Context) (map[string]string, error) {
 	replacements, err := r.List(ctx)
 	if err != nil {
@@ -84,6 +94,7 @@ func (r *WordReplacementRepository) GetReplacementMap(ctx context.Context) (map[
 	return result, nil
 }
 
+// IsDefaultWordReplacement reports whether the given original text is one of the built-in default replacements.
 func IsDefaultWordReplacement(original string) bool {
 	_, ok := defaultOrigins[original]
 	return ok
@@ -171,6 +182,7 @@ func init() {
 	}
 }
 
+// SeedDefaultWordReplacements upserts the built-in default word replacements into the repository.
 func SeedDefaultWordReplacements(ctx context.Context, repo WordReplacementRepositoryInterface) {
 	for i := range defaultWordReplacements {
 		r := defaultWordReplacements[i]

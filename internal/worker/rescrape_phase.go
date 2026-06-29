@@ -27,6 +27,7 @@ type RescrapePhase interface {
 
 type rescrapePhase struct{}
 
+// NewRescrapePhase returns the default RescrapePhase implementation.
 func NewRescrapePhase() RescrapePhase {
 	return &rescrapePhase{}
 }

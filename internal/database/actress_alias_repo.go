@@ -7,10 +7,14 @@ import (
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
+// ActressAliasRepository persists and queries actress alias records that map
+// alternate names to their canonical actress name.
 type ActressAliasRepository struct {
 	*BaseRepository[models.ActressAlias, uint]
 }
 
+// NewActressAliasRepository constructs an ActressAliasRepository backed by
+// the given DB.
 func NewActressAliasRepository(db *DB) *ActressAliasRepository {
 	return &ActressAliasRepository{
 		BaseRepository: NewBaseRepository[models.ActressAlias, uint](
@@ -21,10 +25,13 @@ func NewActressAliasRepository(db *DB) *ActressAliasRepository {
 	}
 }
 
+// Create inserts a new actress alias record.
 func (r *ActressAliasRepository) Create(ctx context.Context, alias *models.ActressAlias) error {
 	return r.BaseRepository.Create(ctx, alias)
 }
 
+// Upsert inserts the alias when new or updates the existing alias record
+// keyed by alias name.
 func (r *ActressAliasRepository) Upsert(ctx context.Context, alias *models.ActressAlias) error {
 	existing, err := r.FindByAliasName(ctx, alias.AliasName)
 	if err != nil {
@@ -42,6 +49,7 @@ func (r *ActressAliasRepository) Upsert(ctx context.Context, alias *models.Actre
 	return nil
 }
 
+// FindByAliasName loads the alias record with the given alias name.
 func (r *ActressAliasRepository) FindByAliasName(ctx context.Context, aliasName string) (*models.ActressAlias, error) {
 	var alias models.ActressAlias
 	err := r.GetDB().WithContext(ctx).First(&alias, "alias_name = ?", aliasName).Error
@@ -51,6 +59,8 @@ func (r *ActressAliasRepository) FindByAliasName(ctx context.Context, aliasName 
 	return &alias, nil
 }
 
+// FindByCanonicalName returns all alias records pointing at the given
+// canonical actress name.
 func (r *ActressAliasRepository) FindByCanonicalName(ctx context.Context, canonicalName string) ([]models.ActressAlias, error) {
 	var aliases []models.ActressAlias
 	err := r.GetDB().WithContext(ctx).Where("canonical_name = ?", canonicalName).Find(&aliases).Error
@@ -60,10 +70,12 @@ func (r *ActressAliasRepository) FindByCanonicalName(ctx context.Context, canoni
 	return aliases, nil
 }
 
+// List returns all actress alias records.
 func (r *ActressAliasRepository) List(ctx context.Context) ([]models.ActressAlias, error) {
 	return r.ListAll(ctx)
 }
 
+// Delete removes the alias record with the given alias name.
 func (r *ActressAliasRepository) Delete(ctx context.Context, aliasName string) error {
 	if err := r.GetDB().WithContext(ctx).Delete(&models.ActressAlias{}, "alias_name = ?", aliasName).Error; err != nil {
 		return wrapDBErr("delete", fmt.Sprintf("actress alias %s", aliasName), err)
@@ -71,6 +83,7 @@ func (r *ActressAliasRepository) Delete(ctx context.Context, aliasName string) e
 	return nil
 }
 
+// GetAliasMap returns a map from each alias name to its canonical actress name.
 func (r *ActressAliasRepository) GetAliasMap(ctx context.Context) (map[string]string, error) {
 	aliases, err := r.List(ctx)
 	if err != nil {

@@ -16,6 +16,7 @@ type apiErrorResponse struct {
 	Errors []string `json:"errors,omitempty"`
 }
 
+// WriteAPIError writes an error to the gin response as a structured API error, unwrapping PathError details.
 func WriteAPIError(c *gin.Context, err error) {
 	var pathErr *PathError
 	if errors.As(err, &pathErr) {

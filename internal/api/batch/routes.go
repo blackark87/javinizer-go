@@ -6,6 +6,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/api/middleware"
 )
 
+// RegisterRoutes registers the batch job API routes on the given protected router group.
 func RegisterRoutes(protected *gin.RouterGroup, rt *core.APIRuntime) {
 	protected.GET("/batch", listBatchJobs(rt))
 	protected.POST("/batch/scrape", batchScrape(rt))

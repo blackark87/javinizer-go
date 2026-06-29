@@ -38,6 +38,7 @@ const (
 // DefaultSessionTTL is the default authenticated session lifetime.
 const DefaultSessionTTL = 24 * time.Hour
 
+// Sentinel errors returned by the auth manager.
 var (
 	ErrAuthNotInitialized = errors.New("authentication is not initialized")
 	ErrAuthAlreadySet     = errors.New("authentication is already initialized")
@@ -111,12 +112,14 @@ type AuthManager struct {
 	disableRateLimit       bool
 }
 
+// SetApiTokenRepo configures the API token repository used for token validation.
 func (m *AuthManager) SetApiTokenRepo(repo database.ApiTokenRepositoryInterface) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.apiTokenRepo = repo
 }
 
+// ValidateToken resolves an active API token by its hash and returns the token ID.
 func (m *AuthManager) ValidateToken(ctx context.Context, tokenHash string) (string, error) {
 	m.mu.RLock()
 	repo := m.apiTokenRepo
@@ -138,6 +141,7 @@ func (m *AuthManager) ValidateToken(ctx context.Context, tokenHash string) (stri
 	return apiToken.ID, nil
 }
 
+// UpdateTokenLastUsed stamps the last-used timestamp for the given API token.
 func (m *AuthManager) UpdateTokenLastUsed(ctx context.Context, tokenID string) error {
 	m.mu.RLock()
 	repo := m.apiTokenRepo

@@ -9,10 +9,12 @@ import (
 	"gorm.io/gorm"
 )
 
+// BatchFileOperationRepository persists batch file operation records used for revert tracking.
 type BatchFileOperationRepository struct {
 	*BaseRepository[models.BatchFileOperation, uint]
 }
 
+// NewBatchFileOperationRepository returns a repository backed by db for batch file operations.
 func NewBatchFileOperationRepository(db *DB) *BatchFileOperationRepository {
 	return &BatchFileOperationRepository{
 		BaseRepository: NewBaseRepository[models.BatchFileOperation, uint](
@@ -23,10 +25,12 @@ func NewBatchFileOperationRepository(db *DB) *BatchFileOperationRepository {
 	}
 }
 
+// Create inserts a single batch file operation record.
 func (r *BatchFileOperationRepository) Create(ctx context.Context, op *models.BatchFileOperation) error {
 	return r.BaseRepository.Create(ctx, op)
 }
 
+// CreateBatch inserts multiple batch file operation records in a single transaction.
 func (r *BatchFileOperationRepository) CreateBatch(ctx context.Context, ops []*models.BatchFileOperation) error {
 	return r.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, op := range ops {
@@ -38,10 +42,12 @@ func (r *BatchFileOperationRepository) CreateBatch(ctx context.Context, ops []*m
 	})
 }
 
+// FindByID returns the batch file operation with the given primary key.
 func (r *BatchFileOperationRepository) FindByID(ctx context.Context, id uint) (*models.BatchFileOperation, error) {
 	return r.BaseRepository.FindByID(ctx, id)
 }
 
+// FindByBatchJobID returns all file operations for a batch job, ordered by id.
 func (r *BatchFileOperationRepository) FindByBatchJobID(ctx context.Context, batchJobID string) ([]models.BatchFileOperation, error) {
 	var ops []models.BatchFileOperation
 	err := r.GetDB().WithContext(ctx).Where("batch_job_id = ?", batchJobID).Order("id ASC").Find(&ops).Error
@@ -51,6 +57,7 @@ func (r *BatchFileOperationRepository) FindByBatchJobID(ctx context.Context, bat
 	return ops, nil
 }
 
+// FindByBatchJobIDAndRevertStatus returns a batch job's operations filtered by revert status, ordered by id.
 func (r *BatchFileOperationRepository) FindByBatchJobIDAndRevertStatus(ctx context.Context, batchJobID string, revertStatus models.RevertStatusEnum) ([]models.BatchFileOperation, error) {
 	var ops []models.BatchFileOperation
 	err := r.GetDB().WithContext(ctx).Where("batch_job_id = ? AND revert_status = ?", batchJobID, revertStatus).Order("id ASC").Find(&ops).Error
@@ -60,6 +67,7 @@ func (r *BatchFileOperationRepository) FindByBatchJobIDAndRevertStatus(ctx conte
 	return ops, nil
 }
 
+// UpdateRevertStatus sets the revert status of an operation, stamping reverted_at when the status is reverted.
 func (r *BatchFileOperationRepository) UpdateRevertStatus(ctx context.Context, id uint, status models.RevertStatusEnum) error {
 	updates := map[string]any{
 		"revert_status": status,
@@ -74,6 +82,7 @@ func (r *BatchFileOperationRepository) UpdateRevertStatus(ctx context.Context, i
 	return nil
 }
 
+// CountByBatchJobID returns the number of file operations for a batch job.
 func (r *BatchFileOperationRepository) CountByBatchJobID(ctx context.Context, batchJobID string) (int64, error) {
 	var count int64
 	err := r.GetDB().WithContext(ctx).Model(&models.BatchFileOperation{}).Where("batch_job_id = ?", batchJobID).Count(&count).Error
@@ -83,6 +92,7 @@ func (r *BatchFileOperationRepository) CountByBatchJobID(ctx context.Context, ba
 	return count, nil
 }
 
+// CountByBatchJobIDAndRevertStatus returns the number of operations for a batch job with the given revert status.
 func (r *BatchFileOperationRepository) CountByBatchJobIDAndRevertStatus(ctx context.Context, batchJobID string, status models.RevertStatusEnum) (int64, error) {
 	var count int64
 	err := r.GetDB().WithContext(ctx).Model(&models.BatchFileOperation{}).Where("batch_job_id = ? AND revert_status = ?", batchJobID, status).Count(&count).Error
@@ -92,6 +102,7 @@ func (r *BatchFileOperationRepository) CountByBatchJobIDAndRevertStatus(ctx cont
 	return count, nil
 }
 
+// Update saves all fields of the given batch file operation record.
 func (r *BatchFileOperationRepository) Update(ctx context.Context, op *models.BatchFileOperation) error {
 	if err := r.GetDB().WithContext(ctx).Save(op).Error; err != nil {
 		return wrapDBErr("update", fmt.Sprintf("batch file operation %d", op.ID), err)

@@ -57,6 +57,7 @@ func isPrivateIP(ip net.IP) bool {
 	return false
 }
 
+// CheckURL validates that rawURL uses an http(s) scheme and does not resolve to a private or internal IP address.
 func CheckURL(rawURL string) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -91,6 +92,7 @@ func checkRedirect(req *http.Request, via []*http.Request) error {
 	return nil
 }
 
+// NewSSRFSafeClient returns an HTTP client that blocks requests to private or internal IP addresses.
 func NewSSRFSafeClient(timeout time.Duration) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
@@ -122,6 +124,7 @@ func NewSSRFSafeClient(timeout time.Duration) *http.Client {
 	}
 }
 
+// WrapTransportWithSSRFCheck wraps the given transport's dialer to block connections to private or internal IP addresses.
 func WrapTransportWithSSRFCheck(transport *http.Transport) *http.Transport {
 	originalDialContext := transport.DialContext
 	if originalDialContext == nil {

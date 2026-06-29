@@ -137,6 +137,7 @@ type dbRevertLog struct {
 	logger         logging.Logger
 }
 
+// NewDBRevertLog returns a RevertLog that persists batch file operation records through repo.
 func NewDBRevertLog(repo database.BatchFileOperationRepositoryInterface, cfg *RevertLogConfig, jobID string, fs afero.Fs, templateEngine template.EngineInterface, nfoFieldMerger nfo.NFOFieldMerger, logger logging.Logger) RevertLog {
 	logger = resolveLogger(logger)
 	return &dbRevertLog{repo: repo, cfg: cfg, jobID: jobID, fs: fs, templateEngine: templateEngine, nfoFieldMerger: nfoFieldMerger, logger: logger}

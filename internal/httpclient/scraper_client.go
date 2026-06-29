@@ -8,6 +8,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
+// ScraperHTTPClientOption configures a scraper HTTP client at construction.
 type ScraperHTTPClientOption func(*scraperHTTPConfig)
 
 type scraperHTTPConfig struct {
@@ -16,6 +17,7 @@ type scraperHTTPConfig struct {
 	withProxy bool
 }
 
+// WithScraperHeaders returns an option that merges the given HTTP headers into a scraper client's request defaults.
 func WithScraperHeaders(headers map[string]string) ScraperHTTPClientOption {
 	return func(c *scraperHTTPConfig) {
 		if c.headers == nil {
@@ -27,12 +29,14 @@ func WithScraperHeaders(headers map[string]string) ScraperHTTPClientOption {
 	}
 }
 
+// WithScraperCookies returns an option that sets the cookies sent with each scraper request.
 func WithScraperCookies(cookies map[string]string) ScraperHTTPClientOption {
 	return func(c *scraperHTTPConfig) {
 		c.cookies = cookies
 	}
 }
 
+// WithProxyProfile returns an option that enables proxy support on the scraper client.
 func WithProxyProfile() ScraperHTTPClientOption {
 	return func(c *scraperHTTPConfig) {
 		c.withProxy = true
@@ -63,6 +67,7 @@ func newScraperHTTPClient(cfg *models.ScraperSettings, globalProxy *models.Proxy
 	return builder.BuildClient()
 }
 
+// ScraperClientResult bundles a configured scraper HTTP client with its resolved proxy state.
 type ScraperClientResult struct {
 	Client       *resty.Client
 	FlareSolverr *FlareSolverr
@@ -70,6 +75,7 @@ type ScraperClientResult struct {
 	ProxyEnabled bool
 }
 
+// InitScraperClient builds a scraper HTTP client from scraper and global proxy settings, applying the given options.
 func InitScraperClient(settings *models.ScraperSettings, globalProxy *models.ProxyConfig, globalFlareSolverr models.FlareSolverrConfig, opts ...ScraperHTTPClientOption) *ScraperClientResult {
 	scraperCfg := &models.ScraperSettings{
 		Enabled:       settings.Enabled,

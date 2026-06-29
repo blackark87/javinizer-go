@@ -16,6 +16,8 @@ import (
 
 const maxTranslationResponseSize = 10 * 1024 * 1024
 
+// Service translates movie metadata fields via configured translator
+// providers, retrying transient failures with exponential backoff.
 type Service struct {
 	cfg       Config
 	providers map[string]TranslatorProvider
@@ -23,6 +25,8 @@ type Service struct {
 	rand      *rand.Rand // per-instance random source for retry jitter; protected by randMu
 }
 
+// New constructs a translation Service from the given config and providers,
+// keyed by provider name.
 func New(cfg Config, providers ...TranslatorProvider) *Service {
 	m := make(map[string]TranslatorProvider, len(providers))
 	for _, p := range providers {

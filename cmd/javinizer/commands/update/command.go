@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// NewCommand creates the update CLI subcommand that refreshes metadata in place.
 func NewCommand() *cobra.Command {
 	updateCmd := &cobra.Command{
 		Use:   "update [path]",

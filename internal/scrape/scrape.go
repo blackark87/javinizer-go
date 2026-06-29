@@ -78,6 +78,7 @@ func (s *ScrapeStatus) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// ScrapeCmd holds the parameters for a single scrape operation.
 type ScrapeCmd struct {
 	MovieID          string
 	ForceRefresh     bool
@@ -97,6 +98,7 @@ type ScrapeCmd struct {
 	SkipPersist bool
 }
 
+// ScrapeResult holds the output of a scrape operation: the aggregated movie, per-scraper results, field sources, and timing.
 type ScrapeResult struct {
 	// Movie is the aggregated result from scraping.
 	// API handlers should use this field instead of calling conversion functions.
@@ -134,6 +136,7 @@ type ScraperInstanceResolver interface {
 	Names() []string
 }
 
+// Scraper is the scrape engine that orchestrates cache lookup, multi-source scraping, and aggregation for a single MovieID.
 type Scraper struct {
 	registry    ScraperInstanceResolver
 	aggregator  aggregator.AggregatorInterface
@@ -145,12 +148,14 @@ type Scraper struct {
 	fs          afero.Fs
 }
 
+// ScraperInterface is the contract for executing a scrape operation.
 type ScraperInterface interface {
 	Scrape(ctx context.Context, cmd ScrapeCmd, progress ProgressFunc) (*ScrapeResult, error)
 }
 
 var _ ScraperInterface = (*Scraper)(nil)
 
+// New constructs a Scraper engine from its registry, aggregator, repositories, HTTP client, config, translator, and filesystem dependencies.
 func New(
 	registry ScraperInstanceResolver,
 	aggregator aggregator.AggregatorInterface,
@@ -261,6 +266,7 @@ func postProcessScraped(ctx context.Context, scraped *models.Movie, results []*m
 	return result, nil
 }
 
+// Scrape runs the cache-aware scrape pipeline for the given command and returns the aggregated result.
 func (s *Scraper) Scrape(ctx context.Context, cmd ScrapeCmd, progress ProgressFunc) (*ScrapeResult, error) {
 	if ctx == nil {
 		ctx = context.Background()

@@ -6,6 +6,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/logging"
 )
 
+// DrainAndClose reads remaining bytes from body then closes it, returning the close error if any.
 func DrainAndClose(body io.ReadCloser) error {
 	if body == nil {
 		return nil

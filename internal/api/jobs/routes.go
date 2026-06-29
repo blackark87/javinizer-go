@@ -5,6 +5,8 @@ import (
 	"github.com/javinizer/javinizer-go/internal/api/middleware"
 )
 
+// RegisterRoutes registers the jobs API routes on the given protected
+// router group, guarding :id routes with ValidateJobID.
 func RegisterRoutes(protected *gin.RouterGroup, deps JobDeps) {
 	protected.GET("/jobs", listJobs(deps))
 

@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Package configuration constants: config schema version, file/directory permissions, default HTTP user agents, and temp directory.
 const (
 	CurrentConfigVersion = 3
 
@@ -138,6 +139,7 @@ type SecurityConfig struct {
 	ForceSecureCookies bool            `yaml:"force_secure_cookies" json:"force_secure_cookies"`
 }
 
+// RateLimitConfig holds API rate limiting settings.
 type RateLimitConfig struct {
 	RequestsPerMinute int `yaml:"requests_per_minute" json:"requests_per_minute"`
 }

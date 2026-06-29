@@ -24,6 +24,7 @@ type Scanner struct {
 	extSet map[string]struct{}
 }
 
+// NewScanner returns a Scanner that selects files matching the configured extensions and exclude patterns.
 func NewScanner(fs afero.Fs, cfg *Config) *Scanner {
 	extSet := make(map[string]struct{}, len(cfg.Extensions))
 	for _, ext := range cfg.Extensions {

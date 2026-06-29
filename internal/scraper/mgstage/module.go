@@ -5,6 +5,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/scraperutil"
 )
 
+// Register registers the MGStage scraper with the given scraper registrar.
 func Register(reg scraperutil.ScraperRegistrar) {
 	reg.Register(scraperutil.ScraperRegistration{
 		Name:        "mgstage",

@@ -25,6 +25,7 @@ type Generator struct {
 	mediaAnalyzer  mediaAnalyzer
 }
 
+// NewGenerator returns an NFO generator that writes to fs using the given config.
 func NewGenerator(fs afero.Fs, cfg *Config) *Generator {
 	return newGeneratorWithAnalyzer(fs, cfg, nil)
 }
@@ -148,6 +149,7 @@ func NewNFOImplementor(fs afero.Fs, nfoConfig *Config, templateEngine template.E
 	return nfoImplementor{fs: fs, nfoConfig: nfoConfig, templateEngine: templateEngine}
 }
 
+// GeneratorInterface describes the operations for generating NFO files from movie metadata.
 type GeneratorInterface interface {
 	Generate(ctx context.Context, movie *models.Movie, outputPath string, partSuffix string, videoFilePath string, tags []string) error
 	GenerateAtPath(ctx context.Context, movie *models.Movie, nfoPath string, videoFilePath string, tags []string) error
@@ -264,6 +266,7 @@ func (g *Generator) movieToNFO(ctx context.Context, movie *models.Movie, videoFi
 	return g.buildNFO(input)
 }
 
+// WriteNFO encodes the NFO struct to the given path, creating parent directories as needed.
 func (g *Generator) WriteNFO(nfo *Movie, path string) error {
 	// Ensure output directory exists
 	dir := filepath.Dir(path)

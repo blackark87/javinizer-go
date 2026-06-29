@@ -9,7 +9,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
-// mergeResult contains the merged movie and metadata about the merge
+// MergeResult contains the merged movie and metadata about the merge.
 type MergeResult struct {
 	Merged     *models.Movie
 	Provenance map[string]DataSource

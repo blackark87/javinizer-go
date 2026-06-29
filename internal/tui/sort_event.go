@@ -7,6 +7,7 @@ import "time"
 // so it does not import the worker package directly.
 type SortEventPhase string
 
+// SortEventPhase values are the phases a sort operation reports events for.
 const (
 	SortEventPhaseScrape SortEventPhase = "scrape"
 	SortEventPhaseApply  SortEventPhase = "apply"

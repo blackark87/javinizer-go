@@ -30,6 +30,8 @@ type simpleRunner struct {
 	errs   []error
 }
 
+// NewSimpleRunner constructs a single-goroutine background runner derived
+// from the given context.
 func NewSimpleRunner(ctx context.Context) *simpleRunner {
 	ctx, cancel := context.WithCancel(ctx)
 	return &simpleRunner{

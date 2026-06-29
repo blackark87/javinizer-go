@@ -5,6 +5,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/api/core"
 )
 
+// RegisterRoutes registers the protected file-system routes on the given router group.
 func RegisterRoutes(protected *gin.RouterGroup, rt *core.APIRuntime) {
 	protected.GET("/cwd", getCurrentWorkingDirectory(rt))
 	protected.POST("/scan", scanDirectory(rt))

@@ -8,12 +8,14 @@ import (
 
 const defaultThresholdKB = 10
 
+// Config controls placeholder image detection for scraped posters.
 type Config struct {
 	Enabled   bool
 	Threshold int64
 	Hashes    []string
 }
 
+// ConfigFromSettings builds a Config from scraper settings and the default placeholder hashes.
 func ConfigFromSettings(settings *models.ScraperSettings, defaultHashes []string) Config {
 	cfg := Config{
 		Enabled:   true,

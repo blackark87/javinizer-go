@@ -315,7 +315,7 @@ func buildOrchestratorConfigs(cfg *config.Config, dcs domainConfigs, fs afero.Fs
 	return previewCfg, applyCfg
 }
 
-// all domain objects from a *config.Config + registry + repos. It delegates
+// NewFactoryConfigFromRepos builds all domain objects from a *config.Config + registry + repos. It delegates
 // to named construction steps (extractDomainConfigs, buildMatcher, etc.)
 // instead of inlining all construction logic. Each step has a clear contract
 // and can be tested independently.

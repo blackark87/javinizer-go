@@ -106,10 +106,12 @@ func NewScraperRegistry() *ScraperRegistry {
 
 // --- Registration concern (delegates to catalog) ---
 
+// Register adds a scraper registration to the registry.
 func (r *ScraperRegistry) Register(reg ScraperRegistration) {
 	r.catalog.Register(reg)
 }
 
+// Get returns the registration metadata for the named scraper.
 func (r *ScraperRegistry) Get(name string) (ScraperRegistration, bool) {
 	return r.catalog.Get(name)
 }
@@ -120,10 +122,12 @@ func (r *ScraperRegistry) GetAll() map[string]ScraperRegistration {
 	return r.catalog.GetAll()
 }
 
+// Names returns the names of all registered scrapers.
 func (r *ScraperRegistry) Names() []string {
 	return r.catalog.Names()
 }
 
+// Priorities returns the names of all registered scrapers ordered by descending priority, with ties broken alphabetically.
 func (r *ScraperRegistry) Priorities() []string {
 	return r.catalog.Priorities()
 }

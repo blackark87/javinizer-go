@@ -6,6 +6,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/scraperutil"
 )
 
+// Register registers the r18dev scraper with the given scraper registrar.
 func Register(reg scraperutil.ScraperRegistrar) {
 	reg.Register(scraperutil.ScraperRegistration{
 		Name:        "r18dev",

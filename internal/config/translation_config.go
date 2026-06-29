@@ -365,6 +365,7 @@ type NFOConfig struct {
 	Extra   NFOExtraConfig   `yaml:",inline"`
 }
 
+// IsUnknownActressFallback reports whether the NFO config uses the fallback unknown-actress mode.
 func (n *NFOConfig) IsUnknownActressFallback() bool {
 	return n.Format.UnknownActressMode == models.UnknownActressModeFallback
 }
@@ -429,6 +430,7 @@ type settingsHashInput struct {
 	GoogleMode                     string                  `json:"google_mode,omitempty"`
 }
 
+// EffectiveEnableThinking returns the enable_thinking flag, treating a nil value as false.
 func (oc OpenAICompatibleTranslationConfig) EffectiveEnableThinking() bool {
 	if oc.EnableThinking == nil {
 		return false
@@ -436,6 +438,7 @@ func (oc OpenAICompatibleTranslationConfig) EffectiveEnableThinking() bool {
 	return *oc.EnableThinking
 }
 
+// NormalizedBackendType returns the canonical backend type, mapping aliases and "auto" to an empty string.
 func (oc OpenAICompatibleTranslationConfig) NormalizedBackendType() string {
 	switch strings.ToLower(strings.TrimSpace(oc.BackendType)) {
 	case "", "auto":

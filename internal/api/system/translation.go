@@ -21,6 +21,7 @@ import (
 
 const maxTranslationAPIResponseSize = 10 * 1024 * 1024 // 10MB
 
+// DeepLUsageResponse mirrors the DeepL usage API response (character counts and limits).
 type DeepLUsageResponse struct {
 	CharacterCount int64  `json:"character_count"`
 	CharacterLimit int64  `json:"character_limit"`
@@ -30,6 +31,7 @@ type DeepLUsageResponse struct {
 	APIKeyLimit    int64  `json:"api_key_character_limit,omitempty"`
 }
 
+// DeepLUsageRequest carries the mode, base URL, and API key for a DeepL usage lookup.
 type DeepLUsageRequest struct {
 	Mode    string `json:"mode"`
 	BaseURL string `json:"base_url"`

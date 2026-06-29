@@ -4,6 +4,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/config"
 )
 
+// StandardHTMLHeaders returns the default HTTP headers for browser-like HTML requests.
 func StandardHTMLHeaders() map[string]string {
 	return map[string]string{
 		"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -14,6 +15,7 @@ func StandardHTMLHeaders() map[string]string {
 	}
 }
 
+// JSONAPIHeaders returns HTTP headers for JSON API requests.
 func JSONAPIHeaders() map[string]string {
 	return map[string]string{
 		"Accept":          "application/json, text/plain, */*",
@@ -23,12 +25,14 @@ func JSONAPIHeaders() map[string]string {
 	}
 }
 
+// RefererHeader returns a header map that sets the Referer to the given URL.
 func RefererHeader(url string) map[string]string {
 	return map[string]string{
 		"Referer": url,
 	}
 }
 
+// DMMHeaders returns HTTP headers for DMM requests, including age-check and locale cookies.
 func DMMHeaders() map[string]string {
 	return map[string]string{
 		"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -40,6 +44,7 @@ func DMMHeaders() map[string]string {
 	}
 }
 
+// R18DevHeaders returns HTTP headers for requests to the R18 dev API.
 func R18DevHeaders() map[string]string {
 	return map[string]string{
 		"Accept":          "application/json, text/plain, */*",
@@ -49,6 +54,7 @@ func R18DevHeaders() map[string]string {
 	}
 }
 
+// UserAgentHeader returns a header map with the User-Agent resolved from the given value.
 func UserAgentHeader(ua string) map[string]string {
 	resolved := config.ResolveScraperUserAgent(ua)
 	return map[string]string{
@@ -56,6 +62,7 @@ func UserAgentHeader(ua string) map[string]string {
 	}
 }
 
+// CombineHeaders merges the given header presets into a single header map.
 func CombineHeaders(presets ...map[string]string) map[string]string {
 	result := make(map[string]string)
 	for _, preset := range presets {

@@ -306,6 +306,7 @@ func cloneTimePtr(src *time.Time) *time.Time {
 	return &t
 }
 
+// GetStatus returns a thread-safe snapshot of the job's current status and results.
 func (job *BatchJob) GetStatus() *BatchJobStatus {
 	snapshot := job.snapshotFull()
 	return &BatchJobStatus{
@@ -316,12 +317,14 @@ func (job *BatchJob) GetStatus() *BatchJobStatus {
 	}
 }
 
+// GetTempDir returns the job's temporary directory path.
 func (job *BatchJob) GetTempDir() string {
 	job.mu.RLock()
 	defer job.mu.RUnlock()
 	return job.cfg.tempDir
 }
 
+// GetOperationModeOverride returns the operation mode override configured for the job.
 func (job *BatchJob) GetOperationModeOverride() operationmode.OperationMode {
 	job.mu.RLock()
 	defer job.mu.RUnlock()
@@ -333,6 +336,7 @@ func (job *BatchJob) GetOperationModeOverride() operationmode.OperationMode {
 // See jobController.SetOperationModeOverride.
 // Callers with *BatchJob should use job.Controller().SetOperationModeOverride(mode).
 
+// GetDestination returns the configured destination directory for the job.
 func (job *BatchJob) GetDestination() string {
 	job.mu.RLock()
 	defer job.mu.RUnlock()
@@ -375,6 +379,7 @@ func (job *BatchJob) Lifecycle() *JobLifecycle {
 // during phase launch are a controller concern.
 // See jobController.markStarted.
 
+// GetID returns the job's unique identifier as a string.
 func (job *BatchJob) GetID() string {
 	job.mu.RLock()
 	defer job.mu.RUnlock()
@@ -410,6 +415,7 @@ func (job *BatchJob) GetPersistError() string {
 // Callers with *BatchJob should use job.Controller().SetJobStatus(status).
 // Production code should use the PhaseController interface.
 
+// TemplateEngine returns the job's template engine, initializing it lazily on first use.
 func (job *BatchJob) TemplateEngine() template.EngineInterface {
 	job.mu.RLock()
 	eng := job.templateEngine

@@ -85,6 +85,7 @@ type DownloadResult struct {
 // MediaType represents the type of media being downloaded
 type MediaType string
 
+// MediaType values are the kinds of media the downloader can fetch.
 const (
 	MediaTypeCover       MediaType = "cover"
 	MediaTypePoster      MediaType = "poster"

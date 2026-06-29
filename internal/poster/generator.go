@@ -8,6 +8,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
+// PosterGenerator generates a poster for a movie during a scrape job.
 type PosterGenerator interface {
 	GeneratePoster(ctx context.Context, jobID string, movie *models.Movie) error
 }
@@ -53,12 +54,14 @@ func NewScrapePosterGenerator(manager PosterManagerInterface, userAgent string, 
 	}
 }
 
+// WithSSRFCheck returns a copy of the generator that validates download URLs against the given SSRF check.
 func (g *ScrapePosterGenerator) WithSSRFCheck(fn ssrfCheckFunc) *ScrapePosterGenerator {
 	cp := *g
 	cp.ssrfCheck = fn
 	return &cp
 }
 
+// GeneratePoster downloads and stores a poster for the movie, falling back to the cover URL when no poster URL is set.
 func (g *ScrapePosterGenerator) GeneratePoster(ctx context.Context, jobID string, movie *models.Movie) error {
 	if g.manager == nil || movie == nil {
 		return nil

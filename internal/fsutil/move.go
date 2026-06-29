@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/afero"
 )
 
+// CopyFileFs copies a file within the afero filesystem, creating destination directories as needed.
 func CopyFileFs(fs afero.Fs, src, dst string) error {
 	if err := fs.MkdirAll(filepath.Dir(dst), config.DirPerm); err != nil {
 		return fmt.Errorf("failed to create destination directory: %w", err)
@@ -23,6 +24,7 @@ func CopyFileFs(fs afero.Fs, src, dst string) error {
 	return copyFileDataFs(fs, src, dst)
 }
 
+// MoveFileFs moves a file within the afero filesystem, falling back to copy-and-remove across devices.
 func MoveFileFs(fs afero.Fs, src, dst string) error {
 	if err := fs.MkdirAll(filepath.Dir(dst), config.DirPerm); err != nil {
 		return fmt.Errorf("failed to create destination directory: %w", err)

@@ -275,15 +275,9 @@ type BatchJobInterface interface {
 	JobEditor
 }
 
-// StandaloneJob is the composite interface for CLI/TUI usage where no
-// JobStore persistence is needed. It extends ControlledJob with the
-// CLI-specific methods SetRunOptions and Run.
-// Per DEEP-2: callers of CreateStandaloneJob use this interface instead of
-// *BatchJob directly, eliminating the need for passthrough methods on BatchJob.
 // newStandaloneJobFromBatchJob creates a StandaloneJob from a *BatchJob.
 // This is a package-internal helper for tests and the factory that need to
 // construct a StandaloneJob from a concrete *BatchJob.
-// Per DEEP-1: Run/SetRunOptions are on JobRunner, not on BatchJob.
 func newStandaloneJobFromBatchJob(job *BatchJob) StandaloneJob {
 	a := buildAdapters(job)
 	batchCfg := job.controller.resolveBatchCfg()
@@ -304,6 +298,12 @@ func newStandaloneJobFromBatchJob(job *BatchJob) StandaloneJob {
 	}
 }
 
+// StandaloneJob is the composite interface for CLI/TUI usage where no
+// JobStore persistence is needed. It extends ControlledJob with the
+// CLI-specific methods SetRunOptions and Run.
+// Per DEEP-2: callers of CreateStandaloneJob use this interface instead of
+// *BatchJob directly, eliminating the need for passthrough methods on BatchJob.
+// Per DEEP-1: Run/SetRunOptions are on JobRunner, not on BatchJob.
 type StandaloneJob interface {
 	ControlledJob
 

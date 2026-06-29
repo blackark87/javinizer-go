@@ -29,10 +29,12 @@ type MockScraperWithResults struct {
 	err     error
 }
 
+// Name returns the mock scraper's configured name.
 func (m *MockScraperWithResults) Name() string {
 	return m.name
 }
 
+// Search returns the scraper's predefined result, echoing id into the result ID.
 func (m *MockScraperWithResults) Search(_ context.Context, id string) (*models.ScraperResult, error) {
 	if m.err != nil {
 		return nil, m.err
@@ -42,18 +44,22 @@ func (m *MockScraperWithResults) Search(_ context.Context, id string) (*models.S
 	return &result, nil
 }
 
+// GetURL returns an empty URL, satisfying the Scraper interface for tests.
 func (m *MockScraperWithResults) GetURL(_ context.Context, id string) (string, error) {
 	return "", nil
 }
 
+// IsEnabled reports whether the mock scraper is enabled.
 func (m *MockScraperWithResults) IsEnabled() bool {
 	return m.enabled
 }
 
+// Config returns an empty ScraperSettings, satisfying the Scraper interface for tests.
 func (m *MockScraperWithResults) Config() *models.ScraperSettings {
 	return &models.ScraperSettings{}
 }
 
+// Close is a no-op, satisfying the Scraper interface for tests.
 func (m *MockScraperWithResults) Close() error {
 	return nil
 }

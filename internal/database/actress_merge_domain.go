@@ -8,6 +8,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
+// Errors returned for invalid actress merge input.
 var (
 	ErrActressMergeInvalidField    = errors.New("invalid merge field")
 	ErrActressMergeInvalidDecision = errors.New("invalid merge resolution")

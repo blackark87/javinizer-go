@@ -299,6 +299,7 @@ func (o *Organizer) resolveStrategy() OperationStrategy {
 	return ResolveStrategy(o.fs, o.config, o.matcher, o.templateEngine)
 }
 
+// ResolveStrategy returns the operation strategy selected by the configured operation mode.
 func ResolveStrategy(fs afero.Fs, cfg *Config, m matcher.MatcherInterface, engine template.EngineInterface) OperationStrategy {
 	switch cfg.OperationMode {
 	case operationmode.OperationModeOrganize:

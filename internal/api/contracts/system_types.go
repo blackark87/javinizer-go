@@ -53,6 +53,7 @@ type ProxyTestResponse struct {
 	TokenExpiresAt    int64  `json:"token_expires_at,omitempty"`   // Unix timestamp when token expires
 }
 
+// TranslationModelsRequest carries the provider, base URL, and API key for a model discovery lookup.
 type TranslationModelsRequest struct {
 	Provider string `json:"provider" binding:"required"` // openai (OpenAI-compatible only for now)
 	BaseURL  string `json:"base_url" binding:"required"` // API base URL (e.g., https://api.openai.com/v1)

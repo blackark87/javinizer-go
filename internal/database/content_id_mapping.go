@@ -8,14 +8,17 @@ import (
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
+// ContentIDMappingRepository persists and queries content ID mappings.
 type ContentIDMappingRepository struct {
 	db *DB
 }
 
+// NewContentIDMappingRepository returns a ContentIDMappingRepository backed by the given DB.
 func NewContentIDMappingRepository(db *DB) *ContentIDMappingRepository {
 	return &ContentIDMappingRepository{db: db}
 }
 
+// FindBySearchID returns the content ID mapping for the given search ID (case-insensitive).
 func (r *ContentIDMappingRepository) FindBySearchID(ctx context.Context, searchID string) (*models.ContentIDMapping, error) {
 	var mapping models.ContentIDMapping
 
@@ -29,6 +32,7 @@ func (r *ContentIDMappingRepository) FindBySearchID(ctx context.Context, searchI
 	return &mapping, nil
 }
 
+// Create upserts a content ID mapping, matching on the uppercased search ID.
 func (r *ContentIDMappingRepository) Create(ctx context.Context, mapping *models.ContentIDMapping) error {
 	mapping.SearchID = strings.ToUpper(mapping.SearchID)
 
@@ -43,6 +47,7 @@ func (r *ContentIDMappingRepository) Create(ctx context.Context, mapping *models
 	return nil
 }
 
+// Delete removes the content ID mapping for the given search ID (case-insensitive).
 func (r *ContentIDMappingRepository) Delete(ctx context.Context, searchID string) error {
 	normalizedID := strings.ToUpper(searchID)
 	if err := r.db.WithContext(ctx).Where("search_id = ?", normalizedID).Delete(&models.ContentIDMapping{}).Error; err != nil {

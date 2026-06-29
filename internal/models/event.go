@@ -12,6 +12,7 @@ import (
 // EventCategory represents the category of a structured event log entry.
 type EventCategory string
 
+// EventCategory values classifying the source of a structured event log entry.
 const (
 	EventCategoryScraper  EventCategory = "scraper"
 	EventCategoryOrganize EventCategory = "organize"
@@ -20,15 +21,22 @@ const (
 
 func (e EventCategory) String() string { return string(e) }
 
-func (e EventCategory) MarshalJSON() ([]byte, error)  { return MarshalStringEnum(string(e)) }
+// MarshalJSON implements json.Marshaler for EventCategory.
+func (e EventCategory) MarshalJSON() ([]byte, error) { return MarshalStringEnum(string(e)) }
+
+// UnmarshalJSON implements json.Unmarshaler for EventCategory.
 func (e *EventCategory) UnmarshalJSON(b []byte) error { return UnmarshalStringEnum((*string)(e), b) }
 
-func (e *EventCategory) Scan(value any) error        { return ScanStringEnum((*string)(e), value) }
+// Scan implements sql.Scanner for EventCategory.
+func (e *EventCategory) Scan(value any) error { return ScanStringEnum((*string)(e), value) }
+
+// Value implements driver.Valuer for EventCategory.
 func (e EventCategory) Value() (driver.Value, error) { return StringEnumValue(string(e)) }
 
 // EventSeverity represents the severity level of a structured event log entry.
 type EventSeverity string
 
+// EventSeverity values ranking the importance of a structured event log entry.
 const (
 	SeverityDebug EventSeverity = "debug"
 	SeverityInfo  EventSeverity = "info"
@@ -38,10 +46,16 @@ const (
 
 func (e EventSeverity) String() string { return string(e) }
 
-func (e EventSeverity) MarshalJSON() ([]byte, error)  { return MarshalStringEnum(string(e)) }
+// MarshalJSON implements json.Marshaler for EventSeverity.
+func (e EventSeverity) MarshalJSON() ([]byte, error) { return MarshalStringEnum(string(e)) }
+
+// UnmarshalJSON implements json.Unmarshaler for EventSeverity.
 func (e *EventSeverity) UnmarshalJSON(b []byte) error { return UnmarshalStringEnum((*string)(e), b) }
 
-func (e *EventSeverity) Scan(value any) error        { return ScanStringEnum((*string)(e), value) }
+// Scan implements sql.Scanner for EventSeverity.
+func (e *EventSeverity) Scan(value any) error { return ScanStringEnum((*string)(e), value) }
+
+// Value implements driver.Valuer for EventSeverity.
 func (e EventSeverity) Value() (driver.Value, error) { return StringEnumValue(string(e)) }
 
 // Event represents a structured event log entry for debugging and bug reporting

@@ -6,6 +6,8 @@ import (
 	"github.com/javinizer/javinizer-go/internal/template"
 )
 
+// NFONameConfig holds the resolved NFO filename and actress-grouping
+// options shared across the nfo, organizer, and downloader bridges.
 type NFONameConfig struct {
 	FilenameTemplate string
 	GroupActress     bool

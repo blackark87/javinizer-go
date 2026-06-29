@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// GenreTranslationRepository persists and queries genre translation records.
 type GenreTranslationRepository struct {
 	db *DB
 }
@@ -21,10 +22,12 @@ func genreTranslationEntityID(genreID uint, language string) string {
 	return fmt.Sprintf("genre translation %d/%s", genreID, language)
 }
 
+// Upsert inserts or updates the given genre translation using the repository's default context.
 func (r *GenreTranslationRepository) Upsert(ctx context.Context, translation *models.GenreTranslation) error {
 	return r.UpsertTx(r.db.WithContext(ctx), translation)
 }
 
+// UpsertTx inserts or updates the given genre translation within the provided transaction, tolerating duplicate-key races.
 func (r *GenreTranslationRepository) UpsertTx(tx *gorm.DB, translation *models.GenreTranslation) error {
 	var existing models.GenreTranslation
 	err := tx.First(&existing, "genre_id = ? AND language = ?", translation.GenreID, translation.Language).Error
@@ -57,6 +60,7 @@ func (r *GenreTranslationRepository) UpsertTx(tx *gorm.DB, translation *models.G
 	return nil
 }
 
+// FindByGenreAndLanguage returns the translation for the given genre and language.
 func (r *GenreTranslationRepository) FindByGenreAndLanguage(ctx context.Context, genreID uint, language string) (*models.GenreTranslation, error) {
 	var translation models.GenreTranslation
 	err := r.db.WithContext(ctx).First(&translation, "genre_id = ? AND language = ?", genreID, language).Error
@@ -66,6 +70,7 @@ func (r *GenreTranslationRepository) FindByGenreAndLanguage(ctx context.Context,
 	return &translation, nil
 }
 
+// FindAllByGenre returns all translations stored for the given genre.
 func (r *GenreTranslationRepository) FindAllByGenre(ctx context.Context, genreID uint) ([]models.GenreTranslation, error) {
 	var translations []models.GenreTranslation
 	err := r.db.WithContext(ctx).Where("genre_id = ?", genreID).Find(&translations).Error
@@ -75,6 +80,7 @@ func (r *GenreTranslationRepository) FindAllByGenre(ctx context.Context, genreID
 	return translations, nil
 }
 
+// FindByGenreIDsAndLanguage returns translations for the given genre IDs in the specified language, grouped by genre ID.
 func (r *GenreTranslationRepository) FindByGenreIDsAndLanguage(ctx context.Context, genreIDs []uint, language string) (map[uint][]models.GenreTranslation, error) {
 	if len(genreIDs) == 0 {
 		return make(map[uint][]models.GenreTranslation), nil
@@ -90,6 +96,7 @@ func (r *GenreTranslationRepository) FindByGenreIDsAndLanguage(ctx context.Conte
 	return result, nil
 }
 
+// Delete removes the translation for the given genre and language.
 func (r *GenreTranslationRepository) Delete(ctx context.Context, genreID uint, language string) error {
 	if err := r.db.WithContext(ctx).Delete(&models.GenreTranslation{}, "genre_id = ? AND language = ?", genreID, language).Error; err != nil {
 		return wrapDBErr("delete", genreTranslationEntityID(genreID, language), err)

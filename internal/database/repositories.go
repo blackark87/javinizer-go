@@ -55,6 +55,8 @@ type Repositories struct {
 	ReplacementRepos
 }
 
+// Repositories constructs and returns the full repository bag for the
+// database, wiring up all domain-oriented sub-structs.
 func (db *DB) Repositories() Repositories {
 	return Repositories{
 		ContentRepos: ContentRepos{

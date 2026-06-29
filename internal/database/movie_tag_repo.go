@@ -7,14 +7,17 @@ import (
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
+// MovieTagRepository persists movie-to-tag associations in the database.
 type MovieTagRepository struct {
 	db *DB
 }
 
+// NewMovieTagRepository returns a MovieTagRepository backed by db.
 func NewMovieTagRepository(db *DB) *MovieTagRepository {
 	return &MovieTagRepository{db: db}
 }
 
+// AddTag associates tag with the movie identified by movieID.
 func (r *MovieTagRepository) AddTag(ctx context.Context, movieID, tag string) error {
 	movieTag := &models.MovieTag{
 		MovieID: movieID,
@@ -26,6 +29,7 @@ func (r *MovieTagRepository) AddTag(ctx context.Context, movieID, tag string) er
 	return nil
 }
 
+// RemoveTag deletes the association between movieID and tag.
 func (r *MovieTagRepository) RemoveTag(ctx context.Context, movieID, tag string) error {
 	if err := r.db.WithContext(ctx).Where("movie_id = ? AND tag = ?", movieID, tag).Delete(&models.MovieTag{}).Error; err != nil {
 		return wrapDBErr("delete", fmt.Sprintf("tag %s for movie %s", tag, movieID), err)
@@ -33,6 +37,7 @@ func (r *MovieTagRepository) RemoveTag(ctx context.Context, movieID, tag string)
 	return nil
 }
 
+// RemoveAllTags deletes every tag associated with the given movieID.
 func (r *MovieTagRepository) RemoveAllTags(ctx context.Context, movieID string) error {
 	if err := r.db.WithContext(ctx).Where("movie_id = ?", movieID).Delete(&models.MovieTag{}).Error; err != nil {
 		return wrapDBErr("delete", fmt.Sprintf("tags for movie %s", movieID), err)
@@ -40,6 +45,7 @@ func (r *MovieTagRepository) RemoveAllTags(ctx context.Context, movieID string) 
 	return nil
 }
 
+// GetTagsForMovie returns the tags associated with movieID, ordered by name.
 func (r *MovieTagRepository) GetTagsForMovie(ctx context.Context, movieID string) ([]string, error) {
 	var movieTags []models.MovieTag
 	err := r.db.WithContext(ctx).Where("movie_id = ?", movieID).Order("tag ASC").Find(&movieTags).Error
@@ -54,6 +60,7 @@ func (r *MovieTagRepository) GetTagsForMovie(ctx context.Context, movieID string
 	return tags, nil
 }
 
+// GetMoviesWithTag returns the IDs of movies associated with tag, ordered by movie ID.
 func (r *MovieTagRepository) GetMoviesWithTag(ctx context.Context, tag string) ([]string, error) {
 	var movieTags []models.MovieTag
 	err := r.db.WithContext(ctx).Where("tag = ?", tag).Order("movie_id ASC").Find(&movieTags).Error
@@ -124,6 +131,7 @@ func (r *MovieTagRepository) ListAllChunked(ctx context.Context, chunkSize int) 
 	return result, nil
 }
 
+// GetUniqueTagsList returns the distinct set of all tags, ordered by name.
 func (r *MovieTagRepository) GetUniqueTagsList(ctx context.Context) ([]string, error) {
 	var tags []string
 	err := r.db.WithContext(ctx).Model(&models.MovieTag{}).Distinct("tag").Order("tag ASC").Pluck("tag", &tags).Error

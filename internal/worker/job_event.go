@@ -10,6 +10,7 @@ import (
 // JobEventPhase identifies which phase of a batch job emitted an event.
 type JobEventPhase string
 
+// JobEventPhase values naming the phases of batch job execution.
 const (
 	JobEventPhaseScrape JobEventPhase = "scrape"
 	jobEventPhaseApply  JobEventPhase = "apply"
@@ -18,6 +19,7 @@ const (
 // JobEventStep identifies which step within a phase emitted an event.
 type JobEventStep string
 
+// JobEventStep values naming the individual steps within a job phase.
 const (
 	StepQueued   JobEventStep = "queued"
 	StepScrape   JobEventStep = "scrape"

@@ -35,17 +35,21 @@ type googlePaidTranslateResponse struct {
 	} `json:"data"`
 }
 
+// GoogleProvider translates text using the Google translation backend.
 type GoogleProvider struct {
 	cfg        Config
 	httpClient httpclient.HTTPClient
 }
 
+// NewGoogleProvider returns a GoogleProvider using cfg and the given HTTP client.
 func NewGoogleProvider(cfg Config, httpClient httpclient.HTTPClient) *GoogleProvider {
 	return &GoogleProvider{cfg: cfg, httpClient: httpClient}
 }
 
+// Name returns the provider identifier "google".
 func (p *GoogleProvider) Name() string { return "google" }
 
+// Translate translates texts from sourceLang to targetLang using the configured Google mode.
 func (p *GoogleProvider) Translate(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
 	if p == nil {
 		return nil, fmt.Errorf("nil receiver: *GoogleProvider")

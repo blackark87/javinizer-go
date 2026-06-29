@@ -7,6 +7,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
+// MergeWithExistingOptions configures how MergeWithExistingNFO combines scraped data with an existing NFO.
 type MergeWithExistingOptions struct {
 	Match          models.FileMatchInfo
 	ForceOverwrite bool
@@ -15,6 +16,7 @@ type MergeWithExistingOptions struct {
 	ArrayStrategy  bool          // true=merge, false=replace. Resolved at boundary
 }
 
+// MergeWithExistingResult is the outcome of merging scraped metadata with an existing NFO.
 type MergeWithExistingResult struct {
 	Movie        *models.Movie
 	Merged       bool

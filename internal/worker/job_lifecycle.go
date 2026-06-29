@@ -8,6 +8,8 @@ import (
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
+// JobLifecycle manages the lifecycle state and transitions of a batch job.
+//
 // Lock ordering: lifecycle.mu → results.mu → job.mu. Never acquire in reverse order.
 type JobLifecycle struct {
 	mu          sync.RWMutex
@@ -35,6 +37,7 @@ type JobLifecycle struct {
 	markCompletedFn func()
 }
 
+// IsJobActive reports whether the job is active in the rescrape-management sense (Pending or Completed).
 func (lc *JobLifecycle) IsJobActive() bool {
 	lc.mu.RLock()
 	defer lc.mu.RUnlock()
@@ -51,6 +54,7 @@ func (lc *JobLifecycle) IsJobActive() bool {
 	return lc.Status == models.JobStatusPending || lc.Status == models.JobStatusCompleted
 }
 
+// IsDeleted reports whether the job has been marked deleted.
 func (lc *JobLifecycle) IsDeleted() bool {
 	lc.mu.RLock()
 	defer lc.mu.RUnlock()
@@ -110,10 +114,12 @@ func (lc *JobLifecycle) closeDoneLocked() {
 	}
 }
 
+// Cancel marks the job cancelled and invokes its context cancel function.
 func (lc *JobLifecycle) Cancel() {
 	lc.cancelAndMarkCancelled()
 }
 
+// MarkFailed transitions the job to failed unless it has already reached a terminal state.
 func (lc *JobLifecycle) MarkFailed() {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
@@ -125,6 +131,7 @@ func (lc *JobLifecycle) MarkFailed() {
 	lc.closeDoneLocked()
 }
 
+// MarkCancelled transitions the job to cancelled unless it has already reached a terminal state.
 func (lc *JobLifecycle) MarkCancelled() {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
@@ -136,6 +143,7 @@ func (lc *JobLifecycle) MarkCancelled() {
 	lc.closeDoneLocked()
 }
 
+// MarkOrganized transitions the job to organized unless it has reached a terminal non-success state.
 func (lc *JobLifecycle) MarkOrganized() {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
@@ -151,6 +159,7 @@ func (lc *JobLifecycle) MarkOrganized() {
 	lc.closeDoneLocked()
 }
 
+// MarkReverted transitions the job to reverted, idempotent when already reverted.
 func (lc *JobLifecycle) MarkReverted() {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
@@ -162,12 +171,14 @@ func (lc *JobLifecycle) MarkReverted() {
 	lc.closeDoneLocked()
 }
 
+// GetJobStatus returns the current job status.
 func (lc *JobLifecycle) GetJobStatus() models.JobStatus {
 	lc.mu.RLock()
 	defer lc.mu.RUnlock()
 	return lc.Status
 }
 
+// SetDeleted sets the job's deleted flag.
 func (lc *JobLifecycle) SetDeleted(deleted bool) {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()

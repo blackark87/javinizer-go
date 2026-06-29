@@ -5,6 +5,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/scraperutil"
 )
 
+// Register registers the FC2 scraper with the given scraper registrar.
 func Register(reg scraperutil.ScraperRegistrar) {
 	reg.Register(scraperutil.ScraperRegistration{
 		Name:        "fc2",

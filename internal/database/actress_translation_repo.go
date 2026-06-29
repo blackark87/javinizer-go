@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// ActressTranslationRepository persists localized name translations for actresses.
 type ActressTranslationRepository struct {
 	db *DB
 }
@@ -21,10 +22,12 @@ func actressTranslationEntityID(actressID uint, language string) string {
 	return fmt.Sprintf("actress translation %d/%s", actressID, language)
 }
 
+// Upsert inserts the actress translation or updates the existing record matched by actress and language.
 func (r *ActressTranslationRepository) Upsert(ctx context.Context, translation *models.ActressTranslation) error {
 	return r.UpsertTx(r.db.WithContext(ctx), translation)
 }
 
+// UpsertTx inserts or updates the actress translation within the provided transaction.
 func (r *ActressTranslationRepository) UpsertTx(tx *gorm.DB, translation *models.ActressTranslation) error {
 	var existing models.ActressTranslation
 	err := tx.First(&existing, "actress_id = ? AND language = ?", translation.ActressID, translation.Language).Error
@@ -57,6 +60,7 @@ func (r *ActressTranslationRepository) UpsertTx(tx *gorm.DB, translation *models
 	return nil
 }
 
+// FindByActressAndLanguage returns the translation for the given actress in the given language.
 func (r *ActressTranslationRepository) FindByActressAndLanguage(ctx context.Context, actressID uint, language string) (*models.ActressTranslation, error) {
 	var translation models.ActressTranslation
 	err := r.db.WithContext(ctx).First(&translation, "actress_id = ? AND language = ?", actressID, language).Error
@@ -66,6 +70,7 @@ func (r *ActressTranslationRepository) FindByActressAndLanguage(ctx context.Cont
 	return &translation, nil
 }
 
+// FindAllByActress returns every translation stored for the given actress.
 func (r *ActressTranslationRepository) FindAllByActress(ctx context.Context, actressID uint) ([]models.ActressTranslation, error) {
 	var translations []models.ActressTranslation
 	err := r.db.WithContext(ctx).Where("actress_id = ?", actressID).Find(&translations).Error
@@ -75,6 +80,7 @@ func (r *ActressTranslationRepository) FindAllByActress(ctx context.Context, act
 	return translations, nil
 }
 
+// FindByActressIDsAndLanguage returns translations grouped by actress ID for the given actress IDs and language.
 func (r *ActressTranslationRepository) FindByActressIDsAndLanguage(ctx context.Context, actressIDs []uint, language string) (map[uint][]models.ActressTranslation, error) {
 	if len(actressIDs) == 0 {
 		return make(map[uint][]models.ActressTranslation), nil
@@ -90,6 +96,7 @@ func (r *ActressTranslationRepository) FindByActressIDsAndLanguage(ctx context.C
 	return result, nil
 }
 
+// Delete removes the translation for the given actress in the given language.
 func (r *ActressTranslationRepository) Delete(ctx context.Context, actressID uint, language string) error {
 	if err := r.db.WithContext(ctx).Delete(&models.ActressTranslation{}, "actress_id = ? AND language = ?", actressID, language).Error; err != nil {
 		return wrapDBErr("delete", actressTranslationEntityID(actressID, language), err)

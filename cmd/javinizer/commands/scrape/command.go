@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// NewCommand creates the scrape CLI subcommand that fetches metadata for a single movie ID.
 func NewCommand() *cobra.Command {
 	scrapeCmd := &cobra.Command{
 		Use:   "scrape [id]",

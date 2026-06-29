@@ -15,12 +15,15 @@ type OpenAIProvider struct {
 	httpClient httpclient.HTTPClient
 }
 
+// NewOpenAIProvider returns an OpenAI translation provider using cfg and httpClient.
 func NewOpenAIProvider(cfg Config, httpClient httpclient.HTTPClient) *OpenAIProvider {
 	return &OpenAIProvider{cfg: cfg, httpClient: httpClient}
 }
 
+// Name returns the provider identifier "openai".
 func (p *OpenAIProvider) Name() string { return "openai" }
 
+// Translate sends texts to the OpenAI chat completion API and returns the translated strings.
 func (p *OpenAIProvider) Translate(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
 	if p == nil {
 		return nil, fmt.Errorf("nil receiver: *OpenAIProvider")
@@ -64,12 +67,15 @@ type OpenAICompatibleProvider struct {
 	httpClient httpclient.HTTPClient
 }
 
+// NewOpenAICompatibleProvider returns a provider for an OpenAI-compatible API using cfg and httpClient.
 func NewOpenAICompatibleProvider(cfg Config, httpClient httpclient.HTTPClient) *OpenAICompatibleProvider {
 	return &OpenAICompatibleProvider{cfg: cfg, httpClient: httpClient}
 }
 
+// Name returns the provider identifier "openai-compatible".
 func (p *OpenAICompatibleProvider) Name() string { return "openai-compatible" }
 
+// Translate sends texts to an OpenAI-compatible chat API with automatic thinking-strategy fallback.
 func (p *OpenAICompatibleProvider) Translate(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
 	if p == nil {
 		return nil, fmt.Errorf("nil receiver: *OpenAICompatibleProvider")

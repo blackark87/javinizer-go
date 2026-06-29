@@ -15,6 +15,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/logging"
 )
 
+// MinPosterWidth and MinPosterHeight are the minimum pixel dimensions for a high-quality portrait poster.
 const (
 	MinPosterWidth = 800
 

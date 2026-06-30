@@ -71,9 +71,11 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 	const queryClient = deps.getQueryClient();
 
 	function invalidateJobQueries() {
-		void queryClient.invalidateQueries({ queryKey: ['batch-job', deps.getJobId()] });
-		void queryClient.invalidateQueries({ queryKey: ['batch-job-slim', deps.getJobId()] });
-		void queryClient.invalidateQueries({ queryKey: ['actresses'] });
+		return Promise.all([
+			queryClient.invalidateQueries({ queryKey: ['batch-job', deps.getJobId()] }),
+			queryClient.invalidateQueries({ queryKey: ['batch-job-slim', deps.getJobId()] }),
+			queryClient.invalidateQueries({ queryKey: ['actresses'] }),
+		]);
 	}
 
 	const posterFromUrlMutation = createMutation(() => ({
@@ -126,7 +128,7 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 				});
 			}
 
-			invalidateJobQueries();
+			void invalidateJobQueries();
 		},
 		onError: (err: Error) => {
 			deps.toastError(`Failed to set poster from screenshot: ${err.message}`);
@@ -157,7 +159,7 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 				}
 			}
 			deps.toastSuccess('Movie excluded from organization');
-			invalidateJobQueries();
+			void invalidateJobQueries();
 
 			const movieResultsLength = deps.getMovieResultsLength();
 			const postExcludeLength = movieResultsLength - 1;
@@ -185,20 +187,24 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 					movieToSave.title = movieToSave.display_title;
 				}
 				const resultId = job?.results?.[filePath]?.result_id;
-				if (!resultId) return Promise.resolve();
+				if (!resultId) return null;
 				return deps.updateBatchMovie(deps.getJobId(), resultId, movieToSave);
 			});
 
-			if (savePromises.length > 0) {
-				await Promise.all(savePromises);
+			const sent = savePromises.filter((p): p is Promise<unknown> => p !== null);
+			if (sent.length > 0) {
+				await Promise.all(sent);
 			}
+			return sent.length;
 		},
-		onSuccess: () => {
+		onSuccess: async (sent: number) => {
+			if (sent > 0) {
+				await invalidateJobQueries().catch(() => {});
+				deps.toastSuccess('Changes saved to database');
+			}
 			deps.clearEditedMovies();
 			deps.clearPosterPreviewOverrides();
 			deps.clearEditStorage();
-			invalidateJobQueries();
-			deps.toastSuccess('Changes saved to database');
 		},
 		onError: (err: Error) => {
 			deps.toastError(`Failed to save edits: ${err.message}`);
@@ -239,7 +245,7 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 			deps.toastSuccess('Poster crop updated');
 			deps.setShowPosterCropModal(false);
 
-			invalidateJobQueries();
+			void invalidateJobQueries();
 		},
 		onError: (err: Error) => {
 			deps.toastError(err.message || 'Failed to update poster crop');
@@ -272,7 +278,7 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 				);
 			}
 
-			invalidateJobQueries();
+			void invalidateJobQueries();
 		},
 		onError: (err: Error) => {
 			deps.toastError(`Failed to exclude movies: ${err.message}`);
@@ -319,7 +325,7 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 				deps.toastSuccess(`Rescraped ${data.succeeded} movie${data.succeeded !== 1 ? 's' : ''}`);
 			}
 
-			invalidateJobQueries();
+			void invalidateJobQueries();
 		},
 		onError: (err: Error) => {
 			deps.toastError(`Failed to rescrape movies: ${err.message}`);

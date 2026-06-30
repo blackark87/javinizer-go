@@ -718,10 +718,12 @@ If a deployment encounters issues, you can revert to a previous version:
    # Backup current binary
    cp /usr/local/bin/javinizer /usr/local/bin/javinizer.backup
    
-   # Replace with previous version (release assets are bare binaries,
-   # downloaded ready-to-run — just make it executable before moving)
-   chmod +x javinizer-v1.2.3-linux-amd64
-   sudo mv javinizer-v1.2.3-linux-amd64 /usr/local/bin/javinizer
+   # Replace with a previous version (release assets are bare binaries,
+   # downloaded ready-to-run — just make it executable before moving).
+   # Pin a specific tag in the URL, e.g.:
+   #   curl -L -o javinizer-linux-amd64 https://github.com/javinizer/javinizer-go/releases/download/v1.2.3/javinizer-linux-amd64
+   chmod +x javinizer-linux-amd64
+   sudo mv javinizer-linux-amd64 /usr/local/bin/javinizer
    sudo chmod +x /usr/local/bin/javinizer
    ```
 

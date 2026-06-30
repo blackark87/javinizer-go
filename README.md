@@ -7,6 +7,7 @@ A metadata scraper and file organizer for Japanese Adult Videos (JAV), with CLI,
 [![Test & Coverage](https://github.com/javinizer/javinizer-go/actions/workflows/test.yml/badge.svg)](https://github.com/javinizer/javinizer-go/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/javinizer/javinizer-go/branch/main/graph/badge.svg)](https://codecov.io/gh/javinizer/javinizer-go)
 [![Discord](https://img.shields.io/discord/608449512352120834?color=brightgreen&style=plastic&label=discord)](https://discord.gg/Pds7xCpzpc)
+[![latest release](https://img.shields.io/github/v/release/javinizer/javinizer-go?include_prereleases&label=latest%20release)](https://github.com/javinizer/javinizer-go/releases)
 
 ---
 
@@ -94,23 +95,28 @@ Download from [GitHub Releases](https://github.com/javinizer/javinizer-go/releas
 **Linux / macOS:**
 
 ```bash
-# Download (example: Linux x86_64 — pick the asset matching your OS/arch)
-curl -L -o javinizer https://github.com/javinizer/javinizer-go/releases/download/v1.0.0-rc1/javinizer-v1.0.0-rc1-linux-amd64
-
+# 1. Download the asset matching your OS/arch from the Releases page:
+#    https://github.com/javinizer/javinizer-go/releases  (e.g. javinizer-linux-amd64)
+# 2. Make it executable and put it on your PATH:
 chmod +x javinizer
 sudo mv javinizer /usr/local/bin/
 
 javinizer version
 ```
 
+> **One-shot install (from v1.0.0 stable):** once a non-prerelease `v1.0.0` is published, `releases/latest` resolves and you can fetch the latest binary directly — no version in the URL:
+> ```bash
+> curl -L -o javinizer https://github.com/javinizer/javinizer-go/releases/latest/download/javinizer-linux-amd64
+> ```
+> Prereleases can't be the “Latest” release on GitHub, so this permalink 404s until `v1.0.0` stable ships.
+
 **Windows:**
 
-Download `javinizer-v1.0.0-rc1-windows-amd64.exe` from the [latest release](https://github.com/javinizer/javinizer-go/releases/latest), then run in PowerShell:
+Download `javinizer-windows-amd64.exe` from the [Releases page](https://github.com/javinizer/javinizer-go/releases), then run in PowerShell:
 
 ```powershell
-# Save it somewhere convenient (e.g. a tools folder or your Downloads)
 # Optional: rename for ease of use
-Rename-Item javinizer-v1.0.0-rc1-windows-amd64.exe javinizer.exe
+Rename-Item javinizer-windows-amd64.exe javinizer.exe
 
 # Run from the same folder
 .\javinizer.exe version

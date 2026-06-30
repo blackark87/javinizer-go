@@ -323,7 +323,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          output="${{ env.BINARY_NAME }}-${VERSION}-${{ matrix.artifact_suffix }}"
+          output="${{ env.BINARY_NAME }}-${{ matrix.artifact_suffix }}"
 
           go build -trimpath -ldflags="-w -s \
             -X github.com/javinizer/javinizer-go/internal/version.Version=${VERSION} \
@@ -392,24 +392,22 @@ jobs:
             -X github.com/javinizer/javinizer-go/internal/version.Version=${VERSION} \
             -X github.com/javinizer/javinizer-go/internal/version.Commit=${COMMIT} \
             -X github.com/javinizer/javinizer-go/internal/version.BuildDate=${BUILD_DATE}" \
-            -o "dist/${{ env.BINARY_NAME }}-${VERSION}-darwin-amd64" ./cmd/javinizer
+            -o "dist/${{ env.BINARY_NAME }}-darwin-amd64" ./cmd/javinizer
 
           GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-w -s \
             -X github.com/javinizer/javinizer-go/internal/version.Version=${VERSION} \
             -X github.com/javinizer/javinizer-go/internal/version.Commit=${COMMIT} \
             -X github.com/javinizer/javinizer-go/internal/version.BuildDate=${BUILD_DATE}" \
-            -o "dist/${{ env.BINARY_NAME }}-${VERSION}-darwin-arm64" ./cmd/javinizer
+            -o "dist/${{ env.BINARY_NAME }}-darwin-arm64" ./cmd/javinizer
 
       - name: Create universal binary
         shell: bash
-        env:
-          VERSION: ${{ needs.prepare-release.outputs.version }}
         run: |
           set -euo pipefail
           lipo -create \
-            "dist/${{ env.BINARY_NAME }}-${VERSION}-darwin-amd64" \
-            "dist/${{ env.BINARY_NAME }}-${VERSION}-darwin-arm64" \
-            -output "dist/${{ env.BINARY_NAME }}-${VERSION}-darwin-universal"
+            "dist/${{ env.BINARY_NAME }}-darwin-amd64" \
+            "dist/${{ env.BINARY_NAME }}-darwin-arm64" \
+            -output "dist/${{ env.BINARY_NAME }}-darwin-universal"
 
       - name: Upload artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -471,7 +469,7 @@ jobs:
           BUILD_DATE: ${{ needs.prepare-release.outputs.build_date }}
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          $output = "${{ env.BINARY_NAME }}-$env:VERSION-windows-amd64.exe"
+          $output = "${{ env.BINARY_NAME }}-windows-amd64.exe"
           go build -trimpath -ldflags "-w -s -X github.com/javinizer/javinizer-go/internal/version.Version=$env:VERSION -X github.com/javinizer/javinizer-go/internal/version.Commit=$env:COMMIT -X github.com/javinizer/javinizer-go/internal/version.BuildDate=$env:BUILD_DATE" -o "dist/$output" ./cmd/javinizer
 
       - name: Upload artifact

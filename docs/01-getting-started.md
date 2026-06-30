@@ -72,23 +72,29 @@ Javinizer Go is a modern, high-performance metadata scraper and file organizer f
 Each release ships a single ready-to-run executable — no archive to extract. Download the asset matching your OS and architecture from the [Releases page](https://github.com/javinizer/javinizer-go/releases), make it executable, and put it on your `PATH`:
 
 ```bash
-# Download (example: macOS Apple Silicon — choose the asset matching your OS/arch)
-curl -L -o javinizer https://github.com/javinizer/javinizer-go/releases/download/v1.0.0-rc1/javinizer-v1.0.0-rc1-darwin-arm64
-
+# 1. Download the asset matching your OS/arch from the Releases page:
+#    https://github.com/javinizer/javinizer-go/releases  (e.g. javinizer-darwin-arm64)
+# 2. Make it executable and put it on your PATH:
 chmod +x javinizer
 sudo mv javinizer /usr/local/bin/
 
 javinizer --help
 ```
 
-Available release assets:
+> **One-shot install (from v1.0.0 stable):** once a non-prerelease `v1.0.0` is published, fetch the latest binary directly — no version in the URL:
+> ```bash
+> curl -L -o javinizer https://github.com/javinizer/javinizer-go/releases/latest/download/javinizer-darwin-arm64
+> ```
+> Prereleases can't be the “Latest” release on GitHub, so this permalink 404s until `v1.0.0` stable ships.
+
+Available release assets (stable names from v1.0.0; `rc` releases used versioned names like `javinizer-v1.0.0-rc2-darwin-arm64`):
 
 | Platform | Asset |
 |----------|-------|
-| macOS Intel | `javinizer-v1.0.0-rc1-darwin-amd64` |
-| macOS Apple Silicon | `javinizer-v1.0.0-rc1-darwin-arm64` (or `...-darwin-universal`) |
-| Linux x86_64 | `javinizer-v1.0.0-rc1-linux-amd64` |
-| Linux arm64 | `javinizer-v1.0.0-rc1-linux-arm64` |
+| macOS Intel | `javinizer-darwin-amd64` |
+| macOS Apple Silicon | `javinizer-darwin-arm64` (or `javinizer-darwin-universal`) |
+| Linux x86_64 | `javinizer-linux-amd64` |
+| Linux arm64 | `javinizer-linux-arm64` |
 
 > **macOS Gatekeeper**: downloaded binaries may be flagged as an "unidentified developer." If so, right-click the file → *Open* the first time, or strip the quarantine attribute:
 > ```bash
@@ -100,11 +106,12 @@ Available release assets:
 Download the Windows executable from the [Releases page](https://github.com/javinizer/javinizer-go/releases) — via your browser, or with PowerShell:
 
 ```powershell
-# Download the Windows binary
-Invoke-WebRequest -Uri "https://github.com/javinizer/javinizer-go/releases/download/v1.0.0-rc1/javinizer-v1.0.0-rc1-windows-amd64.exe" -OutFile "javinizer.exe"
-
-# Optional: move it to a permanent location
-Move-Item javinizer.exe "$env:USERPROFILE\javinizer.exe"
+# 1. Download javinizer-windows-amd64.exe from the Releases page:
+#    https://github.com/javinizer/javinizer-go/releases
+# 2. (From v1.0.0 stable) one-shot download — no version in the URL:
+#    Invoke-WebRequest -Uri "https://github.com/javinizer/javinizer-go/releases/latest/download/javinizer-windows-amd64.exe" -OutFile "javinizer.exe"
+# 3. Move it to a permanent location:
+Move-Item javinizer-windows-amd64.exe "$env:USERPROFILE\javinizer.exe"
 
 # Verify
 javinizer.exe --help

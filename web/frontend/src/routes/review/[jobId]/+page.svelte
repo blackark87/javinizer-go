@@ -171,6 +171,10 @@
 						onClose={() => goto('/browse')}
 						onUpdateAll={s.updateAll}
 						onOrganizeAll={s.organizeAll}
+						onSaveAll={s.saveAllEdits}
+						hasEdits={s.editedMovieCount > 0}
+						editCount={s.editedMovieCount}
+						savingEdits={s.isSavingEdits}
 					/>
 
 					<OrganizeStatusCard
@@ -280,6 +284,7 @@
 								<ActressEditor
 									movie={s.currentMovie!}
 									onUpdate={s.updateCurrentMovie}
+								onPersistEdits={s.saveAllEdits}
 									actressSources={s.currentResult.actress_sources}
 									showFieldSources={s.showFieldScraperSources}
 								/>

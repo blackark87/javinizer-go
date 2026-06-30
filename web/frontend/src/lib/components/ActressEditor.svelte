@@ -14,11 +14,12 @@
 	interface Props {
 		movie: Movie;
 		onUpdate: (movie: Movie) => void;
+		onPersistEdits?: () => void | Promise<void>;
 		actressSources?: Record<string, string>;
 		showFieldSources?: boolean;
 	}
 
-	let { movie, onUpdate, actressSources, showFieldSources = false }: Props = $props();
+	let { movie, onUpdate, onPersistEdits, actressSources, showFieldSources = false }: Props = $props();
 
 	let actresses = $state<Actress[]>([]);
 	let showEditModal = $state(false);
@@ -120,6 +121,7 @@
 
 	function notifyParent() {
 		onUpdate({ ...movie, actresses });
+		void Promise.resolve(onPersistEdits?.()).catch(() => {});
 	}
 
 	function openAddActress() {

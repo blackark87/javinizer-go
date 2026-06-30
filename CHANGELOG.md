@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.0.0-rc3] - 2026-06-30
+
+### Fixed
+
+- Persist actress name edits from review page to DB and NFO (#71)
+- Restore movie.OriginalFileName so `<FILENAME>` NFO tag resolves
+
+### Changed
+
+- Drop version from release asset names + link to releases page
+- Add doc comments to exported identifiers + enable exported lint (#47)
+- Remove 146 stale ADR citations referencing deleted ADRs (#46)
+
 ## [v1.0.0-rc2] - 2026-06-30
 
 ### Added

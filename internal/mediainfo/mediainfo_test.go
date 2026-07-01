@@ -59,21 +59,55 @@ func TestDetectContainer(t *testing.T) {
 func TestVideoInfo_GetResolution(t *testing.T) {
 	tests := []struct {
 		name     string
+		width    int
 		height   int
 		expected string
 	}{
-		{"4K", 2160, "4K"},
-		{"1080p", 1080, "1080p"},
-		{"720p", 720, "720p"},
-		{"480p", 480, "480p"},
-		{"below 480p floor", 360, "480p"},
+		{"4K", 0, 2160, "4K"},
+		{"1080p", 0, 1080, "1080p"},
+		{"720p", 0, 720, "720p"},
+		{"480p", 0, 480, "480p"},
+		{"below 480p floor", 0, 360, "480p"},
+		{"8K by width", 7680, 0, "8K"},
+		{"VR180 SBS 4K (3840x1920)", 3840, 1920, "4K"},
+		{"VR180 SBS 8K (7680x3840)", 7680, 3840, "8K"},
+		{"VR180 SBS 1080p (1920x960)", 1920, 960, "1080p"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := &VideoInfo{Height: tt.height}
+			v := &VideoInfo{Width: tt.width, Height: tt.height}
 			if got := v.GetResolution(); got != tt.expected {
 				t.Errorf("GetResolution() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestVideoInfo_IsVR(t *testing.T) {
+	tests := []struct {
+		name     string
+		width    int
+		height   int
+		expected bool
+	}{
+		{"flat 16:9 1080p", 1920, 1080, false},
+		{"flat 16:9 4K", 3840, 2160, false},
+		{"flat 4:3", 1024, 768, false},
+		{"zero dimensions", 0, 0, false},
+		{"VR180 SBS 4K (3840x1920)", 3840, 1920, true},
+		{"VR180 SBS 8K (7680x3840)", 7680, 3840, true},
+		{"VR180 SBS (5760x2880)", 5760, 2880, true},
+		{"top-bottom VR (1920x3840)", 1920, 3840, true},
+		{"low-res coincidental 2:1 below floor", 1280, 640, false},
+		{"low-res coincidental 1:2 below floor", 640, 1280, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v := &VideoInfo{Width: tt.width, Height: tt.height}
+			if got := v.IsVR(); got != tt.expected {
+				t.Errorf("IsVR() = %v, want %v", got, tt.expected)
 			}
 		})
 	}

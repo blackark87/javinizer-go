@@ -94,17 +94,54 @@ func detectContainer(header []byte) string {
 
 // GetResolution returns human-readable resolution string.
 // Examples: "8K", "4K", "1080p", "720p", "480p".
+//
+// Width is checked alongside Height at every tier (not just 8K) because
+// side-by-side packed VR video (e.g. 180 SBS) doubles the width for the
+// left/right eye but keeps a single-eye height, e.g. a "4K" VR180 SBS file
+// is often 3840x1920 - height alone would misclassify it as 1080p.
 func (v *VideoInfo) GetResolution() string {
 	if v.Width >= 7680 || v.Height >= 4320 {
 		return "8K"
-	} else if v.Height >= 2160 {
+	} else if v.Width >= 3840 || v.Height >= 2160 {
 		return "4K"
-	} else if v.Height >= 1080 {
+	} else if v.Width >= 1920 || v.Height >= 1080 {
 		return "1080p"
-	} else if v.Height >= 720 {
+	} else if v.Width >= 1280 || v.Height >= 720 {
 		return "720p"
 	}
 	return "480p"
+}
+
+const (
+	// vrAspectMin/vrAspectMax bound the width/height ratio treated as VR framing.
+	// 180 SBS and 360 mono-equirect pack two eyes/the full sphere side by side,
+	// doubling width while keeping single-eye height (~2:1, e.g. 3840x1920,
+	// 5760x2880, 7680x3840). Top-bottom VR mirrors this on height (~1:2).
+	vrAspectMin = 1.9
+	vrAspectMax = 2.1
+
+	// vrMinDoubledDimension is a floor on the doubled dimension (Width for SBS,
+	// Height for top-bottom). VR capture is always high resolution since each
+	// eye only gets half the frame, so this avoids misclassifying a
+	// low-resolution flat video that coincidentally has a ~2:1 aspect ratio.
+	vrMinDoubledDimension = 2880
+)
+
+// IsVR reports whether the video's own dimensions indicate VR framing
+// (180 SBS, top-bottom, or 360 mono-equirectangular), independent of any
+// scraped metadata - the file itself is the source of truth.
+func (v *VideoInfo) IsVR() bool {
+	if v.Width <= 0 || v.Height <= 0 {
+		return false
+	}
+	aspect := float64(v.Width) / float64(v.Height)
+	if aspect >= vrAspectMin && aspect <= vrAspectMax {
+		return v.Width >= vrMinDoubledDimension
+	}
+	if aspect >= 1/vrAspectMax && aspect <= 1/vrAspectMin {
+		return v.Height >= vrMinDoubledDimension
+	}
+	return false
 }
 
 // GetAudioChannelDescription returns human-readable audio channel description

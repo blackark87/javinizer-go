@@ -293,6 +293,7 @@ func TestIsTranslatableTag(t *testing.T) {
 		{"DISC is not translatable", "DISC", false},
 		{"PARTSUFFIX is not translatable", "PARTSUFFIX", false},
 		{"MULTIPART is not translatable", "MULTIPART", false},
+		{"VR is not translatable", "VR", false},
 		{"Unknown tag is not translatable", "UNKNOWN", false},
 		{"Empty tag is not translatable", "", false},
 	}

@@ -316,6 +316,17 @@ func (c *Context) Clone() *Context {
 	return &clone
 }
 
+// IsVR reports whether the source video file is VR-framed (180 SBS,
+// top-bottom, or 360 mono-equirectangular), based on its own dimensions
+// rather than scraped metadata - a file may not match its release's genre tags.
+func (c *Context) IsVR() bool {
+	info := c.GetMediaInfo()
+	if info == nil {
+		return false
+	}
+	return info.IsVR()
+}
+
 // GetMediaInfo lazy-loads and caches video metadata.
 // Thread-safe: uses sync.Once to ensure single initialization even under concurrent access.
 // Preserves pre-existing cached values from Clone() to avoid duplicate expensive analysis.

@@ -415,6 +415,11 @@ func (e *Engine) resolveTag(tagName, modifier string, ctx *Context) (string, err
 			return "true", nil
 		}
 		return "", nil
+	case "VR":
+		if ctx.IsVR() {
+			return "true", nil
+		}
+		return "", nil
 	default:
 		return "", fmt.Errorf("unknown tag: %s", tagName)
 	}

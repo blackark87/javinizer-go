@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/javinizer/javinizer-go/internal/logging"
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
@@ -15,6 +16,15 @@ type aliasResolverInterface interface {
 	// It checks JapaneseName, FirstName LastName, and LastName FirstName
 	// combinations against the alias cache.
 	Resolve(actress *models.Actress)
+
+	// CanonicalName returns the canonical name for the given name components
+	// without mutating them. Used for cross-source deduplication so that two
+	// scrapers crediting the same person under different alias names collapse
+	// into one entry. Unlike Resolve, this is gated only by
+	// ActressDatabase.Enabled (not ConvertAlias): removing duplicates is
+	// always correct, while renaming the display name is opt-in.
+	// Returns "" when resolution is disabled or no alias is found.
+	CanonicalName(japaneseName, firstName, lastName string) string
 
 	// Reload refreshes the actress alias cache from the database.
 	Reload(ctx context.Context)
@@ -69,11 +79,14 @@ func (ar *aliasResolver) Resolve(actress *models.Actress) {
 		return
 	}
 
-	// Check cache with read lock
 	ar.mu.RLock()
 	defer ar.mu.RUnlock()
 
-	// Try Japanese name first
+	// Japanese-name matches map directly to the canonical JapaneseName (no
+	// First/Last split). Romanized matches split the canonical into LastName /
+	// FirstName when it is two words, else fall back to JapaneseName. We check
+	// the Japanese path first so its precedence and write behavior are
+	// preserved — lookupLocked itself is precedence-agnostic about the result.
 	if actress.JapaneseName != "" {
 		if canonical, found := ar.cache[actress.JapaneseName]; found {
 			actress.JapaneseName = canonical
@@ -81,37 +94,59 @@ func (ar *aliasResolver) Resolve(actress *models.Actress) {
 		}
 	}
 
-	// Try FirstName LastName combination
 	if actress.FirstName != "" && actress.LastName != "" {
-		fullName := actress.FirstName + " " + actress.LastName
-		if canonical, found := ar.cache[fullName]; found {
-			if len(canonical) > 0 {
-				first, last := models.SplitFullName(canonical)
-				if last != "" && !strings.Contains(last, " ") {
-					actress.LastName = first
-					actress.FirstName = last
-				} else {
-					actress.JapaneseName = canonical
-				}
-			}
+		canonical, found := ar.lookupLocked("", actress.FirstName, actress.LastName)
+		if !found || canonical == "" {
 			return
 		}
-
-		// Try LastName FirstName combination
-		reverseName := actress.LastName + " " + actress.FirstName
-		if canonical, found := ar.cache[reverseName]; found {
-			if len(canonical) > 0 {
-				first, last := models.SplitFullName(canonical)
-				if last != "" && !strings.Contains(last, " ") {
-					actress.LastName = first
-					actress.FirstName = last
-				} else {
-					actress.JapaneseName = canonical
-				}
-			}
-			return
+		first, last := models.SplitFullName(canonical)
+		if last != "" && !strings.Contains(last, " ") {
+			actress.LastName = first
+			actress.FirstName = last
+		} else {
+			actress.JapaneseName = canonical
 		}
 	}
+}
+
+// CanonicalName returns the canonical name for the given components without
+// mutating any caller state. Gated only by ActressDatabase.Enabled so that
+// deduplication works even when ConvertAlias (display rename) is disabled.
+// Returns "" when disabled or no alias maps the input.
+func (ar *aliasResolver) CanonicalName(japaneseName, firstName, lastName string) string {
+	if ar == nil || !ar.cfg.ActressDatabase.Enabled {
+		return ""
+	}
+
+	ar.mu.RLock()
+	defer ar.mu.RUnlock()
+
+	if canonical, found := ar.lookupLocked(japaneseName, firstName, lastName); found {
+		return canonical
+	}
+	return ""
+}
+
+// lookupLocked performs the alias cache lookup shared by Resolve and
+// CanonicalName. Caller must hold ar.mu (read or write).
+// Precedence: JapaneseName, then "FirstName LastName", then "LastName FirstName".
+func (ar *aliasResolver) lookupLocked(japaneseName, firstName, lastName string) (string, bool) {
+	if japaneseName != "" {
+		if canonical, found := ar.cache[japaneseName]; found {
+			return canonical, true
+		}
+	}
+
+	if firstName != "" && lastName != "" {
+		if canonical, found := ar.cache[firstName+" "+lastName]; found {
+			return canonical, true
+		}
+		if canonical, found := ar.cache[lastName+" "+firstName]; found {
+			return canonical, true
+		}
+	}
+
+	return "", false
 }
 
 // Reload refreshes the actress alias cache from the database.
@@ -136,5 +171,7 @@ func (ar *aliasResolver) loadCache(ctx context.Context) {
 		ar.mu.Lock()
 		ar.cache = aliasMap
 		ar.mu.Unlock()
+	} else {
+		logging.Warnf("aliasResolver: failed to load actress aliases: %v", err)
 	}
 }

@@ -34,7 +34,7 @@ interface OrganizeControllerDeps {
 		getBatchJob: (jobId: string, includeData?: boolean) => Promise<BatchJobResponse>;
 		organizeBatchJob: (
 			jobId: string,
-			request: { destination: string; copy_only: boolean; link_mode?: 'hard' | 'soft'; operation_mode?: OperationMode; skip_nfo?: boolean; skip_download?: boolean }
+			request: { destination: string; copy_only: boolean; link_mode?: 'hard' | 'soft'; operation_mode?: OperationMode; skip_nfo?: boolean; skip_download?: boolean; resume?: boolean }
 		) => Promise<unknown>;
 		updateBatchJob: (jobId: string, request?: UpdateRequest) => Promise<unknown>;
 	};

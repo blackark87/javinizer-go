@@ -112,21 +112,19 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 	// Pre-pass: build JapaneseName → romanized name map so we can detect when the title
 	// is an actress name and substitute the romanized form instead of translating it.
 	actressJaNameToRomanized := make(map[string]string)
-	if fields.Actresses {
-		for _, actress := range movie.Actresses {
-			jaName := strings.TrimSpace(actress.JapaneseName)
-			if jaName == "" {
-				continue
+	for _, actress := range movie.Actresses {
+		jaName := strings.TrimSpace(actress.JapaneseName)
+		if jaName == "" {
+			continue
+		}
+		if lastName, firstName, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL); ok {
+			actressJaNameToRomanized[jaName] = joinName(lastName, firstName)
+		} else if actress.FirstName != "" && isLikelyRomanized(actress.FirstName) {
+			name := strings.TrimSpace(actress.FirstName)
+			if actress.LastName != "" && isLikelyRomanized(actress.LastName) {
+				name = strings.TrimSpace(actress.LastName) + " " + name
 			}
-			if lastName, firstName, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL); ok {
-				actressJaNameToRomanized[jaName] = joinName(lastName, firstName)
-			} else if actress.FirstName != "" && isLikelyRomanized(actress.FirstName) {
-				name := strings.TrimSpace(actress.FirstName)
-				if actress.LastName != "" && isLikelyRomanized(actress.LastName) {
-					name = strings.TrimSpace(actress.LastName) + " " + name
-				}
-				actressJaNameToRomanized[jaName] = name
-			}
+			actressJaNameToRomanized[jaName] = name
 		}
 	}
 

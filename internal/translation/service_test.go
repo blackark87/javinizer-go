@@ -330,17 +330,7 @@ func TestTranslateMovie_TitleIsActressName(t *testing.T) {
 		assert.Equal(t, "번역된 제목", result[0].Title, "non-name title should go through LLM")
 	})
 
-	t.Run("title matches actress but actresses field disabled - normal LLM path", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			response := map[string]interface{}{
-				"choices": []map[string]interface{}{
-					{"message": map[string]string{"content": `["대낮"]`}},
-				},
-			}
-			_ = json.NewEncoder(w).Encode(response)
-		}))
-		defer server.Close()
-
+	t.Run("title matches actress with actresses field disabled - still uses romanized form", func(t *testing.T) {
 		cfg := config.TranslationConfig{
 			Enabled:        true,
 			Provider:       "openai",
@@ -348,12 +338,9 @@ func TestTranslateMovie_TitleIsActressName(t *testing.T) {
 			ApplyToPrimary: true,
 			Fields: config.TranslationFieldsConfig{
 				Title:     true,
-				Actresses: false, // actress field disabled — name map not built
+				Actresses: false, // title matching still uses known actress context
 			},
-			OpenAI: config.OpenAITranslationConfig{
-				BaseURL: server.URL,
-				APIKey:  "key",
-			},
+			OpenAI: config.OpenAITranslationConfig{APIKey: "key"},
 		}
 
 		s := New(cfg)
@@ -368,8 +355,33 @@ func TestTranslateMovie_TitleIsActressName(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
-		// Actress field disabled → name map not built → LLM translates literally
-		assert.Equal(t, "대낮", result[0].Title)
+		assert.Equal(t, "Mahiru", result[0].Title)
+		assert.Equal(t, "Mahiru", movie.Title)
+	})
+}
+
+func TestBuildLLMTranslationPrompts_TitleNameRule(t *testing.T) {
+	t.Run("labeled prompt includes no-semantic-translation instruction", func(t *testing.T) {
+		systemPrompt, _, _, err := buildLLMTranslationPrompts("ja", "ko", []string{"なつ"}, []string{"title"})
+		require.NoError(t, err)
+
+		assert.Contains(t, systemPrompt, "short personal-name-like Japanese string")
+		assert.Contains(t, systemPrompt, "transliterate it phonetically")
+		assert.Contains(t, systemPrompt, "instead of translating its semantic meaning")
+		assert.Contains(t, systemPrompt, "なつ as 나츠")
+		assert.Contains(t, systemPrompt, "夏 as 나츠")
+		assert.Contains(t, systemPrompt, "NOT 여름")
+	})
+
+	t.Run("indexed prompt includes no-semantic-translation instruction", func(t *testing.T) {
+		systemPrompt, _, _, err := buildLLMTranslationPrompts("ja", "ko", []string{"夏"}, nil)
+		require.NoError(t, err)
+
+		assert.Contains(t, systemPrompt, "short personal-name-like Japanese string")
+		assert.Contains(t, systemPrompt, "known actress-name context")
+		assert.Contains(t, systemPrompt, "transliterate it phonetically")
+		assert.Contains(t, systemPrompt, "夏 as 나츠")
+		assert.Contains(t, systemPrompt, "NOT 여름")
 	})
 }
 

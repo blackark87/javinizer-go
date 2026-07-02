@@ -3430,3 +3430,32 @@ func TestTranslateMovie_CountMismatchWarning(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 }
+
+func TestBuildActressTranslationPrompts_TargetLanguageInstructions(t *testing.T) {
+	t.Run("korean target requests Hangul phonetic transliteration without ASCII constraint", func(t *testing.T) {
+		systemPrompt, userPrompt, err := buildActressTranslationPrompts("ja", "ko", []string{"なつ", "夏"})
+		require.NoError(t, err)
+
+		assert.Contains(t, systemPrompt, "Hangul")
+		assert.Contains(t, systemPrompt, "phonetically into Hangul Korean")
+		assert.Contains(t, systemPrompt, "do NOT translate meanings")
+		assert.Contains(t, systemPrompt, "なつ -> 나츠")
+		assert.Contains(t, systemPrompt, "夏 -> 나츠")
+		assert.Contains(t, systemPrompt, "not 여름")
+		assert.NotContains(t, systemPrompt, "Use ONLY standard ASCII")
+		assert.NotContains(t, systemPrompt, "No diacritics")
+		assert.Contains(t, userPrompt, "なつ")
+		assert.Contains(t, userPrompt, "夏")
+	})
+
+	t.Run("latin target keeps ASCII romanization instructions", func(t *testing.T) {
+		systemPrompt, userPrompt, err := buildActressTranslationPrompts("ja", "en", []string{"波多野結衣"})
+		require.NoError(t, err)
+
+		assert.Contains(t, systemPrompt, "Romanize each Japanese name")
+		assert.Contains(t, systemPrompt, "Use ONLY standard ASCII")
+		assert.Contains(t, systemPrompt, "romanize phonetically only")
+		assert.NotContains(t, systemPrompt, "Hangul")
+		assert.Contains(t, userPrompt, "Romanize these Japanese actress names")
+	})
+}

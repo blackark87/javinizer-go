@@ -130,93 +130,6 @@ func TestNormalizeLanguage(t *testing.T) {
 }
 
 // =============================================================================
-// actressDisplayTitle tests
-// =============================================================================
-
-func TestActressDisplayTitle(t *testing.T) {
-	tests := []struct {
-		name     string
-		actress  models.Actress
-		expected string
-	}{
-		{
-			name: "japanese name only",
-			actress: models.Actress{
-				JapaneseName: "田中香",
-			},
-			expected: "田中香",
-		},
-		{
-			name: "first and last name",
-			actress: models.Actress{
-				FirstName: "Yui",
-				LastName:  "Tanaka",
-			},
-			expected: "Tanaka Yui",
-		},
-		{
-			name: "japanese name takes priority over first/last",
-			actress: models.Actress{
-				JapaneseName: "田中香",
-				FirstName:    "Yui",
-				LastName:     "Tanaka",
-			},
-			expected: "田中香",
-		},
-		{
-			name:     "empty fields",
-			actress:  models.Actress{},
-			expected: "",
-		},
-		{
-			name: "whitespace handling",
-			actress: models.Actress{
-				FirstName: "  Yui  ",
-				LastName:  "  Tanaka  ",
-			},
-			expected: "Tanaka Yui",
-		},
-		{
-			name: "only first name",
-			actress: models.Actress{
-				FirstName: "Yui",
-			},
-			expected: "Yui",
-		},
-		{
-			name: "only last name",
-			actress: models.Actress{
-				LastName: "Tanaka",
-			},
-			expected: "Tanaka",
-		},
-		{
-			name: "name with apostrophe",
-			actress: models.Actress{
-				FirstName: "Marie",
-				LastName:  "O'Brien",
-			},
-			expected: "O'Brien Marie",
-		},
-		{
-			name: "name with hyphen",
-			actress: models.Actress{
-				FirstName: "Anne",
-				LastName:  "Smith-Jones",
-			},
-			expected: "Smith-Jones Anne",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := actressDisplayTitle(tt.actress)
-			assert.Equal(t, tt.expected, got)
-		})
-	}
-}
-
-// =============================================================================
 // replaceActressName tests
 // =============================================================================
 
@@ -347,7 +260,7 @@ func TestReplaceActressName(t *testing.T) {
 			},
 		},
 		{
-			name: "Korean LLM output ignored - actress unchanged",
+			name: "Korean LLM output applied - single Hangul name in FirstName",
 			actress: &models.Actress{
 				JapaneseName: "まひる",
 				FirstName:    "Mahiru",
@@ -356,8 +269,22 @@ func TestReplaceActressName(t *testing.T) {
 			translated: "마히루",
 			expected: models.Actress{
 				JapaneseName: "まひる",
-				FirstName:    "Mahiru",
+				FirstName:    "마히루",
 				LastName:     "",
+			},
+		},
+		{
+			name: "Korean LLM output applied - FamilyName GivenName order",
+			actress: &models.Actress{
+				JapaneseName: "波多野結衣",
+				FirstName:    "Yui",
+				LastName:     "Hatano",
+			},
+			translated: "하타노 유이",
+			expected: models.Actress{
+				JapaneseName: "波多野結衣",
+				FirstName:    "유이",
+				LastName:     "하타노",
 			},
 		},
 		{
@@ -444,6 +371,47 @@ func TestCleanActressNameForTranslation(t *testing.T) {
 }
 
 // =============================================================================
+// stripVRMarkers tests
+// =============================================================================
+
+func TestStripVRMarkers(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		// bracketed VR tags removed
+		{"[VR] 素敵なタイトル", "素敵なタイトル"},
+		{"【VR】素敵なタイトル", "素敵なタイトル"},
+		{"【8K VR】タイトル", "タイトル"},
+		{"タイトル [4K VR]", "タイトル"},
+		{"タイトル（VR）", "タイトル"},
+		{"［VR］タイトル", "タイトル"},
+		{"[vr] lowercase tag", "lowercase tag"},
+		{"タイトル前半 [VR] 後半", "タイトル前半 後半"},
+		// title that is only a VR tag becomes empty
+		{"[VR]", ""},
+		{"【8K VR】", ""},
+		// bare "VR" in the title text is kept
+		{"VR初体験のタイトル", "VR初体験のタイトル"},
+		{"彼女とVRデート", "彼女とVRデート"},
+		// mixed: tag removed, in-text VR kept
+		{"[VR] VRの世界へ", "VRの世界へ"},
+		// non-VR brackets untouched
+		{"[中出し] タイトル", "[中出し] タイトル"},
+		// full-width space preserved when no tag present
+		{"タイトル　続編", "タイトル　続編"},
+		// no-op cases
+		{"素敵なタイトル", "素敵なタイトル"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			assert.Equal(t, tt.expected, stripVRMarkers(tt.input))
+		})
+	}
+}
+
+// =============================================================================
 // isLikelyRomanized tests
 // =============================================================================
 
@@ -467,112 +435,6 @@ func TestIsLikelyRomanized(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			assert.Equal(t, tt.expected, isLikelyRomanized(tt.input))
-		})
-	}
-}
-
-// =============================================================================
-// parseStringArrayPayload tests
-// =============================================================================
-
-func TestParseStringArrayPayload(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected []string
-		wantErr  bool
-	}{
-		{
-			name:     "valid json array",
-			input:    `["hello","world"]`,
-			expected: []string{"hello", "world"},
-			wantErr:  false,
-		},
-		{
-			name:     "with code fences",
-			input:    "```json[\"hello\",\"world\"]```",
-			expected: []string{"hello", "world"},
-			wantErr:  false,
-		},
-		{
-			name:     "with code fences and newline",
-			input:    "```json\n[\"hello\",\"world\"]\n```",
-			expected: []string{"hello", "world"},
-			wantErr:  false,
-		},
-		{
-			name:     "with extra text before array",
-			input:    "Here is the translation: [\"hello\"]",
-			expected: []string{"hello"},
-			wantErr:  false,
-		},
-		{
-			name:     "with whitespace only",
-			input:    "   ",
-			expected: nil,
-			wantErr:  true,
-		},
-		{
-			name:     "empty string",
-			input:    "",
-			expected: nil,
-			wantErr:  true,
-		},
-		{
-			name:     "invalid json",
-			input:    "not a json array",
-			expected: nil,
-			wantErr:  true,
-		},
-		{
-			name:     "malformed json string array",
-			input:    `["Karen","She says "It's forceful..." but looks happy"]`,
-			expected: nil,
-			wantErr:  true,
-		},
-		{
-			name:     "empty strings in array",
-			input:    `["hello","","world"]`,
-			expected: []string{"hello", "", "world"},
-			wantErr:  false,
-		},
-		{
-			name:     "unicode characters",
-			input:    `["こんにちは","世界"]`,
-			expected: []string{"こんにちは", "世界"},
-			wantErr:  false,
-		},
-		{
-			name:     "escaped quotes in strings",
-			input:    `["hello \"world\"","test"]`,
-			expected: []string{"hello \"world\"", "test"},
-			wantErr:  false,
-		},
-		{
-			name:     "single element array",
-			input:    `["single"]`,
-			expected: []string{"single"},
-			wantErr:  false,
-		},
-		{
-			name:     "array with numbers coerced to strings",
-			input:    `[1,2,3]`,
-			expected: nil,
-			wantErr:  true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseStringArrayPayload(tt.input)
-
-			if tt.wantErr {
-				assert.Error(t, err)
-				return
-			}
-
-			require.NoError(t, err)
-			assert.Equal(t, tt.expected, got)
 		})
 	}
 }
@@ -698,10 +560,9 @@ She says "It's forceful..." but looks happy while being teased.`
 		}, got)
 	})
 
-	t.Run("falls back to json array payload", func(t *testing.T) {
-		got, err := parseLLMTranslationPayload(`["hello","world"]`, []string{"<<<JZ_0>>>", "<<<JZ_1>>>"})
-		require.NoError(t, err)
-		assert.Equal(t, []string{"hello", "world"}, got)
+	t.Run("errors when first marker is missing", func(t *testing.T) {
+		_, err := parseLLMTranslationPayload(`["hello","world"]`, []string{"<<<JZ_0>>>", "<<<JZ_1>>>"})
+		require.Error(t, err)
 	})
 }
 

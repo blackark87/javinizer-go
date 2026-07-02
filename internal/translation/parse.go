@@ -1,7 +1,6 @@
 package translation
 
 import (
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -23,40 +22,15 @@ func normalizeTranslationPayload(payload string) string {
 
 func parseLLMTranslationPayload(payload string, markers []string) ([]string, error) {
 	cleaned := normalizeTranslationPayload(payload)
-	if len(markers) > 0 && strings.Contains(cleaned, markers[0]) {
-		parsed, err := parseCompactTranslationPayload(cleaned, markers)
-		if err != nil {
-			return nil, err
-		}
-		logging.Debugf("Translation: parseLLMTranslationPayload parsed %d compact tagged items", len(parsed))
-		return parsed, nil
+	if len(markers) == 0 || !strings.Contains(cleaned, markers[0]) {
+		return nil, fmt.Errorf("failed to parse translated output payload: first output marker not found")
 	}
-	return parseStringArrayPayload(cleaned)
-}
-
-func parseStringArrayPayload(payload string) ([]string, error) {
-	cleaned := normalizeTranslationPayload(payload)
-
-	logging.Debugf("Translation: parseStringArrayPayload input length=%d, first 200 chars: %s", len(cleaned), cleaned[:min(200, len(cleaned))])
-
-	if result, err := unmarshalStringArray(cleaned); err == nil {
-		logging.Debugf("Translation: parseStringArrayPayload direct unmarshal successful (%d items)", len(result))
-		return result, nil
+	parsed, err := parseCompactTranslationPayload(cleaned, markers)
+	if err != nil {
+		return nil, err
 	}
-
-	start := strings.IndexByte(cleaned, '[')
-	end := strings.LastIndexByte(cleaned, ']')
-	if start >= 0 && end > start {
-		candidate := strings.TrimSpace(cleaned[start : end+1])
-		if candidate != cleaned {
-			if result, err := unmarshalStringArray(candidate); err == nil {
-				logging.Debugf("Translation: parseStringArrayPayload extracted JSON array from wrapped content (%d items)", len(result))
-				return result, nil
-			}
-		}
-	}
-
-	return nil, fmt.Errorf("failed to parse translated output payload as JSON string array")
+	logging.Debugf("Translation: parseLLMTranslationPayload parsed %d compact tagged items", len(parsed))
+	return parsed, nil
 }
 
 func parseCompactTranslationPayload(payload string, markers []string) ([]string, error) {
@@ -90,12 +64,4 @@ func parseCompactTranslationPayload(payload string, markers []string) ([]string,
 	}
 
 	return out, nil
-}
-
-func unmarshalStringArray(payload string) ([]string, error) {
-	var result []string
-	if err := json.Unmarshal([]byte(payload), &result); err != nil {
-		return nil, err
-	}
-	return result, nil
 }

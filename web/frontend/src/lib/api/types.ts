@@ -736,7 +736,6 @@ export interface TranslationConfig {
 	source_language?: string;
 	target_language?: string;
 	target_languages?: string[];
-	actress_target_language?: string;
 	timeout_seconds?: number;
 	apply_to_primary?: boolean;
 	overwrite_existing_target?: boolean;

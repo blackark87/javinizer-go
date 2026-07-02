@@ -233,7 +233,7 @@ func TestRun_CacheHit_HashMismatch(t *testing.T) {
 			"choices": []map[string]interface{}{
 				{
 					"message": map[string]interface{}{
-						"content": json.RawMessage(`["New Translation Title"]`),
+						"content": "<<<title>>>\nNew Translation Title",
 					},
 				},
 			},

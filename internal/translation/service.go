@@ -57,8 +57,6 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 		sourceLang = sourceLangAuto
 	}
 
-	actressTargetLang := s.actressTargetLanguage()
-
 	type pendingText struct {
 		text       string
 		fieldName  string
@@ -97,6 +95,7 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 			text:       trimmed,
 			fieldName:  fieldName,
 			targetLang: lang,
+			isActress:  strings.HasPrefix(fieldName, "actress["),
 			apply: func(translated string) {
 				assignRecord(translated)
 				if s.cfg.ApplyToPrimary && lang == targetLanguages[0] {
@@ -128,26 +127,58 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 		}
 	}
 
-	romanizedTitle := ""
-	if normTitle := strings.TrimSpace(movie.Title); normTitle != "" {
-		if romanized, ok := actressJaNameToRomanized[normTitle]; ok && romanized != "" {
-			romanizedTitle = romanized
-			logging.Debugf("Translation[%s]: title %q matches actress JapaneseName → using romanized %q instead of translating", movieID, normTitle, romanized)
+	// Bracketed VR tags like "[VR]" / "【8K VR】" are dropped before translation —
+	// they label the release format and may not match the actual file.
+	titleForTranslation := stripVRMarkers(movie.Title)
+
+	// When the title is an actress name, queue it under the title_as_name label so the
+	// person-name prompt rule guarantees phonetic transliteration (never a semantic
+	// translation like 夏 → 여름). Romaji, when known, replaces the input because it
+	// pins the correct reading of the kanji.
+	titleFieldName := "title"
+	if normTitle := strings.TrimSpace(titleForTranslation); normTitle != "" {
+		for _, actress := range movie.Actresses {
+			if strings.TrimSpace(actress.JapaneseName) != normTitle {
+				continue
+			}
+			titleFieldName = fieldNameTitleAsName
+			if romanized := actressJaNameToRomanized[normTitle]; romanized != "" {
+				titleForTranslation = romanized
+			}
+			logging.Debugf("Translation[%s]: title %q matches actress JapaneseName → transliterating as person name (input %q)", movieID, normTitle, titleForTranslation)
+			break
+		}
+	}
+
+	// Per-actress transliteration source, resolved once. Romaji pins the correct
+	// kanji reading, so it is preferred over the Japanese name as LLM input:
+	// ① DMM actjpgs URL, ② scraper-provided romanization, ③ cleaned Japanese name.
+	// Empty entry → nothing usable, actress is skipped.
+	actressSourceNames := make([]string, len(movie.Actresses))
+	if fields.Actresses {
+		for i := range movie.Actresses {
+			actress := movie.Actresses[i]
+			if lastName, firstName, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL); ok {
+				actressSourceNames[i] = joinName(lastName, firstName)
+			} else if jaName := strings.TrimSpace(actress.JapaneseName); jaName != "" {
+				if romanized := actressJaNameToRomanized[jaName]; romanized != "" {
+					actressSourceNames[i] = romanized
+				} else {
+					actressSourceNames[i] = cleanActressNameForTranslation(jaName)
+				}
+			}
+			if actressSourceNames[i] == "" {
+				logging.Debugf("Translation[%s]: actress[%d] skip — no usable source name (JapaneseName=%q ThumbURL=%q)", movieID, i, actress.JapaneseName, actress.ThumbURL)
+			} else {
+				logging.Debugf("Translation[%s]: actress[%d] transliteration input %q (JapaneseName=%q)", movieID, i, actressSourceNames[i], actress.JapaneseName)
+			}
 		}
 	}
 
 	for _, lang := range targetLanguages {
 		rec := getRecord(lang)
 		if fields.Title {
-			if romanizedTitle != "" {
-				rec.Title = romanizedTitle
-				touchedRecords[lang] = true
-				if s.cfg.ApplyToPrimary && lang == targetLanguages[0] {
-					movie.Title = romanizedTitle
-				}
-			} else {
-				queueField(lang, movie.Title, func(v string) { rec.Title = v }, func(v string) { movie.Title = v }, "title")
-			}
+			queueField(lang, titleForTranslation, func(v string) { rec.Title = v }, func(v string) { movie.Title = v }, titleFieldName)
 		}
 		if fields.OriginalTitle {
 			queueField(lang, movie.OriginalTitle, func(v string) { rec.OriginalTitle = v }, func(v string) { movie.OriginalTitle = v }, "original_title")
@@ -173,75 +204,21 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 				queueField(lang, movie.Genres[idx].Name, func(string) {}, func(v string) { movie.Genres[idx].Name = v }, fmt.Sprintf("genre[%d]", i))
 			}
 		}
-	}
-
-	// Queue actress fields for actressTargetLang — separate batch with actress-specific prompt
-	if fields.Actresses {
-		actressRecord := getRecord(actressTargetLang)
-		actressRecord.Actresses = make([]string, len(movie.Actresses))
-		for i := range movie.Actresses {
-			idx := i
-			actress := &movie.Actresses[idx]
-
-			logging.Debugf("Translation[%s]: actress[%d] before=%q JapaneseName=%q FirstName=%q LastName=%q ThumbURL=%q", movieID, idx, actressDisplayTitle(*actress), actress.JapaneseName, actress.FirstName, actress.LastName, actress.ThumbURL)
-
-			// Priority 1: extract romanized name directly from DMM actjpgs thumbnail URL.
-			// This is more reliable than LLM romanization (official DMM naming).
-			if lastName, firstName, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL); ok {
-				displayName := joinName(lastName, firstName)
-				logging.Debugf("Translation[%s]: actress[%d] URL extraction → %q (LastName=%q FirstName=%q)", movieID, idx, displayName, capitalize(lastName), capitalize(firstName))
-				actressRecord.Actresses[idx] = displayName
-				if s.cfg.ApplyToPrimary {
-					actress.LastName = capitalize(lastName)
-					actress.FirstName = capitalize(firstName)
-				}
-				touchedRecords[actressTargetLang] = true
-				continue
+		if fields.Actresses {
+			if rec.Actresses == nil {
+				rec.Actresses = make([]string, len(movie.Actresses))
 			}
-
-			// Priority 1.5: use romanization already known from actress.FirstName
-			// (e.g. r18dev name_romaji field). Avoids an unnecessary LLM call when
-			// the scraper already provided a reliable Latin form.
-			if jaName := strings.TrimSpace(actress.JapaneseName); jaName != "" {
-				if romanized, ok := actressJaNameToRomanized[jaName]; ok && romanized != "" {
-					logging.Debugf("Translation[%s]: actress[%d] pre-built romanization → %q", movieID, idx, romanized)
-					actressRecord.Actresses[idx] = romanized
-					if s.cfg.ApplyToPrimary {
-						replaceActressName(actress, romanized)
-					}
-					touchedRecords[actressTargetLang] = true
+			for i := range movie.Actresses {
+				idx := i
+				actress := &movie.Actresses[idx]
+				if actressSourceNames[idx] == "" {
 					continue
 				}
+				queueField(lang, actressSourceNames[idx],
+					func(v string) { rec.Actresses[idx] = v },
+					func(v string) { replaceActressName(actress, v) },
+					fmt.Sprintf("actress[%d]", idx))
 			}
-
-			// Priority 2: LLM romanization — only if a Japanese source name exists.
-			if strings.TrimSpace(actress.JapaneseName) == "" {
-				logging.Debugf("Translation[%s]: actress[%d] skip — no JapaneseName", movieID, idx)
-				continue
-			}
-			rawName := actressDisplayTitle(*actress)
-			name := cleanActressNameForTranslation(rawName)
-			if name == "" {
-				continue
-			}
-			if sourceLang != sourceLangAuto && sourceLang == actressTargetLang {
-				continue
-			}
-			touchedRecords[actressTargetLang] = true
-			requests = append(requests, pendingText{
-				text:       name,
-				fieldName:  fmt.Sprintf("actress[%d]", i),
-				targetLang: actressTargetLang,
-				isActress:  true,
-				apply: func(translated string) {
-					logging.Debugf("Translation[%s]: actress[%d] LLM → %q", movieID, idx, translated)
-					actressRecord.Actresses[idx] = translated
-					if s.cfg.ApplyToPrimary {
-						replaceActressName(actress, translated)
-						logging.Debugf("Translation[%s]: actress[%d] after replaceActressName FirstName=%q LastName=%q", movieID, idx, actress.FirstName, actress.LastName)
-					}
-				},
-			})
 		}
 	}
 
@@ -249,20 +226,14 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 		return nil, "", nil
 	}
 
-	// Group requests by (targetLang, isActress) and execute in separate batches.
-	// Actress names use a specialized romanization prompt; metadata uses the general prompt.
-	type batchKey struct {
-		lang      string
-		isActress bool
-	}
-	requestsByKey := make(map[batchKey][]int)
+	// Group requests by target language and execute one batch per language.
+	requestsByLang := make(map[string][]int)
 	for i := range requests {
-		key := batchKey{lang: requests[i].targetLang, isActress: requests[i].isActress}
-		requestsByKey[key] = append(requestsByKey[key], i)
+		requestsByLang[requests[i].targetLang] = append(requestsByLang[requests[i].targetLang], i)
 	}
 
 	var warnings []string
-	for key, indexes := range requestsByKey {
+	for lang, indexes := range requestsByLang {
 		texts := make([]string, 0, len(indexes))
 		fieldNames := make([]string, 0, len(indexes))
 		for _, idx := range indexes {
@@ -270,13 +241,7 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 			fieldNames = append(fieldNames, requests[idx].fieldName)
 		}
 
-		var translatedTexts []string
-		var err error
-		if key.isActress {
-			translatedTexts, err = s.translateActressNames(ctx, sourceLang, key.lang, texts)
-		} else {
-			translatedTexts, err = s.translateTexts(ctx, sourceLang, key.lang, texts, fieldNames)
-		}
+		translatedTexts, err := s.translateTexts(ctx, sourceLang, lang, texts, fieldNames)
 		if err != nil {
 			logging.Debugf("Translation[%s]: translateTexts failed: %v", movieID, err)
 			warning := sanitizeTranslationWarning(normalizeProvider(s.cfg.Provider), err)
@@ -311,7 +276,7 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 		logging.Warnf("Translation[%s]: %s", movieID, warning)
 	}
 
-	// Collect output records: metadata languages first, then actress language if distinct
+	// Collect output records in target-language order
 	out := make([]models.MovieTranslation, 0, len(records))
 	seen := make(map[string]bool)
 	for _, lang := range targetLanguages {
@@ -322,13 +287,6 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 		if touchedRecords[lang] || movieTranslationHasContent(*rec) {
 			out = append(out, *rec)
 			seen[lang] = true
-		}
-	}
-	if !seen[actressTargetLang] {
-		if rec, ok := records[actressTargetLang]; ok {
-			if touchedRecords[actressTargetLang] || movieTranslationHasContent(*rec) {
-				out = append(out, *rec)
-			}
 		}
 	}
 
@@ -358,14 +316,6 @@ func (s *Service) targetLanguages() []string {
 		languages = append(languages, lang)
 	}
 	return languages
-}
-
-func (s *Service) actressTargetLanguage() string {
-	lang := normalizeLanguage(s.cfg.ActressTargetLanguage)
-	if lang == "" {
-		return "en"
-	}
-	return lang
 }
 
 func movieTranslationHasContent(record models.MovieTranslation) bool {
@@ -421,6 +371,25 @@ func cleanActressNameForTranslation(name string) string {
 	return name
 }
 
+// vrMarkerRE matches bracketed VR tags like [VR], [8K VR], 【VR】, ［4K VR］, （VR）.
+// Only bracketed marker tokens are removed; a bare "VR" inside the title text is kept
+// because there it carries meaning rather than labeling the release format.
+var vrMarkerRE = regexp.MustCompile(`(?i)[\[【［(（]\s*(?:\d+\s*K\s*)?VR\s*[\]】］)）]`)
+
+var asciiSpaceRunRE = regexp.MustCompile(`[ \t]{2,}`)
+
+// stripVRMarkers removes bracketed VR format tags from a title before translation.
+// Scraped metadata often carries tags like "[VR]" or "【8K VR】" that may not match
+// the actual file, so they are dropped from the translated title.
+func stripVRMarkers(title string) string {
+	if !vrMarkerRE.MatchString(title) {
+		return title
+	}
+	cleaned := vrMarkerRE.ReplaceAllString(title, "")
+	cleaned = asciiSpaceRunRE.ReplaceAllString(cleaned, " ")
+	return strings.TrimSpace(cleaned)
+}
+
 func normalizeProvider(provider string) string {
 	return strings.ToLower(strings.TrimSpace(provider))
 }
@@ -448,14 +417,6 @@ func sanitizeTranslationWarning(provider string, err error) string {
 
 func normalizeLanguage(language string) string {
 	return strings.ToLower(strings.TrimSpace(language))
-}
-
-func actressDisplayTitle(actress models.Actress) string {
-	if strings.TrimSpace(actress.JapaneseName) != "" {
-		return actress.JapaneseName
-	}
-	full := strings.TrimSpace(strings.TrimSpace(actress.LastName) + " " + strings.TrimSpace(actress.FirstName))
-	return full
 }
 
 // ageOccupationSuffixRE matches " N歳..." suffixes (ASCII or full-width digits).
@@ -500,6 +461,16 @@ func isLikelyRomanized(s string) bool {
 	return true
 }
 
+// containsHangul reports whether s contains at least one Hangul syllable.
+func containsHangul(s string) bool {
+	for _, r := range s {
+		if r >= 0xAC00 && r <= 0xD7A3 {
+			return true
+		}
+	}
+	return false
+}
+
 func replaceActressName(actress *models.Actress, translated string) {
 	translated = strings.TrimSpace(translated)
 	if actress == nil || translated == "" {
@@ -512,9 +483,12 @@ func replaceActressName(actress *models.Actress, translated string) {
 	if translated == "" {
 		return
 	}
-	translated = normalizeRomanizationToASCII(translated)
-	if !isLikelyRomanized(translated) {
-		logging.Debugf("Translation: replaceActressName skipping non-Latin result %q", translated)
+	// Latin results get diacritics folded to ASCII; Hangul results are applied as-is.
+	// Anything else (kana/kanji echoed back) means transliteration failed — skip it.
+	if isLikelyRomanized(translated) {
+		translated = normalizeRomanizationToASCII(translated)
+	} else if !containsHangul(translated) {
+		logging.Debugf("Translation: replaceActressName skipping non-Latin/non-Hangul result %q", translated)
 		return
 	}
 	// Prompt returns Japanese name order: FamilyName GivenName.
@@ -588,6 +562,21 @@ type translationResult struct {
 func (s *Service) translateTexts(ctx context.Context, sourceLang, targetLang string, texts []string, fieldNames []string) ([]string, error) {
 	provider := normalizeProvider(s.cfg.Provider)
 
+	// Prompts are provider-independent — build them once for LLM providers.
+	var systemPrompt, userPrompt string
+	var markers []string
+	switch provider {
+	case providerOpenAI, providerOpenAICompatible, providerAnthropic, providerBedrock:
+		var err error
+		systemPrompt, userPrompt, markers, err = buildLLMTranslationPrompts(sourceLang, targetLang, texts, fieldNames)
+		if err != nil {
+			return nil, err
+		}
+	case providerDeepL, providerGoogle:
+	default:
+		return nil, fmt.Errorf("unsupported translation provider: %s", provider)
+	}
+
 	var lastResult *translationResult
 	var lastErr error
 	expectedCount := len(texts)
@@ -598,19 +587,17 @@ func (s *Service) translateTexts(ctx context.Context, sourceLang, targetLang str
 
 		switch provider {
 		case providerOpenAI:
-			result, err = s.translateWithOpenAI(ctx, sourceLang, targetLang, texts, fieldNames)
+			result, err = s.translateWithOpenAI(ctx, systemPrompt, userPrompt, markers)
 		case providerDeepL:
 			result, err = s.translateWithDeepL(ctx, sourceLang, targetLang, texts)
 		case providerGoogle:
 			result, err = s.translateWithGoogle(ctx, sourceLang, targetLang, texts)
 		case providerOpenAICompatible:
-			result, err = s.translateWithOpenAICompatible(ctx, sourceLang, targetLang, texts, fieldNames)
+			result, err = s.translateWithOpenAICompatible(ctx, systemPrompt, userPrompt, markers)
 		case providerAnthropic:
-			result, err = s.translateWithAnthropic(ctx, sourceLang, targetLang, texts, fieldNames)
+			result, err = s.translateWithAnthropic(ctx, systemPrompt, userPrompt, markers)
 		case providerBedrock:
-			result, err = s.translateWithBedrock(ctx, sourceLang, targetLang, texts, fieldNames)
-		default:
-			return nil, fmt.Errorf("unsupported translation provider: %s", provider)
+			result, err = s.translateWithBedrock(ctx, systemPrompt, userPrompt, markers)
 		}
 
 		if err == nil {
@@ -700,89 +687,6 @@ func (s *Service) translateTextsOneByOne(ctx context.Context, sourceLang, target
 		results[i] = single[0]
 	}
 	return results, nil
-}
-
-// translateActressNames uses a specialized romanization prompt for LLM providers.
-// For non-LLM providers (DeepL, Google), falls back to the standard translateTexts.
-func (s *Service) translateActressNames(ctx context.Context, sourceLang, targetLang string, texts []string) ([]string, error) {
-	provider := normalizeProvider(s.cfg.Provider)
-	switch provider {
-	case providerDeepL, providerGoogle:
-		return s.translateTexts(ctx, sourceLang, targetLang, texts, nil)
-	default:
-		return s.translateActressNamesWithLLM(ctx, sourceLang, targetLang, texts)
-	}
-}
-
-// translateActressNamesWithLLM executes actress name romanization via LLM with retry logic.
-func (s *Service) translateActressNamesWithLLM(ctx context.Context, sourceLang, targetLang string, texts []string) ([]string, error) {
-	provider := normalizeProvider(s.cfg.Provider)
-
-	var lastResult *translationResult
-	var lastErr error
-	expectedCount := len(texts)
-
-	for attempt := 1; attempt <= maxTranslationRetries; attempt++ {
-		var result *translationResult
-		var err error
-
-		switch provider {
-		case providerOpenAI:
-			result, err = s.translateActressNamesWithOpenAI(ctx, sourceLang, targetLang, texts)
-		case providerOpenAICompatible:
-			result, err = s.translateActressNamesWithOpenAICompatible(ctx, sourceLang, targetLang, texts)
-		case providerAnthropic:
-			result, err = s.translateActressNamesWithAnthropic(ctx, sourceLang, targetLang, texts)
-		case providerBedrock:
-			result, err = s.translateActressNamesWithBedrock(ctx, sourceLang, targetLang, texts)
-		default:
-			return nil, fmt.Errorf("unsupported translation provider: %s", provider)
-		}
-
-		if err == nil {
-			if result == nil {
-				err = &TranslationError{Kind: TranslationErrorProvider, Message: "translation provider returned no result"}
-			} else if len(result.texts) != expectedCount {
-				err = &TranslationError{
-					Kind:    TranslationErrorCountMismatch,
-					Message: fmt.Sprintf("translation provider returned %d items for %d inputs", len(result.texts), expectedCount),
-				}
-			}
-		}
-
-		if err == nil && result != nil {
-			return result.texts, nil
-		}
-
-		lastResult = result
-		lastErr = err
-
-		if attempt < maxTranslationRetries {
-			if isRetryableError(err, result) {
-				logging.Debugf("Translation (actress): attempt %d/%d failed (%v), retrying...", attempt, maxTranslationRetries, err)
-				select {
-				case <-ctx.Done():
-					return nil, ctx.Err()
-				case <-time.After(time.Duration(attempt) * 200 * time.Millisecond):
-				}
-			} else {
-				logging.Debugf("Translation (actress): attempt %d/%d failed with non-retryable error (%v), giving up", attempt, maxTranslationRetries, err)
-				break
-			}
-		}
-	}
-
-	if lastResult != nil && lastResult.rawLLM != "" {
-		logging.Debugf("Translation (actress): all %d attempts failed. Last LLM output (length=%d):\n%s", maxTranslationRetries, len(lastResult.rawLLM), lastResult.rawLLM)
-	}
-
-	if lastErr != nil {
-		return nil, lastErr
-	}
-	return nil, &TranslationError{
-		Kind:    TranslationErrorProvider,
-		Message: fmt.Sprintf("actress translation failed after %d attempts", maxTranslationRetries),
-	}
 }
 
 func isRetryableError(err error, result *translationResult) bool {

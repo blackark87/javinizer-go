@@ -112,7 +112,7 @@ scoop install javinizer
 scoop update javinizer   # update to the latest stable release later
 ```
 
-The manifest installs the prebuilt `javinizer-windows-amd64.exe` and shims it as `javinizer`. The bucket is updated automatically on each **stable** release; prereleases never reach it, so `scoop update` never hands you a release candidate. This is the recommended Windows install path until release binaries are Authenticode-signed (see [issue #72](https://github.com/javinizer/javinizer-go/issues/72) — Scoop downloads via a trusted process and verifies the hash from the manifest, sidestepping the manual Mark-of-the-Web / Smart App Control friction of a raw browser download).
+The manifest installs the prebuilt `javinizer-windows-amd64.exe` and shims it as `javinizer`. The bucket is updated automatically on each **stable** release; prereleases never reach it, so `scoop update` never hands you a release candidate. Scoop downloads via a trusted process and verifies the hash from the manifest, making this the recommended Windows install path.
 
 ### One-shot install (Linux / macOS / Windows)
 
@@ -134,7 +134,7 @@ irm https://raw.githubusercontent.com/javinizer/javinizer-go/main/scripts/instal
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/javinizer/javinizer-go/main/scripts/install.ps1))) -PreRelease
 ```
 
-The Windows installer also runs `Unblock-File` on the downloaded binary, which strips the Mark-of-the-Web tag that can otherwise trigger an "Access is denied" error under Smart App Control (see [issue #72](https://github.com/javinizer/javinizer-go/issues/72)).
+The Windows installer also runs `Unblock-File` on the downloaded binary, stripping the Mark-of-the-Web tag that can otherwise trigger an "Access is denied" error under Smart App Control.
 
 ### Prebuilt Binaries (manual download)
 
@@ -170,7 +170,7 @@ Rename-Item javinizer-windows-amd64.exe javinizer.exe
 .\javinizer.exe version
 ```
 
-> **Windows 11 + Smart App Control:** Windows release binaries are not yet Authenticode-signed (see the [Code signing policy](./CODE_SIGNING_POLICY.md) — SignPath Foundation signing is pending). If Smart App Control is in enforcement mode it may block the unsigned binary with an "Access is denied" error. The one-shot `install.ps1` above runs `Unblock-File` automatically; for a manual download, unblock it by right-clicking the `.exe` → Properties → check **Unblock** → OK (equivalently `Unblock-File .\javinizer.exe`), or build from source (below — locally-built binaries carry no Mark-of-the-Web and are not gated by SAC).
+> **Windows 11 + Smart App Control:** Windows release binaries are not yet Authenticode-signed. If Smart App Control is in enforcement mode it may block the unsigned binary with an "Access is denied" error. The one-shot `install.ps1` above runs `Unblock-File` automatically; for a manual download, unblock it by right-clicking the `.exe` → Properties → check **Unblock** → OK (equivalently `Unblock-File .\javinizer.exe`), or build from source (below — locally-built binaries carry no Mark-of-the-Web and are not gated by SAC).
 
 To run `javinizer` from anywhere, add its folder to your `PATH` (System Properties → Environment Variables → Path → New), or copy `javinizer.exe` into a folder that's already on your `PATH`.
 

@@ -315,9 +315,6 @@ func (e *Engine) resolveTag(tagName, modifier string, ctx *Context) (string, err
 		}
 		return ctx.Series, nil
 	case "ACTORS", "ACTRESSES":
-		if parsed.isLanguage {
-			return e.resolveActressNames(parsed.languageSpec, ctx), nil
-		}
 		if len(ctx.Actresses) > 0 {
 			if ctx.GroupActress && len(ctx.Actresses) > 1 {
 				groupName := ctx.GroupActressName
@@ -330,12 +327,17 @@ func (e *Engine) resolveTag(tagName, modifier string, ctx *Context) (string, err
 			if modifier != "" {
 				delimiter = modifier
 			}
+			if len(e.languageCandidates("", ctx)) > 0 {
+				return e.resolveActressNamesWithDelimiter("", delimiter, ctx), nil
+			}
 			return strings.Join(ctx.formatActressNames(), delimiter), nil
 		}
 		return "", nil
 	case "ACTRESS", "ACTORNAME", "ACTRESSNAME":
-		if parsed.isLanguage {
-			return e.resolveActressName(parsed.languageSpec, 0, ctx), nil
+		if len(e.languageCandidates("", ctx)) > 0 {
+			if name := e.resolveActressName("", 0, ctx); name != "" {
+				return name, nil
+			}
 		}
 		if ctx.ActressName != "" {
 			return ctx.ActressName, nil
@@ -687,6 +689,10 @@ func (e *Engine) resolveTranslatedTag(tagName, explicitLang string, ctx *Context
 }
 
 func (e *Engine) resolveActressNames(explicitLang string, ctx *Context) string {
+	return e.resolveActressNamesWithDelimiter(explicitLang, ", ", ctx)
+}
+
+func (e *Engine) resolveActressNamesWithDelimiter(explicitLang, delimiter string, ctx *Context) string {
 	if len(ctx.Actresses) == 0 && len(ctx.ActressDetails) == 0 {
 		return ""
 	}
@@ -700,7 +706,7 @@ func (e *Engine) resolveActressNames(explicitLang string, ctx *Context) string {
 			names = append(names, name)
 		}
 	}
-	return strings.Join(names, ", ")
+	return strings.Join(names, delimiter)
 }
 
 func (e *Engine) resolveActressName(explicitLang string, index int, ctx *Context) string {
@@ -735,13 +741,7 @@ func (e *Engine) resolveActressName(explicitLang string, index int, ctx *Context
 }
 
 func (e *Engine) isAcceptableActressTranslation(lang, name string) bool {
-	if name == "" {
-		return false
-	}
-	if lang == "en" && cjkRegex.MatchString(name) {
-		return false
-	}
-	return true
+	return name != ""
 }
 
 func (e *Engine) translatedActressName(lang string, index int, ctx *Context) string {

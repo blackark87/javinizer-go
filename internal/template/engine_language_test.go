@@ -593,6 +593,19 @@ func TestTemplateBackwardCompatibility(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:       "Actress names follow default language translation settings",
+			engineOpts: EngineOptions{DefaultLanguage: "en"},
+			template:   "<ACTORS: | > - <ACTRESS>",
+			ctx: &Context{
+				Actresses: []string{"Romanized One", "Romanized Two"},
+				Translations: map[string]models.MovieTranslation{
+					"en": {Language: "en", Actresses: []string{"波多野結衣", "上原亜衣"}},
+				},
+			},
+			want:    "波多野結衣 | 上原亜衣 - 波多野結衣",
+			wantErr: false,
+		},
+		{
 			name:       "Genres delimiter modifier still works",
 			engineOpts: EngineOptions{},
 			template:   "<GENRES:;>",
@@ -732,19 +745,6 @@ func TestTemplateBackwardCompatibility(t *testing.T) {
 				GroupActress: true,
 			},
 			want:    "IPX-535 - @Group",
-			wantErr: false,
-		},
-		{
-			name:       "English actress tag rejects CJK fallback",
-			engineOpts: EngineOptions{},
-			template:   "<ACTRESS:en>",
-			ctx: &Context{
-				Actresses: []string{"波多野結衣"},
-				ActressDetails: []ActressDetail{
-					{JapaneseName: "波多野結衣"},
-				},
-			},
-			want:    "",
 			wantErr: false,
 		},
 		{

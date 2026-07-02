@@ -89,6 +89,7 @@ func buildLLMTranslationPrompts(sourceLang, targetLang string, texts []string, f
 		"(2) Kanji adult slang: translate by meaning using vocabulary natural to adult content in the target language — never just read the characters (e.g. 美脚 → 각선미; 爆乳 → 폭유; 神乳 → 신의 가슴). " +
 		"(3) Japanese kana loanwords commonly borrowed into the target language: keep the standard phonetic form (e.g. パパ活 → 파파카츠, NOT 파파활). " +
 		"(4) Translate ALL text in each item, including any Latin or English portions — do not leave any part untranslated. "
+	titleNameRule := "Title-specific name rule: if a title is a short personal-name-like Japanese string, especially kana-only or a title that appears to match known actress-name context supplied by the service, transliterate it phonetically into the target language instead of translating its semantic meaning. For Korean, write なつ as 나츠 and 夏 as 나츠, NOT 여름. "
 
 	var systemPrompt string
 	var userPrompt strings.Builder
@@ -96,6 +97,7 @@ func buildLLMTranslationPrompts(sourceLang, targetLang string, texts []string, f
 	if useNamed {
 		systemPrompt = fmt.Sprintf("You are a translator specializing in Japanese adult video (JAV) content metadata. Translate each labeled section into natural, engaging promotional copy — not a literal word-for-word translation. Titles should be concise and enticing; descriptions should read as sensual, persuasive marketing blurbs in the target language. Follow these terminology rules: "+
 			terminologyRules+
+			titleNameRule+
 			"CRITICAL labeling rule: translate the text under each <<<label>>> and return it under the SAME <<<label>>> — never merge multiple sections into one label, never omit a label, never swap labels. "+
 			"Return ONLY the labeled output markers with their translations. Do not use JSON. Do not add commentary. Keep each translation on a single logical line; if needed, replace internal newlines with spaces. Source language: %s. Target language: %s.", sourceLang, targetLang)
 
@@ -114,6 +116,7 @@ func buildLLMTranslationPrompts(sourceLang, targetLang string, texts []string, f
 	} else {
 		systemPrompt = fmt.Sprintf("You are a translator specializing in Japanese adult video (JAV) content metadata. Translate each item into natural, engaging promotional copy — not a literal word-for-word translation. Titles should be concise and enticing; descriptions should read as sensual, persuasive marketing blurbs in the target language. Follow these terminology rules: "+
 			terminologyRules+
+			titleNameRule+
 			"CRITICAL ordering rule: item[0] MUST go under <<<JZ_0>>>, item[1] MUST go under <<<JZ_1>>>, and so on — never swap or reorder items. "+
 			"Return ONLY the output markers with their translations. Do not use JSON. Do not add commentary. Do not repeat the input markers as content. Do not omit any index. Keep each translation on a single logical line; if needed, replace internal newlines with spaces. Source language: %s. Target language: %s.", sourceLang, targetLang)
 

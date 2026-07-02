@@ -140,23 +140,39 @@ func translationCompactOutputMarker(i int) string {
 	return fmt.Sprintf("<<<JZ_%d>>>", i)
 }
 
-// buildActressTranslationPrompts builds a specialized romanization prompt for actress names.
-// Unlike the general translation prompt, this instructs the LLM to romanize phonetically,
-// return ASCII-only output, and use Western (GivenName FamilyName) order.
+// buildActressTranslationPrompts builds a specialized phonetic prompt for actress names.
+// Korean targets receive Hangul transliteration instructions, while other targets
+// keep the existing English/Latin ASCII romanization behavior.
 func buildActressTranslationPrompts(sourceLang, targetLang string, texts []string) (string, string, error) {
-	systemPrompt := fmt.Sprintf(
-		"You are a Japanese actress name romanizer. "+
-			"Romanize each Japanese name (kanji, katakana, or hiragana) to its English/Latin equivalent. "+
-			"Rules: "+
-			"(1) Use ONLY standard ASCII letters (a-z, A-Z), spaces, and hyphens. No diacritics, no accents, no special characters. Write 'u' not 'ū', 'o' not 'ō', 'a' not 'ā'. "+
-			"(2) Return names in Japanese name order: FamilyName GivenName (e.g. 'Hatano Yui', not 'Yui Hatano'). "+
-			"(3) Do NOT translate meaning — romanize phonetically only. "+
-			"(4) Preserve order and return ONLY the indexed output markers in ascending order. Do not add commentary. Do not omit any index. "+
-			"(5) If the input contains a personal name alongside descriptive text (age, occupation, cup size, height, etc.), romanize ONLY the personal name — ignore age (歳), cup sizes, occupations, heights, and other non-name content. "+
-			"(6) If the input contains NO personal name (e.g. it is a job title, physical description, or scene description only), return an empty string for that entry. "+
-			"Source language: %s. Target language: %s.",
-		sourceLang, targetLang,
-	)
+	var systemPrompt string
+	if strings.EqualFold(strings.TrimSpace(targetLang), "ko") {
+		systemPrompt = fmt.Sprintf(
+			"You are a Japanese actress name Hangul transliterator. "+
+				"Transliterate each Japanese name (kanji, katakana, or hiragana) phonetically into Hangul Korean. "+
+				"Rules: "+
+				"(1) Use Hangul that matches the Japanese pronunciation; do NOT translate meanings. For example, なつ -> 나츠 and 夏 -> 나츠, not 여름. "+
+				"(2) Return names in Japanese name order: FamilyName GivenName (e.g. '하타노 유이', not '유이 하타노'). "+
+				"(3) Preserve order and return ONLY the indexed output markers in ascending order. Do not add commentary. Do not omit any index. "+
+				"(4) If the input contains a personal name alongside descriptive text (age, occupation, cup size, height, etc.), transliterate ONLY the personal name — ignore age (歳), cup sizes, occupations, heights, and other non-name content. "+
+				"(5) If the input contains NO personal name (e.g. it is a job title, physical description, or scene description only), return an empty string for that entry. "+
+				"Source language: %s. Target language: %s.",
+			sourceLang, targetLang,
+		)
+	} else {
+		systemPrompt = fmt.Sprintf(
+			"You are a Japanese actress name romanizer. "+
+				"Romanize each Japanese name (kanji, katakana, or hiragana) to its English/Latin equivalent. "+
+				"Rules: "+
+				"(1) Use ONLY standard ASCII letters (a-z, A-Z), spaces, and hyphens. No diacritics, no accents, no special characters. Write 'u' not 'ū', 'o' not 'ō', 'a' not 'ā'. "+
+				"(2) Return names in Japanese name order: FamilyName GivenName (e.g. 'Hatano Yui', not 'Yui Hatano'). "+
+				"(3) Do NOT translate meaning — romanize phonetically only. "+
+				"(4) Preserve order and return ONLY the indexed output markers in ascending order. Do not add commentary. Do not omit any index. "+
+				"(5) If the input contains a personal name alongside descriptive text (age, occupation, cup size, height, etc.), romanize ONLY the personal name — ignore age (歳), cup sizes, occupations, heights, and other non-name content. "+
+				"(6) If the input contains NO personal name (e.g. it is a job title, physical description, or scene description only), return an empty string for that entry. "+
+				"Source language: %s. Target language: %s.",
+			sourceLang, targetLang,
+		)
+	}
 
 	payloadBytes, err := json.Marshal(texts)
 	if err != nil {

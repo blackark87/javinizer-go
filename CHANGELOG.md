@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.0.0-rc4] - 2026-07-02
+
+### Added
+
+- Add self-upgrade (`javinizer upgrade`), Homebrew/Scoop taps, and one-shot installers for v1.0.0 (#78)
+- Add alias-aware actress dedup and per-movie NFO name choice (#74)
+
+### Fixed
+
+- Harden actress rename path and guard review save-flow (rc3 regressions) (#73)
+- Address CodeRabbit review: collapse redundant Homebrew darwin branches and restore BackgroundCheck error logging
+
+### Changed
+
+- Close codecov patch gaps and enforce the 80% patch gate over informational hide
+- Cover defensive branches in the update/version commands via DI seams rather than filesystem tricks
+
 ## [v1.0.0-rc3] - 2026-06-30
 
 ### Fixed

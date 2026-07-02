@@ -1,6 +1,6 @@
 import { createMutation } from '@tanstack/svelte-query';
 import type { QueryClient } from '@tanstack/svelte-query';
-import type { BatchJobResponse, BatchExcludeRequest, BatchExcludeResponse, BulkRescrapeRequest, BulkRescrapeResponse, FileResult, Movie, PosterCropResponse, PosterFromURLResponse } from '$lib/api/types';
+import type { BatchJobResponse, BatchExcludeRequest, BatchExcludeResponse, BulkRescrapeRequest, FileResult, Movie, PosterCropResponse, PosterFromURLResponse } from '$lib/api/types';
 import { normalizeCropBox, type PosterCropBox, type PosterCropState, type PosterPreviewOverride, type PosterCropMetrics } from '../review-utils';
 
 	interface ReviewMutationsDeps {
@@ -25,7 +25,7 @@ import { normalizeCropBox, type PosterCropBox, type PosterCropState, type Poster
 	updateBatchMovie: (jobId: string, resultId: string, movie: Movie) => Promise<unknown>;
 	updateBatchMoviePosterCrop: (jobId: string, resultId: string, crop: PosterCropBox) => Promise<PosterCropResponse>;
 	batchExcludeMovies: (jobId: string, request: BatchExcludeRequest) => Promise<BatchExcludeResponse>;
-	bulkRescrapeMovies: (jobId: string, request: BulkRescrapeRequest) => Promise<BulkRescrapeResponse>;
+	bulkRescrapeMovies: (jobId: string, request: BulkRescrapeRequest) => Promise<void>;
 	getSelectedMovieIds: () => Set<string>;
 	clearSelectedMovieIds: () => void;
 	deleteSelectedMovieId: (movieId: string) => void;

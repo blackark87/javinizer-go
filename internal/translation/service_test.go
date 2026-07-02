@@ -521,6 +521,10 @@ func TestBuildLLMTranslationPrompts_Rules(t *testing.T) {
 		assert.Contains(t, systemPrompt, "NOT 여름")
 		assert.Contains(t, systemPrompt, "FamilyName GivenName")
 		assert.Contains(t, systemPrompt, "short personal-name-like Japanese string")
+		// Romaji is the authoritative reading — no "correcting" to a known reading
+		assert.Contains(t, systemPrompt, "AUTHORITATIVE reading")
+		assert.Contains(t, systemPrompt, "NEVER substitute a different reading")
+		assert.Contains(t, systemPrompt, "Rena → 레나 (NOT 레이나)")
 	})
 
 	t.Run("prompt includes proper-noun rule for maker/label/director", func(t *testing.T) {

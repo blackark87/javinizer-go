@@ -82,7 +82,9 @@ func buildLLMTranslationPrompts(sourceLang, targetLang string, texts []string, f
 		"(4) Translate ALL text in each item, including any Latin or English portions — do not leave any part untranslated. "
 	personNameRule := "Person-name rule: fields labeled <<<actress[N]>>> or <<<title_as_name>>> contain a performer's name. Transliterate it phonetically into the target language — never translate its meaning (for Korean use Hangul: なつ → 나츠 and 夏 → 나츠, NOT 여름). " +
 		"Keep Japanese name order: FamilyName GivenName (e.g. 하타노 유이, not 유이 하타노). " +
-		"If the input is already romanized Latin text, it reflects the correct Japanese pronunciation — transliterate that pronunciation as-is. " +
+		"If the input is romanized Latin text, that romaji spelling is the AUTHORITATIVE reading of the name. " +
+		"NEVER substitute a different reading you believe is correct for this person, and NEVER re-derive the reading from kanji appearing elsewhere in the input — the same kanji can have multiple readings and the romaji fixes which one is right. " +
+		"Transliterate the romaji syllables literally as Hepburn Japanese, not as an English word: Rena → 레나 (NOT 레이나), Reina → 레이나, Yuu → 유우. " +
 		"Ignore non-name extras such as age (歳), cup size, height, or occupation. If the field contains no personal name at all, return an empty string for it. " +
 		"Also apply this rule to a <<<title>>> that is a short personal-name-like Japanese string (especially kana-only). "
 	properNounRule := "Proper-noun rule: fields labeled <<<maker>>>, <<<label>>>, or <<<director>>> are studio/brand/person names. Transliterate them phonetically; do NOT translate their meaning and do NOT embellish them into marketing copy. "

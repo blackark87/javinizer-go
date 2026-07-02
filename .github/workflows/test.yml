@@ -416,3 +416,32 @@ jobs:
           web/frontend/playwright-report/
         if-no-files-found: ignore
         retention-days: 30
+
+  # Job: CLI E2E — builds the real `javinizer` binary and drives its
+  # subcommands (sort, version, --help, --dry-run) end-to-end via os/exec.
+  # Hermetic + deterministic: JAVINIZER_E2E_SCRAPERS=true substitutes the
+  # offline e2emock scraper at the dependency-injection seam, so no real
+  # network scraping happens. This is the CLI counterpart to the fullstack
+  # Playwright suite (which drives the API server).
+  cli-e2e:
+    name: CLI E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      with:
+        persist-credentials: false
+
+    - name: Set up Go
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      with:
+        go-version-file: ${{ env.GO_VERSION_FILE }}
+        cache: true
+
+    - name: Download Go dependencies
+      run: go mod download
+
+    - name: Run CLI E2E suite
+      run: make test-e2e-cli

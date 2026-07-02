@@ -13,6 +13,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/logging"
 	"github.com/javinizer/javinizer-go/internal/scraper"
+	"github.com/javinizer/javinizer-go/internal/scraper/e2emock"
 	"github.com/javinizer/javinizer-go/internal/scraperutil"
 	"github.com/javinizer/javinizer-go/internal/workflow"
 )
@@ -137,7 +138,17 @@ func NewDependenciesWithOptions(cfg *config.Config, opts *DependenciesOptions) (
 		deps.ScraperRegistry = opts.ScraperRegistry
 	} else {
 		reg := scraperutil.NewScraperRegistry()
-		scraper.RegisterAll(reg)
+		// E2E seam: when JAVINIZER_E2E_SCRAPERS=true, substitute the deterministic
+		// offline e2emock scraper for the full real-scraper set. Mirrors the
+		// JAVINIZER_E2E_AUTH hook used by the API E2E binary; lets the CLI e2e
+		// suite (test/e2e/cli) drive sort/scrape/info through the real binary
+		// without network access. Production runs are unaffected (env unset).
+		if os.Getenv("JAVINIZER_E2E_SCRAPERS") == "true" {
+			e2emock.Register(reg)
+			e2emock.ApplyToConfig(cfg)
+		} else {
+			scraper.RegisterAll(reg)
+		}
 
 		// Set up config resolver for scraper normalization.
 		// This populates cfg.Scrapers.Overrides from the registered scraper defaults.

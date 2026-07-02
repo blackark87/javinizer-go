@@ -18,7 +18,7 @@ func TestAggregate_AppliesConfiguredTranslation(t *testing.T) {
 			"choices": []map[string]any{
 				{
 					"message": map[string]any{
-						"content": `["タイトル翻訳","説明翻訳"]`,
+						"content": "<<<title>>>\nタイトル翻訳\n<<<description>>>\n説明翻訳",
 					},
 				},
 			},
@@ -327,7 +327,7 @@ func TestAggregate_TranslationWarningOnEmptyResult(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{
-				{"message": map[string]interface{}{"content": `[""]`}},
+				{"message": map[string]interface{}{"content": "<<<title>>>\n"}},
 			},
 		})
 	}))

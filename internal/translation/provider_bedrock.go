@@ -18,7 +18,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/logging"
 )
 
-func (s *Service) translateWithBedrock(ctx context.Context, sourceLang, targetLang string, texts []string, fieldNames []string) (*translationResult, error) {
+func (s *Service) translateWithBedrock(ctx context.Context, systemPrompt, userPrompt string, markers []string) (*translationResult, error) {
 	cfg := s.cfg.Bedrock
 	region := strings.TrimSpace(cfg.Region)
 	if region == "" {
@@ -37,10 +37,6 @@ func (s *Service) translateWithBedrock(ctx context.Context, sourceLang, targetLa
 		model = "anthropic.claude-3-5-sonnet-20241022-v2:0"
 	}
 
-	systemPrompt, userPrompt, markers, err := buildLLMTranslationPrompts(sourceLang, targetLang, texts, fieldNames)
-	if err != nil {
-		return nil, err
-	}
 	body, err := json.Marshal(map[string]interface{}{
 		"anthropic_version": "bedrock-2023-05-31",
 		"max_tokens":        4096,
@@ -56,7 +52,7 @@ func (s *Service) translateWithBedrock(ctx context.Context, sourceLang, targetLa
 		baseURL = "https://bedrock-runtime." + region + ".amazonaws.com"
 	}
 	endpoint := baseURL + "/model/" + url.PathEscape(model) + "/invoke"
-	logging.Debugf("Translation (bedrock): POST %s model=%s texts=%d", endpoint, model, len(texts))
+	logging.Debugf("Translation (bedrock): POST %s model=%s texts=%d", endpoint, model, len(markers))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
@@ -79,93 +75,11 @@ func (s *Service) translateWithBedrock(ctx context.Context, sourceLang, targetLa
 		return nil, &TranslationError{Kind: TranslationErrorHTTPStatus, StatusCode: resp.StatusCode, Message: fmt.Sprintf("bedrock translation failed with status %d: %s", resp.StatusCode, string(respBody))}
 	}
 
-	var decoded struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	if err := json.Unmarshal(respBody, &decoded); err != nil {
-		return nil, fmt.Errorf("failed to decode bedrock response: %w", err)
-	}
-	if len(decoded.Content) == 0 {
-		return nil, fmt.Errorf("bedrock response contained no content blocks")
-	}
-	return buildLLMTranslationResult(strings.TrimSpace(decoded.Content[0].Text), markers)
-}
-
-func (s *Service) translateActressNamesWithBedrock(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
-	cfg := s.cfg.Bedrock
-	region := strings.TrimSpace(cfg.Region)
-	if region == "" {
-		region = "us-east-1"
-	}
-	accessKeyID := strings.TrimSpace(cfg.AccessKeyID)
-	secretAccessKey := strings.TrimSpace(cfg.SecretAccessKey)
-	if accessKeyID == "" {
-		return nil, fmt.Errorf("bedrock access_key_id is required")
-	}
-	if secretAccessKey == "" {
-		return nil, fmt.Errorf("bedrock secret_access_key is required")
-	}
-	model := strings.TrimSpace(cfg.Model)
-	if model == "" {
-		model = "anthropic.claude-3-5-sonnet-20241022-v2:0"
-	}
-
-	systemPrompt, userPrompt, err := buildActressTranslationPrompts(sourceLang, targetLang, texts)
+	content, err := decodeClaudeMessageContent("bedrock", respBody)
 	if err != nil {
 		return nil, err
 	}
-	body, err := json.Marshal(map[string]interface{}{
-		"anthropic_version": "bedrock-2023-05-31",
-		"max_tokens":        4096,
-		"system":            systemPrompt,
-		"messages":          []map[string]string{{"role": "user", "content": userPrompt}},
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	baseURL := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
-	if baseURL == "" {
-		baseURL = "https://bedrock-runtime." + region + ".amazonaws.com"
-	}
-	endpoint := baseURL + "/model/" + url.PathEscape(model) + "/invoke"
-	logging.Debugf("Translation (bedrock actress): POST %s model=%s texts=%d", endpoint, model, len(texts))
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("content-type", "application/json")
-	req.Header.Set("accept", "application/json")
-	signBedrockRequest(req, body, region, accessKeyID, secretAccessKey, strings.TrimSpace(cfg.SessionToken), time.Now().UTC())
-
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxTranslationResponseSize))
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, &TranslationError{Kind: TranslationErrorHTTPStatus, StatusCode: resp.StatusCode, Message: fmt.Sprintf("bedrock translation failed with status %d: %s", resp.StatusCode, string(respBody))}
-	}
-
-	var decoded struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	if err := json.Unmarshal(respBody, &decoded); err != nil {
-		return nil, fmt.Errorf("failed to decode bedrock response: %w", err)
-	}
-	if len(decoded.Content) == 0 {
-		return nil, fmt.Errorf("bedrock response contained no content blocks")
-	}
-	return buildLLMTranslationResult(strings.TrimSpace(decoded.Content[0].Text), makeJZMarkers(len(texts)))
+	return buildLLMTranslationResult(content, markers)
 }
 
 func signBedrockRequest(req *http.Request, payload []byte, region, accessKeyID, secretAccessKey, sessionToken string, now time.Time) {

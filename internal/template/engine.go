@@ -328,14 +328,14 @@ func (e *Engine) resolveTag(tagName, modifier string, ctx *Context) (string, err
 				delimiter = modifier
 			}
 			if len(e.languageCandidates("", ctx)) > 0 {
-				return e.resolveActressNamesWithDelimiter("", delimiter, ctx), nil
+				return e.resolveActressNamesWithDelimiter(delimiter, ctx), nil
 			}
 			return strings.Join(ctx.formatActressNames(), delimiter), nil
 		}
 		return "", nil
 	case "ACTRESS", "ACTORNAME", "ACTRESSNAME":
 		if len(e.languageCandidates("", ctx)) > 0 {
-			if name := e.resolveActressName("", 0, ctx); name != "" {
+			if name := e.resolveActressName(0, ctx); name != "" {
 				return name, nil
 			}
 		}
@@ -688,11 +688,9 @@ func (e *Engine) resolveTranslatedTag(tagName, explicitLang string, ctx *Context
 	return e.resolveBaseTag(tagName, ctx)
 }
 
-func (e *Engine) resolveActressNames(explicitLang string, ctx *Context) string {
-	return e.resolveActressNamesWithDelimiter(explicitLang, ", ", ctx)
-}
-
-func (e *Engine) resolveActressNamesWithDelimiter(explicitLang, delimiter string, ctx *Context) string {
+// resolveActressNamesWithDelimiter joins actress names resolved via the global
+// translation languages (no explicit per-tag language spec is supported).
+func (e *Engine) resolveActressNamesWithDelimiter(delimiter string, ctx *Context) string {
 	if len(ctx.Actresses) == 0 && len(ctx.ActressDetails) == 0 {
 		return ""
 	}
@@ -702,46 +700,40 @@ func (e *Engine) resolveActressNamesWithDelimiter(explicitLang, delimiter string
 		count = len(ctx.Actresses)
 	}
 	for i := 0; i < count; i++ {
-		if name := e.resolveActressName(explicitLang, i, ctx); name != "" {
+		if name := e.resolveActressName(i, ctx); name != "" {
 			names = append(names, name)
 		}
 	}
 	return strings.Join(names, delimiter)
 }
 
-func (e *Engine) resolveActressName(explicitLang string, index int, ctx *Context) string {
+func (e *Engine) resolveActressName(index int, ctx *Context) string {
 	primaryLang := ""
-	for _, lang := range e.languageCandidates(explicitLang, ctx) {
+	for _, lang := range e.languageCandidates("", ctx) {
 		if primaryLang == "" {
 			primaryLang = lang
 		}
-		if name := e.translatedActressName(lang, index, ctx); e.isAcceptableActressTranslation(lang, name) {
+		if name := e.translatedActressName(lang, index, ctx); name != "" {
 			return name
 		}
 	}
 	if index < len(ctx.ActressDetails) {
 		detail := ctx.ActressDetails[index]
-		// Language-filtered name (respects CJK rejection for English requests)
+		// Language-shaped name (JapaneseName for ja, CJK rejection for en)
 		if name := ctx.formatActressNameForLanguage(detail, primaryLang); name != "" {
 			return name
 		}
-		// No translation — only fall back to raw name if it passes the language filter
-		if rawName := ctx.formatActressName(detail); e.isAcceptableActressTranslation(primaryLang, rawName) {
+		if rawName := ctx.formatActressName(detail); rawName != "" {
 			return rawName
 		}
 	}
 	// Fall back to raw Actresses slice (covers case where ActressDetails is absent)
 	if index < len(ctx.Actresses) {
-		rawName := ctx.Actresses[index]
-		if e.isAcceptableActressTranslation(primaryLang, rawName) {
+		if rawName := ctx.Actresses[index]; rawName != "" {
 			return rawName
 		}
 	}
 	return ""
-}
-
-func (e *Engine) isAcceptableActressTranslation(lang, name string) bool {
-	return name != ""
 }
 
 func (e *Engine) translatedActressName(lang string, index int, ctx *Context) string {

@@ -882,3 +882,76 @@ jobs:
             git commit -m "scoop: javinizer ${VERSION}"
             git push
           fi
+
+  notify-discord:
+    name: Notify Discord
+    needs: [prepare-release, create-release]
+    # Notify on every published release (stable + prerelease); skip drafts
+    # and non-release runs (snapshots/nightlies where create_release == 'false').
+    #
+    # NOTE: This lives in cli-release.yml rather than a separate
+    # release-event-triggered workflow because the release above is published
+    # with GITHUB_TOKEN, and events triggered by GITHUB_TOKEN do not spawn
+    # downstream workflow runs (GitHub anti-loop protection). Running in the
+    # same workflow avoids that limitation entirely.
+    if: needs.prepare-release.outputs.create_release == 'true' && needs.prepare-release.outputs.draft != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post release to Discord webhook
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TAG: ${{ needs.prepare-release.outputs.tag_name }}
+          NAME: ${{ needs.prepare-release.outputs.release_name }}
+          PRERELEASE: ${{ needs.prepare-release.outputs.prerelease }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DISCORD_WEBHOOK_URL}" ]; then
+            echo "DISCORD_WEBHOOK_URL secret is not set; skipping"
+            exit 0
+          fi
+
+          url="https://github.com/${REPO}/releases/tag/${TAG}"
+          # Fetch the rendered release notes body (falls back to empty).
+          body="$(gh api "repos/${REPO}/releases/tags/${TAG}" --jq '.body // "" 2>/dev/null' || true)"
+          body_preview="$(printf '%s' "${body}" | head -c 3800)"
+          title="${NAME:-${TAG}}"
+          title="$(printf '%s' "${title}" | head -c 250)"
+
+          if [ "${PRERELEASE}" = "true" ]; then
+            color="15844367" # orange — prerelease
+            type_label="Pre-release"
+          else
+            color="32768"   # green — stable
+            type_label="Release"
+          fi
+
+          payload="$(jq -n \
+            --arg title "${title}" \
+            --arg tag "${TAG}" \
+            --arg url "${url}" \
+            --arg type "${type_label}" \
+            --arg color "${color}" \
+            --arg body "${body_preview}" \
+            --arg repo "${REPO}" \
+            '{
+              content: ("New " + $type + " published: [" + $tag + "](" + $url + ")"),
+              embeds: [{
+                title: $title,
+                url: $url,
+                color: ($color | tonumber),
+                description: $body,
+                footer: { text: $repo },
+                timestamp: (now | todate)
+              }]
+            }')"
+
+          echo "Posting release ${TAG} to Discord..."
+          curl -fsSL -X POST \
+            -H "Content-Type: application/json" \
+            -d "${payload}" \
+            "${DISCORD_WEBHOOK_URL}"
+
+          echo "Discord notification sent for ${TAG}"

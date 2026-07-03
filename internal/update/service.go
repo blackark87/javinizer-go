@@ -29,9 +29,9 @@ type UpdateConfig struct {
 	VersionCheckIntervalHours int
 	// StableOnly, when true, restricts update notifications to stable releases
 	// only (prereleases are still fetched and cached for transparency but never
-	// reported as available). Defaults to false: the Go repo currently ships
-	// only prereleases, so suppressing them by default would mean the checker
-	// never notifies any user until a stable release exists.
+	// reported as available). Defaults to false: with v1.0.0 stable as the
+	// latest release, suppressing prereleases by default still surfaces stable
+	// updates, and users who want release candidates can opt in via --prerelease.
 	StableOnly bool
 }
 
@@ -241,10 +241,9 @@ func (s *Service) forceCheckLocked(ctx context.Context) *updateState {
 	isPrerelease := latest.Prerelease || IsPrerelease(latest.Version)
 
 	// Honor the user's stable-only preference: when restricting to stable
-	// releases, never surface a prerelease as an available update (the Go repo
-	// currently ships only prereleases, so this means "no update" until a
-	// stable release lands — by design, not a bug). The version is still cached
-	// so the UI can show what was found; only the Available flag is suppressed.
+	// releases, never surface a prerelease as an available update. The version
+	// is still cached so the UI can show what was found; only the Available
+	// flag is suppressed.
 	if isAvailable && isPrerelease && s.stableOnly {
 		isAvailable = false
 	}

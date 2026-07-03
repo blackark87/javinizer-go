@@ -201,13 +201,13 @@ func (c *githubChecker) CheckLatestVersion(ctx context.Context) (*versionInfo, e
 		return nil, ErrNotModified
 	}
 
-	// GitHub's /releases/latest endpoint EXCLUDES prereleases, so a repo that
-	// has only prereleases (the Go rewrite currently ships v0.x-alpha only)
-	// responds 404. Fall back to the most recent release via the list endpoint
-	// rather than erroring — otherwise the update checker would never find an
-	// update for a prerelease-only repo. The returned version may be a
-	// prerelease; the caller (service layer) applies the user's
-	// check-prerelease preference to decide whether to surface it.
+	// GitHub's /releases/latest endpoint EXCLUDES prereleases, so a repo
+	// whose latest release is a prerelease responds 404. Fall back to the most
+	// recent release via the list endpoint rather than erroring — otherwise
+	// the update checker would never find an update when the newest release
+	// is a prerelease. The returned version may be a prerelease; the caller
+	// (service layer) applies the user's check-prerelease preference to
+	// decide whether to surface it.
 	if resp.StatusCode == http.StatusNotFound {
 		return c.latestFromReleaseList(ctx)
 	}

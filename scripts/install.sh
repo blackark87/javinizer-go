@@ -122,7 +122,7 @@ get_latest_version() {
         VERSION=$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPO/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
         if [ -z "$VERSION" ]; then
             echo -e "${RED}No stable release is available yet.${NC}"
-            echo -e "${YELLOW}Javinizer is currently in pre-release. To install the latest pre-release, re-run with --pre-release:${NC}"
+            echo -e "${YELLOW}To install the latest pre-release, re-run with --pre-release:${NC}"
             echo -e "${GREEN}  curl -sSL https://raw.githubusercontent.com/javinizer/javinizer-go/main/scripts/install.sh | bash -s -- --pre-release${NC}"
             echo -e "${YELLOW}Or download a specific release from: https://github.com/$GITHUB_REPO/releases${NC}"
             exit 1

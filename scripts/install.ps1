@@ -59,7 +59,7 @@ function Get-LatestTag {
         $r = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -Headers @{ 'User-Agent' = 'Javinizer-Installer' } -ErrorAction Stop
         if ($r.tag_name) { return $r.tag_name }
     } catch {
-        Die "No stable release is available yet. Javinizer is currently in pre-release. To install the latest pre-release, re-run with -PreRelease, or download a specific release from https://github.com/$Repo/releases"
+        Die "No stable release is available yet. To install the latest pre-release, re-run with -PreRelease, or download a specific release from https://github.com/$Repo/releases"
     }
     Die "No stable release is available yet. To install the latest pre-release, re-run with -PreRelease, or download from https://github.com/$Repo/releases"
 }

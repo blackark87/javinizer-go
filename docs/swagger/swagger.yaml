@@ -1740,10 +1740,11 @@ definitions:
         description: |-
           VersionCheckStableOnly, when true, restricts update notifications to
           stable releases only (prereleases are still fetched and cached for
-          transparency but never reported as available). Defaults to false: the
-          Go rewrite currently ships only prereleases (v0.x-alpha), so suppressing
-          them by default would mean no user is ever notified until a stable
-          release exists. Set to true to be notified only about stable releases.
+          transparency but never reported as available). Defaults to false: with
+          v1.0.0 stable as the latest release, suppressing prereleases by default
+          still surfaces stable updates, and users who want release candidates can
+          opt in via --prerelease. Set to true to be notified only about stable
+          releases.
           Modeled as an opt-in restriction (not an opt-out) so the zero value is
           the correct default for existing configs — no migration needed.
         type: boolean

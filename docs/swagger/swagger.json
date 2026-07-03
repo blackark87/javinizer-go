@@ -5664,7 +5664,7 @@
                     "type": "integer"
                 },
                 "version_check_stable_only": {
-                    "description": "VersionCheckStableOnly, when true, restricts update notifications to\nstable releases only (prereleases are still fetched and cached for\ntransparency but never reported as available). Defaults to false: the\nGo rewrite currently ships only prereleases (v0.x-alpha), so suppressing\nthem by default would mean no user is ever notified until a stable\nrelease exists. Set to true to be notified only about stable releases.\nModeled as an opt-in restriction (not an opt-out) so the zero value is\nthe correct default for existing configs — no migration needed.",
+                    "description": "VersionCheckStableOnly, when true, restricts update notifications to\nstable releases only (prereleases are still fetched and cached for\ntransparency but never reported as available). Defaults to false: with\nv1.0.0 stable as the latest release, suppressing prereleases by default\nstill surfaces stable updates, and users who want release candidates can\nopt in via --prerelease. Set to true to be notified only about stable\nreleases.\nModeled as an opt-in restriction (not an opt-out) so the zero value is\nthe correct default for existing configs — no migration needed.",
                     "type": "boolean"
                 }
             }

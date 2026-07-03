@@ -7,7 +7,7 @@ A metadata scraper and file organizer for Japanese Adult Videos (JAV), with CLI,
 [![Test & Coverage](https://github.com/javinizer/javinizer-go/actions/workflows/test.yml/badge.svg)](https://github.com/javinizer/javinizer-go/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/javinizer/javinizer-go/branch/main/graph/badge.svg)](https://codecov.io/gh/javinizer/javinizer-go)
 [![Discord](https://img.shields.io/discord/608449512352120834?color=brightgreen&style=plastic&label=discord)](https://discord.gg/Pds7xCpzpc)
-[![latest release](https://img.shields.io/github/v/release/javinizer/javinizer-go?include_prereleases&label=latest%20release)](https://github.com/javinizer/javinizer-go/releases)
+[![latest release](https://img.shields.io/github/v/release/javinizer/javinizer-go?label=latest%20release)](https://github.com/javinizer/javinizer-go/releases)
 
 ---
 
@@ -86,11 +86,11 @@ docker-compose up -d
 
 The compose file includes **javinizer** (API + web UI) and an optional **flaresolverr** (Cloudflare solver for JavDB/JavLibrary). See the [Docker Deployment Guide](./docs/docker-deployment.md) for details.
 
-**Tag policy:** `latest` tracks the most recent release; pin a tag (e.g. `v1.0.0-rc1`) for reproducible deployments.
+**Tag policy:** `latest` tracks the most recent release; pin a tag (e.g. `v1.0.0`) for reproducible deployments.
 
 ### Homebrew (macOS / Linux)
 
-Once a stable `v1.0.0` is published, install via the Homebrew tap (recommended for macOS):
+Install via the Homebrew tap (recommended for macOS):
 
 ```bash
 brew tap javinizer/homebrew-tap https://github.com/javinizer/homebrew-tap
@@ -103,7 +103,7 @@ The formula installs a prebuilt binary (CGO/SQLite is statically linked into eac
 
 ### Scoop (Windows)
 
-Once a stable `v1.0.0` is published, install via the Scoop bucket (recommended for Windows):
+Install via the Scoop bucket (recommended for Windows):
 
 ```powershell
 scoop bucket add javinizer https://github.com/javinizer/scoop-javinizer
@@ -152,11 +152,11 @@ sudo mv javinizer /usr/local/bin/
 javinizer version
 ```
 
-> **One-shot download (from v1.0.0 stable):** once a non-prerelease `v1.0.0` is published, `releases/latest` resolves and you can fetch the latest binary directly — no version in the URL:
+> **One-shot download:** `releases/latest` resolves to the newest stable release, so you can fetch the latest binary directly — no version in the URL:
 > ```bash
 > curl -L -o javinizer https://github.com/javinizer/javinizer-go/releases/latest/download/javinizer-linux-amd64
 > ```
-> Prereleases can't be the “Latest” release on GitHub, so this permalink 404s until `v1.0.0` stable ships.
+> Prereleases can't be the “Latest” release on GitHub, so this permalink always points at a stable release.
 
 **Windows:**
 

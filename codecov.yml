@@ -19,6 +19,22 @@ coverage:
         # PR that ships mostly-untested code still fails.
         target: 80%
 
+# Paths excluded from both project and patch coverage. These are either
+# never compiled into the coverage run or are generated/vendored — counting
+# them as diff lines produces false patch-coverage failures.
+ignore:
+  # Build-tagged e2e suites (//go:build e2e / live). `go test -cover` does
+  # not compile them, so they never appear in coverage.out; without this
+  # ignore, adding an e2e test file fails the 80% patch gate on every PR.
+  - "test/e2e/**"
+  # swag-generated API docs + //go:embed wrappers (no testable logic).
+  - "docs/swagger/**"
+  # //go:embed wrapper for the built frontend; the frontend has its own
+  # vitest suite, not Go coverage.
+  - "web/**"
+  # Vendored deps that ship Go files (e.g. flatted/golang).
+  - "**/node_modules/**"
+
 comment:
   layout: "reach,diff,flags,files"
   behavior: default

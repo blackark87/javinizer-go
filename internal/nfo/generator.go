@@ -31,6 +31,7 @@ type Config struct {
 
 	// File naming
 	NFOFilenameTemplate string // Template for NFO filename (default: "<ID>.nfo")
+	DisplayTitleTemplate string // Template for NFO <title> field
 	PerFile             bool   // Create separate NFO for each multi-part file (default: false)
 
 	// Optional fields
@@ -137,11 +138,7 @@ func (g *Generator) Generate(movie *models.Movie, outputPath string, partSuffix 
 // MovieToNFO converts a Movie model to NFO format
 // videoFilePath: optional path to video file for extracting stream details (empty string to skip)
 func (g *Generator) MovieToNFO(movie *models.Movie, videoFilePath string) *Movie {
-	// Use DisplayTitle (canonical title), fallback to Title if not set
-	title := movie.DisplayTitle
-	if title == "" {
-		title = movie.Title
-	}
+	title := g.renderDisplayTitle(movie, videoFilePath, nil)
 
 	nfo := &Movie{
 		ID:            movie.ID,
@@ -360,6 +357,46 @@ func (g *Generator) MovieToNFO(movie *models.Movie, videoFilePath string) *Movie
 	}
 
 	return nfo
+}
+
+func (g *Generator) renderDisplayTitle(movie *models.Movie, videoFilePath string, mediaInfo *mediainfo.VideoInfo) string {
+	fallback := movie.DisplayTitle
+	if fallback == "" {
+		fallback = movie.Title
+	}
+
+	tmpl := strings.TrimSpace(g.config.DisplayTitleTemplate)
+	if tmpl == "" {
+		return fallback
+	}
+	if fallback != "" && !templateNeedsVideoContext(tmpl) {
+		return fallback
+	}
+
+	ctx := template.NewContextFromMovie(movie)
+	ctx.GroupActress = g.config.GroupActress
+	ctx.GroupActressName = g.config.GroupActressName
+	ctx.FirstNameOrder = g.config.ActorFirstNameOrder
+	if videoFilePath != "" {
+		ctx.SetSourceFile(videoFilePath, filepath.Base(videoFilePath), filepath.Ext(videoFilePath))
+	}
+	if mediaInfo != nil {
+		ctx.SetMediaInfo(mediaInfo)
+	}
+
+	rendered, err := g.templateEngine.Execute(tmpl, ctx)
+	if err != nil || strings.TrimSpace(rendered) == "" {
+		return fallback
+	}
+	return rendered
+}
+
+func templateNeedsVideoContext(tmpl string) bool {
+	upper := strings.ToUpper(tmpl)
+	return strings.Contains(upper, "<VR") ||
+		strings.Contains(upper, "<IF:VR") ||
+		strings.Contains(upper, "<RESOLUTION") ||
+		strings.Contains(upper, "<IF:RESOLUTION")
 }
 
 func normalizeActressNameForDedup(name string) string {

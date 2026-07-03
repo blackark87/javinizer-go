@@ -327,6 +327,13 @@ func (c *Context) IsVR() bool {
 	return info.IsVR()
 }
 
+// SetMediaInfo preloads media metadata for tags such as <RESOLUTION> and <VR>.
+// This is useful when a caller has already analyzed the source file.
+func (c *Context) SetMediaInfo(info *mediainfo.VideoInfo) {
+	c.cachedMediaInfo = info
+	c.mediaInfoError = nil
+}
+
 // GetMediaInfo lazy-loads and caches video metadata.
 // Thread-safe: uses sync.Once to ensure single initialization even under concurrent access.
 // Preserves pre-existing cached values from Clone() to avoid duplicate expensive analysis.

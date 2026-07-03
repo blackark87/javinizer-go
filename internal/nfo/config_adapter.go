@@ -25,6 +25,7 @@ func ConfigFromAppConfig(appCfg *config.NFOConfig, outputCfg *config.OutputConfi
 		UnknownActress:       appCfg.UnknownActressText,
 		UnknownActressMode:   appCfg.UnknownActressMode,
 		NFOFilenameTemplate:  appCfg.FilenameTemplate,
+		DisplayTitleTemplate: appCfg.DisplayTitle,
 		PerFile:              appCfg.PerFile,
 		ActressAsTag:         appCfg.ActressAsTag,
 		AddGenericRole:       appCfg.AddGenericRole,

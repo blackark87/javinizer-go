@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"github.com/javinizer/javinizer-go/internal/mediainfo"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/stretchr/testify/assert"
 )
@@ -415,6 +416,54 @@ func TestGenerateWithTemplate(t *testing.T) {
 			t.Logf("  - %s", f.Name())
 		}
 	}
+}
+
+func TestRenderDisplayTitleWithVideoTemplateTags(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.DisplayTitleTemplate = "<ID><IF:VR> [VR]</IF><IF:RESOLUTION> [<RESOLUTION>]</IF> - <TITLE>"
+	gen := NewGenerator(afero.NewOsFs(), cfg)
+
+	movie := &models.Movie{
+		ID:           "STSK-074",
+		Title:        "Sample Title",
+		DisplayTitle: "STSK-074 - Sample Title",
+	}
+
+	got := gen.renderDisplayTitle(movie, "", &mediainfo.VideoInfo{Width: 3840, Height: 1920})
+
+	assert.Equal(t, "STSK-074 [VR] [4K] - Sample Title", got)
+}
+
+func TestRenderDisplayTitleWithResolutionOnly(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.DisplayTitleTemplate = "<ID><IF:VR> [VR]</IF><IF:RESOLUTION> [<RESOLUTION>]</IF> - <TITLE>"
+	gen := NewGenerator(afero.NewOsFs(), cfg)
+
+	movie := &models.Movie{
+		ID:           "IPX-535",
+		Title:        "Flat Title",
+		DisplayTitle: "IPX-535 - Flat Title",
+	}
+
+	got := gen.renderDisplayTitle(movie, "", &mediainfo.VideoInfo{Width: 1920, Height: 1080})
+
+	assert.Equal(t, "IPX-535 [1080p] - Flat Title", got)
+}
+
+func TestRenderDisplayTitlePreservesExistingWithoutVideoTags(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.DisplayTitleTemplate = "<ID> - <TITLE>"
+	gen := NewGenerator(afero.NewOsFs(), cfg)
+
+	movie := &models.Movie{
+		ID:           "ABC-123",
+		Title:        "Raw Title",
+		DisplayTitle: "Manual Display Title",
+	}
+
+	got := gen.renderDisplayTitle(movie, "", &mediainfo.VideoInfo{Width: 3840, Height: 1920})
+
+	assert.Equal(t, "Manual Display Title", got)
 }
 
 func TestGenerator_GenerateMultiPart(t *testing.T) {

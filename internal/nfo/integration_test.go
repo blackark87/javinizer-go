@@ -218,6 +218,9 @@ func TestConfigFromAppConfig(t *testing.T) {
 	if nfoCfg.NFOFilenameTemplate != "<ID> [<STUDIO>].nfo" {
 		t.Errorf("NFOFilenameTemplate not mapped correctly: got %s", nfoCfg.NFOFilenameTemplate)
 	}
+	if nfoCfg.DisplayTitleTemplate != "<ID> - <TITLE>" {
+		t.Errorf("DisplayTitleTemplate not mapped correctly: got %s", nfoCfg.DisplayTitleTemplate)
+	}
 	if nfoCfg.IncludeStreamDetails != true {
 		t.Error("IncludeStreamDetails not mapped correctly")
 	}

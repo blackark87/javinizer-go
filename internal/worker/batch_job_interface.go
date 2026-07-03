@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/javinizer/javinizer-go/internal/database"
@@ -113,13 +114,14 @@ type RescrapeCmd struct {
 // RescrapeResult is everything the caller gets back from the rescrape seam.
 // Contains only data the API layer needs for response translation.
 type RescrapeResult struct {
-	Movie            *models.Movie         // Data struct — acceptable per RESEARCH §Architecture Patterns — Pattern 1 note
-	FieldSources     map[string]string     // Per-field scraper attribution
-	ActressSources   map[string]string     // Per-actress scraper attribution
-	Status           models.RescrapeStatus // success, failed, gone, conflict
-	Error            string                // Human-readable error for "failed" status
-	OrphanedMovieIDs []string              // IDs that became orphaned during rescrape cleanup
-	FilePath         string                // File path that was rescraped (for provenance propagation)
+	Movie            *models.Movie           // Data struct — acceptable per RESEARCH §Architecture Patterns — Pattern 1 note
+	FieldSources     map[string]string       // Per-field scraper attribution
+	ActressSources   map[string]string       // Per-actress scraper attribution
+	ScraperResults   []*models.ScraperResult // Raw per-scraper results, retained in-memory for the review source viewer
+	Status           models.RescrapeStatus   // success, failed, gone, conflict
+	Error            string                  // Human-readable error for "failed" status
+	OrphanedMovieIDs []string                // IDs that became orphaned during rescrape cleanup
+	FilePath         string                  // File path that was rescraped (for provenance propagation)
 }
 
 // FileLookupResult holds the output of looking up a movie ID in job results.
@@ -157,6 +159,12 @@ type MovieLookup interface {
 	// GetFileResultByResultID returns the MovieResult and its file path for
 	// a given stable ResultID (thread-safe). Returns (result, filePath, found).
 	GetFileResultByResultID(resultID string) (*MovieResult, string, bool)
+
+	// GetProvenance returns the provenance (field/actress source attribution
+	// plus the in-memory raw ScraperResults) for a file path, or nil. The
+	// returned value is a clone and safe for the caller to mutate. Used by the
+	// review-page source viewer to read per-scraper raw results.
+	GetProvenance(filePath string) *ProvenanceData
 }
 
 // JobEditor provides mutation operations on a job's results.
@@ -167,6 +175,12 @@ type JobEditor interface {
 	ExcludeFile(filePath string)
 	UpdatePosterCrop(movieID string, croppedURL string) error
 	UpdatePosterFromURL(ctx context.Context, movieID string, posterURL string, croppedURL string) error
+
+	// ApplyFieldOverride cherry-picks a single field's value from the named
+	// scraper source's raw results and applies it to the movie, updating
+	// provenance attribution. Mirrors the original Javinizer "Replace" button.
+	// Returns the updated MovieResult and ProvenanceData (both clones).
+	ApplyFieldOverride(ctx context.Context, resultID, fieldKey, source string) (*MovieResult, *ProvenanceData, error)
 }
 
 // PhaseController provides phase execution and dependency-wiring operations
@@ -350,10 +364,12 @@ func (jr *jobReaderImpl) Subscribe() JobEventSubscriber { return jr.subscribeFn(
 type jobEditorImpl struct {
 	updater      ResultUpdater
 	accessor     ResultMapAccessor
+	tracker      *ResultTracker
 	lifecycle    *JobLifecycle
 	posterEditor *PosterEditor
 	movieRepo    database.MovieRepositoryInterface
 	actressRepo  database.ActressRepositoryInterface
+	overrideMu   sync.Map // resultID -> *sync.Mutex
 }
 
 func (je *jobEditorImpl) UpdateMovie(ctx context.Context, filePath string, movie *models.Movie) error {
@@ -439,6 +455,47 @@ func (je *jobEditorImpl) UpdatePosterFromURL(ctx context.Context, movieID string
 	// Delegates entirely to PosterEditor, which handles both in-memory update
 	// and DB persistence when movieRepo is configured.
 	return je.posterEditor.UpdatePosterFromURL(ctx, movieID, posterURL, croppedURL)
+}
+
+// ApplyFieldOverride cherry-picks a single field's value from the named
+// scraper source's raw results and applies it to the movie, updating
+// provenance attribution to reflect the user's choice. Mirrors the original
+// PowerShell Javinizer "Replace" button (javinizergui.ps1:2538):
+//
+//	$cache:findData[$cache:index].Data.($prop.Name) = $prop.Value
+//	$cache:findData[$cache:index].Selected.($prop.Name) = $source
+//
+// The movie is persisted via UpdateMovie (DB upsert + in-memory), consistent
+// with the poster-from-url / poster-crop edit endpoints. Provenance
+// (FieldSources/ActressSources/ScraperResults) is persisted via the job
+// envelope — the handler calls PersistJobByID after this method succeeds.
+// Raw ScraperResults round-trip through the envelope (json:"scraper_results").
+// A per-resultID mutex serializes concurrent overrides on the same result so
+// the read-clone-mutate-write sequence cannot lose an earlier override.
+func (je *jobEditorImpl) ApplyFieldOverride(ctx context.Context, resultID, fieldKey, source string) (*MovieResult, *ProvenanceData, error) {
+	mu, _ := je.overrideMu.LoadOrStore(resultID, &sync.Mutex{})
+	mu.(*sync.Mutex).Lock()
+	defer mu.(*sync.Mutex).Unlock()
+
+	result, filePath, found := je.tracker.GetFileResultByResultID(resultID)
+	if !found || result == nil || result.Movie == nil {
+		return nil, nil, fmt.Errorf("result %s not found or has no movie", resultID)
+	}
+	prov := je.tracker.GetProvenance(filePath)
+	if prov == nil {
+		prov = &ProvenanceData{}
+	}
+	movie := result.Movie.Clone()
+	if err := applyFieldOverride(movie, prov, fieldKey, source); err != nil {
+		return nil, nil, err
+	}
+	if err := je.UpdateMovie(ctx, filePath, movie); err != nil {
+		return nil, nil, fmt.Errorf("persist field override: %w", err)
+	}
+	je.updater.SetProvenance(filePath, prov)
+	updated, _, _ := je.tracker.GetFileResultByResultID(resultID)
+	updatedProv := je.tracker.GetProvenance(filePath)
+	return updated, updatedProv, nil
 }
 
 // editableJobAdapter satisfies EditableJob by composing jobReaderImpl,

@@ -134,21 +134,29 @@ func batchRescrapeMovies(rt *core.APIRuntime) gin.HandlerFunc {
 			return
 		}
 
-		snap := job.GetStatus()
-		if rescrapeNotAllowed(snap) {
-			if snap.IsDeleted {
+		statusSnap := job.GetStatus()
+		if rescrapeNotAllowed(statusSnap) {
+			if statusSnap.IsDeleted {
 				writeErrorResponse(c, http.StatusGone, true, "Job has been deleted")
 			} else {
-				writeErrorResponse(c, http.StatusConflict, false, fmt.Sprintf("Cannot rescrape %s job", snap.Status))
+				writeErrorResponse(c, http.StatusConflict, false, fmt.Sprintf("Cannot rescrape %s job", statusSnap.Status))
 			}
 			return
 		}
 
-		// Delegate to orchestrator for resolve→construct→execute pipeline
+		// Delegate to orchestrator for resolve→construct→execute pipeline.
+		// Snapshot so the workflow factory and batch job factory see the same
+		// reload epoch (issue #44).
+		rtSnap := rt.Snapshot()
+		factory := rtSnap.BatchJobFactory()
+		if factory == nil {
+			c.JSON(http.StatusServiceUnavailable, contracts.ErrorResponse{Error: "batch job factory unavailable — workflow factory not ready; retry the request"})
+			return
+		}
 		orch := NewRescrapeOrchestrator(RescrapeDeps{
 			JobStore:  deps.GetJobStore(),
-			WfFactory: &apiWorkflowFactory{rt: rt},
-			Factory:   rt.GetBatchJobFactory(),
+			WfFactory: &apiWorkflowFactory{snap: rtSnap},
+			Factory:   factory,
 			Persist:   deps.GetJobStore(),
 			Broadcast: &runtimeStateBroadcaster{rs: rt.GetRuntime()},
 			ServerCtx: rt.ServerCtx(),

@@ -23,11 +23,12 @@ import (
 func prepareAndLaunchApply(
 	c *gin.Context,
 	rt *core.APIRuntime,
+	snap *core.RuntimeSnapshot,
 	job worker.BatchJobInterface,
 	applyOpts worker.ApplyPhaseConfig,
 	successMessage string,
 ) {
-	wf, wfErr := rt.GetBatchWorkflow(job.GetID())
+	wf, wfErr := snap.BatchWorkflow(job.GetID())
 	if wfErr != nil {
 		c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: fmt.Sprintf("Failed to create workflow: %v", wfErr)})
 		return
@@ -65,19 +66,28 @@ func prepareAndLaunchApply(
 // @Router /api/v1/batch/{id}/organize [post]
 func organizeJob(rt *core.APIRuntime) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		deps := rt.Deps()
 		var req contracts.OrganizeRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: err.Error()})
 			return
 		}
 
-		job, err := prepareBatchRequest(deps, rt, c, withRequireCompleted("Job must be completed before organizing"))
+		// One snapshot so prepareBatchRequest (batch defaults), the apply-config
+		// builder (apiCfg), and prepareAndLaunchApply (workflow) all see the same
+		// reload epoch (issue #44).
+		snap := rt.Snapshot()
+
+		job, err := prepareBatchRequest(snap, c, withRequireCompleted("Job must be completed before organizing"))
 		if err != nil {
 			return
 		}
 
-		applyOpts, resolveErr := resolveOrganizeApplyConfig(rt, rt.GetBatchJobFactory(), job, req)
+		factory := snap.BatchJobFactory()
+		if factory == nil {
+			c.JSON(http.StatusServiceUnavailable, contracts.ErrorResponse{Error: "batch job factory unavailable — workflow factory not ready; retry the request"})
+			return
+		}
+		applyOpts, resolveErr := resolveOrganizeApplyConfig(snap, factory, job, req)
 		if resolveErr != nil {
 			if resolveErr.Error() == "Access denied to requested directory" {
 				c.JSON(http.StatusForbidden, contracts.ErrorResponse{Error: resolveErr.Error()})
@@ -87,7 +97,7 @@ func organizeJob(rt *core.APIRuntime) gin.HandlerFunc {
 			return
 		}
 
-		prepareAndLaunchApply(c, rt, job, applyOpts, "Organization started")
+		prepareAndLaunchApply(c, rt, snap, job, applyOpts, "Organization started")
 	}
 }
 
@@ -145,13 +155,21 @@ func updateBatchJob(rt *core.APIRuntime) gin.HandlerFunc {
 			}
 		}
 
-		applyOpts, err := resolveUpdateApplyConfig(rt, rt.GetBatchJobFactory(), job, req)
+		// One snapshot so the apply-config builder (apiCfg) and prepareAndLaunchApply
+		// (workflow) see the same reload epoch (issue #44).
+		snap := rt.Snapshot()
+		factory := snap.BatchJobFactory()
+		if factory == nil {
+			c.JSON(http.StatusServiceUnavailable, contracts.ErrorResponse{Error: "batch job factory unavailable — workflow factory not ready; retry the request"})
+			return
+		}
+		applyOpts, err := resolveUpdateApplyConfig(snap, factory, job, req)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: err.Error()})
 			return
 		}
 
-		prepareAndLaunchApply(c, rt, job, applyOpts, "Update started")
+		prepareAndLaunchApply(c, rt, snap, job, applyOpts, "Update started")
 	}
 }
 
@@ -179,7 +197,10 @@ func previewOrganize(rt *core.APIRuntime) gin.HandlerFunc {
 			return
 		}
 
-		apiCfg := rt.GetAPIConfig()
+		// One snapshot so the APIConfig (security/batch defaults) and the preview
+		// workflow see the same reload epoch (issue #44).
+		snap := rt.Snapshot()
+		apiCfg := snap.APIConfig()
 		batchCfg := apiCfg.BatchConfig()
 		secCfg := apiCfg.SecurityConfig()
 
@@ -218,7 +239,7 @@ func previewOrganize(rt *core.APIRuntime) gin.HandlerFunc {
 		}
 
 		// Generate preview for all file results (multi-part support)
-		wf, wfErr := rt.GetBatchWorkflow(jobID)
+		wf, wfErr := snap.BatchWorkflow(jobID)
 		if wfErr != nil {
 			c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: fmt.Sprintf("Failed to create workflow for preview: %v", wfErr)})
 			return

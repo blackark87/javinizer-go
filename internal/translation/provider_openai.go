@@ -89,11 +89,15 @@ func buildLLMTranslationPrompts(sourceLang, targetLang string, texts []string, f
 		"Ignore non-name extras such as age (歳), cup size, height, or occupation. If the field contains no personal name at all, return an empty string for it. " +
 		"Also apply this rule to a <<<title>>> that is a short personal-name-like Japanese string (especially kana-only). "
 	properNounRule := "Proper-noun rule: fields labeled <<<maker>>>, <<<label>>>, or <<<director>>> are studio/brand/person names. Transliterate them phonetically; do NOT translate their meaning and do NOT embellish them into marketing copy. "
+	titleCleanupRule := "Title cleanup rule: fields labeled <<<title>>> may include VR format labels such as [VR], 【VR】, 【8K VR】, or similar bracketed VR markers. Exclude those VR labels entirely; do NOT translate, keep, or add them. "
+	descriptionCleanupRule := "Description cleanup rule: fields labeled <<<description>>> may contain platform notices or store promotions. Exclude those phrases entirely; do NOT translate or keep them. Examples to exclude include binaural/playback/device notices such as この作品はバイノーラル録音, この商品は専用プレイヤー, VR専用作品, 動作環境・対応デバイス, 配信方法によって収録内容が異なる場合があります, and store campaign text such as 最新作やセール商品など、お得な情報満載 and KMPストアはこちら. If the description contains only excluded material, return an empty string for <<<description>>>. "
 
 	systemPrompt := fmt.Sprintf("You are a translator specializing in Japanese adult video (JAV) content metadata. Translate each labeled section into natural, engaging promotional copy — not a literal word-for-word translation. Titles should be concise and enticing; descriptions should read as sensual, persuasive marketing blurbs in the target language. Follow these terminology rules: "+
 		terminologyRules+
 		personNameRule+
 		properNounRule+
+		titleCleanupRule+
+		descriptionCleanupRule+
 		"CRITICAL labeling rule: translate the text under each <<<label>>> and return it under the SAME <<<label>>> — never merge multiple sections into one label, never omit a label, never swap labels. "+
 		"Return ONLY the labeled output markers with their translations. Do not use JSON. Do not add commentary. Keep each translation on a single logical line; if needed, replace internal newlines with spaces. Source language: %s. Target language: %s.", sourceLang, targetLang)
 

@@ -371,6 +371,66 @@ func TestCleanActressNameForTranslation(t *testing.T) {
 }
 
 // =============================================================================
+// cleanDescriptionForTranslation tests
+// =============================================================================
+
+func TestCleanDescriptionForTranslation(t *testing.T) {
+	promoBlock := "※この作品はバイノーラル録音されておりますが、視点移動により音声が連動するものではありません。 ※この商品は専用プレイヤーでの視聴に最適化されています。 ※VR専用作品は必ず下記リンクより動作環境・対応デバイスを確認いただきご購入ください。 「動作環境・対応デバイス」について ※ 配信方法によって収録内容が異なる場合があります。 特集 最新作やセール商品など、お得な情報満載의 『【VR】KMPストア』はこちら！"
+	doubleStorePromoBlock := "※この作品はバイノーラル録音されておりますが、視点移動により音声が連動するものではありません。 ※この商品は専用プレイヤーでの視聴に最適化されています。 ※VR専用作品は必ず下記リンクより動作環境・対応デバイスを確認いただきご購入ください。 「動作環境・対応デバイス」について ※ 配信方法によって収録内容が異なる場合があります。 特集 最新作やセール商品など、お得な情報満載의 『【厳選】KMPストア 2号店』はこちら！最新作やセール商品など、お得な情報満載의 『【VR】KMPストア』はこちら！"
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "promo-only VR notice is removed",
+			input:    promoBlock,
+			expected: "",
+		},
+		{
+			name:     "double KMP store promo is removed",
+			input:    doubleStorePromoBlock,
+			expected: "",
+		},
+		{
+			name:     "main description before promo is preserved",
+			input:    "本編の説明です。 " + promoBlock,
+			expected: "本編の説明です。",
+		},
+		{
+			name:     "normal description is preserved",
+			input:    "彼女との甘い時間を描いた本編の説明です。",
+			expected: "彼女との甘い時間を描いた本編の説明です。",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, cleanDescriptionForTranslation(tt.input))
+		})
+	}
+}
+
+func TestCleanTitleForTranslation(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"【VR】森日向子", "森日向子"},
+		{"[VR] 모리 히나코", "모리 히나코"},
+		{"【8K VR】素敵なタイトル", "素敵なタイトル"},
+		{"彼女とVRデート", "彼女とVRデート"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			assert.Equal(t, tt.expected, cleanTitleForTranslation(tt.input))
+		})
+	}
+}
+
+// =============================================================================
 // stripVRMarkers tests
 // =============================================================================
 
@@ -386,6 +446,10 @@ func TestStripVRMarkers(t *testing.T) {
 		{"タイトル [4K VR]", "タイトル"},
 		{"タイトル（VR）", "タイトル"},
 		{"［VR］タイトル", "タイトル"},
+		{"［ＶＲ］タイトル", "タイトル"},
+		{"【VR専用】タイトル", "タイトル"},
+		{"【VR作品】タイトル", "タイトル"},
+		{"[8Ｋ　ＶＲ] タイトル", "タイトル"},
 		{"[vr] lowercase tag", "lowercase tag"},
 		{"タイトル前半 [VR] 後半", "タイトル前半 後半"},
 		// title that is only a VR tag becomes empty

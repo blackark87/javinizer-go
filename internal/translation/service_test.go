@@ -318,6 +318,190 @@ func TestTranslateMovie_StripsVRMarkerFromTitle(t *testing.T) {
 		assert.False(t, llmCalled)
 		assert.Equal(t, "[VR]", movie.Title)
 	})
+
+	t.Run("full-width and VR-only bracket variants are removed before sending to LLM", func(t *testing.T) {
+		var capturedRequest struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&capturedRequest)
+			response := map[string]interface{}{
+				"choices": []map[string]interface{}{
+					{
+						"message": map[string]string{
+							"content": "<<<title>>>\nTranslated Title",
+						},
+					},
+				},
+			}
+			_ = json.NewEncoder(w).Encode(response)
+		}))
+		defer server.Close()
+
+		cfg := config.TranslationConfig{
+			Enabled:        true,
+			Provider:       "openai",
+			TargetLanguage: "en",
+			SourceLanguage: "ja",
+			Fields: config.TranslationFieldsConfig{
+				Title: true,
+			},
+			OpenAI: config.OpenAITranslationConfig{
+				BaseURL: server.URL,
+				APIKey:  "test-key",
+			},
+		}
+
+		s := New(cfg)
+		movie := &models.Movie{Title: "【ＶＲ専用】素敵なタイトル"}
+		result, _, err := s.TranslateMovie(context.Background(), movie, "")
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Len(t, capturedRequest.Messages, 2)
+		userPrompt := capturedRequest.Messages[1].Content
+		assert.Contains(t, userPrompt, "素敵なタイトル")
+		assert.NotContains(t, userPrompt, "ＶＲ専用")
+	})
+
+	t.Run("LLM-added VR tag is removed from translated title", func(t *testing.T) {
+		var capturedRequest struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&capturedRequest)
+			response := map[string]interface{}{
+				"choices": []map[string]interface{}{
+					{
+						"message": map[string]string{
+							"content": "<<<title>>>\n[VR] 모리 히나코",
+						},
+					},
+				},
+			}
+			_ = json.NewEncoder(w).Encode(response)
+		}))
+		defer server.Close()
+
+		cfg := config.TranslationConfig{
+			Enabled:        true,
+			Provider:       "openai",
+			TargetLanguage: "ko",
+			SourceLanguage: "ja",
+			ApplyToPrimary: true,
+			Fields: config.TranslationFieldsConfig{
+				Title: true,
+			},
+			OpenAI: config.OpenAITranslationConfig{
+				BaseURL: server.URL,
+				APIKey:  "test-key",
+			},
+		}
+
+		s := New(cfg)
+		movie := &models.Movie{Title: "【VR】森日向子"}
+		result, _, err := s.TranslateMovie(context.Background(), movie, "")
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Len(t, capturedRequest.Messages, 2)
+		userPrompt := capturedRequest.Messages[1].Content
+		assert.Contains(t, userPrompt, "森日向子")
+		assert.NotContains(t, userPrompt, "【VR】")
+		assert.Equal(t, "모리 히나코", result[0].Title)
+		assert.Equal(t, "모리 히나코", movie.Title)
+	})
+}
+
+func TestTranslateMovie_CleansPromotionalDescription(t *testing.T) {
+	promoBlock := "※この作品はバイノーラル録音されておりますが、視点移動により音声が連動するものではありません。 ※この商品は専用プレイヤーでの視聴に最適化されています。 ※VR専用作品は必ず下記リンクより動作環境・対応デバイスを確認いただきご購入ください。 「動作環境・対応デバイス」について ※ 配信方法によって収録内容が異なる場合があります。 特集 最新作やセール商品など、お得な情報満載의 『【VR】KMPストア』はこちら！"
+
+	t.Run("description is cleaned before LLM request", func(t *testing.T) {
+		var capturedRequest struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&capturedRequest)
+			response := map[string]interface{}{
+				"choices": []map[string]interface{}{
+					{
+						"message": map[string]string{
+							"content": "<<<description>>>\nTranslated Description",
+						},
+					},
+				},
+			}
+			_ = json.NewEncoder(w).Encode(response)
+		}))
+		defer server.Close()
+
+		cfg := config.TranslationConfig{
+			Enabled:        true,
+			Provider:       "openai",
+			TargetLanguage: "en",
+			SourceLanguage: "ja",
+			ApplyToPrimary: true,
+			Fields: config.TranslationFieldsConfig{
+				Description: true,
+			},
+			OpenAI: config.OpenAITranslationConfig{
+				BaseURL: server.URL,
+				APIKey:  "test-key",
+			},
+		}
+
+		s := New(cfg)
+		movie := &models.Movie{Description: "本編の説明です。 " + promoBlock}
+		result, _, err := s.TranslateMovie(context.Background(), movie, "")
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Len(t, capturedRequest.Messages, 2)
+		userPrompt := capturedRequest.Messages[1].Content
+		assert.Contains(t, userPrompt, "本編の説明です。")
+		assert.NotContains(t, userPrompt, "バイノーラル録音")
+		assert.NotContains(t, userPrompt, "KMPストア")
+		assert.Equal(t, "Translated Description", movie.Description)
+	})
+
+	t.Run("promo-only description is skipped and excluded from primary", func(t *testing.T) {
+		llmCalled := false
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			llmCalled = true
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		cfg := config.TranslationConfig{
+			Enabled:        true,
+			Provider:       "openai",
+			TargetLanguage: "en",
+			SourceLanguage: "ja",
+			ApplyToPrimary: true,
+			Fields: config.TranslationFieldsConfig{
+				Description: true,
+			},
+			OpenAI: config.OpenAITranslationConfig{
+				BaseURL: server.URL,
+				APIKey:  "test-key",
+			},
+		}
+
+		s := New(cfg)
+		movie := &models.Movie{Description: promoBlock}
+		result, _, err := s.TranslateMovie(context.Background(), movie, "")
+
+		require.NoError(t, err)
+		assert.False(t, llmCalled)
+		assert.Nil(t, result)
+		assert.Empty(t, movie.Description)
+	})
 }
 
 // =============================================================================
@@ -539,6 +723,27 @@ func TestBuildLLMTranslationPrompts_Rules(t *testing.T) {
 		assert.Contains(t, systemPrompt, "<<<label>>>")
 		assert.Contains(t, systemPrompt, "<<<director>>>")
 		assert.Contains(t, systemPrompt, "do NOT embellish them into marketing copy")
+	})
+
+	t.Run("prompt includes title cleanup rule", func(t *testing.T) {
+		systemPrompt, _, _, err := buildLLMTranslationPrompts("ja", "ko", []string{"【VR】森日向子"}, []string{"title"})
+		require.NoError(t, err)
+
+		assert.Contains(t, systemPrompt, "Title cleanup rule")
+		assert.Contains(t, systemPrompt, "<<<title>>>")
+		assert.Contains(t, systemPrompt, "do NOT translate, keep, or add")
+		assert.Contains(t, systemPrompt, "【VR】")
+	})
+
+	t.Run("prompt includes description cleanup rule", func(t *testing.T) {
+		systemPrompt, _, _, err := buildLLMTranslationPrompts("ja", "ko", []string{"説明"}, []string{"description"})
+		require.NoError(t, err)
+
+		assert.Contains(t, systemPrompt, "Description cleanup rule")
+		assert.Contains(t, systemPrompt, "<<<description>>>")
+		assert.Contains(t, systemPrompt, "do NOT translate or keep")
+		assert.Contains(t, systemPrompt, "KMPストア")
+		assert.Contains(t, systemPrompt, "return an empty string")
 	})
 
 	t.Run("errors when field names are missing", func(t *testing.T) {

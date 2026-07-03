@@ -133,7 +133,15 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 
 	// Bracketed VR tags like "[VR]" / "【8K VR】" are dropped before translation —
 	// they label the release format and may not match the actual file.
-	titleForTranslation := stripVRMarkers(movie.Title)
+	titleForTranslation := cleanTitleForTranslation(movie.Title)
+	descriptionForTranslation := movie.Description
+	if fields.Description {
+		descriptionForTranslation = cleanDescriptionForTranslation(movie.Description)
+		if descriptionForTranslation != strings.TrimSpace(movie.Description) {
+			logging.Debugf("Translation[%s]: description promotional text removed before translation", movieID)
+		}
+	}
+	descriptionPromotionalOnly := fields.Description && descriptionForTranslation == "" && strings.TrimSpace(movie.Description) != ""
 
 	// When the title is an actress name, queue it under the title_as_name label so the
 	// person-name prompt rule guarantees phonetic transliteration (never a semantic
@@ -192,7 +200,7 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 			queueField(lang, movie.OriginalTitle, func(v string) { rec.OriginalTitle = v }, func(v string) { movie.OriginalTitle = v }, "original_title")
 		}
 		if fields.Description {
-			queueField(lang, movie.Description, func(v string) { rec.Description = v }, func(v string) { movie.Description = v }, "description")
+			queueField(lang, descriptionForTranslation, func(v string) { rec.Description = v }, func(v string) { movie.Description = v }, "description")
 		}
 		if fields.Director {
 			queueField(lang, movie.Director, func(v string) { rec.Director = v }, func(v string) { movie.Director = v }, "director")
@@ -235,6 +243,9 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 	}
 
 	if len(requests) == 0 && len(touchedRecords) == 0 && !movieTranslationRecordsHaveContent(records) {
+		if descriptionPromotionalOnly && s.cfg.ApplyToPrimary {
+			movie.Description = ""
+		}
 		return nil, "", nil
 	}
 
@@ -317,6 +328,14 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 			} else if requests[reqIdx].isActress && models.IsUnknownActressName(translated) {
 				translated = models.UnknownActressName
 			}
+			if isTitleTranslationField(requests[reqIdx].fieldName) {
+				cleanedTitle := cleanTitleForTranslation(translated)
+				if cleanedTitle != "" {
+					translated = cleanedTitle
+				} else {
+					translated = requests[reqIdx].text
+				}
+			}
 			requests[reqIdx].apply(translated)
 		}
 	}
@@ -325,6 +344,9 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 	if len(warnings) > 0 {
 		warning = fmt.Sprintf("Translation (%s): %s", normalizeProvider(s.cfg.Provider), strings.Join(warnings, "; "))
 		logging.Warnf("Translation[%s]: %s", movieID, warning)
+	}
+	if descriptionPromotionalOnly && s.cfg.ApplyToPrimary {
+		movie.Description = ""
 	}
 
 	// Collect output records in target-language order
@@ -431,12 +453,55 @@ func cleanActressNameForTranslation(name string) string {
 	return name
 }
 
+var descriptionPromoStoreRE = regexp.MustCompile(`(?:特集\s*)?最新作やセール商品など、お得な情報満載[の의]\s*『[^』]*KMPストア[^』]*』はこちら！?`)
+
+var descriptionPromotionalAnchors = []string{
+	"※この作品はバイノーラル録音されております",
+	"※ この作品はバイノーラル録音されております",
+	"※この商品は専用プレイヤーでの視聴に最適化されています",
+	"※ この商品は専用プレイヤーでの視聴に最適化されています",
+	"※VR専用作品は必ず下記リンクより動作環境・対応デバイス",
+	"※ VR専用作品は必ず下記リンクより動作環境・対応デバイス",
+	"「動作環境・対応デバイス」について",
+	"※ 配信方法によって収録内容が異なる場合があります",
+	"※配信方法によって収録内容が異なる場合があります",
+	"特集 最新作やセール商品など、お得な情報満載",
+	"最新作やセール商品など、お得な情報満載",
+}
+
+// cleanDescriptionForTranslation removes platform notices and store promotions
+// that should not be translated into the output description.
+func cleanDescriptionForTranslation(description string) string {
+	description = strings.TrimSpace(description)
+	if description == "" {
+		return ""
+	}
+
+	cutAt := len(description)
+	for _, anchor := range descriptionPromotionalAnchors {
+		if idx := strings.Index(description, anchor); idx >= 0 && idx < cutAt {
+			cutAt = idx
+		}
+	}
+	if cutAt < len(description) {
+		description = strings.TrimSpace(description[:cutAt])
+	}
+
+	description = descriptionPromoStoreRE.ReplaceAllString(description, "")
+	description = asciiSpaceRunRE.ReplaceAllString(description, " ")
+	return strings.TrimSpace(description)
+}
+
 // vrMarkerRE matches bracketed VR tags like [VR], [8K VR], 【VR】, ［4K VR］, （VR）.
 // Only bracketed marker tokens are removed; a bare "VR" inside the title text is kept
 // because there it carries meaning rather than labeling the release format.
-var vrMarkerRE = regexp.MustCompile(`(?i)[\[【［(（]\s*(?:\d+\s*K\s*)?VR\s*[\]】］)）]`)
+var vrMarkerRE = regexp.MustCompile(`[\[【［(（][\s　]*(?:\d+[\s　]*[KkＫｋ][\s　]*)?[VvＶｖ][RrＲｒ](?:[\s　]*(?:専用|動画|作品))?[\s　]*[\]】］)）]`)
 
 var asciiSpaceRunRE = regexp.MustCompile(`[ \t]{2,}`)
+
+func cleanTitleForTranslation(title string) string {
+	return stripVRMarkers(title)
+}
 
 // stripVRMarkers removes bracketed VR format tags from a title before translation.
 // Scraped metadata often carries tags like "[VR]" or "【8K VR】" that may not match
@@ -525,6 +590,10 @@ func isLikelyRomanized(s string) bool {
 // actress[N] batch entries and a title queued under the title_as_name label.
 func isPersonNameField(fieldName string) bool {
 	return strings.HasPrefix(fieldName, "actress[") || fieldName == fieldNameTitleAsName
+}
+
+func isTitleTranslationField(fieldName string) bool {
+	return fieldName == "title" || fieldName == fieldNameTitleAsName
 }
 
 // containsHangul reports whether s contains at least one Hangul syllable.

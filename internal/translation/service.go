@@ -252,6 +252,43 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 			return nil, "", fmt.Errorf("translation provider returned %d items for %d inputs", len(translatedTexts), len(indexes))
 		}
 
+		// Person-name slots for a Korean target must come back in Hangul. Models —
+		// local ones especially — may echo the romaji input unchanged instead of
+		// transliterating it. Retry those slots individually; if the echo persists,
+		// keep the source name and surface a warning rather than failing the batch.
+		if lang == "ko" {
+			var retryPos []int
+			for i, reqIdx := range indexes {
+				translated := strings.TrimSpace(translatedTexts[i])
+				if translated != "" && isPersonNameField(requests[reqIdx].fieldName) && !containsHangul(translated) {
+					logging.Debugf("Translation[%s]: non-Hangul result %q for %s, retrying slot individually", movieID, translated, requests[reqIdx].fieldName)
+					retryPos = append(retryPos, i)
+				}
+			}
+			if len(retryPos) > 0 {
+				retryTexts := make([]string, len(retryPos))
+				retryFields := make([]string, len(retryPos))
+				for j, pos := range retryPos {
+					retryTexts[j] = requests[indexes[pos]].text
+					retryFields[j] = requests[indexes[pos]].fieldName
+				}
+				retried, retryErr := s.translateTextsOneByOne(ctx, sourceLang, lang, retryTexts, retryFields)
+				if retryErr != nil {
+					logging.Debugf("Translation[%s]: per-slot Hangul retry failed: %v", movieID, retryErr)
+				}
+				for j, pos := range retryPos {
+					if retryErr == nil {
+						if r := strings.TrimSpace(retried[j]); containsHangul(r) {
+							translatedTexts[pos] = r
+							continue
+						}
+					}
+					translatedTexts[pos] = requests[indexes[pos]].text
+					warnings = append(warnings, fmt.Sprintf("%s: LLM returned non-Hangul, kept romaji", requests[indexes[pos]].fieldName))
+				}
+			}
+		}
+
 		for i, reqIdx := range indexes {
 			raw := translatedTexts[i]
 			translated := strings.TrimSpace(raw)
@@ -459,6 +496,12 @@ func isLikelyRomanized(s string) bool {
 		}
 	}
 	return true
+}
+
+// isPersonNameField reports whether the labeled slot carries a performer's name:
+// actress[N] batch entries and a title queued under the title_as_name label.
+func isPersonNameField(fieldName string) bool {
+	return strings.HasPrefix(fieldName, "actress[") || fieldName == fieldNameTitleAsName
 }
 
 // containsHangul reports whether s contains at least one Hangul syllable.

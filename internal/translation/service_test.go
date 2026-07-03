@@ -525,6 +525,9 @@ func TestBuildLLMTranslationPrompts_Rules(t *testing.T) {
 		assert.Contains(t, systemPrompt, "AUTHORITATIVE reading")
 		assert.Contains(t, systemPrompt, "NEVER substitute a different reading")
 		assert.Contains(t, systemPrompt, "Rena → 레나 (NOT 레이나)")
+		// Output script rule: echoing the romaji input back is an error
+		assert.Contains(t, systemPrompt, "returning the romaji/Latin input unchanged is an ERROR")
+		assert.Contains(t, systemPrompt, "Miyashita Rena → 미야시타 레나")
 	})
 
 	t.Run("prompt includes proper-noun rule for maker/label/director", func(t *testing.T) {
@@ -703,6 +706,178 @@ func TestTranslateMovie_ActressInMainBatch(t *testing.T) {
 		require.NoError(t, err)
 		assert.False(t, llmCalled)
 		assert.Nil(t, result)
+	})
+}
+
+// =============================================================================
+// TranslateMovie tests - Hangul validation of person-name slots (ko target)
+// =============================================================================
+
+func TestTranslateMovie_KoreanPersonNameHangulValidation(t *testing.T) {
+	markerRE := regexp.MustCompile(`<<<[\w\[\]]+>>>`)
+
+	// requestMarkers returns the unique markers of the request's user prompt, in order.
+	requestMarkers := func(r *http.Request) []string {
+		var req struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if len(req.Messages) == 0 {
+			return nil
+		}
+		seen := map[string]bool{}
+		var out []string
+		for _, m := range markerRE.FindAllString(req.Messages[len(req.Messages)-1].Content, -1) {
+			if !seen[m] {
+				seen[m] = true
+				out = append(out, m)
+			}
+		}
+		return out
+	}
+
+	respond := func(w http.ResponseWriter, content string) {
+		response := map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{"message": map[string]string{"content": content}},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(response)
+	}
+
+	newConfig := func(baseURL string) config.TranslationConfig {
+		return config.TranslationConfig{
+			Enabled:        true,
+			Provider:       "openai",
+			TargetLanguage: "ko",
+			SourceLanguage: "ja",
+			ApplyToPrimary: true,
+			Fields: config.TranslationFieldsConfig{
+				Title:     true,
+				Actresses: true,
+			},
+			OpenAI: config.OpenAITranslationConfig{
+				BaseURL: baseURL,
+				APIKey:  "key",
+			},
+		}
+	}
+
+	newMovie := func(title string) *models.Movie {
+		return &models.Movie{
+			Title: title,
+			Actresses: []models.Actress{
+				{
+					JapaneseName: "双葉れぇな",
+					ThumbURL:     "https://pics.dmm.co.jp/mono/actjpgs/hutaba_reena.jpg",
+				},
+			},
+		}
+	}
+
+	t.Run("romaji echo is retried per slot and Hangul applied", func(t *testing.T) {
+		calls := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			var b strings.Builder
+			for _, m := range requestMarkers(r) {
+				switch {
+				case m == "<<<title>>>":
+					b.WriteString(m + "\n멋진 작품\n")
+				case strings.HasPrefix(m, "<<<actress["):
+					if calls == 1 {
+						b.WriteString(m + "\nFutaba Reena\n") // batch echoes the romaji input
+					} else {
+						b.WriteString(m + "\n후타바 레에나\n")
+					}
+				}
+			}
+			respond(w, b.String())
+		}))
+		defer server.Close()
+
+		s := New(newConfig(server.URL))
+		movie := newMovie("素敵な作品")
+
+		result, warning, err := s.TranslateMovie(context.Background(), movie, "")
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Empty(t, warning)
+		assert.Equal(t, 2, calls) // batch + one per-slot retry
+
+		assert.Equal(t, "멋진 작품", movie.Title)
+		assert.Equal(t, "후타바", movie.Actresses[0].LastName)
+		assert.Equal(t, "레에나", movie.Actresses[0].FirstName)
+		require.Len(t, result[0].Actresses, 1)
+		assert.Equal(t, "후타바 레에나", result[0].Actresses[0])
+	})
+
+	t.Run("persistent romaji echo keeps source name and warns", func(t *testing.T) {
+		calls := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			var b strings.Builder
+			for _, m := range requestMarkers(r) {
+				switch {
+				case m == "<<<title>>>":
+					b.WriteString(m + "\n멋진 작품\n")
+				case strings.HasPrefix(m, "<<<actress["):
+					b.WriteString(m + "\nFutaba Reena\n") // always echoes romaji
+				}
+			}
+			respond(w, b.String())
+		}))
+		defer server.Close()
+
+		s := New(newConfig(server.URL))
+		movie := newMovie("素敵な作品")
+
+		result, warning, err := s.TranslateMovie(context.Background(), movie, "")
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Equal(t, 2, calls) // batch + one per-slot retry
+		assert.Contains(t, warning, "actress[0]: LLM returned non-Hangul, kept romaji")
+
+		// The title still translates; the actress falls back to the URL romaji.
+		assert.Equal(t, "멋진 작품", movie.Title)
+		assert.Equal(t, "Futaba", movie.Actresses[0].LastName)
+		assert.Equal(t, "Reena", movie.Actresses[0].FirstName)
+		require.Len(t, result[0].Actresses, 1)
+		assert.Equal(t, "Futaba Reena", result[0].Actresses[0])
+	})
+
+	t.Run("title_as_name slot is validated for Hangul too", func(t *testing.T) {
+		calls := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			var b strings.Builder
+			for _, m := range requestMarkers(r) {
+				if m == "<<<title_as_name>>>" || strings.HasPrefix(m, "<<<actress[") {
+					if calls == 1 {
+						b.WriteString(m + "\nFutaba Reena\n")
+					} else {
+						b.WriteString(m + "\n후타바 레에나\n")
+					}
+				}
+			}
+			respond(w, b.String())
+		}))
+		defer server.Close()
+
+		s := New(newConfig(server.URL))
+		movie := newMovie("双葉れぇな") // title equals the actress JapaneseName
+
+		result, warning, err := s.TranslateMovie(context.Background(), movie, "")
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Empty(t, warning)
+		assert.Equal(t, 3, calls) // batch + one retry per echoed slot
+
+		assert.Equal(t, "후타바 레에나", movie.Title)
+		assert.Equal(t, "후타바", movie.Actresses[0].LastName)
+		assert.Equal(t, "레에나", movie.Actresses[0].FirstName)
 	})
 }
 

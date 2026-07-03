@@ -198,6 +198,9 @@ func (g *Generator) MovieToNFO(movie *models.Movie, videoFilePath string) *Movie
 		seenNames := make(map[string]struct{})
 		for _, actress := range movie.Actresses {
 			actorName := g.formatActressName(actress)
+			if actorName == "" || (g.config.UnknownActressMode != "fallback" && models.IsUnknownActressName(actorName)) {
+				continue
+			}
 
 			// Deduplicate actresses:
 			// 1) Prefer positive DMMID as stable identity.
@@ -300,7 +303,7 @@ func (g *Generator) MovieToNFO(movie *models.Movie, videoFilePath string) *Movie
 		// Add actress names as tags
 		for _, actress := range movie.Actresses {
 			actressName := g.formatActressName(actress)
-			skipUnknownTag := g.config.UnknownActressMode != "fallback" && actressName == g.config.UnknownActress
+			skipUnknownTag := g.config.UnknownActressMode != "fallback" && models.IsUnknownActressName(actressName)
 			if actressName != "" && !skipUnknownTag && !tagSet[actressName] {
 				nfo.Tags = append(nfo.Tags, actressName)
 				tagSet[actressName] = true
@@ -426,7 +429,13 @@ func FormatActressName(actress models.Actress, japaneseNames bool, firstNameOrde
 		mode = unknownActressMode[0]
 	}
 	if unknownActress == "" {
-		unknownActress = "Unknown"
+		unknownActress = models.UnknownActressName
+	} else if models.IsUnknownActressName(unknownActress) {
+		unknownActress = models.UnknownActressName
+	}
+
+	if models.IsUnknownActressFields(actress.LastName, actress.FirstName, actress.JapaneseName) {
+		return models.UnknownActressName
 	}
 
 	if japaneseNames && actress.JapaneseName != "" {

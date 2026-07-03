@@ -82,6 +82,9 @@ type Actress struct {
 
 // FormatActressName builds a display name from actress name components
 func FormatActressName(lastName, firstName, japaneseName string) string {
+	if IsUnknownActressFields(lastName, firstName, japaneseName) {
+		return UnknownActressName
+	}
 	if lastName != "" && firstName != "" {
 		return lastName + " " + firstName
 	}

@@ -275,23 +275,32 @@ func normalizeNameKey(name string) string {
 	return strings.Join(strings.Fields(strings.ToLower(strings.TrimSpace(name))), " ")
 }
 
-func isUnknownActress(info models.ActressInfo, nameKey string, unknownText string) bool {
+func isUnknownActress(info models.ActressInfo, _ string, unknownText string) bool {
+	if models.IsUnknownActressFields(info.LastName, info.FirstName, info.JapaneseName) {
+		return true
+	}
+
 	if unknownText == "" {
 		return false
 	}
-	if nameKey == unknownText {
+
+	if normalizeNameKey(info.LastName+" "+info.FirstName) == unknownText ||
+		normalizeNameKey(info.FirstName+" "+info.LastName) == unknownText {
 		return true
 	}
-	if normalizeNameKey(info.JapaneseName) == unknownText {
-		return true
+
+	hasPlaceholder := false
+	for _, name := range []string{info.JapaneseName, info.FirstName, info.LastName} {
+		nameKey := normalizeNameKey(name)
+		if nameKey == "" {
+			continue
+		}
+		if nameKey != unknownText {
+			return false
+		}
+		hasPlaceholder = true
 	}
-	if normalizeNameKey(info.FirstName) == unknownText {
-		return true
-	}
-	if normalizeNameKey(info.LastName) == unknownText {
-		return true
-	}
-	return false
+	return hasPlaceholder
 }
 
 func resolveNameKey(japaneseName, firstName, lastName string) string {
@@ -318,7 +327,7 @@ func (a *Aggregator) getActressesByPriority(
 	if a.config != nil {
 		skipUnknown = !a.config.Metadata.NFO.IsUnknownActressFallback()
 		if skipUnknown {
-			unknownText = strings.ToLower(strings.TrimSpace(a.config.Metadata.NFO.UnknownActressText))
+			unknownText = normalizeNameKey(a.config.Metadata.NFO.UnknownActressText)
 		}
 	}
 
@@ -332,6 +341,7 @@ func (a *Aggregator) getActressesByPriority(
 
 		for _, info := range result.Actresses {
 			hadAnyActressFromScrapers = true
+			models.CanonicalizeUnknownActressInfo(&info)
 
 			nameKey := resolveNameKey(info.JapaneseName, info.FirstName, info.LastName)
 
@@ -437,8 +447,8 @@ func (a *Aggregator) getActressesByPriority(
 	if !hadAnyActressFromScrapers && a.config.Metadata.NFO.IsUnknownActressFallback() && a.config.Metadata.NFO.UnknownActressText != "" {
 		return []models.Actress{
 			{
-				FirstName:    a.config.Metadata.NFO.UnknownActressText,
-				JapaneseName: a.config.Metadata.NFO.UnknownActressText,
+				FirstName:    models.UnknownActressName,
+				JapaneseName: models.UnknownActressName,
 			},
 		}
 	}

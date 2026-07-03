@@ -707,6 +707,97 @@ func TestTranslateMovie_ActressInMainBatch(t *testing.T) {
 		assert.False(t, llmCalled)
 		assert.Nil(t, result)
 	})
+
+	t.Run("unknown actress placeholder is not sent to LLM", func(t *testing.T) {
+		llmCalled := false
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			llmCalled = true
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		cfg := config.TranslationConfig{
+			Enabled:        true,
+			Provider:       "openai",
+			TargetLanguage: "ko",
+			SourceLanguage: "ja",
+			ApplyToPrimary: true,
+			Fields: config.TranslationFieldsConfig{
+				Actresses: true,
+			},
+			OpenAI: config.OpenAITranslationConfig{
+				BaseURL: server.URL,
+				APIKey:  "key",
+			},
+		}
+
+		s := New(cfg)
+		movie := &models.Movie{
+			Actresses: []models.Actress{
+				{FirstName: "Unknown", JapaneseName: "Unknown"},
+			},
+		}
+
+		result, _, err := s.TranslateMovie(context.Background(), movie, "")
+		require.NoError(t, err)
+		assert.False(t, llmCalled)
+		assert.Equal(t, "Unknown", movie.Actresses[0].FirstName)
+		assert.Empty(t, movie.Actresses[0].LastName)
+		assert.Equal(t, "Unknown", movie.Actresses[0].JapaneseName)
+		require.Len(t, result, 1)
+		require.Len(t, result[0].Actresses, 1)
+		assert.Equal(t, "Unknown", result[0].Actresses[0])
+	})
+
+	t.Run("translated unknown actress result is canonicalized", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			response := map[string]interface{}{
+				"choices": []map[string]interface{}{
+					{
+						"message": map[string]string{
+							"content": "<<<actress[0]>>>\n미상",
+						},
+					},
+				},
+			}
+			_ = json.NewEncoder(w).Encode(response)
+		}))
+		defer server.Close()
+
+		cfg := config.TranslationConfig{
+			Enabled:        true,
+			Provider:       "openai",
+			TargetLanguage: "ko",
+			SourceLanguage: "ja",
+			ApplyToPrimary: true,
+			Fields: config.TranslationFieldsConfig{
+				Actresses: true,
+			},
+			OpenAI: config.OpenAITranslationConfig{
+				BaseURL: server.URL,
+				APIKey:  "key",
+			},
+		}
+
+		s := New(cfg)
+		movie := &models.Movie{
+			Actresses: []models.Actress{
+				{
+					JapaneseName: "双葉れぇな",
+					ThumbURL:     "https://pics.dmm.co.jp/mono/actjpgs/hutaba_reena.jpg",
+				},
+			},
+		}
+
+		result, _, err := s.TranslateMovie(context.Background(), movie, "")
+		require.NoError(t, err)
+		assert.Equal(t, "Unknown", movie.Actresses[0].FirstName)
+		assert.Empty(t, movie.Actresses[0].LastName)
+		assert.Equal(t, "Unknown", movie.Actresses[0].JapaneseName)
+		require.Len(t, result, 1)
+		require.Len(t, result[0].Actresses, 1)
+		assert.Equal(t, "Unknown", result[0].Actresses[0])
+	})
 }
 
 // =============================================================================

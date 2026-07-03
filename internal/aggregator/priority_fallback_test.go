@@ -193,6 +193,44 @@ func TestUnknownActressFallbackModeKeepsFromScraper(t *testing.T) {
 	require.NotNil(t, movie)
 
 	assert.Equal(t, 1, len(movie.Actresses), "Fallback mode should keep Unknown actress from scraper")
+	assert.Equal(t, "Unknown", movie.Actresses[0].FirstName)
+	assert.Equal(t, "Unknown", movie.Actresses[0].JapaneseName)
+}
+
+func TestUnknownActressFallbackModeCanonicalizesTranslatedPlaceholder(t *testing.T) {
+	cfg := &config.Config{
+		Scrapers: config.ScrapersConfig{
+			Priority: []string{"mgstage"},
+		},
+		Metadata: config.MetadataConfig{
+			NFO: config.NFOConfig{
+				UnknownActressMode: "fallback",
+				UnknownActressText: "Unknown",
+			},
+		},
+	}
+
+	agg := New(cfg)
+
+	results := []*models.ScraperResult{
+		{
+			Source: "mgstage",
+			ID:     "200GANA-3215",
+			Title:  "マジ軟派、初撮。 2172",
+			Actresses: []models.ActressInfo{
+				{FirstName: "미상", JapaneseName: "알 수 없음"},
+			},
+		},
+	}
+
+	movie, _, err := agg.Aggregate(results)
+	require.NoError(t, err)
+	require.NotNil(t, movie)
+
+	require.Len(t, movie.Actresses, 1)
+	assert.Equal(t, "Unknown", movie.Actresses[0].FirstName)
+	assert.Empty(t, movie.Actresses[0].LastName)
+	assert.Equal(t, "Unknown", movie.Actresses[0].JapaneseName)
 }
 
 func TestUnknownActressFallbackModeAddsPlaceholder(t *testing.T) {
@@ -224,6 +262,7 @@ func TestUnknownActressFallbackModeAddsPlaceholder(t *testing.T) {
 
 	assert.Equal(t, 1, len(movie.Actresses), "Fallback mode should add Unknown placeholder")
 	assert.Equal(t, "Unknown", movie.Actresses[0].FirstName)
+	assert.Equal(t, "Unknown", movie.Actresses[0].JapaneseName)
 }
 
 func TestUnknownActressSkipModeNoPlaceholder(t *testing.T) {
@@ -268,7 +307,8 @@ func TestIsUnknownActress(t *testing.T) {
 		{"last name unknown", models.ActressInfo{LastName: "Unknown"}, "unknown", true},
 		{"case insensitive", models.ActressInfo{FirstName: "UNKNOWN"}, "unknown", true},
 		{"normal name", models.ActressInfo{JapaneseName: "テスト女優"}, "unknown", false},
-		{"empty unknown text", models.ActressInfo{FirstName: "Unknown"}, "", false},
+		{"empty unknown text still recognizes canonical placeholder", models.ActressInfo{FirstName: "Unknown"}, "", true},
+		{"translated korean placeholder", models.ActressInfo{FirstName: "미상"}, "unknown", true},
 	}
 
 	for _, tc := range tests {

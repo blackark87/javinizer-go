@@ -111,7 +111,11 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 	// Pre-pass: build JapaneseName → romanized name map so we can detect when the title
 	// is an actress name and substitute the romanized form instead of translating it.
 	actressJaNameToRomanized := make(map[string]string)
-	for _, actress := range movie.Actresses {
+	for i := range movie.Actresses {
+		if models.CanonicalizeUnknownActress(&movie.Actresses[i]) {
+			continue
+		}
+		actress := movie.Actresses[i]
 		jaName := strings.TrimSpace(actress.JapaneseName)
 		if jaName == "" {
 			continue
@@ -157,6 +161,10 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 	actressSourceNames := make([]string, len(movie.Actresses))
 	if fields.Actresses {
 		for i := range movie.Actresses {
+			if models.CanonicalizeUnknownActress(&movie.Actresses[i]) {
+				logging.Debugf("Translation[%s]: actress[%d] skip — unknown placeholder", movieID, i)
+				continue
+			}
 			actress := movie.Actresses[i]
 			if lastName, firstName, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL); ok {
 				actressSourceNames[i] = joinName(lastName, firstName)
@@ -211,6 +219,10 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 			for i := range movie.Actresses {
 				idx := i
 				actress := &movie.Actresses[idx]
+				if models.CanonicalizeUnknownActress(actress) {
+					rec.Actresses[idx] = models.UnknownActressName
+					continue
+				}
 				if actressSourceNames[idx] == "" {
 					continue
 				}
@@ -222,7 +234,7 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 		}
 	}
 
-	if len(requests) == 0 && len(touchedRecords) == 0 {
+	if len(requests) == 0 && len(touchedRecords) == 0 && !movieTranslationRecordsHaveContent(records) {
 		return nil, "", nil
 	}
 
@@ -296,12 +308,14 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 				if requests[reqIdx].isActress {
 					logging.Debugf("Translation[%s]: empty result for %s (original=%q, raw=%q), non-person name — using Unknown", movieID, requests[reqIdx].fieldName, requests[reqIdx].text, raw)
 					warnings = append(warnings, fmt.Sprintf("%s: non-person name, set to Unknown", requests[reqIdx].fieldName))
-					translated = "Unknown"
+					translated = models.UnknownActressName
 				} else {
 					logging.Debugf("Translation[%s]: empty result for %s (original=%q, raw=%q), falling back to original", movieID, requests[reqIdx].fieldName, requests[reqIdx].text, raw)
 					warnings = append(warnings, fmt.Sprintf("%s: empty translation, kept original", requests[reqIdx].fieldName))
 					translated = requests[reqIdx].text
 				}
+			} else if requests[reqIdx].isActress && models.IsUnknownActressName(translated) {
+				translated = models.UnknownActressName
 			}
 			requests[reqIdx].apply(translated)
 		}
@@ -361,6 +375,15 @@ func movieTranslationHasContent(record models.MovieTranslation) bool {
 	}
 	for _, actress := range record.Actresses {
 		if strings.TrimSpace(actress) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func movieTranslationRecordsHaveContent(records map[string]*models.MovieTranslation) bool {
+	for _, record := range records {
+		if record != nil && movieTranslationHasContent(*record) {
 			return true
 		}
 	}
@@ -517,6 +540,12 @@ func containsHangul(s string) bool {
 func replaceActressName(actress *models.Actress, translated string) {
 	translated = strings.TrimSpace(translated)
 	if actress == nil || translated == "" {
+		return
+	}
+	if models.IsUnknownActressName(translated) {
+		actress.FirstName = models.UnknownActressName
+		actress.LastName = ""
+		actress.JapaneseName = models.UnknownActressName
 		return
 	}
 	// Strip parenthetical noise the LLM may append (e.g. "Kuroki(Mai" → "Kuroki").

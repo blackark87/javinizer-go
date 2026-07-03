@@ -44,6 +44,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -135,13 +136,127 @@ var scraperFixtures = map[string]string{
 	"tokyohot":        "n0814",
 	"dlgetchu":        "4021016",
 	"aventertainment": "1PON-020326-001",
+	// #22: FC2 routing through libredmm. Currently pending (libredmm.com
+	// returns "still processing" for this ID). See pendingFixtures.
+	"libredmm_fc2": "FC2-PPV-4761557",
 }
 
 // pendingFixtures lists scrapers that have no verified fixture ID yet.
 // These are skipped (not failed) so the suite stays green — a missing fixture
 // is not a degradation signal. Remove a scraper from this set once a verified
 // ID is added to scraperFixtures.
-var pendingFixtures = map[string]bool{}
+var pendingFixtures = map[string]bool{
+	// #22: libredmm should route FC2-PPV-* inputs to its FC2 source.
+	// libredmm.com currently returns "still processing" for FC2-PPV-4761557
+	// (the FC2 scraper's known-good fixture ID), so it's not a stable live
+	// fixture yet. When libredmm's FC2 index catches up, add
+	// `"libredmm_fc2": "FC2-PPV-4761557"` to scraperFixtures and remove
+	// this entry to activate a second libredmm subtest that pins the FC2
+	// routing regression directly.
+	"libredmm_fc2": true,
+}
+
+// invariant is a single output-row assertion against a scrape's stdout.
+// Each pins a specific past regression (see scraperInvariants below).
+type invariant struct {
+	label    string // human-readable description, e.g. "poster URL is ps.jpg not pl.jpg (#31/#37)"
+	check    func(out string) bool
+	describe func() string
+}
+
+// rowMatches asserts a labelled row exists and its value matches re.
+func rowMatches(label, pattern, desc string) invariant {
+	re := regexp.MustCompile(pattern)
+	return invariant{
+		label:    desc,
+		describe: func() string { return desc },
+		check:    func(out string) bool { return re.MatchString(extractRow(out, label)) },
+	}
+}
+
+// rowPresent asserts a labelled row exists with a non-empty value.
+func rowPresent(label, desc string) invariant {
+	return invariant{
+		label:    desc,
+		describe: func() string { return desc },
+		check:    func(out string) bool { return extractRow(out, label) != "" },
+	}
+}
+
+// screenshotsMatch asserts every screenshot URL matches re (and there's ≥1).
+func screenshotsMatch(pattern, desc string) invariant {
+	re := regexp.MustCompile(pattern)
+	return invariant{
+		label:    desc,
+		describe: func() string { return desc },
+		check: func(out string) bool {
+			urls := extractScreenshotURLs(out)
+			if len(urls) == 0 {
+				return false
+			}
+			for _, u := range urls {
+				if !re.MatchString(u) {
+					return false
+				}
+			}
+			return true
+		},
+	}
+}
+
+// scraperInvariants maps a scraper name to the output assertions that pin
+// specific past regressions. A scraper not in this map has only the exit-0
+// pass gate. Each invariant documents the issue(s) it pins.
+//
+// NOTE on dmm Poster URL (#37/#31): when the awsimgsrc ps.jpg is genuinely
+// unavailable (404/too small), GetOptimalPosterURL intentionally falls back
+// to the cover (pl.jpg) with shouldCrop=true. For the SONE-267 fixture the
+// portrait ps.jpg IS reachable (verified), so a pl.jpg Poster URL here is a
+// real regression, not a fallback. If a future run flips to the fallback,
+// treat it as the degradation signal it is.
+var scraperInvariants = map[string][]invariant{
+	"r18dev": {
+		// #75: r18.dev was down (then came back). #18: every lookup 403'd.
+		// A passing scrape with a real cover + source proves the site is up
+		// and the scraper is reaching it.
+		rowPresent("Cover URL", "Cover URL present (r18.dev reachable, #75/#18)"),
+		rowMatches("Cover URL", `^https://(pics\.dmm\.co\.jp|awsimgsrc\.dmm\.com|r18\.dev)/.*\.(jpg|jpeg)`, "Cover URL is a DMM/r18 image (#75/#18)"),
+		rowMatches("Sources", `r18dev`, "Sources includes r18dev (#75/#18)"),
+		// #1: r18.dev must populate BOTH EN and JA translations (the fix for
+		// #1 was "populate translations for both EN and JA from R18.dev API").
+		// The Translations row lists per-language sources; assert Japanese
+		// is present. A sort-based <TITLE:JA> test would be more end-to-end
+		// but fragile (config loading + template resolution + FS encoding);
+		// the translations row is the direct, stable regression signal.
+		rowMatches("Translations", `Japanese`, "Translations includes Japanese (#1)"),
+	},
+	"dmm": {
+		// #37/#31: poster was upgraded from ps.jpg (portrait) to pl.jpg
+		// (landscape jacket). The poster must be ps.jpg.
+		rowMatches("Cover URL", `^https://pics\.dmm\.co\.jp/.*(pl|ps)\.jpg$`, "Cover URL is a DMM jacket (#37/#31)"),
+		rowMatches("Poster URL", `ps\.jpg$`, "Poster URL is portrait ps.jpg, not landscape pl.jpg (#37/#31)"),
+		// #23: screenshots were emitted as small thumbnails (-N.jpg) instead
+		// of the high-res form (jp-N.jpg).
+		screenshotsMatch(`jp-\d+\.jpg$`, "Screenshots use high-res jp-N.jpg form, not thumbnails (#23)"),
+		rowMatches("Sources", `dmm`, "Sources includes dmm"),
+	},
+	"caribbeancom": {
+		// #20: Caribbeancom IDs did not resolve; the scraper failed instead
+		// of constructing the canonical moviepage URL.
+		rowMatches("ID", `^120614-753$`, "ID matches input (#20)"),
+		rowMatches("Cover URL", `caribbeancom\.com/moviepages/120614-753/images/l`, "Cover URL is canonical moviepage cover (#20)"),
+		rowMatches("Sources", `caribbeancom`, "Sources includes caribbeancom (#20)"),
+	},
+	"libredmm": {
+		// #22: libredmm expanded to route FC2/MGStage/SOD sources. The
+		// existing ROYD-191 fixture guards the standard-JAV path stays
+		// working. The FC2 routing (FC2-PPV-*) is tracked as a pending
+		// fixture (libredmm_fc2) — libredmm.com returns "still processing"
+		// for FC2-PPV-4761557, so it's not a stable fixture yet.
+		rowPresent("Cover URL", "Cover URL present (libredmm reachable, #22)"),
+		rowMatches("Sources", `libredmm`, "Sources includes libredmm (#22)"),
+	},
+}
 
 // scrapeTimeout is the per-scraper wall-clock budget. Real sites can be slow
 // (FlareSolverr challenges, proxy hops, browser rendering). 90s is generous
@@ -216,6 +331,30 @@ func TestLive_Scrapers(t *testing.T) {
 			title := extractTitle(out)
 			pass := code == 0
 
+			// Per-scraper output invariants: beyond exit 0, assert the scrape
+			// produced the expected output rows (Cover URL, Poster URL,
+			// Screenshots, etc.). These pin specific past regressions:
+			//   - #75/#18: r18.dev must return a cover + source (not 403/down)
+			//   - #37/#31: dmm poster must be the portrait ps.jpg, not the
+			//     landscape pl.jpg jacket (ps→pl upgrade regression)
+			//   - #23: dmm screenshots must be the high-res jp-N.jpg form,
+			//     not the small thumbnail -N.jpg form
+			//   - #20: caribbeancom must resolve the ID to the canonical
+			//     /moviepages/<id>/images/l_l.jpg cover
+			// A failing invariant is a real regression signal — the exact
+			// degradation this suite exists to catch.
+			var invariantFailures []string
+			if pass {
+				for _, inv := range scraperInvariants[name] {
+					if !inv.check(out) {
+						invariantFailures = append(invariantFailures, inv.describe())
+					}
+				}
+				if len(invariantFailures) > 0 {
+					pass = false
+				}
+			}
+
 			res := scraperResult{
 				Scraper: name,
 				ID:      id,
@@ -229,8 +368,14 @@ func TestLive_Scrapers(t *testing.T) {
 			results = append(results, res)
 
 			if !pass {
-				t.Errorf("%s scrape failed (exit %d): %s\n--- output ---\n%s",
-					name, code, res.Error, out)
+				if len(invariantFailures) > 0 {
+					res.Error = fmt.Sprintf("%d invariant(s) failed: %s", len(invariantFailures), strings.Join(invariantFailures, "; "))
+					t.Errorf("%s invariant failures:\n  - %s\n--- output ---\n%s",
+						name, strings.Join(invariantFailures, "\n  - "), out)
+				} else {
+					t.Errorf("%s scrape failed (exit %d): %s\n--- output ---\n%s",
+						name, code, res.Error, out)
+				}
 			} else {
 				if title != "" {
 					t.Logf("%s ✓  %s  (%.1fs)", name, truncate(title, 60), latency.Seconds())
@@ -320,17 +465,54 @@ func runScrape(t *testing.T, configPath, dbPath, id, scraper string) (string, in
 // cover) without populating the title field, so an empty title is NOT a failure
 // signal; the pass/fail gate is the binary's exit code (see pass criteria).
 func extractTitle(out string) string {
+	return extractRow(out, "Title")
+}
+
+// extractRow pulls the value of a labelled row from the formatter's text-table
+// output. Rows are printed as `<padded-label> : <value>` (e.g.
+// `Cover URL    : https://...`). The Media-URL rows (Cover URL, Poster URL,
+// Trailer URL, Screenshots) are indented two spaces under a `Media URLs:`
+// header but the same `label : value` parse works. Returns "" if the row is
+// absent.
+func extractRow(out, label string) string {
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
 		idx := strings.Index(line, ":")
 		if idx < 0 {
 			continue
 		}
-		if strings.TrimSpace(line[:idx]) == "Title" {
+		if strings.TrimSpace(line[:idx]) == label {
 			return strings.TrimSpace(line[idx+1:])
 		}
 	}
 	return ""
+}
+
+// extractScreenshotURLs returns the `[ i] <url>` screenshot URLs listed under
+// the Screenshots row. Used to assert each screenshot URL matches an expected
+// pattern (e.g. the high-res jp-N.jpg form, not the small thumbnail).
+func extractScreenshotURLs(out string) []string {
+	var urls []string
+	inScreenshots := false
+	for _, line := range strings.Split(out, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Screenshots") {
+			inScreenshots = true
+			continue
+		}
+		if inScreenshots {
+			// Screenshot lines look like `  [ 1] https://...`. Stop when we
+			// hit a non-matching line (next section / separator).
+			if !strings.HasPrefix(trimmed, "[") {
+				break
+			}
+			// Extract the URL after the `]`.
+			if idx := strings.Index(trimmed, "]"); idx >= 0 {
+				urls = append(urls, strings.TrimSpace(trimmed[idx+1:]))
+			}
+		}
+	}
+	return urls
 }
 
 // diagnoseFailure produces a short, human-readable reason for the failure
@@ -371,4 +553,85 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n-1] + "…"
+}
+
+// TestLive_UpgradeCheck_RealGitHubAPI runs `javinizer upgrade --check` against
+// the REAL GitHub releases API (api.github.com/repos/javinizer/javinizer-go).
+// Pins issue #39 (background update checker wired to the real GitHub checker +
+// the defaultRepo hardcode pointing at the Go repo, not the legacy Python repo).
+//
+// A regression here means: the binary can't reach GitHub, misparses the release
+// JSON, or the hardcoded repo is wrong — only catchable by hitting the real
+// endpoint. The unit tests (internal/update/) use stubs + httptest servers and
+// can't surface a real-transport break.
+//
+// Rate-limit handling: GitHub allows 60 unauthenticated requests/hour. If
+// rate-limited, the command errors with a 403/rate-limit message — we treat
+// that as a SKIP, not a FAIL (same convention as the Playwright
+// update-indicator.spec.ts).
+func TestLive_UpgradeCheck_RealGitHubAPI(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, binaryPath, "upgrade", "--check")
+	cmd.Env = func() []string {
+		env := os.Environ()
+		out := make([]string, 0, len(env)+1)
+		for _, kv := range env {
+			if strings.HasPrefix(kv, "JAVINIZER_DB=") {
+				continue
+			}
+			out = append(out, kv)
+		}
+		return append(out, "JAVINIZER_DB="+filepath.Join(t.TempDir(), "upgrade-check.db"))
+	}()
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	err := cmd.Run()
+	out := buf.String()
+	code := 0
+	if ee, ok := err.(*exec.ExitError); ok {
+		code = ee.ExitCode()
+	} else if err != nil {
+		code = 124
+	}
+
+	// Rate-limited (60/hr unauthenticated) → SKIP, not FAIL.
+	if isGitHubRateLimited(out, code) {
+		t.Skipf("GitHub API rate-limited (60/hr unauthenticated); skipping #39 live check")
+	}
+
+	if code != 0 {
+		t.Errorf("upgrade --check failed (exit %d): %s\n--- output ---\n%s", code, diagnoseFailure(code, out), out)
+		return
+	}
+
+	// A successful check mentions the current version + that a check happened.
+	// We don't assert "up to date" vs "update available" — either is a pass
+	// (the binary reached GitHub and parsed a release). The #39 regression is
+	// "never reaches GitHub / can't parse" — both of which produce exit != 0.
+	if !strings.Contains(out, "Checking for") && !strings.Contains(out, "latest") {
+		t.Errorf("upgrade --check output missing release-check signal:\n%s", out)
+	}
+
+	// Guard the defaultRepo regression specifically: output must NOT reference
+	// the legacy Python repo (javinizer/Javinizer). The hardcoded defaultRepo
+	// in internal/update/checker.go points at javinizer/javinizer-go.
+	if strings.Contains(out, "javinizer/Javinizer") && !strings.Contains(out, "javinizer-go") {
+		t.Errorf("upgrade --check referenced the legacy Python repo (javinizer/Javinizer) — defaultRepo regression (#39):\n%s", out)
+	}
+
+	t.Logf("upgrade --check ✓  (exit 0, reached real GitHub API)  %s", truncate(strings.TrimSpace(out), 80))
+}
+
+// isGitHubRateLimited reports whether the output/exit-code indicates a GitHub
+// API rate-limit (403 with rate-limit messaging) rather than a real failure.
+func isGitHubRateLimited(out string, code int) bool {
+	if code == 0 {
+		return false
+	}
+	low := strings.ToLower(out)
+	return strings.Contains(low, "rate limit") ||
+		strings.Contains(low, "403") && strings.Contains(low, "github")
 }

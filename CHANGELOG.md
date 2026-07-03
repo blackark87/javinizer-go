@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v1.0.0] - 2026-07-03
 
+### Added
+
+- Add per-scraper output invariants and update-checker live e2e tests
+- Add PR template with issue auto-close reminder
+- Add stale issues workflow
+- Add real-live scraper e2e suite (local only, not CI)
+- Add live CLI end-to-end suite driving the real javinizer binary
+
 ### Fixed
 
 - Respect download_extrafanart config when --extrafanart is omitted (#79)
@@ -14,14 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Notify Discord webhook on release publish
-- Add per-scraper output invariants and update-checker live e2e tests
 - Rewrite README future-tense framing to present tense for v1.0.0 stable
-- Add PR template with issue auto-close reminder
 - Ignore build-tagged e2e and generated/vendored paths in codecov
-- Add stale issues workflow
-- Add real-live scraper e2e suite (local only, not CI)
 - Pin all CLI flags and flag-supersedes-config behavior in e2e
-- Add live CLI end-to-end suite driving the real javinizer binary
 - Drop issue #72 refs, SignPath-pending note, and broken code-signing link in README
 
 ## [v1.0.0-rc4] - 2026-07-02

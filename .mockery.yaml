@@ -84,7 +84,7 @@ packages:
     interfaces:
       EventEmitter:
 
-  # EditableJob and ControlledJob from internal/worker (per ADR-0032)
+  # EditableJob and ControlledJob from internal/worker
   # NOTE: Separate directory to avoid import cycle with API tests
   github.com/javinizer/javinizer-go/internal/worker:
     config:

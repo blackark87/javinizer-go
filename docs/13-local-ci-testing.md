@@ -106,7 +106,7 @@ ci: vet lint vuln coverage-check test-race config-drift check-import-guard check
 | 4 | `coverage-check` | `make coverage` + `./scripts/check_coverage.sh 75 coverage.out` (75% line coverage) |
 | 5 | `test-race` | race detector on `internal/worker`, `internal/tui`, `internal/websocket`, `internal/api` |
 | 6 | `config-drift` | `./scripts/validate-config-sync.sh` — defaults stay in sync with `configs/config.yaml.example` |
-| 7 | `check-import-guard` | `./scripts/check_import_guard.sh` — `internal/models` must not import `internal/config` (ADR-0020) |
+| 7 | `check-import-guard` | `./scripts/check_import_guard.sh` — `internal/models` must not import `internal/config` |
 | 8 | `check-mocks` | regenerates mockery mocks; fails if `internal/mocks/` is out of date |
 
 > **Frontend:** `make ci` does **not** run frontend tests. Use `make ci-full` (= `ci` + `web-test`) to add the Vitest suite. The `fullstack-e2e` job is not part of either target — run it explicitly with `make test-e2e-fullstack`.

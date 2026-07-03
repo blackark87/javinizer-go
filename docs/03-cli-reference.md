@@ -726,7 +726,7 @@ Output:
   - Download extrafanart: true
 
 Update:
-  - Current version: v1.0.0-rc1
+  - Current version: v1.0.0
   - Update enabled: true
   - Check interval: 24 hours
   - Last checked: never

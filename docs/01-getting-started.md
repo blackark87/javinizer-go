@@ -138,13 +138,13 @@ sudo mv javinizer /usr/local/bin/
 javinizer --help
 ```
 
-> **One-shot install (from v1.0.0 stable):** once a non-prerelease `v1.0.0` is published, fetch the latest binary directly — no version in the URL:
+> **One-shot install:** fetch the latest stable binary directly — no version in the URL:
 > ```bash
 > curl -L -o javinizer https://github.com/javinizer/javinizer-go/releases/latest/download/javinizer-darwin-arm64
 > ```
-> Prereleases can't be the “Latest” release on GitHub, so this permalink 404s until `v1.0.0` stable ships.
+> Prereleases can't be the “Latest” release on GitHub, so this permalink always points at a stable release.
 
-Available release assets (stable names from v1.0.0; `rc` releases used versioned names like `javinizer-v1.0.0-rc2-darwin-arm64`):
+Available release assets (stable names; `rc` releases used versioned names like `javinizer-v1.0.0-rc2-darwin-arm64`):
 
 | Platform | Asset |
 |----------|-------|
@@ -165,7 +165,7 @@ Download the Windows executable from the [Releases page](https://github.com/javi
 ```powershell
 # 1. Download javinizer-windows-amd64.exe from the Releases page:
 #    https://github.com/javinizer/javinizer-go/releases
-# 2. (From v1.0.0 stable) one-shot download — no version in the URL:
+# 2. One-shot download — no version in the URL:
 #    Invoke-WebRequest -Uri "https://github.com/javinizer/javinizer-go/releases/latest/download/javinizer-windows-amd64.exe" -OutFile "javinizer.exe"
 # 3. Move it to a permanent location:
 Move-Item javinizer-windows-amd64.exe "$env:USERPROFILE\javinizer.exe"

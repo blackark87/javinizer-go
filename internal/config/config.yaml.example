@@ -67,10 +67,9 @@ system:
     # Interval between version checks in hours (default: 24)
     version_check_interval_hours: 24
     # Restrict update notifications to stable releases only (default: false).
-    # The Go rewrite currently ships only prereleases (v0.x-alpha), so the
-    # default keeps prerelease notifications on — otherwise no user would be
-    # notified until a stable release exists. Set to true to be notified only
-    # about stable releases.
+    # When false, notifications also surface prereleases (e.g. v1.1.0-rc1) so
+    # users tracking release candidates are alerted. Set to true to be
+    # notified only about stable releases.
     version_check_stable_only: false
     # Base directory for temporary files (posters, etc.)
     # Can be overridden with JAVINIZER_TEMP_DIR environment variable

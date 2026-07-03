@@ -50,7 +50,7 @@ rm homebrew_tap_deploy_key homebrew_tap_deploy_key.pub
 
 ## How users install
 
-Once a stable (non-prerelease) `v1.0.0` ships and the CI job has run:
+Now that v1.0.0 stable has shipped and the CI job has run:
 
 ```bash
 brew tap javinizer/homebrew-tap https://github.com/javinizer/homebrew-tap

@@ -73,11 +73,12 @@ Once a stable `v1.0.0` is published, the Homebrew tap is the recommended install
 
 ```bash
 brew tap javinizer/homebrew-tap https://github.com/javinizer/homebrew-tap
+brew trust --formula javinizer/tap/javinizer   # required once on Homebrew 6.0+
 brew install javinizer
 brew upgrade javinizer   # update to the latest stable release later
 ```
 
-The formula installs a prebuilt binary (CGO/SQLite is statically linked). The tap is updated automatically on each **stable** release; prereleases never reach it.
+Homebrew 6.0+ requires explicitly trusting third-party taps before installing from them. The `brew trust` step is a one-time setup per tap; alternatively set `HOMEBREW_NO_REQUIRE_TAP_TRUST=1` to skip the check. The formula installs a prebuilt binary (CGO/SQLite is statically linked). The tap is updated automatically on each **stable** release; prereleases never reach it.
 
 ### Scoop (Windows)
 

@@ -3,7 +3,6 @@ set -euo pipefail
 
 # check_import_guard.sh — Fails if any file in internal/models/ imports internal/config.
 # Enforces the dependency direction: config → models (accepted), models → config (forbidden).
-# See ADR-0020.
 
 TARGET_DIR="${1:-internal/models}"
 
@@ -19,7 +18,7 @@ if [ -n "$VIOLATIONS" ]; then
   echo "❌ Forbidden import: models → config back-edge detected:"
   echo "$VIOLATIONS"
   echo ""
-  echo "The models package must not import config. See ADR-0020."
+  echo "The models package must not import config."
   exit 1
 fi
 

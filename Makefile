@@ -1,5 +1,5 @@
 .PHONY: help build run run-api run-api-dev test test-short test-race test-verbose bench clean clean-all deps install web-dev web-build web-preview web-install web-clean web-restore-placeholder web-test
-.PHONY: coverage coverage-fast coverage-html coverage-check coverage-func ci ci-full config-drift check-import-guard check-mocks simulate-ci
+.PHONY: coverage coverage-fast coverage-html coverage-check coverage-func ci ci-full config-drift config-sync check-import-guard check-mocks simulate-ci
 .PHONY: fmt lint vet vuln swagger docs mocks test-e2e-fullstack test-e2e-field-drop test-e2e-cli test-e2e-live test-coverage
 .PHONY: build-cli-linux build-cli-darwin build-cli-windows build-cli-all
 .PHONY: act-list act-test act-build act-lint act-docker act-cli-release act-ci act-dry act-help
@@ -47,7 +47,8 @@ help:
 	@echo "  make ci                 - Run full CI suite (vet + lint + coverage + race + drift)"
 	@echo "  make ci-full            - Run full CI suite including frontend tests"
 	@echo "  make config-drift       - Validate config synchronization (no hardcoded values)"
-	@echo "  make check-import-guard - Enforce models→config dependency direction (ADR-0020)"
+	@echo "  make config-sync        - Sync configs/config.yaml.example from the embedded master copy"
+	@echo "  make check-import-guard - Enforce models→config dependency direction"
 	@echo "  make simulate-ci        - Simulate GitHub Actions CI locally"
 	@echo ""
 	@echo "Web Frontend:"
@@ -180,7 +181,16 @@ test-coverage: coverage
 config-drift:
 	@./scripts/validate-config-sync.sh
 
-# Check that internal/models does not import internal/config (enforces dependency direction per ADR-0020)
+# Sync configs/config.yaml.example from the embedded master copy
+# (internal/config/config.yaml.example). The embedded copy is the source of
+# truth — it is what the binary reads at runtime via //go:embed. Run this
+# after editing the embedded copy, then commit both files together.
+config-sync:
+	@echo "Syncing configs/config.yaml.example from internal/config/config.yaml.example..."
+	@cp internal/config/config.yaml.example configs/config.yaml.example
+	@echo "✓ Synced. Review and commit: git add configs/config.yaml.example internal/config/config.yaml.example"
+
+# Check that internal/models does not import internal/config (enforces dependency direction)
 check-import-guard:
 	@./scripts/check_import_guard.sh
 

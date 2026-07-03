@@ -20,6 +20,7 @@ echo ""
 # Check 1: Verify config files exist
 if [[ ! -f "configs/config.yaml.example" ]]; then
     echo -e "${RED}✗ configs/config.yaml.example not found${NC}"
+    echo -e "${YELLOW}Run 'make config-sync' to generate it from the embedded master copy.${NC}"
     exit 1
 fi
 
@@ -54,10 +55,21 @@ fi
 echo ""
 
 # Check 4: Verify embedded config can be loaded
+# The embedded copy (internal/config/config.yaml.example) is the master —
+# it is what the binary reads at runtime via //go:embed. configs/ is a
+# user-facing mirror that must stay byte-identical.
 echo -e "${BLUE}[3/4] Validating embedded config matches source file...${NC}"
 if ! go test -short -run TestEmbeddedConfigMatchesSourceFile ./internal/config/... 2>&1; then
     echo -e "${RED}✗ Embedded config validation failed${NC}"
-    echo -e "${YELLOW}The embedded config may be out of sync with config.yaml.example${NC}"
+    echo -e "${YELLOW}The user-facing copy (configs/config.yaml.example) is out of sync with${NC}"
+    echo -e "${YELLOW}the embedded master (internal/config/config.yaml.example).${NC}"
+    echo ""
+    echo -e "${YELLOW}Fix: run 'make config-sync' and commit both files:${NC}"
+    echo -e "${YELLOW}  git add configs/config.yaml.example internal/config/config.yaml.example${NC}"
+    echo ""
+    echo -e "${YELLOW}  (internal/config/config.yaml.example is the master — if you${NC}"
+    echo -e "${YELLOW}   edited configs/config.yaml.example directly, move your edit${NC}"
+    echo -e "${YELLOW}   to the master first, then re-run make config-sync.)${NC}"
     exit 1
 fi
 echo -e "${GREEN}✓ Embedded config validation passed${NC}"

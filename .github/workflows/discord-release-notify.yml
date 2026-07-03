@@ -1,0 +1,73 @@
+name: Discord Release Notify
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    name: Post release to Discord
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Discord webhook
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TAG: ${{ github.event.release.tag_name }}
+          NAME: ${{ github.event.release.name }}
+          URL: ${{ github.event.release.html_url }}
+          BODY: ${{ github.event.release.body }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+          AUTHOR: ${{ github.event.release.author.login }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DISCORD_WEBHOOK_URL}" ]; then
+            echo "DISCORD_WEBHOOK_URL secret is not set; skipping"
+            exit 0
+          fi
+
+          # Discord caps embed descriptions at 4096 chars and titles at 256.
+          # Clip the release notes so the payload always validates.
+          body_preview="$(printf '%s' "${BODY}" | head -c 3800)"
+          title="${NAME:-${TAG}}"
+          title="$(printf '%s' "${title}" | head -c 250)"
+
+          if [ "${PRERELEASE}" = "true" ]; then
+            color="15844367" # orange — prerelease
+            type_label="Pre-release"
+          else
+            color="32768"   # green — stable
+            type_label="Release"
+          fi
+
+          payload="$(jq -n \
+            --arg title "${title}" \
+            --arg tag "${TAG}" \
+            --arg url "${URL}" \
+            --arg author "${AUTHOR}" \
+            --arg type "${type_label}" \
+            --arg color "${color}" \
+            --arg body "${body_preview}" \
+            --arg repo "${GITHUB_REPOSITORY}" \
+            '{
+              content: ("New " + $type + " published: [" + $tag + "](" + $url + ")"),
+              embeds: [{
+                title: $title,
+                url: $url,
+                color: ($color | tonumber),
+                description: $body,
+                footer: { text: ("by @" + $author + " · " + $repo) },
+                timestamp: (now | todate)
+              }]
+            }')"
+
+          echo "Posting release ${TAG} to Discord..."
+          curl -fsSL -X POST \
+            -H "Content-Type: application/json" \
+            -d "${payload}" \
+            "${DISCORD_WEBHOOK_URL}"
+
+          echo "Discord notification sent for ${TAG}"

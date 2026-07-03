@@ -974,20 +974,7 @@ func (t *ProcessFileTask) mergeWithExistingNFO(ctx context.Context, movie *model
 
 	merged := mergeResult.Merged
 
-	if t.cfg.Metadata.NFO.DisplayTitle != "" {
-		displayCtx := template.NewContextFromMovie(merged)
-		displayCtx.GroupActress = t.cfg.Output.GroupActress
-		displayCtx.GroupActressName = t.cfg.Output.GroupActressName
-		displayCtx.FirstNameOrder = t.cfg.Output.FirstNameOrder
-		displayCtx.Title = movie.Title
-		if displayName, err := t.templateEngine.ExecuteWithContext(ctx, t.cfg.Metadata.NFO.DisplayTitle, displayCtx); err == nil {
-			merged.DisplayTitle = displayName
-		} else if merged.DisplayTitle == "" {
-			merged.DisplayTitle = merged.Title
-		}
-	} else if merged.DisplayTitle == "" {
-		merged.DisplayTitle = merged.Title
-	}
+	ApplyDisplayTitleWithSource(ctx, merged, movie, t.cfg.Metadata.NFO.DisplayTitle, t.templateEngine, t.cfg.Output.GroupActress, t.cfg.Output.GroupActressName, t.cfg.Output.FirstNameOrder, t.match.File.Path)
 
 	return merged
 }

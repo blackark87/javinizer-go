@@ -216,7 +216,7 @@ func updateFileNFO(fileCtx context.Context, sourceDir string, filePath string, m
 	res.movieToWrite = movieToWrite
 	res.mergeStats = mergeStats
 
-	worker.ApplyDisplayTitle(fileCtx, movieToWrite, movie, cfg.Metadata.NFO.DisplayTitle, template.NewEngine(), cfg.Output.GroupActress, cfg.Output.GroupActressName, cfg.Output.FirstNameOrder)
+	worker.ApplyDisplayTitleWithSource(fileCtx, movieToWrite, movie, cfg.Metadata.NFO.DisplayTitle, template.NewEngine(), cfg.Output.GroupActress, cfg.Output.GroupActressName, cfg.Output.FirstNameOrder, filePath)
 
 	if isMultiPart {
 		res.multipart = &downloader.MultipartInfo{IsMultiPart: isMultiPart, PartNumber: partNum, PartSuffix: partSuffix}

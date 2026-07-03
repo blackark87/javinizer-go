@@ -200,6 +200,7 @@ func RunBatchScrapeOnce(
 		}
 	}
 
+	displayTitleSource := &models.Movie{Title: movie.Title}
 	if updateMode && cfg != nil {
 		movie, fieldSources, actressSources = mergeScrapedNFO(ctx, job, fileIndex, filePath, movie, query.matchResultPtr, cfg, scalarStrategy, arrayStrategy, fieldSources, actressSources)
 		if actressRepo != nil {
@@ -208,6 +209,7 @@ func RunBatchScrapeOnce(
 			}
 		}
 	}
+	applyDisplayTitleWithSource(ctx, job, cfg, movie, displayTitleSource, filePath)
 
 	posterErr := generateScrapedPoster(ctx, job, fileIndex, movie, httpClient, userAgent, referer, processedMovieIDs, cfg)
 

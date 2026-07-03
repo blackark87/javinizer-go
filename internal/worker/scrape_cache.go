@@ -71,7 +71,7 @@ func handleCacheHit(
 	}
 
 	if !displayTitleApplied {
-		applyDisplayTitle(ctx, job, cfg, movieToReturn, cached)
+		applyDisplayTitleWithSource(ctx, job, cfg, movieToReturn, cached, filePath)
 	}
 
 	now := time.Now()

@@ -9,7 +9,6 @@ import (
 	"github.com/javinizer/javinizer-go/internal/matcher"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/nfo"
-	"github.com/javinizer/javinizer-go/internal/template"
 	"github.com/spf13/afero"
 )
 
@@ -110,21 +109,7 @@ func mergeScrapedNFO(
 	logging.Infof("[Batch %s] File %d: NFO merge complete for %s: %d from scraper, %d from NFO, %d conflicts resolved",
 		job.ID, fileIndex, movie.ID, mergeResult.Stats.FromScraper, mergeResult.Stats.FromNFO, mergeResult.Stats.ConflictsResolved)
 
-	if cfg != nil && cfg.Metadata.NFO.DisplayTitle != "" {
-		displayTmplEngine := job.TemplateEngine()
-		displayCtx := template.NewContextFromMovie(movie)
-		displayCtx.GroupActress = cfg.Output.GroupActress
-		displayCtx.GroupActressName = cfg.Output.GroupActressName
-		displayCtx.FirstNameOrder = cfg.Output.FirstNameOrder
-		displayCtx.Title = preMergeTitle
-		if displayName, err := displayTmplEngine.ExecuteWithContext(ctx, cfg.Metadata.NFO.DisplayTitle, displayCtx); err == nil {
-			movie.DisplayTitle = displayName
-		} else if movie.DisplayTitle == "" {
-			movie.DisplayTitle = movie.Title
-		}
-	} else if movie.DisplayTitle == "" {
-		movie.DisplayTitle = movie.Title
-	}
+	applyDisplayTitleWithSource(ctx, job, cfg, movie, &models.Movie{Title: preMergeTitle}, filePath)
 
 	return movie, fieldSources, actressSources
 }
@@ -183,6 +168,6 @@ func mergeCachedNFO(
 	logging.Infof("[Batch %s] File %d: NFO merge complete for cached %s: %d from cache, %d from NFO, %d conflicts resolved",
 		job.ID, fileIndex, cached.ID, mergeResult.Stats.FromScraper, mergeResult.Stats.FromNFO, mergeResult.Stats.ConflictsResolved)
 
-	applyDisplayTitle(ctx, job, cfg, movieToReturn, cached)
+	applyDisplayTitleWithSource(ctx, job, cfg, movieToReturn, cached, filePath)
 	return movieToReturn, fieldSources, actressSources, true
 }

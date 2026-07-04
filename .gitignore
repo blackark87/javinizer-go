@@ -3,6 +3,7 @@
 *.exe~
 *.dll
 *.so
+*.syso
 *.dylib
 
 # Test binary, built with `go test -c`
@@ -81,7 +82,7 @@ cmd/javinizer/commands/update/extrafanart/
 # Coverage files
 *.out
 coverage*.out
-coveragecheck
+/coveragecheck
 coverage.html
 *.coverprofile
 COVERAGE_REPORT.md

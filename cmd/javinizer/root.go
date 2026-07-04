@@ -9,6 +9,7 @@ import (
 
 	"github.com/javinizer/javinizer-go/cmd/javinizer/commands/actress"
 	"github.com/javinizer/javinizer-go/cmd/javinizer/commands/api"
+	"github.com/javinizer/javinizer-go/cmd/javinizer/commands/app"
 	configcmd "github.com/javinizer/javinizer-go/cmd/javinizer/commands/config"
 	"github.com/javinizer/javinizer-go/cmd/javinizer/commands/dump"
 	"github.com/javinizer/javinizer-go/cmd/javinizer/commands/genre"
@@ -27,6 +28,7 @@ import (
 	"github.com/javinizer/javinizer-go/cmd/javinizer/commands/word"
 	"github.com/javinizer/javinizer-go/internal/config"
 	_ "github.com/javinizer/javinizer-go/internal/config/migrations"
+	"github.com/javinizer/javinizer-go/internal/desktop"
 
 	"github.com/javinizer/javinizer-go/internal/logging"
 	"github.com/javinizer/javinizer-go/internal/models"
@@ -49,6 +51,18 @@ var rootCmd = &cobra.Command{
 	Version: version.Short(),
 }
 
+// initDesktopDefault wires no-arg → GUI for desktop builds only. In CLI builds
+// (BuildDesktop="0") rootCmd keeps no Run, so no-args prints help as before.
+func initDesktopDefault() {
+	if !desktop.IsDesktopBuild() {
+		return
+	}
+	rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
+		cmd.SilenceUsage = true
+		return desktop.Run(desktop.Options{ConfigFile: cfgFile})
+	}
+}
+
 func init() {
 	// Customize version template
 	rootCmd.SetVersionTemplate(version.Info() + "\n")
@@ -57,8 +71,28 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "configs/config.yaml", "config file path")
 	rootCmd.PersistentFlags().BoolVarP(&verboseFlag, "verbose", "v", false, "enable debug logging")
 
-	// Initialize configuration for commands that need it.
+	// Desktop builds (injected via -X internal/desktop.BuildDesktop=1) run with
+	// a portable user-data dir so config/db/logs land in a writable,
+	// CWD-independent location regardless of how the app was launched
+	// (Finder/Explorer set CWD to "/" or the bundle dir). This must run before
+	// config init so ApplyEnvironmentOverrides picks the portable paths up.
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		if desktop.IsDesktopBuild() {
+			// Only set up the portable env when the user did not pass a custom
+			// --config. With a custom config, the user owns their data layout;
+			// injecting JAVINIZER_DB/LOG_DIR here would have ApplyEnvironmentOverrides
+			// override that file's DB/log settings with the portable paths.
+			if cfgFile == "" || cfgFile == "configs/config.yaml" {
+				if err := desktop.SetupPortableEnv(); err != nil {
+					_, _ = fmt.Fprintf(os.Stderr, "desktop: %v\n", err)
+				}
+				cfgFile = desktop.DefaultConfigPath()
+			}
+			// Write the resolved path back to the flag so subcommands that read
+			// cmd.Flags().GetString("config") (api, app, tui, …) see the portable
+			// path, not the default "configs/config.yaml".
+			_ = cmd.Flags().Set("config", cfgFile)
+		}
 		if shouldSkipConfigInit(cmd) {
 			return
 		}
@@ -70,6 +104,7 @@ func init() {
 	rootCmd.AddCommand(
 		actress.NewCommand(),
 		api.NewCommand(),
+		app.NewCommand(),
 		configcmd.NewCommand(),
 		dump.NewCommand(),
 		genre.NewCommand(),
@@ -87,6 +122,8 @@ func init() {
 		word.NewCommand(),
 		versioncmd.NewCommand(),
 	)
+
+	initDesktopDefault()
 }
 
 func shouldSkipConfigInit(cmd *cobra.Command) bool {
@@ -98,7 +135,13 @@ func shouldSkipConfigInit(cmd *cobra.Command) bool {
 	// `upgrade` also runs without config: it only talks to GitHub and replaces
 	// the binary, and forcing config init would create a config file as a side
 	// effect of a self-update.
+	// `app` on a non-desktop build always errors (the desktop runner is a
+	// build-tagged stub), so initConfig would create config/DB/log files before
+	// the command fails — the same side-effect concern as `upgrade`.
 	if cmd.Name() == "version" || cmd.Name() == "help" || cmd.Name() == "completion" || cmd.Name() == "upgrade" {
+		return true
+	}
+	if cmd.Name() == "app" && !desktop.IsDesktopBuild() {
 		return true
 	}
 

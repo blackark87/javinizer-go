@@ -134,7 +134,7 @@ func setupAuth(rt *core.APIRuntime) gin.HandlerFunc {
 			return
 		}
 
-		setSessionCookie(c, sessionID, deps.Auth.SessionTTL(), true, securityConfig(rt))
+		setSessionCookie(c, sessionID, deps.Auth.PersistentSessionTTL(), true, securityConfig(rt))
 		c.JSON(http.StatusOK, contracts.AuthStatusResponse{
 			Initialized:   true,
 			Authenticated: true,
@@ -189,7 +189,11 @@ func loginAuth(rt *core.APIRuntime) gin.HandlerFunc {
 			return
 		}
 
-		setSessionCookie(c, sessionID, deps.Auth.SessionTTL(), req.RememberMe, securityConfig(rt))
+		sessionTTL := deps.Auth.SessionTTL()
+		if req.RememberMe {
+			sessionTTL = deps.Auth.PersistentSessionTTL()
+		}
+		setSessionCookie(c, sessionID, sessionTTL, req.RememberMe, securityConfig(rt))
 		c.JSON(http.StatusOK, contracts.AuthStatusResponse{
 			Initialized:   true,
 			Authenticated: true,

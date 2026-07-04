@@ -154,6 +154,87 @@ func TestAuthManager_NonRememberedSessionDoesNotPersistAcrossReload(t *testing.T
 	assert.ErrorIs(t, err, ErrInvalidSession)
 }
 
+func TestAuthManager_RememberedSessionOutlivesEphemeralTTL(t *testing.T) {
+	// Regression test for the "Remember me" login persistency bug: a
+	// remember-me session must outlive an ephemeral (non-remembered)
+	// session. Users selecting "Remember me" expect to stay logged in
+	// across server restarts for a long window (weeks), not the same
+	// short TTL as an ephemeral session. Before this fix, both paths used
+	// the same sessionTTL — so a server restart after the TTL window
+	// expired the session + prompted the user to log in again, despite
+	// "Remember me" being selected.
+	t.Parallel()
+
+	configFile := filepath.Join(t.TempDir(), "config.yaml")
+	manager, err := NewAuthManager(configFile, time.Hour)
+	require.NoError(t, err)
+	require.NoError(t, manager.Setup("admin", "password123"))
+
+	// Fixed clock so we can fast-forward deterministically.
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	manager.nowFn = func() time.Time { return base }
+
+	ephemeralID, err := manager.Login("admin", "password123", false)
+	require.NoError(t, err)
+
+	rememberedID, err := manager.Login("admin", "password123", true)
+	require.NoError(t, err)
+
+	// Both sessions are valid at T0.
+	_, err = manager.AuthenticateSession(ephemeralID)
+	require.NoError(t, err)
+	_, err = manager.AuthenticateSession(rememberedID)
+	require.NoError(t, err)
+
+	// Fast-forward past the ephemeral TTL (1h). The ephemeral session
+	// must expire; the remember-me session must STILL be valid.
+	base = base.Add(2 * time.Hour)
+
+	_, err = manager.AuthenticateSession(ephemeralID)
+	assert.ErrorIs(t, err, ErrInvalidSession, "ephemeral session must expire after its TTL")
+
+	_, err = manager.AuthenticateSession(rememberedID)
+	assert.NoError(t, err, "remember-me session must outlive the ephemeral TTL")
+}
+
+func TestAuthManager_RememberedSessionSurvivesRestartPastEphemeralTTL(t *testing.T) {
+	// Regression test for the user-reported symptom: "despite selecting
+	// Remember me, I get prompted to login after server restarts." A
+	// remember-me session must survive a server restart EVEN when the
+	// restart happens past the ephemeral TTL window — because the
+	// persistent session has a longer lifetime. Before the fix, the
+	// persisted session carried the ephemeral TTL, so loadSessionsFromDisk
+	// pruned it during the reload (the now.After(expiresAt) guard).
+	t.Parallel()
+
+	configFile := filepath.Join(t.TempDir(), "config.yaml")
+	manager, err := NewAuthManager(configFile, time.Hour)
+	require.NoError(t, err)
+	require.NoError(t, manager.Setup("admin", "password123"))
+
+	// Use real time as the base so loadSessionsFromDisk (which runs inside
+	// NewAuthManager with time.Now before nowFn can be overridden) sees the
+	// persisted session as non-expired during the reload below.
+	base := time.Now()
+	manager.nowFn = func() time.Time { return base }
+
+	rememberedID, err := manager.Login("admin", "password123", true)
+	require.NoError(t, err)
+
+	// Simulate a server restart past the ephemeral TTL: fast-forward 2h,
+	// then construct a fresh manager (loads sessions from disk). The
+	// persisted session must still be valid because remember-me grants a
+	// longer TTL.
+	base = base.Add(2 * time.Hour)
+
+	reloaded, err := NewAuthManager(configFile, time.Hour)
+	require.NoError(t, err)
+	reloaded.nowFn = func() time.Time { return base }
+
+	_, err = reloaded.AuthenticateSession(rememberedID)
+	assert.NoError(t, err, "remember-me session must survive a restart past the ephemeral TTL")
+}
+
 func TestAuthManager_LoadMalformedCredentialFields(t *testing.T) {
 	t.Parallel()
 

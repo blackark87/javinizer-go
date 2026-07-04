@@ -116,6 +116,9 @@ type NoOpAuth struct{}
 // SessionTTL returns a fixed one-hour TTL. Unused on the pass-through path.
 func (NoOpAuth) SessionTTL() time.Duration { return time.Hour }
 
+// PersistentSessionTTL returns a fixed 30-day TTL. Unused on the pass-through path.
+func (NoOpAuth) PersistentSessionTTL() time.Duration { return 30 * 24 * time.Hour }
+
 // IsInitialized always reports true. Unused on the pass-through path.
 func (NoOpAuth) IsInitialized() bool { return true }
 

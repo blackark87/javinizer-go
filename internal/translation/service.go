@@ -161,7 +161,11 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 			logging.Debugf("Translation[%s]: actress[%d] skip — no usable source name (JapaneseName=%q ThumbURL=%q)", movieID, i, actress.JapaneseName, actress.ThumbURL)
 			continue
 		}
-		if isLikelyRomanized(actressSourceNames[i]) {
+		// A Hangul name already on the record (e.g. promoted in the DB) is used
+		// directly; otherwise a romaji source is transliterated via the table.
+		if hangul := hangulActressName(actress); hangul != "" {
+			actressHangulNames[i] = hangul
+		} else if isLikelyRomanized(actressSourceNames[i]) {
 			if hangul, ok := romajiToHangul(actressSourceNames[i]); ok {
 				actressHangulNames[i] = hangul
 			}
@@ -185,34 +189,45 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 	}
 	descriptionPromotionalOnly := fields.Description && descriptionForTranslation == "" && strings.TrimSpace(movie.Description) != ""
 
-	// Korean title: actress names appearing inside the title are pinned to their
-	// table-confirmed Hangul reading so the title and the actress fields always
-	// agree on the same transliteration. Two forms are built:
-	//   koTitleHangul     — names replaced by their Hangul directly (used when no
-	//                        LLM round-trip is needed, or as a lossless fallback).
-	//   koTitlePlaceheld  — names replaced by opaque ⟦N⟧ placeholders. This is what
-	//                        the LLM receives: an opaque token is far more robust
-	//                        than embedded Hangul, which local models tend to
-	//                        "correct" (e.g. 히비키 → 히비キ). Placeholders are
-	//                        restored to Hangul in the response.
-	koTitleHangul := cleanedTitle
-	koTitlePlaceheld := cleanedTitle
-	namePlaceholders := make(map[string]string)
+	// Actress names appearing inside the title or description are pinned to their
+	// table-confirmed Hangul reading so those fields and the actress fields always
+	// agree on the same transliteration (伊藤舞雪 → 이토 마유키, never a guessed
+	// reading). Each actress with a Hangul reading gets a stable ⟦N⟧ token; the LLM
+	// receives the placeholder form (an opaque token survives the round-trip far
+	// better than embedded Hangul, which local models "correct" to 히비キ etc.) and
+	// the token is restored afterwards. applyNameSubs returns the Hangul form, the
+	// placeholder form, and the token→Hangul map for the tokens it actually used.
+	type nameSub struct{ jaName, hangul, token string }
+	nameSubs := make([]nameSub, 0, len(movie.Actresses))
 	for i := range movie.Actresses {
 		if actressHangulNames[i] == "" {
 			continue
 		}
 		jaName := strings.TrimSpace(movie.Actresses[i].JapaneseName)
-		if jaName == "" || !strings.Contains(koTitleHangul, jaName) {
+		if jaName == "" {
 			continue
 		}
-		token := fmt.Sprintf("⟦%d⟧", len(namePlaceholders))
-		namePlaceholders[token] = actressHangulNames[i]
-		koTitleHangul = strings.ReplaceAll(koTitleHangul, jaName, actressHangulNames[i])
-		koTitlePlaceheld = strings.ReplaceAll(koTitlePlaceheld, jaName, token)
-		logging.Debugf("Translation[%s]: title contains actress %q → Hangul %q (placeholder %q)", movieID, jaName, actressHangulNames[i], token)
+		nameSubs = append(nameSubs, nameSub{jaName, actressHangulNames[i], fmt.Sprintf("⟦%d⟧", len(nameSubs))})
 	}
-	koTitleDirect := koTitleHangul != cleanedTitle && !containsTranslatableText(koTitleHangul)
+	applyNameSubs := func(src string) (hangulVer, placeheldVer string, tokens map[string]string) {
+		hangulVer, placeheldVer = src, src
+		tokens = make(map[string]string)
+		for _, sub := range nameSubs {
+			if !strings.Contains(hangulVer, sub.jaName) {
+				continue
+			}
+			hangulVer = strings.ReplaceAll(hangulVer, sub.jaName, sub.hangul)
+			placeheldVer = strings.ReplaceAll(placeheldVer, sub.jaName, sub.token)
+			tokens[sub.token] = sub.hangul
+			logging.Debugf("Translation[%s]: substituted actress %q → Hangul %q (placeholder %q)", movieID, sub.jaName, sub.hangul, sub.token)
+		}
+		return
+	}
+
+	koTitleHangul, koTitlePlaceheld, titleTokens := applyNameSubs(cleanedTitle)
+	koDescHangul, koDescPlaceheld, descTokens := applyNameSubs(descriptionForTranslation)
+	// koTitleDirect: the title WAS only the actress name(s) — final without an LLM call.
+	koTitleDirect := len(titleTokens) > 0 && !containsTranslatableText(koTitleHangul)
 
 	// When the title is an actress name, queue it under the title_as_name label so the
 	// person-name prompt rule guarantees phonetic transliteration (never a semantic
@@ -243,7 +258,7 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 				if s.cfg.ApplyToPrimary && lang == targetLanguages[0] {
 					movie.Title = koTitleHangul
 				}
-			case lang == "ko" && koTitlePlaceheld != cleanedTitle:
+			case lang == "ko" && len(titleTokens) > 0:
 				queueField(lang, koTitlePlaceheld, func(v string) { rec.Title = v }, func(v string) { movie.Title = v }, "title")
 			default:
 				queueField(lang, titleForTranslation, func(v string) { rec.Title = v }, func(v string) { movie.Title = v }, titleFieldName)
@@ -253,7 +268,11 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 			queueField(lang, movie.OriginalTitle, func(v string) { rec.OriginalTitle = v }, func(v string) { movie.OriginalTitle = v }, "original_title")
 		}
 		if fields.Description {
-			queueField(lang, descriptionForTranslation, func(v string) { rec.Description = v }, func(v string) { movie.Description = v }, "description")
+			descInput := descriptionForTranslation
+			if lang == "ko" && len(descTokens) > 0 {
+				descInput = koDescPlaceheld
+			}
+			queueField(lang, descInput, func(v string) { rec.Description = v }, func(v string) { movie.Description = v }, "description")
 		}
 		if fields.Director {
 			queueField(lang, movie.Director, func(v string) { rec.Director = v }, func(v string) { movie.Director = v }, "director")
@@ -390,21 +409,31 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 			} else if requests[reqIdx].isActress && models.IsUnknownActressName(translated) {
 				translated = models.UnknownActressName
 			}
-			if isTitleTranslationField(requests[reqIdx].fieldName) {
+			// Restore actress-name placeholders to their Hangul. If the model dropped
+			// a placeholder, fall back to the direct Hangul field so the name is never
+			// lost (surrounding text may stay untranslated).
+			switch {
+			case isTitleTranslationField(requests[reqIdx].fieldName):
 				cleanedTitle := cleanTitleForTranslation(translated)
 				if cleanedTitle != "" {
 					translated = cleanedTitle
 				} else {
 					translated = requests[reqIdx].text
 				}
-				// Restore actress-name placeholders to their Hangul. If the model
-				// dropped a placeholder, fall back to the direct Hangul title so the
-				// name is never lost (surrounding text may stay untranslated).
-				if lang == "ko" && len(namePlaceholders) > 0 {
-					restored, ok := restoreNamePlaceholders(translated, namePlaceholders)
+				if lang == "ko" && len(titleTokens) > 0 {
+					restored, ok := restoreNamePlaceholders(translated, titleTokens)
 					if !ok {
 						logging.Debugf("Translation[%s]: title placeholder missing in LLM output %q, using Hangul fallback", movieID, translated)
 						restored = koTitleHangul
+					}
+					translated = restored
+				}
+			case requests[reqIdx].fieldName == "description":
+				if lang == "ko" && len(descTokens) > 0 {
+					restored, ok := restoreNamePlaceholders(translated, descTokens)
+					if !ok {
+						logging.Debugf("Translation[%s]: description placeholder missing in LLM output %q, using Hangul fallback", movieID, translated)
+						restored = koDescHangul
 					}
 					translated = restored
 				}
@@ -729,6 +758,26 @@ func containsHangul(s string) bool {
 		}
 	}
 	return false
+}
+
+// hangulActressName returns a Hangul reading already present on the actress
+// record (e.g. promoted into the DB by mergeActressData), keeping Japanese name
+// order (FamilyName GivenName). Returns "" when neither name part is Hangul.
+func hangulActressName(a models.Actress) string {
+	last := strings.TrimSpace(a.LastName)
+	first := strings.TrimSpace(a.FirstName)
+	lastHangul := containsHangul(last)
+	firstHangul := containsHangul(first)
+	switch {
+	case lastHangul && firstHangul:
+		return last + " " + first
+	case firstHangul:
+		return first
+	case lastHangul:
+		return last
+	default:
+		return ""
+	}
 }
 
 func replaceActressName(actress *models.Actress, translated string) {

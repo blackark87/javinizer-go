@@ -33,17 +33,37 @@ const (
 // by .github/workflows/cli-release.yml (ghcr.io/javinizer/javinizer-go).
 const dockerImageRef = "ghcr.io/javinizer/javinizer-go"
 
-// IsRunningInContainer reports whether the process is inside a Docker (or
-// containerd/k8s) container. Detection is best-effort: it checks /.dockerenv
-// (the file Docker creates in every container) and /proc/1/cgroup (Linux
-// control groups name the container runtime). Extracted from
+// IsRunningInContainer reports whether the process is inside a container.
+// Detection is best-effort and checks three independent markers, short-
+// circuiting on the first hit:
+//
+//   - /.dockerenv — the file Docker creates in every container (reliable for
+//     `docker run` / compose, the primary deployment path this project ships).
+//   - /run/.containerenv — created by podman/nerdctl-style containers that do
+//     not write /.dockerenv. Without this, a bare podman/nerdctl container
+//     would misclassify as CLI and attempt a self-swap the image would lose
+//     on recreate.
+//   - /proc/1/cgroup substring match (docker/containerd/kubepods) — a legacy
+//     fallback for cgroup v1 hosts.
+//
+// Known limitation: on cgroup v2 hosts with cgroup namespaces enabled (the
+// default for modern Docker/containerd since ~2021), /proc/1/cgroup inside
+// the container reads just `0::/` with no runtime identifier, so the substring
+// match misses. The /.dockerenv and /run/.containerenv file markers cover the
+// common runtimes, but a bare containerd/k8s pod without either marker will
+// classify as CLI. The failure mode is conservative — a wasted self-swap that
+// the next container recreate reverts — rather than a dangerous false
+// positive, so this is accepted as best-effort. Extracted from
 // internal/scraper/dmm so the upgrade path and the Chrome sandbox logic share
 // one source of truth for container detection.
 //
-// On non-Linux hosts both probes miss and the function returns false, which is
+// On non-Linux hosts all probes miss and the function returns false, which is
 // correct: a macOS/Windows desktop or CLI build is never "in a container".
 func IsRunningInContainer(fs afero.Fs) bool {
 	if _, err := fs.Stat("/.dockerenv"); err == nil {
+		return true
+	}
+	if _, err := fs.Stat("/run/.containerenv"); err == nil {
 		return true
 	}
 	if data, err := afero.ReadFile(fs, "/proc/1/cgroup"); err == nil {

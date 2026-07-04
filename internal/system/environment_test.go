@@ -20,6 +20,22 @@ func TestIsRunningInContainer(t *testing.T) {
 		}
 	})
 
+	t.Run("containerenv file present (podman/nerdctl)", func(t *testing.T) {
+		t.Parallel()
+		// Podman and nerdctl create /run/.containerenv instead of /.dockerenv.
+		// Without this marker a podman container would fall through to the
+		// cgroup substring match, which on cgroup v2 reads just `0::/` and
+		// misses — misclassifying the container as CLI and attempting a
+		// self-swap the image would lose on recreate.
+		fs := afero.NewMemMapFs()
+		if _, err := fs.Create("/run/.containerenv"); err != nil {
+			t.Fatalf("create /run/.containerenv: %v", err)
+		}
+		if !IsRunningInContainer(fs) {
+			t.Fatal("expected container detection when /run/.containerenv exists")
+		}
+	})
+
 	t.Run("cgroup mentions docker", func(t *testing.T) {
 		t.Parallel()
 		fs := afero.NewMemMapFs()

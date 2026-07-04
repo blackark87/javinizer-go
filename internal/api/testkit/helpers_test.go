@@ -94,6 +94,7 @@ func TestNoOpAuth_InterfaceMethods(t *testing.T) {
 	auth := NoOpAuth{}
 
 	assert.Equal(t, time.Hour, auth.SessionTTL())
+	assert.Equal(t, 30*24*time.Hour, auth.PersistentSessionTTL())
 	assert.True(t, auth.IsInitialized())
 
 	username, err := auth.AuthenticateSession("any-session")

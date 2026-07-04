@@ -42,7 +42,7 @@
 	let revertFileCount = $state(0);
 	let revertingMovieIds = $state<Set<string>>(new Set());
 
-	const pendingCount = $derived(operations.filter((o) => o.revert_status === 'pending' || o.revert_status === 'failed').length);
+	const pendingCount = $derived(operations.filter((o) => o.revert_status === 'applied' || o.revert_status === 'failed').length);
 
 	const revertBatchMutation = createMutation(() => ({
 		mutationFn: () => apiClient.revertBatchJob(jobId),

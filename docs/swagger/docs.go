@@ -7361,6 +7361,10 @@ const docTemplate = `{
                     "description": "Error message if any",
                     "type": "string"
                 },
+                "install_environment": {
+                    "description": "InstallEnvironment reports how javinizer is running (\"docker\", \"desktop\",\nor \"cli\") so the UI can render the right upgrade path: docker images can't\nself-swap (read-only image), desktop apps need a new bundle, only cli\nbuilds self-upgrade in place.",
+                    "type": "string"
+                },
                 "latest": {
                     "description": "Latest available version",
                     "type": "string"
@@ -7376,6 +7380,10 @@ const docTemplate = `{
                 "update_available": {
                     "description": "Whether an update is available",
                     "type": "boolean"
+                },
+                "upgrade_instructions": {
+                    "description": "UpgradeInstructions carries environment-specific guidance verbatim (e.g.\nthe ` + "`" + `docker pull` + "`" + ` command for docker, the releases URL for desktop, the\n` + "`" + `javinizer upgrade` + "`" + ` command for cli) so the frontend doesn't have to\nhardcode the image ref or rebuild steps per environment.",
+                    "type": "string"
                 }
             }
         }

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/javinizer/javinizer-go/internal/models"
+	"github.com/javinizer/javinizer-go/internal/system"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,7 +57,7 @@ func TestValidateBrowserURL_IPv4WithPort(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// --- isRunningInContainer: env var combinations ---
+// --- system.IsRunningInContainer: env var combinations ---
 
 func TestIsRunningInContainer_ChromeEnvsAreNotAContainerSignal(t *testing.T) {
 	// CHROME_BIN/CHROME_PATH point at the Chrome binary location and are set
@@ -81,7 +82,7 @@ func TestIsRunningInContainer_ChromeEnvsAreNotAContainerSignal(t *testing.T) {
 		}
 	}()
 
-	result := isRunningInContainer(afero.NewMemMapFs())
+	result := system.IsRunningInContainer(afero.NewMemMapFs())
 	assert.False(t, result, "CHROME_BIN/CHROME_PATH must not imply a container")
 }
 
@@ -177,5 +178,24 @@ func TestFetchWithBrowser_ContainerDetectionViaChromePath(t *testing.T) {
 	}()
 
 	_, err := fetchWithBrowser(context.Background(), "https://www.dmm.co.jp/", 1, nil, os.Getenv, afero.NewOsFs())
+	_ = err
+}
+
+// TestFetchWithBrowser_ContainerDetectedDisablesSandbox exercises the
+// `IsRunningInContainer(fs) == true` branch of fetchWithBrowser by injecting an
+// in-memory filesystem with /.dockerenv. On a non-container CI runner the real
+// filesystem returns false, so without this test the no-sandbox flag path
+// (the container-detected true branch) is never covered. The call still fails
+// when chromedp tries to launch Chrome — we only need it to reach past the
+// container-detection branch, mirroring the ViaChromeBin/ViaChromePath tests
+// above.
+func TestFetchWithBrowser_ContainerDetectedDisablesSandbox(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	if err := afero.WriteFile(fs, "/.dockerenv", []byte(""), 0o644); err != nil {
+		t.Fatalf("create /.dockerenv: %v", err)
+	}
+	require.True(t, system.IsRunningInContainer(fs), "test setup: fs must read as container")
+
+	_, err := fetchWithBrowser(context.Background(), "https://www.dmm.co.jp/", 1, nil, os.Getenv, fs)
 	_ = err
 }

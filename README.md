@@ -225,6 +225,8 @@ javinizer upgrade --prerelease  # upgrade to the newest release, including prere
 
 The new binary is verified against the release `checksums.txt` before the swap. If javinizer was installed via **Homebrew** or **Scoop**, `upgrade` detects that and tells you to use `brew upgrade javinizer` / `scoop update javinizer` instead, so it never clobbers a package-manager install.
 
+`upgrade` is also **environment-aware**: inside a **Docker** container it refuses the in-place swap (the image is read-only and a replace would be lost on the next recreate) and prints the `docker pull ghcr.io/javinizer/javinizer-go:latest` command instead; in the **desktop app** it points you to the [releases page](https://github.com/javinizer/javinizer-go/releases) (a bare binary swap would orphan the `.app`/`.exe`/`.AppImage` wrapper). The Web UI's update banner shows the same guidance with a "Running in Docker" / "Desktop app" / "CLI install" badge so you always know which upgrade path applies.
+
 By default `upgrade` targets the latest **stable** release. Add `--prerelease` to jump to a newer release candidate (e.g. `v1.1.0-rc1`) when you want to track prereleases.
 
 > Note: `javinizer upgrade` updates the **program**; `javinizer update` refreshes **metadata** for your existing files. They are different commands.

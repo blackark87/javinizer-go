@@ -38,6 +38,23 @@ swap `x86_64` for `aarch64` in the asset name.
 
 To build from source instead, see [Build](#build) below.
 
+## Updating
+
+Because the app is a native bundle (not a self-swappable binary), `javinizer
+upgrade` refuses to replace it in place and points you to the right path
+instead:
+
+| Install method | Update command |
+|----------------|-----------------|
+| macOS Cask | `brew upgrade --cask javinizer-app` |
+| Windows Scoop | `scoop update javinizer-app` |
+| Linux AppImage | Download the latest `Javinizer-linux-x86_64.AppImage` from the [releases page](https://github.com/javinizer/javinizer-go/releases) and replace the old file |
+
+The cask and bucket are republished automatically on each **stable** release
+(prereleases never reach them). The Web UI's update banner also detects the
+desktop environment and shows a "Desktop app" badge with a link to the releases
+page, so you don't have to remember the command.
+
 ## How it works
 
 The desktop app starts the existing API server (REST + embedded SvelteKit Web

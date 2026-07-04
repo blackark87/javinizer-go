@@ -17,6 +17,7 @@ import (
 
 	"github.com/javinizer/javinizer-go/internal/httpclient"
 	"github.com/javinizer/javinizer-go/internal/logging"
+	"github.com/javinizer/javinizer-go/internal/system"
 )
 
 const (
@@ -148,6 +149,13 @@ type UpgradeOptions struct {
 	ExePath string
 	// Out receives progress messages (default os.Stdout).
 	Out io.Writer
+	// Environment classifies how javinizer is running (docker/desktop/cli),
+	// set by the caller (cmd layer) via system.DetectEnvironment. The library
+	// can't import internal/desktop to compute it itself (import cycle), so the
+	// command layer injects it. Docker and desktop builds can't self-swap and
+	// get an environment-specific handoff instead. Zero value ("") behaves as
+	// CLI to keep backward compatibility for callers that don't set it.
+	Environment system.Environment
 }
 
 // UpgradeResult is the outcome of an Upgrade run.
@@ -158,10 +166,12 @@ type UpgradeResult struct {
 	AssetName      string
 	UpToDate       bool
 	Upgraded       bool
-	// Handoff is true when the install is managed by a package manager and the
-	// caller was told to run `brew upgrade` / `scoop update` instead.
-	Handoff       bool
-	InstallMethod InstallMethod
+	// Handoff is true when the install is managed by a package manager OR the
+	// running environment can't self-swap (docker image / desktop bundle), and
+	// the caller was told the right upgrade command instead.
+	Handoff            bool
+	InstallMethod      InstallMethod
+	InstallEnvironment system.Environment
 }
 
 // Upgrade checks for, downloads, and applies the latest release, replacing the
@@ -217,6 +227,23 @@ func Upgrade(ctx context.Context, opts UpgradeOptions) (*UpgradeResult, error) {
 
 	if result.UpToDate && !opts.Force {
 		_, _ = fmt.Fprintf(out, "Already up to date: %s\n", opts.CurrentVersion)
+		return result, nil
+	}
+
+	// Record the running environment on the result so callers (and tests) can
+	// see which path was taken even when no swap happens.
+	result.InstallEnvironment = opts.Environment
+
+	// Environment-aware handoff: docker images are read-only (an in-place
+	// binary replace would be lost on container recreate) and desktop builds
+	// are native bundles whose inner binary can't be swapped without orphaning
+	// the .app/.exe/.AppImage wrapper. In both cases, defer to the right
+	// upgrade path instead of attempting a self-swap that would silently fail
+	// or break the install. This runs after the up-to-date check so a no-op
+	// upgrade still reports "already up to date" without a handoff.
+	if opts.Environment == system.EnvironmentDocker || opts.Environment == system.EnvironmentDesktop {
+		result.Handoff = true
+		_, _ = fmt.Fprintf(out, "%s\n", system.UpgradeInstructions(opts.Environment))
 		return result, nil
 	}
 

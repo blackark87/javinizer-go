@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/javinizer/javinizer-go/internal/system"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 )
@@ -58,7 +59,7 @@ func TestIsRunningInContainer(t *testing.T) {
 			tt.setup()
 			defer tt.cleanup()
 
-			result := isRunningInContainer(afero.NewOsFs())
+			result := system.IsRunningInContainer(afero.NewOsFs())
 			assert.Equal(t, tt.expected, result, tt.description)
 		})
 	}

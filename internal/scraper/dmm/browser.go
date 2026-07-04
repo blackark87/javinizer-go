@@ -12,6 +12,7 @@ import (
 	"github.com/chromedp/chromedp"
 	"github.com/javinizer/javinizer-go/internal/logging"
 	"github.com/javinizer/javinizer-go/internal/models"
+	"github.com/javinizer/javinizer-go/internal/system"
 	"github.com/spf13/afero"
 )
 
@@ -43,25 +44,6 @@ func validateBrowserURL(rawURL string) error {
 	return nil
 }
 
-// isRunningInContainer detects if we're running inside a Docker container
-// using the provided filesystem dependency.
-func isRunningInContainer(fs afero.Fs) bool {
-	// Check for /.dockerenv file (Docker specific)
-	if _, err := fs.Stat("/.dockerenv"); err == nil {
-		return true
-	}
-
-	// Check /proc/1/cgroup for docker/containerd.
-	if data, err := afero.ReadFile(fs, "/proc/1/cgroup"); err == nil {
-		content := string(data)
-		if strings.Contains(content, "docker") || strings.Contains(content, "containerd") {
-			return true
-		}
-	}
-
-	return false
-}
-
 // fetchWithBrowser fetches a URL using Chrome browser automation with age verification cookies.
 // envLookup and fs are injected dependencies for environment variable and filesystem access.
 func fetchWithBrowser(parentCtx context.Context, url string, timeout int, proxyProfile *models.ProxyProfile, envLookup func(string) string, fs afero.Fs) (string, error) {
@@ -87,7 +69,7 @@ func fetchWithBrowser(parentCtx context.Context, url string, timeout int, proxyP
 	// Check if running in Docker container
 	// Chrome's sandbox doesn't work in containers due to namespace restrictions
 	// Trade-off: We run as non-root user, and the container itself provides isolation
-	if isRunningInContainer(fs) {
+	if system.IsRunningInContainer(fs) {
 		logging.Debug("DMM Browser: Detected container environment, disabling Chrome sandbox and crashpad")
 		opts = append(opts,
 			chromedp.Flag("no-sandbox", true),

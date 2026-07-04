@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/javinizer/javinizer-go/internal/desktop"
+	"github.com/javinizer/javinizer-go/internal/system"
 	"github.com/javinizer/javinizer-go/internal/update"
 	"github.com/javinizer/javinizer-go/internal/version"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
@@ -54,6 +57,11 @@ metadata for your existing files. They are different commands.`,
 				Force:          force,
 				PreRelease:     prerelease,
 				Out:            cmd.OutOrStdout(),
+				// Detect once at the command layer (where internal/desktop is
+				// reachable without the import cycle the update library would
+				// hit) so Upgrade() can hand off docker/desktop builds instead of
+				// attempting a self-swap that would silently fail.
+				Environment: system.DetectEnvironment(afero.NewOsFs(), desktop.IsDesktopBuild()),
 			})
 			if err != nil {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Upgrade failed: %v\n", err)

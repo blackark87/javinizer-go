@@ -16,6 +16,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/scraper"
 	"github.com/javinizer/javinizer-go/internal/scraper/e2emock"
 	"github.com/javinizer/javinizer-go/internal/scraperutil"
+	"github.com/javinizer/javinizer-go/internal/system"
 	"github.com/javinizer/javinizer-go/internal/workflow"
 )
 
@@ -41,6 +42,10 @@ type CoreDepsReader interface {
 	GetRegistry() *scraperutil.ScraperRegistry
 	GetLogger() logging.Logger
 	HasConfig() bool
+	// InstallEnvironment reports how javinizer is running (docker/desktop/cli)
+	// so handlers can surface environment-specific upgrade guidance. Set once
+	// at bootstrap via SetInstallEnvironment; defaults to CLI.
+	InstallEnvironment() system.Environment
 }
 
 // CoreDeps contains shared dependencies that both CLI and API commands need.
@@ -55,6 +60,13 @@ type CoreDeps struct {
 	// r18DumpCloser holds the local r18.dev dump sidecar handle (when opened)
 	// so it can be released in Close().
 	r18DumpCloser io.Closer
+
+	// installEnvironment classifies the running build (docker/desktop/cli) for
+	// environment-aware upgrade UX. It is a process-level constant set once at
+	// bootstrap (cmd/javinizer) via SetInstallEnvironment, where
+	// desktop.IsDesktopBuild() is reachable without the import cycle the API
+	// layer would hit. Defaults to CLI until set.
+	installEnvironment system.Environment
 
 	// config is the single source of truth for the application config.
 	// Both CLI (set once at construction) and API (hot-reloaded via
@@ -222,6 +234,27 @@ func (d *CoreDeps) GetConfig() *config.Config {
 // is expected (e.g., APIRuntime.InitAPIConfig) rather than a bug.
 func (d *CoreDeps) HasConfig() bool {
 	return d.config.Load() != nil
+}
+
+// InstallEnvironment returns the detected install environment (docker/desktop/cli).
+// Defaults to CLI until SetInstallEnvironment is called at bootstrap.
+func (d *CoreDeps) InstallEnvironment() system.Environment {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	env := d.installEnvironment
+	if env == "" {
+		return system.EnvironmentCLI
+	}
+	return env
+}
+
+// SetInstallEnvironment records the running build's environment (docker/desktop/cli).
+// Called once at process bootstrap (cmd/javinizer) where desktop.IsDesktopBuild()
+// is reachable without the import cycle the API layer would otherwise hit.
+func (d *CoreDeps) SetInstallEnvironment(env system.Environment) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.installEnvironment = env
 }
 
 // SetConfig atomically sets the configuration (thread-safe).

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/javinizer/javinizer-go/internal/system"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -184,6 +185,64 @@ func TestUpgrade_HomebrewHandoff(t *testing.T) {
 	assert.False(t, res.Upgraded)
 	assert.Equal(t, InstallMethodHomebrew, res.InstallMethod)
 	assert.Contains(t, out.String(), "brew upgrade javinizer")
+}
+
+// TestUpgrade_DockerHandoff verifies a docker build never attempts an in-place
+// self-swap (the image is read-only; the replace would be lost on recreate).
+// Instead it hands off with the `docker pull` instruction. The exe path is a
+// manual install path to prove the docker check short-circuits BEFORE the
+// brew/scoop/manual install-method detection.
+func TestUpgrade_DockerHandoff(t *testing.T) {
+	var out bytes.Buffer
+	res, err := Upgrade(context.Background(), UpgradeOptions{
+		CurrentVersion: "v0.0.1",
+		Checker:        &stubChecker{version: "v9.9.9"},
+		ExePath:        "/usr/local/bin/javinizer",
+		Environment:    system.EnvironmentDocker,
+		Out:            &out,
+	})
+	require.NoError(t, err)
+	assert.True(t, res.Handoff, "docker must hand off, not self-swap")
+	assert.False(t, res.Upgraded)
+	assert.Equal(t, system.EnvironmentDocker, res.InstallEnvironment)
+	assert.Contains(t, out.String(), "docker pull")
+	assert.Contains(t, out.String(), "ghcr.io/javinizer/javinizer-go")
+}
+
+// TestUpgrade_DesktopHandoff verifies a desktop bundle never attempts an
+// inner-binary swap (it would orphan the .app/.exe/.AppImage wrapper). It
+// hands off pointing at the GitHub releases page instead.
+func TestUpgrade_DesktopHandoff(t *testing.T) {
+	var out bytes.Buffer
+	res, err := Upgrade(context.Background(), UpgradeOptions{
+		CurrentVersion: "v0.0.1",
+		Checker:        &stubChecker{version: "v9.9.9"},
+		ExePath:        "/Applications/Javinizer.app/Contents/MacOS/javinizer",
+		Environment:    system.EnvironmentDesktop,
+		Out:            &out,
+	})
+	require.NoError(t, err)
+	assert.True(t, res.Handoff, "desktop must hand off, not self-swap")
+	assert.False(t, res.Upgraded)
+	assert.Equal(t, system.EnvironmentDesktop, res.InstallEnvironment)
+	assert.Contains(t, out.String(), "releases")
+}
+
+// TestUpgrade_DockerUpToDateNoHandoff confirms the environment handoff only
+// fires when an upgrade would actually happen — an up-to-date docker install
+// reports "already up to date" without telling the user to docker pull.
+func TestUpgrade_DockerUpToDateNoHandoff(t *testing.T) {
+	var out bytes.Buffer
+	res, err := Upgrade(context.Background(), UpgradeOptions{
+		CurrentVersion: "v9.9.9",
+		Checker:        &stubChecker{version: "v9.9.9"},
+		Environment:    system.EnvironmentDocker,
+		Out:            &out,
+	})
+	require.NoError(t, err)
+	assert.False(t, res.Handoff, "up-to-date must not hand off")
+	assert.True(t, res.UpToDate)
+	assert.Contains(t, out.String(), "Already up to date")
 }
 
 // newAssetServer serves a release asset plus its checksums.txt from a fake

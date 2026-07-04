@@ -2,7 +2,7 @@
 	import { cubicOut } from 'svelte/easing';
 	import { fly } from 'svelte/transition';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
-	import { ArrowUpCircle, RefreshCw, ExternalLink, ChevronDown } from 'lucide-svelte';
+	import { ArrowUpCircle, RefreshCw, ExternalLink, ChevronDown, Container, Monitor, Terminal } from 'lucide-svelte';
 	import { createVersionStatusQuery } from '$lib/query/queries';
 	import { apiClient } from '$lib/api/client';
 	import { toastStore } from '$lib/stores/toast';
@@ -77,6 +77,21 @@
 	const releaseUrl = $derived(
 		status?.latest ? `${REPO_RELEASE_TAG_URL}/${status.latest}` : REPO_RELEASES_URL
 	);
+
+	// Environment label + icon for the "running in" badge. The backend classifies
+	// docker/desktop/cli so the notification can tell a Docker user to `docker pull`
+	// (an in-app self-upgrade is impossible for a read-only image) instead of
+	// pointing them at a binary release asset they can't use.
+	const envBadge = $derived.by(() => {
+		switch (status?.install_environment) {
+			case 'docker':
+				return { label: 'Running in Docker', icon: Container, tone: 'bg-sky-500/15 text-sky-700 dark:text-sky-300' };
+			case 'desktop':
+				return { label: 'Desktop app', icon: Monitor, tone: 'bg-violet-500/15 text-violet-700 dark:text-violet-300' };
+			default:
+				return { label: 'CLI install', icon: Terminal, tone: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' };
+		}
+	});
 </script>
 
 <svelte:window onclick={handleClickOutside} onkeydown={(e) => { if (e.key === 'Escape' && popoverOpen) popoverOpen = false; }} />
@@ -131,8 +146,29 @@
 								prerelease
 							</span>
 						{/if}
+						{#if status?.install_environment}
+							{@const Badge = envBadge.icon}
+							<span
+								class="inline-flex items-center gap-1 mt-2 px-1.5 py-0.5 rounded text-[10px] font-medium {envBadge.tone}"
+								title={envBadge.label}
+							>
+								<Badge class="h-3 w-3" />
+							{envBadge.label}
+							</span>
+						{/if}
 					</div>
 				</div>
+
+				{#if status?.upgrade_instructions}
+					<!-- Backend-provided, environment-specific guidance: docker users see
+					`docker pull`, desktop users see the releases link, CLI users see
+					`javinizer upgrade`. Rendered verbatim (pre-wrap) so the indented
+					commands stay readable. -->
+					<pre
+						class="mt-2 px-2 py-1.5 rounded text-[11px] leading-relaxed whitespace-pre-wrap break-all bg-muted text-muted-foreground border border-border"
+					>{status.upgrade_instructions}</pre
+					>
+				{/if}
 
 				<div class="mt-3 flex items-center gap-2">
 					<a

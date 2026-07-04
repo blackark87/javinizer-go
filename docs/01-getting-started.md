@@ -152,6 +152,8 @@ javinizer upgrade --check   # just report whether an update is available
 
 If javinizer was installed via Homebrew (or Scoop), `upgrade` detects that and tells you to use `brew upgrade javinizer` / `scoop update javinizer` instead.
 
+`upgrade` is also **environment-aware**: inside a **Docker** container it refuses the in-place swap (the image is read-only) and prints `docker pull ghcr.io/javinizer/javinizer-go:latest` instead; in the **desktop app** it points you to the [releases page](https://github.com/javinizer/javinizer-go/releases) (a bare swap would orphan the app bundle). The Web UI update banner shows the same guidance with an environment badge ("Running in Docker" / "Desktop app" / "CLI install").
+
 > `javinizer upgrade` updates the **program**; `javinizer update` refreshes **metadata** for your files. They are different commands.
 
 ### Pre-built Binary (Linux / macOS)

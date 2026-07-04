@@ -185,7 +185,6 @@
 						onDeselectAll={s.deselectAllMovies}
 						onBulkExclude={s.bulkExcludeMovies}
 						onBulkRescrape={s.openBulkRescrapeModal}
-						onForceRefresh={s.executeForceRefresh}
 						onClose={() => goto('/browse')}
 						onUpdateAll={s.updateAll}
 						onOrganizeAll={s.organizeAll}

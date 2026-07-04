@@ -172,6 +172,8 @@
 					onSelectCurrentPage={store.selectCurrentPage}
 					onClearSelection={store.clearSelection}
 					onStartMergeSelected={store.startMergeSelected}
+					onDeleteSelected={store.removeSelected}
+					onDeleteAll={store.removeAll}
 				/>
 
 				{#if store.error}

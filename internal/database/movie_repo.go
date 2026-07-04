@@ -215,7 +215,31 @@ func (r *MovieRepository) mergeActressData(existing *models.Actress, new models.
 		needsUpdate = true
 	}
 
+	// A translated (Hangul) name upgrades an existing untranslated row: rows
+	// written before translation ran (or while it failed) keep romaji forever
+	// otherwise, since the fill-empty rules above never overwrite. The reverse
+	// direction never applies — a failed translation must not downgrade Hangul.
+	newHasHangul := containsHangul(new.FirstName) || containsHangul(new.LastName)
+	existingHasHangul := containsHangul(existing.FirstName) || containsHangul(existing.LastName)
+	if newHasHangul && !existingHasHangul {
+		if existing.FirstName != new.FirstName || existing.LastName != new.LastName {
+			existing.FirstName = new.FirstName
+			existing.LastName = new.LastName
+			needsUpdate = true
+		}
+	}
+
 	return needsUpdate
+}
+
+// containsHangul reports whether s contains at least one Hangul syllable.
+func containsHangul(s string) bool {
+	for _, r := range s {
+		if r >= 0xAC00 && r <= 0xD7A3 {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *MovieRepository) ensureActressesExistTx(tx *gorm.DB, actresses []models.Actress) error {

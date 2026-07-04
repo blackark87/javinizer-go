@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { fly } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
-	import { Search, ArrowUpDown, GitMerge } from 'lucide-svelte';
+	import { Search, ArrowUpDown, GitMerge, Trash2 } from 'lucide-svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 
@@ -20,7 +20,9 @@
 		onToggleSortOrder,
 		onSelectCurrentPage,
 		onClearSelection,
-		onStartMergeSelected
+		onStartMergeSelected,
+		onDeleteSelected,
+		onDeleteAll
 	}: {
 		queryInput: string;
 		activeQuery: string;
@@ -37,6 +39,8 @@
 		onSelectCurrentPage: () => void;
 		onClearSelection: () => void;
 		onStartMergeSelected: () => void;
+		onDeleteSelected: () => void;
+		onDeleteAll: () => void;
 	} = $props();
 </script>
 
@@ -129,6 +133,28 @@
 				<GitMerge class="h-4 w-4" />
 				Merge Selected
 			</Button>
+			<Button
+				variant="outline"
+				size="sm"
+				onclick={onDeleteSelected}
+				disabled={selectedIds.length === 0}
+				class="text-destructive hover:text-destructive"
+			>
+				<Trash2 class="h-4 w-4" />
+				Delete Selected
+			</Button>
+			<div class="ml-auto">
+				<Button
+					variant="outline"
+					size="sm"
+					onclick={onDeleteAll}
+					disabled={total === 0}
+					class="text-destructive hover:text-destructive"
+				>
+					<Trash2 class="h-4 w-4" />
+					Delete All
+				</Button>
+			</div>
 		</div>
 	</Card>
 </div>

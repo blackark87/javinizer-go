@@ -245,10 +245,15 @@ func TestTranslateMovie_ApplyToPrimary(t *testing.T) {
 
 func TestTranslateMovie_StripsVRMarkerFromTitle(t *testing.T) {
 	t.Run("bracketed VR tag removed before sending to LLM", func(t *testing.T) {
-		var requestBody string
+		// Inspect the user prompt (the actual title text), not the whole request:
+		// the system prompt legitimately names VR markers in its cleanup rule.
+		var capturedRequest struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			body, _ := io.ReadAll(r.Body)
-			requestBody = string(body)
+			_ = json.NewDecoder(r.Body).Decode(&capturedRequest)
 			response := map[string]interface{}{
 				"choices": []map[string]interface{}{
 					{
@@ -283,8 +288,10 @@ func TestTranslateMovie_StripsVRMarkerFromTitle(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		assert.Contains(t, requestBody, "素敵なタイトル")
-		assert.NotContains(t, requestBody, "8K VR")
+		require.Len(t, capturedRequest.Messages, 2)
+		userPrompt := capturedRequest.Messages[1].Content
+		assert.Contains(t, userPrompt, "素敵なタイトル")
+		assert.NotContains(t, userPrompt, "8K VR")
 		assert.Equal(t, "Translated Title", movie.Title)
 	})
 
@@ -525,7 +532,7 @@ func TestTranslateMovie_TitleIsActressName(t *testing.T) {
 		}))
 	}
 
-	t.Run("title matches actress JapaneseName - queued as title_as_name with romaji input", func(t *testing.T) {
+	t.Run("title matches actress JapaneseName - table Hangul assigned without LLM", func(t *testing.T) {
 		var requestBody string
 		server := newTitleAsNameServer(t, &requestBody)
 		defer server.Close()
@@ -559,15 +566,14 @@ func TestTranslateMovie_TitleIsActressName(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
-		// Romaji (correct reading) is sent under the title_as_name label
-		assert.Contains(t, requestBody, "title_as_name")
-		assert.Contains(t, requestBody, "Mahiru")
+		// Romaji resolves via the transliteration table — no LLM round-trip
+		assert.Empty(t, requestBody, "no LLM request expected for a table-resolved title")
 
 		assert.Equal(t, "마히루", result[0].Title, "record title should be the transliterated result")
 		assert.Equal(t, "마히루", movie.Title, "primary title should be updated via ApplyToPrimary")
 	})
 
-	t.Run("title matches actress JapaneseName via ThumbURL - romaji from URL used as input", func(t *testing.T) {
+	t.Run("title matches actress JapaneseName via ThumbURL - URL romaji resolved by table", func(t *testing.T) {
 		var requestBody string
 		server := newTitleAsNameServer(t, &requestBody)
 		defer server.Close()
@@ -597,11 +603,13 @@ func TestTranslateMovie_TitleIsActressName(t *testing.T) {
 			},
 		}
 
-		_, _, err := s.TranslateMovie(context.Background(), movie, "")
+		result, _, err := s.TranslateMovie(context.Background(), movie, "")
 		require.NoError(t, err)
+		require.NotNil(t, result)
 
-		assert.Contains(t, requestBody, "title_as_name")
-		assert.Contains(t, requestBody, "Futaba Reena")
+		assert.Empty(t, requestBody, "no LLM request expected for a table-resolved title")
+		assert.Equal(t, "후타바 레나", result[0].Title)
+		assert.Equal(t, "후타바 레나", movie.Title)
 	})
 
 	t.Run("title matches actress without romaji - Japanese name sent as title_as_name", func(t *testing.T) {
@@ -712,6 +720,11 @@ func TestBuildLLMTranslationPrompts_Rules(t *testing.T) {
 		// Output script rule: echoing the romaji input back is an error
 		assert.Contains(t, systemPrompt, "returning the romaji/Latin input unchanged is an ERROR")
 		assert.Contains(t, systemPrompt, "Miyashita Rena → 미야시타 레나")
+		// Embedded Hangul (pre-substituted actress names) must be preserved verbatim
+		assert.Contains(t, systemPrompt, "Embedded-Hangul rule")
+		// Name placeholders must be reproduced verbatim
+		assert.Contains(t, systemPrompt, "Placeholder rule")
+		assert.Contains(t, systemPrompt, "⟦N⟧")
 	})
 
 	t.Run("prompt includes proper-noun rule for maker/label/director", func(t *testing.T) {
@@ -762,7 +775,7 @@ func TestBuildLLMTranslationPrompts_Rules(t *testing.T) {
 // =============================================================================
 
 func TestTranslateMovie_ActressInMainBatch(t *testing.T) {
-	t.Run("URL-extracted romaji is sent to LLM and Hangul result applied to primary", func(t *testing.T) {
+	t.Run("URL-extracted romaji is resolved by the table without LLM", func(t *testing.T) {
 		var requestBody string
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			body, _ := io.ReadAll(r.Body)
@@ -771,7 +784,7 @@ func TestTranslateMovie_ActressInMainBatch(t *testing.T) {
 				"choices": []map[string]interface{}{
 					{
 						"message": map[string]string{
-							"content": "<<<actress[0]>>>\n후타바 레에나",
+							"content": "<<<actress[0]>>>\n후타바 레나",
 						},
 					},
 				},
@@ -810,19 +823,18 @@ func TestTranslateMovie_ActressInMainBatch(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
-		// Romaji from the URL (correct reading) is the LLM input, not the Japanese name
-		assert.Contains(t, requestBody, "Futaba Reena")
-		assert.Contains(t, requestBody, "actress[0]")
+		// URL romaji resolves deterministically — no LLM request is made
+		assert.Empty(t, requestBody)
 
-		// Hangul LLM result is applied to the primary actress
+		// Table Hangul is applied to the primary actress
 		assert.Equal(t, "후타바", movie.Actresses[0].LastName)
-		assert.Equal(t, "레에나", movie.Actresses[0].FirstName)
+		assert.Equal(t, "레나", movie.Actresses[0].FirstName)
 		assert.Equal(t, "双葉れぇな", movie.Actresses[0].JapaneseName)
 
 		// Record carries the Hangul name under the metadata target language
 		require.Len(t, result[0].Actresses, 1)
 		assert.Equal(t, "ko", result[0].Language)
-		assert.Equal(t, "후타바 레에나", result[0].Actresses[0])
+		assert.Equal(t, "후타바 레나", result[0].Actresses[0])
 	})
 
 	t.Run("primary not modified when ApplyToPrimary is false", func(t *testing.T) {
@@ -831,7 +843,7 @@ func TestTranslateMovie_ActressInMainBatch(t *testing.T) {
 				"choices": []map[string]interface{}{
 					{
 						"message": map[string]string{
-							"content": "<<<actress[0]>>>\n후타바 레에나",
+							"content": "<<<actress[0]>>>\n후타바 레나",
 						},
 					},
 				},
@@ -875,7 +887,7 @@ func TestTranslateMovie_ActressInMainBatch(t *testing.T) {
 
 		// Record still carries the translated name
 		require.Len(t, result[0].Actresses, 1)
-		assert.Equal(t, "후타바 레에나", result[0].Actresses[0])
+		assert.Equal(t, "후타바 레나", result[0].Actresses[0])
 	})
 
 	t.Run("actress without any source name is skipped", func(t *testing.T) {
@@ -985,11 +997,12 @@ func TestTranslateMovie_ActressInMainBatch(t *testing.T) {
 		}
 
 		s := New(cfg)
+		// No romaji source (kanji-only, no ThumbURL) so the name goes to the LLM
+		// instead of the transliteration table, exercising the unknown-result path.
 		movie := &models.Movie{
 			Actresses: []models.Actress{
 				{
 					JapaneseName: "双葉れぇな",
-					ThumbURL:     "https://pics.dmm.co.jp/mono/actjpgs/hutaba_reena.jpg",
 				},
 			},
 		}
@@ -1061,19 +1074,18 @@ func TestTranslateMovie_KoreanPersonNameHangulValidation(t *testing.T) {
 		}
 	}
 
+	// A kanji-only actress (no romaji anywhere) exercises the LLM path; actresses
+	// with a romaji source are resolved by the transliteration table instead.
 	newMovie := func(title string) *models.Movie {
 		return &models.Movie{
 			Title: title,
 			Actresses: []models.Actress{
-				{
-					JapaneseName: "双葉れぇな",
-					ThumbURL:     "https://pics.dmm.co.jp/mono/actjpgs/hutaba_reena.jpg",
-				},
+				{JapaneseName: "響蓮"},
 			},
 		}
 	}
 
-	t.Run("romaji echo is retried per slot and Hangul applied", func(t *testing.T) {
+	t.Run("latin echo is retried per slot and Hangul applied", func(t *testing.T) {
 		calls := 0
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			calls++
@@ -1084,9 +1096,9 @@ func TestTranslateMovie_KoreanPersonNameHangulValidation(t *testing.T) {
 					b.WriteString(m + "\n멋진 작품\n")
 				case strings.HasPrefix(m, "<<<actress["):
 					if calls == 1 {
-						b.WriteString(m + "\nFutaba Reena\n") // batch echoes the romaji input
+						b.WriteString(m + "\nHibiki Ren\n") // batch answers in Latin
 					} else {
-						b.WriteString(m + "\n후타바 레에나\n")
+						b.WriteString(m + "\n히비키 렌\n")
 					}
 				}
 			}
@@ -1104,13 +1116,13 @@ func TestTranslateMovie_KoreanPersonNameHangulValidation(t *testing.T) {
 		assert.Equal(t, 2, calls) // batch + one per-slot retry
 
 		assert.Equal(t, "멋진 작품", movie.Title)
-		assert.Equal(t, "후타바", movie.Actresses[0].LastName)
-		assert.Equal(t, "레에나", movie.Actresses[0].FirstName)
+		assert.Equal(t, "히비키", movie.Actresses[0].LastName)
+		assert.Equal(t, "렌", movie.Actresses[0].FirstName)
 		require.Len(t, result[0].Actresses, 1)
-		assert.Equal(t, "후타바 레에나", result[0].Actresses[0])
+		assert.Equal(t, "히비키 렌", result[0].Actresses[0])
 	})
 
-	t.Run("persistent romaji echo keeps source name and warns", func(t *testing.T) {
+	t.Run("persistent latin echo keeps source name and warns", func(t *testing.T) {
 		calls := 0
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			calls++
@@ -1120,7 +1132,7 @@ func TestTranslateMovie_KoreanPersonNameHangulValidation(t *testing.T) {
 				case m == "<<<title>>>":
 					b.WriteString(m + "\n멋진 작품\n")
 				case strings.HasPrefix(m, "<<<actress["):
-					b.WriteString(m + "\nFutaba Reena\n") // always echoes romaji
+					b.WriteString(m + "\nHibiki Ren\n") // always answers in Latin
 				}
 			}
 			respond(w, b.String())
@@ -1134,14 +1146,15 @@ func TestTranslateMovie_KoreanPersonNameHangulValidation(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		assert.Equal(t, 2, calls) // batch + one per-slot retry
-		assert.Contains(t, warning, "actress[0]: LLM returned non-Hangul, kept romaji")
+		assert.Contains(t, warning, "actress[0]: LLM returned non-Hangul, kept source name")
 
-		// The title still translates; the actress falls back to the URL romaji.
+		// The title still translates; the actress keeps its source (Japanese) name —
+		// replaceActressName skips non-Latin/non-Hangul values, so primary is untouched.
 		assert.Equal(t, "멋진 작품", movie.Title)
-		assert.Equal(t, "Futaba", movie.Actresses[0].LastName)
-		assert.Equal(t, "Reena", movie.Actresses[0].FirstName)
+		assert.Equal(t, "", movie.Actresses[0].LastName)
+		assert.Equal(t, "", movie.Actresses[0].FirstName)
 		require.Len(t, result[0].Actresses, 1)
-		assert.Equal(t, "Futaba Reena", result[0].Actresses[0])
+		assert.Equal(t, "響蓮", result[0].Actresses[0])
 	})
 
 	t.Run("title_as_name slot is validated for Hangul too", func(t *testing.T) {
@@ -1152,9 +1165,9 @@ func TestTranslateMovie_KoreanPersonNameHangulValidation(t *testing.T) {
 			for _, m := range requestMarkers(r) {
 				if m == "<<<title_as_name>>>" || strings.HasPrefix(m, "<<<actress[") {
 					if calls == 1 {
-						b.WriteString(m + "\nFutaba Reena\n")
+						b.WriteString(m + "\nHibiki Ren\n")
 					} else {
-						b.WriteString(m + "\n후타바 레에나\n")
+						b.WriteString(m + "\n히비키 렌\n")
 					}
 				}
 			}
@@ -1163,7 +1176,7 @@ func TestTranslateMovie_KoreanPersonNameHangulValidation(t *testing.T) {
 		defer server.Close()
 
 		s := New(newConfig(server.URL))
-		movie := newMovie("双葉れぇな") // title equals the actress JapaneseName
+		movie := newMovie("響蓮") // title equals the actress JapaneseName
 
 		result, warning, err := s.TranslateMovie(context.Background(), movie, "")
 		require.NoError(t, err)
@@ -1171,9 +1184,84 @@ func TestTranslateMovie_KoreanPersonNameHangulValidation(t *testing.T) {
 		assert.Empty(t, warning)
 		assert.Equal(t, 3, calls) // batch + one retry per echoed slot
 
-		assert.Equal(t, "후타바 레에나", movie.Title)
-		assert.Equal(t, "후타바", movie.Actresses[0].LastName)
-		assert.Equal(t, "레에나", movie.Actresses[0].FirstName)
+		assert.Equal(t, "히비키 렌", movie.Title)
+		assert.Equal(t, "히비키", movie.Actresses[0].LastName)
+		assert.Equal(t, "렌", movie.Actresses[0].FirstName)
+	})
+
+	t.Run("actress name inside a long title is protected by a placeholder", func(t *testing.T) {
+		var requests []string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req struct {
+				Messages []struct {
+					Content string `json:"content"`
+				} `json:"messages"`
+			}
+			body, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(body, &req)
+			if len(req.Messages) > 0 {
+				requests = append(requests, req.Messages[len(req.Messages)-1].Content)
+			}
+			// A well-behaved model preserves the ⟦0⟧ placeholder verbatim.
+			respond(w, "<<<title>>>\n관능적인 ⟦0⟧의 유혹\n")
+		}))
+		defer server.Close()
+
+		s := New(newConfig(server.URL))
+		movie := &models.Movie{
+			Title: "官能的な響蓮の誘惑",
+			Actresses: []models.Actress{
+				{
+					JapaneseName: "響蓮",
+					ThumbURL:     "https://pics.dmm.co.jp/mono/actjpgs/hibiki_ren.jpg",
+				},
+			},
+		}
+
+		result, warning, err := s.TranslateMovie(context.Background(), movie, "")
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Empty(t, warning)
+
+		// The LLM sees an opaque placeholder, never the kanji name or the Hangul.
+		require.Len(t, requests, 1)
+		assert.Contains(t, requests[0], "⟦0⟧")
+		assert.NotContains(t, requests[0], "響蓮")
+		assert.NotContains(t, requests[0], "히비키")
+		assert.NotContains(t, requests[0], "actress[0]")
+
+		// Placeholder is restored to Hangul; actress and title agree exactly.
+		assert.Equal(t, "히비키", movie.Actresses[0].LastName)
+		assert.Equal(t, "렌", movie.Actresses[0].FirstName)
+		assert.Equal(t, "관능적인 히비키 렌의 유혹", movie.Title)
+		assert.Equal(t, "히비키 렌", result[0].Actresses[0])
+	})
+
+	t.Run("dropped placeholder falls back to direct Hangul title", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// A misbehaving model drops the placeholder entirely.
+			respond(w, "<<<title>>>\n관능적인 유혹\n")
+		}))
+		defer server.Close()
+
+		s := New(newConfig(server.URL))
+		movie := &models.Movie{
+			Title: "官能的な響蓮の誘惑",
+			Actresses: []models.Actress{
+				{
+					JapaneseName: "響蓮",
+					ThumbURL:     "https://pics.dmm.co.jp/mono/actjpgs/hibiki_ren.jpg",
+				},
+			},
+		}
+
+		result, _, err := s.TranslateMovie(context.Background(), movie, "")
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Fallback keeps the correct name (surrounding text may stay untranslated).
+		assert.Equal(t, "官能的な히비키 렌の誘惑", movie.Title)
+		assert.Equal(t, "히비키 렌", result[0].Actresses[0])
 	})
 }
 

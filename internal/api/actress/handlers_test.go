@@ -1029,3 +1029,107 @@ func TestActressMergeConflictStatus409(t *testing.T) {
 	router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusConflict, w.Code)
 }
+
+func TestBulkDeleteActresses(t *testing.T) {
+	newDB := func(t *testing.T) (*database.DB, *database.ActressRepository) {
+		t.Helper()
+		cfg := &config.Config{
+			Database: config.DatabaseConfig{Type: "sqlite", DSN: ":memory:"},
+			Logging:  config.LoggingConfig{Level: "error"},
+		}
+		db, err := database.New(cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = db.Close() })
+		require.NoError(t, db.AutoMigrate())
+		return db, database.NewActressRepository(db)
+	}
+
+	joinRowCount := func(t *testing.T, db *database.DB) int64 {
+		t.Helper()
+		var count int64
+		require.NoError(t, db.DB.Raw("SELECT COUNT(*) FROM movie_actresses").Scan(&count).Error)
+		return count
+	}
+
+	seedMovieWithActresses := func(t *testing.T, db *database.DB) *models.Movie {
+		t.Helper()
+		movieRepo := database.NewMovieRepository(db)
+		movie := &models.Movie{
+			ContentID: "test001",
+			ID:        "TEST-001",
+			Title:     "Test",
+			Actresses: []models.Actress{
+				{JapaneseName: "女優A", FirstName: "A"},
+				{JapaneseName: "女優B", FirstName: "B"},
+				{JapaneseName: "女優C", FirstName: "C"},
+			},
+		}
+		saved, err := movieRepo.Upsert(movie)
+		require.NoError(t, err)
+		require.Len(t, saved.Actresses, 3)
+		return saved
+	}
+
+	t.Run("bulk-delete removes actresses and join rows", func(t *testing.T) {
+		db, repo := newDB(t)
+		saved := seedMovieWithActresses(t, db)
+		require.EqualValues(t, 3, joinRowCount(t, db))
+
+		router := gin.New()
+		router.POST("/actresses/bulk-delete", bulkDeleteActresses(repo))
+
+		payload, err := json.Marshal(map[string]interface{}{
+			"ids": []uint{saved.Actresses[0].ID, saved.Actresses[1].ID},
+		})
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/actresses/bulk-delete", bytes.NewReader(payload))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code)
+
+		var resp map[string]int64
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.EqualValues(t, 2, resp["deleted"])
+
+		count, err := repo.Count()
+		require.NoError(t, err)
+		assert.EqualValues(t, 1, count)
+		assert.EqualValues(t, 1, joinRowCount(t, db))
+	})
+
+	t.Run("bulk-delete with empty ids returns 400", func(t *testing.T) {
+		_, repo := newDB(t)
+		router := gin.New()
+		router.POST("/actresses/bulk-delete", bulkDeleteActresses(repo))
+
+		req := httptest.NewRequest(http.MethodPost, "/actresses/bulk-delete", bytes.NewReader([]byte(`{"ids":[]}`)))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("delete-all removes every actress and join row", func(t *testing.T) {
+		db, repo := newDB(t)
+		seedMovieWithActresses(t, db)
+
+		router := gin.New()
+		router.POST("/actresses/delete-all", deleteAllActresses(repo))
+
+		req := httptest.NewRequest(http.MethodPost, "/actresses/delete-all", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code)
+
+		var resp map[string]int64
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+		assert.EqualValues(t, 3, resp["deleted"])
+
+		count, err := repo.Count()
+		require.NoError(t, err)
+		assert.EqualValues(t, 0, count)
+		assert.EqualValues(t, 0, joinRowCount(t, db))
+	})
+}

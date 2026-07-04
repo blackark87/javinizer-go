@@ -75,6 +75,54 @@ func (r *ActressRepository) Delete(id uint) error {
 	return r.BaseRepository.Delete(id)
 }
 
+// DeleteByIDs deletes the given actress rows together with their movie
+// associations, so no orphaned movie_actresses join rows remain.
+func (r *ActressRepository) DeleteByIDs(ids []uint) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	var deleted int64
+	err := retryOnLocked(func() error {
+		return r.GetDB().Transaction(func(tx *gorm.DB) error {
+			if err := tx.Exec("DELETE FROM movie_actresses WHERE actress_id IN ?", ids).Error; err != nil {
+				return err
+			}
+			res := tx.Where("id IN ?", ids).Delete(&models.Actress{})
+			if res.Error != nil {
+				return res.Error
+			}
+			deleted = res.RowsAffected
+			return nil
+		})
+	})
+	if err != nil {
+		return 0, wrapDBErr("delete", "actresses by ids", err)
+	}
+	return deleted, nil
+}
+
+// DeleteAll deletes every actress row and all movie associations.
+func (r *ActressRepository) DeleteAll() (int64, error) {
+	var deleted int64
+	err := retryOnLocked(func() error {
+		return r.GetDB().Transaction(func(tx *gorm.DB) error {
+			if err := tx.Exec("DELETE FROM movie_actresses").Error; err != nil {
+				return err
+			}
+			res := tx.Where("1 = 1").Delete(&models.Actress{})
+			if res.Error != nil {
+				return res.Error
+			}
+			deleted = res.RowsAffected
+			return nil
+		})
+	})
+	if err != nil {
+		return 0, wrapDBErr("delete", "all actresses", err)
+	}
+	return deleted, nil
+}
+
 func (r *ActressRepository) Count() (int64, error) {
 	return r.BaseRepository.Count()
 }

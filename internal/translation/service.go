@@ -131,9 +131,51 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 		}
 	}
 
-	// Bracketed VR tags like "[VR]" / "【8K VR】" are dropped before translation —
-	// they label the release format and may not match the actual file.
-	titleForTranslation := cleanTitleForTranslation(movie.Title)
+	// Per-actress transliteration source, resolved once. Romaji pins the correct
+	// kanji reading, so it is preferred over the Japanese name as LLM input:
+	// ① DMM actjpgs URL, ② scraper-provided romanization, ③ cleaned Japanese name.
+	// Empty entry → nothing usable, actress is skipped.
+	// A romaji source is additionally resolved to Hangul with the built-in
+	// transliteration table: for Korean the LLM is then bypassed entirely, so it
+	// can neither echo the romaji back nor substitute a different reading.
+	// The loop runs regardless of fields.Actresses because the Hangul names are
+	// also used to substitute actress names appearing inside the title.
+	actressSourceNames := make([]string, len(movie.Actresses))
+	actressHangulNames := make([]string, len(movie.Actresses))
+	for i := range movie.Actresses {
+		if models.CanonicalizeUnknownActress(&movie.Actresses[i]) {
+			logging.Debugf("Translation[%s]: actress[%d] skip — unknown placeholder", movieID, i)
+			continue
+		}
+		actress := movie.Actresses[i]
+		if lastName, firstName, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL); ok {
+			actressSourceNames[i] = joinName(lastName, firstName)
+		} else if jaName := strings.TrimSpace(actress.JapaneseName); jaName != "" {
+			if romanized := actressJaNameToRomanized[jaName]; romanized != "" {
+				actressSourceNames[i] = romanized
+			} else {
+				actressSourceNames[i] = cleanActressNameForTranslation(jaName)
+			}
+		}
+		if actressSourceNames[i] == "" {
+			logging.Debugf("Translation[%s]: actress[%d] skip — no usable source name (JapaneseName=%q ThumbURL=%q)", movieID, i, actress.JapaneseName, actress.ThumbURL)
+			continue
+		}
+		if isLikelyRomanized(actressSourceNames[i]) {
+			if hangul, ok := romajiToHangul(actressSourceNames[i]); ok {
+				actressHangulNames[i] = hangul
+			}
+		}
+		logging.Debugf("Translation[%s]: actress[%d] transliteration input %q (JapaneseName=%q, table=%q)", movieID, i, actressSourceNames[i], actress.JapaneseName, actressHangulNames[i])
+	}
+
+	// Bracketed VR tags ("[VR]", "【8K VR】") and shop-promotion tags ("[FANZA 限定]",
+	// "[数量限定]") are dropped before translation — they label the release, not the work.
+	cleanedTitle := cleanTitleForTranslation(movie.Title)
+	titleForTranslation := cleanedTitle
+
+	// Store promotions / platform notices are stripped from the description so they
+	// are never translated into the output.
 	descriptionForTranslation := movie.Description
 	if fields.Description {
 		descriptionForTranslation = cleanDescriptionForTranslation(movie.Description)
@@ -142,6 +184,35 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 		}
 	}
 	descriptionPromotionalOnly := fields.Description && descriptionForTranslation == "" && strings.TrimSpace(movie.Description) != ""
+
+	// Korean title: actress names appearing inside the title are pinned to their
+	// table-confirmed Hangul reading so the title and the actress fields always
+	// agree on the same transliteration. Two forms are built:
+	//   koTitleHangul     — names replaced by their Hangul directly (used when no
+	//                        LLM round-trip is needed, or as a lossless fallback).
+	//   koTitlePlaceheld  — names replaced by opaque ⟦N⟧ placeholders. This is what
+	//                        the LLM receives: an opaque token is far more robust
+	//                        than embedded Hangul, which local models tend to
+	//                        "correct" (e.g. 히비키 → 히비キ). Placeholders are
+	//                        restored to Hangul in the response.
+	koTitleHangul := cleanedTitle
+	koTitlePlaceheld := cleanedTitle
+	namePlaceholders := make(map[string]string)
+	for i := range movie.Actresses {
+		if actressHangulNames[i] == "" {
+			continue
+		}
+		jaName := strings.TrimSpace(movie.Actresses[i].JapaneseName)
+		if jaName == "" || !strings.Contains(koTitleHangul, jaName) {
+			continue
+		}
+		token := fmt.Sprintf("⟦%d⟧", len(namePlaceholders))
+		namePlaceholders[token] = actressHangulNames[i]
+		koTitleHangul = strings.ReplaceAll(koTitleHangul, jaName, actressHangulNames[i])
+		koTitlePlaceheld = strings.ReplaceAll(koTitlePlaceheld, jaName, token)
+		logging.Debugf("Translation[%s]: title contains actress %q → Hangul %q (placeholder %q)", movieID, jaName, actressHangulNames[i], token)
+	}
+	koTitleDirect := koTitleHangul != cleanedTitle && !containsTranslatableText(koTitleHangul)
 
 	// When the title is an actress name, queue it under the title_as_name label so the
 	// person-name prompt rule guarantees phonetic transliteration (never a semantic
@@ -162,39 +233,21 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 		}
 	}
 
-	// Per-actress transliteration source, resolved once. Romaji pins the correct
-	// kanji reading, so it is preferred over the Japanese name as LLM input:
-	// ① DMM actjpgs URL, ② scraper-provided romanization, ③ cleaned Japanese name.
-	// Empty entry → nothing usable, actress is skipped.
-	actressSourceNames := make([]string, len(movie.Actresses))
-	if fields.Actresses {
-		for i := range movie.Actresses {
-			if models.CanonicalizeUnknownActress(&movie.Actresses[i]) {
-				logging.Debugf("Translation[%s]: actress[%d] skip — unknown placeholder", movieID, i)
-				continue
-			}
-			actress := movie.Actresses[i]
-			if lastName, firstName, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL); ok {
-				actressSourceNames[i] = joinName(lastName, firstName)
-			} else if jaName := strings.TrimSpace(actress.JapaneseName); jaName != "" {
-				if romanized := actressJaNameToRomanized[jaName]; romanized != "" {
-					actressSourceNames[i] = romanized
-				} else {
-					actressSourceNames[i] = cleanActressNameForTranslation(jaName)
-				}
-			}
-			if actressSourceNames[i] == "" {
-				logging.Debugf("Translation[%s]: actress[%d] skip — no usable source name (JapaneseName=%q ThumbURL=%q)", movieID, i, actress.JapaneseName, actress.ThumbURL)
-			} else {
-				logging.Debugf("Translation[%s]: actress[%d] transliteration input %q (JapaneseName=%q)", movieID, i, actressSourceNames[i], actress.JapaneseName)
-			}
-		}
-	}
-
 	for _, lang := range targetLanguages {
 		rec := getRecord(lang)
 		if fields.Title {
-			queueField(lang, titleForTranslation, func(v string) { rec.Title = v }, func(v string) { movie.Title = v }, titleFieldName)
+			switch {
+			case lang == "ko" && koTitleDirect:
+				rec.Title = koTitleHangul
+				touchedRecords[lang] = true
+				if s.cfg.ApplyToPrimary && lang == targetLanguages[0] {
+					movie.Title = koTitleHangul
+				}
+			case lang == "ko" && koTitlePlaceheld != cleanedTitle:
+				queueField(lang, koTitlePlaceheld, func(v string) { rec.Title = v }, func(v string) { movie.Title = v }, "title")
+			default:
+				queueField(lang, titleForTranslation, func(v string) { rec.Title = v }, func(v string) { movie.Title = v }, titleFieldName)
+			}
 		}
 		if fields.OriginalTitle {
 			queueField(lang, movie.OriginalTitle, func(v string) { rec.OriginalTitle = v }, func(v string) { movie.OriginalTitle = v }, "original_title")
@@ -232,6 +285,15 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 					continue
 				}
 				if actressSourceNames[idx] == "" {
+					continue
+				}
+				if lang == "ko" && actressHangulNames[idx] != "" {
+					// Table-resolved reading — assigned directly, no LLM slot.
+					rec.Actresses[idx] = actressHangulNames[idx]
+					touchedRecords[lang] = true
+					if s.cfg.ApplyToPrimary && lang == targetLanguages[0] {
+						replaceActressName(actress, actressHangulNames[idx])
+					}
 					continue
 				}
 				queueField(lang, actressSourceNames[idx],
@@ -307,7 +369,7 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 						}
 					}
 					translatedTexts[pos] = requests[indexes[pos]].text
-					warnings = append(warnings, fmt.Sprintf("%s: LLM returned non-Hangul, kept romaji", requests[indexes[pos]].fieldName))
+					warnings = append(warnings, fmt.Sprintf("%s: LLM returned non-Hangul, kept source name", requests[indexes[pos]].fieldName))
 				}
 			}
 		}
@@ -334,6 +396,17 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 					translated = cleanedTitle
 				} else {
 					translated = requests[reqIdx].text
+				}
+				// Restore actress-name placeholders to their Hangul. If the model
+				// dropped a placeholder, fall back to the direct Hangul title so the
+				// name is never lost (surrounding text may stay untranslated).
+				if lang == "ko" && len(namePlaceholders) > 0 {
+					restored, ok := restoreNamePlaceholders(translated, namePlaceholders)
+					if !ok {
+						logging.Debugf("Translation[%s]: title placeholder missing in LLM output %q, using Hangul fallback", movieID, translated)
+						restored = koTitleHangul
+					}
+					translated = restored
 				}
 			}
 			requests[reqIdx].apply(translated)
@@ -499,8 +572,11 @@ var vrMarkerRE = regexp.MustCompile(`[\[【［(（][\s　]*(?:\d+[\s　]*[KkＫ�
 
 var asciiSpaceRunRE = regexp.MustCompile(`[ \t]{2,}`)
 
+// cleanTitleForTranslation strips release-format and sales-channel markers from a
+// title before translation: bracketed VR tags ([VR], 【8K VR】) and shop-promotion
+// tags ([FANZA 限定], [数量限定]). Neither describes the work itself.
 func cleanTitleForTranslation(title string) string {
-	return stripVRMarkers(title)
+	return stripPromoMarkers(stripVRMarkers(title))
 }
 
 // stripVRMarkers removes bracketed VR format tags from a title before translation.
@@ -511,6 +587,23 @@ func stripVRMarkers(title string) string {
 		return title
 	}
 	cleaned := vrMarkerRE.ReplaceAllString(title, "")
+	cleaned = asciiSpaceRunRE.ReplaceAllString(cleaned, " ")
+	return strings.TrimSpace(cleaned)
+}
+
+// promoMarkerRE matches bracketed shop-promotion tags like [FANZA 限定], [数量限定],
+// 【期間限定セール】. Only brackets whose content carries a promo keyword are removed;
+// meaningful brackets (series names etc.) are kept.
+var promoMarkerRE = regexp.MustCompile(`[\[【［(（][^\]】］)）]*(?:限定|特典|セール|キャンペーン|独占|割引)[^\]】］)）]*[\]】］)）]`)
+
+// stripPromoMarkers removes bracketed shop-promotion tags from a title before
+// translation. They advertise the sales channel, not the work, so they do not
+// belong in the translated title.
+func stripPromoMarkers(title string) string {
+	if !promoMarkerRE.MatchString(title) {
+		return title
+	}
+	cleaned := promoMarkerRE.ReplaceAllString(title, "")
 	cleaned = asciiSpaceRunRE.ReplaceAllString(cleaned, " ")
 	return strings.TrimSpace(cleaned)
 }
@@ -584,6 +677,38 @@ func isLikelyRomanized(s string) bool {
 		}
 	}
 	return true
+}
+
+// containsTranslatableText reports whether s still carries Japanese or Latin
+// content that needs LLM translation. Hangul, digits, and punctuation alone
+// do not.
+func containsTranslatableText(s string) bool {
+	for _, r := range s {
+		switch {
+		case r >= 0x3040 && r <= 0x30FF: // hiragana + katakana
+			return true
+		case r >= 0x3400 && r <= 0x4DBF, r >= 0x4E00 && r <= 0x9FFF: // CJK ideographs
+			return true
+		case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z':
+			return true
+		}
+	}
+	return false
+}
+
+// restoreNamePlaceholders replaces every ⟦N⟧ placeholder token in text with its
+// Hangul name. It reports ok=false when any expected token is absent from text
+// (the model dropped or mangled it), so the caller can fall back.
+func restoreNamePlaceholders(text string, placeholders map[string]string) (string, bool) {
+	ok := true
+	for token, hangul := range placeholders {
+		if !strings.Contains(text, token) {
+			ok = false
+			continue
+		}
+		text = strings.ReplaceAll(text, token, hangul)
+	}
+	return text, ok
 }
 
 // isPersonNameField reports whether the labeled slot carries a performer's name:

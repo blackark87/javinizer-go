@@ -216,10 +216,9 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 	}));
 
 	const bulkRescrapeMutation = createMutation(() => ({
-		mutationFn: async ({ movieIds, selectedScrapers, force, preset, scalarStrategy, arrayStrategy }: {
+		mutationFn: async ({ movieIds, selectedScrapers, preset, scalarStrategy, arrayStrategy }: {
 			movieIds: string[];
 			selectedScrapers: string[];
-			force?: boolean;
 			preset?: string;
 			scalarStrategy?: string;
 			arrayStrategy?: string;
@@ -227,7 +226,6 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 			return deps.bulkRescrapeMovies(deps.getJobId(), {
 				movie_ids: movieIds,
 				selected_scrapers: selectedScrapers,
-				force,
 				preset: preset as 'conservative' | 'gap-fill' | 'aggressive' | undefined,
 				scalar_strategy: scalarStrategy as 'prefer-nfo' | 'prefer-scraper' | 'preserve-existing' | 'fill-missing-only' | undefined,
 				array_strategy: arrayStrategy as 'merge' | 'replace' | undefined,

@@ -347,6 +347,10 @@ func (m *mockAuthProvider) SessionTTL() time.Duration {
 	return 24 * time.Hour
 }
 
+func (m *mockAuthProvider) PersistentSessionTTL() time.Duration {
+	return 30 * 24 * time.Hour
+}
+
 func (m *mockAuthProvider) IsInitialized() bool {
 	return m.initialized
 }

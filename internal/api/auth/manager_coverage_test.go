@@ -40,6 +40,35 @@ func TestNewAuthManager_Coverage_NegativeTTL(t *testing.T) {
 	assert.Equal(t, DefaultSessionTTL, manager.SessionTTL())
 }
 
+func TestNewAuthManager_Coverage_PersistentTTLDefault(t *testing.T) {
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "config.yaml")
+
+	manager, err := NewAuthManager(configFile, time.Hour)
+	require.NoError(t, err)
+	require.NotNil(t, manager)
+	assert.Equal(t, time.Hour, manager.SessionTTL())
+	assert.Equal(t, DefaultPersistentSessionTTL, manager.PersistentSessionTTL(),
+		"persistent TTL must default to DefaultPersistentSessionTTL when the ephemeral TTL is shorter")
+}
+
+func TestNewAuthManager_Coverage_PersistentTTLClampedToEphemeral(t *testing.T) {
+	// Defensive guard: if the caller passes an ephemeral sessionTTL LONGER
+	// than DefaultPersistentSessionTTL, the persistent TTL is clamped up to
+	// match it (so remember-me is never SHORTER than ephemeral). Covers the
+	// `if persistentTTL < sessionTTL` branch in NewAuthManager.
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "config.yaml")
+
+	longTTL := DefaultPersistentSessionTTL + 24*time.Hour
+	manager, err := NewAuthManager(configFile, longTTL)
+	require.NoError(t, err)
+	require.NotNil(t, manager)
+	assert.Equal(t, longTTL, manager.SessionTTL())
+	assert.Equal(t, longTTL, manager.PersistentSessionTTL(),
+		"persistent TTL must be clamped up to the ephemeral TTL when the ephemeral is longer")
+}
+
 func TestNewAuthManager_Coverage_SetupAndLogin(t *testing.T) {
 	dir := t.TempDir()
 	configFile := filepath.Join(dir, "config.yaml")

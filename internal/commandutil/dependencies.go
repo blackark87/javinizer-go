@@ -23,6 +23,7 @@ import (
 // AuthProvider is the minimal auth contract used by API handlers.
 type AuthProvider interface {
 	SessionTTL() time.Duration
+	PersistentSessionTTL() time.Duration
 	IsInitialized() bool
 	AuthenticateSession(sessionID string) (string, error)
 	Setup(username, password string) error

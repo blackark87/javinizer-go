@@ -35,8 +35,18 @@ const (
 	loginLockoutDuration   = 5 * time.Minute
 )
 
-// DefaultSessionTTL is the default authenticated session lifetime.
+// DefaultSessionTTL is the default authenticated session lifetime for an
+// ephemeral (non-remembered) session — one that lives only for the current
+// browser session and is not persisted across server restarts.
 const DefaultSessionTTL = 24 * time.Hour
+
+// DefaultPersistentSessionTTL is the session lifetime for a "Remember me"
+// session. It is deliberately longer than the ephemeral TTL so users who
+// select "Remember me" stay logged in across server restarts for weeks,
+// not hours. Before this constant existed, both paths shared the same 24h
+// TTL — so a restart after 24h expired the session and prompted the user
+// to log in again, despite "Remember me" being selected.
+const DefaultPersistentSessionTTL = 30 * 24 * time.Hour
 
 // Sentinel errors returned by the auth manager.
 var (
@@ -94,17 +104,18 @@ type sessionFileItem struct {
 
 // AuthManager manages single-user credentials and in-memory sessions.
 type AuthManager struct {
-	mu             sync.RWMutex
-	credentialPath string
-	sessionPath    string
-	credentials    *storedCredentials
-	sessions       map[string]sessionRecord
-	sessionTTL     time.Duration
-	nowFn          func() time.Time
-	randReader     io.Reader
-	apiTokenRepo   database.ApiTokenRepositoryInterface
-	fs             afero.Fs
-	envLookup      func(key string) (string, bool)
+	mu                   sync.RWMutex
+	credentialPath       string
+	sessionPath          string
+	credentials          *storedCredentials
+	sessions             map[string]sessionRecord
+	sessionTTL           time.Duration
+	persistentSessionTTL time.Duration
+	nowFn                func() time.Time
+	randReader           io.Reader
+	apiTokenRepo         database.ApiTokenRepositoryInterface
+	fs                   afero.Fs
+	envLookup            func(key string) (string, bool)
 
 	failedLoginCount       int
 	failedLoginWindowStart time.Time
@@ -193,16 +204,21 @@ func NewAuthManager(configFile string, sessionTTL time.Duration, envLookup ...fu
 	if sessionTTL <= 0 {
 		sessionTTL = DefaultSessionTTL
 	}
+	persistentTTL := DefaultPersistentSessionTTL
+	if persistentTTL < sessionTTL {
+		persistentTTL = sessionTTL
+	}
 
 	manager := &AuthManager{
-		credentialPath: credentialPathForConfig(configFile),
-		sessionPath:    sessionPathForConfig(configFile),
-		sessions:       make(map[string]sessionRecord),
-		sessionTTL:     sessionTTL,
-		nowFn:          time.Now,
-		randReader:     rand.Reader,
-		fs:             afero.NewOsFs(),
-		envLookup:      lookup,
+		credentialPath:       credentialPathForConfig(configFile),
+		sessionPath:          sessionPathForConfig(configFile),
+		sessions:             make(map[string]sessionRecord),
+		sessionTTL:           sessionTTL,
+		persistentSessionTTL: persistentTTL,
+		nowFn:                time.Now,
+		randReader:           rand.Reader,
+		fs:                   afero.NewOsFs(),
+		envLookup:            lookup,
 	}
 
 	if err := manager.loadCredentialsFromDisk(); err != nil {
@@ -229,9 +245,16 @@ func NewAuthManager(configFile string, sessionTTL time.Duration, envLookup ...fu
 	return manager, nil
 }
 
-// SessionTTL returns the configured session lifetime.
+// SessionTTL returns the configured ephemeral session lifetime.
 func (m *AuthManager) SessionTTL() time.Duration {
 	return m.sessionTTL
+}
+
+// PersistentSessionTTL returns the session lifetime for a "Remember me"
+// session. Used by the HTTP layer to set the cookie's MaxAge/Expires so the
+// cookie lifetime matches the server-side session lifetime.
+func (m *AuthManager) PersistentSessionTTL() time.Duration {
+	return m.persistentSessionTTL
 }
 
 // IsInitialized reports whether credentials exist.

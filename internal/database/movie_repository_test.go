@@ -824,3 +824,67 @@ func TestMovieRepository_Upsert_WithSettingsHash(t *testing.T) {
 		assert.Equal(t, "New English Title", found.Translations[0].Title, "title should be updated")
 	})
 }
+
+func TestMovieRepository_MergeActressHangulUpgrade(t *testing.T) {
+	cfg := &config.Config{
+		Database: config.DatabaseConfig{
+			Type: "sqlite",
+			DSN:  ":memory:",
+		},
+		Logging: config.LoggingConfig{
+			Level: "error",
+		},
+	}
+
+	db, err := New(cfg)
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	require.NoError(t, db.AutoMigrate())
+	repo := NewMovieRepository(db)
+
+	t.Run("Hangul name upgrades existing romaji row", func(t *testing.T) {
+		first := createTestMovie("UPG-001")
+		first.Actresses = []models.Actress{
+			{JapaneseName: "響蓮", FirstName: "Ren", LastName: "Hibiki"},
+		}
+		_, err := repo.Upsert(first)
+		require.NoError(t, err)
+
+		second := createTestMovie("UPG-002")
+		second.Actresses = []models.Actress{
+			{JapaneseName: "響蓮", FirstName: "렌", LastName: "히비키"},
+		}
+		saved, err := repo.Upsert(second)
+		require.NoError(t, err)
+		require.Len(t, saved.Actresses, 1)
+		assert.Equal(t, "렌", saved.Actresses[0].FirstName)
+		assert.Equal(t, "히비키", saved.Actresses[0].LastName)
+
+		// The shared row itself is upgraded, so the first movie sees Hangul too
+		found, err := repo.FindByID("UPG-001")
+		require.NoError(t, err)
+		require.Len(t, found.Actresses, 1)
+		assert.Equal(t, "렌", found.Actresses[0].FirstName)
+		assert.Equal(t, "히비키", found.Actresses[0].LastName)
+	})
+
+	t.Run("romaji does not downgrade existing Hangul row", func(t *testing.T) {
+		first := createTestMovie("DWG-001")
+		first.Actresses = []models.Actress{
+			{JapaneseName: "宮下玲奈", FirstName: "레나", LastName: "미야시타"},
+		}
+		_, err := repo.Upsert(first)
+		require.NoError(t, err)
+
+		second := createTestMovie("DWG-002")
+		second.Actresses = []models.Actress{
+			{JapaneseName: "宮下玲奈", FirstName: "Rena", LastName: "Miyashita"},
+		}
+		saved, err := repo.Upsert(second)
+		require.NoError(t, err)
+		require.Len(t, saved.Actresses, 1)
+		assert.Equal(t, "레나", saved.Actresses[0].FirstName)
+		assert.Equal(t, "미야시타", saved.Actresses[0].LastName)
+	})
+}

@@ -476,6 +476,39 @@ func TestStripVRMarkers(t *testing.T) {
 }
 
 // =============================================================================
+// stripPromoMarkers tests
+// =============================================================================
+
+func TestStripPromoMarkers(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		// bracketed promo tags removed
+		{"[FANZA 限定] 素敵なタイトル", "素敵なタイトル"},
+		{"[数量限定] タイトル", "タイトル"},
+		{"【期間限定セール】タイトル", "タイトル"},
+		{"タイトル【特典映像付き】", "タイトル"},
+		{"（DMM独占）タイトル", "タイトル"},
+		{"[30%割引] タイトル", "タイトル"},
+		{"[FANZA 限定][数量限定] タイトル", "タイトル"},
+		// meaningful brackets are kept
+		{"【シリーズ名】タイトル", "【シリーズ名】タイトル"},
+		{"[中出し] タイトル", "[中出し] タイトル"},
+		// promo keyword outside brackets is kept (part of the title text)
+		{"限定公開のタイトル", "限定公開のタイトル"},
+		// no-op cases
+		{"素敵なタイトル", "素敵なタイトル"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			assert.Equal(t, tt.expected, stripPromoMarkers(tt.input))
+		})
+	}
+}
+
+// =============================================================================
 // isLikelyRomanized tests
 // =============================================================================
 

@@ -27,7 +27,6 @@
 		onDeselectAll?: () => void;
 		onBulkExclude?: () => void;
 		onBulkRescrape?: () => void;
-		onForceRefresh?: () => void;
 		onClose: () => void;
 		onUpdateAll: () => void;
 		onOrganizeAll: () => void;
@@ -57,7 +56,6 @@
 		onDeselectAll,
 		onBulkExclude,
 		onBulkRescrape,
-		onForceRefresh,
 		onClose,
 		onUpdateAll,
 		onOrganizeAll
@@ -213,21 +211,6 @@
 			<span class="text-sm font-medium text-muted-foreground whitespace-nowrap">
 				{selectedCount} selected
 			</span>
-			<Button
-				size="sm"
-				variant="outline"
-				onclick={onForceRefresh}
-				disabled={bulkExcluding || bulkRescraping}
-			>
-				{#snippet children()}
-					{#if bulkRescraping}
-						<LoaderCircle class="h-4 w-4 mr-1 animate-spin" />
-					{:else}
-						<RefreshCw class="h-4 w-4 mr-1" />
-					{/if}
-					Force Refresh
-				{/snippet}
-			</Button>
 			<Button
 				size="sm"
 				variant="outline"

@@ -84,13 +84,16 @@ func buildLLMTranslationPrompts(sourceLang, targetLang string, texts []string, f
 		"Keep Japanese name order: FamilyName GivenName (e.g. 하타노 유이, not 유이 하타노). " +
 		"If the input is romanized Latin text, that romaji spelling is the AUTHORITATIVE reading of the name. " +
 		"NEVER substitute a different reading you believe is correct for this person, and NEVER re-derive the reading from kanji appearing elsewhere in the input — the same kanji can have multiple readings and the romaji fixes which one is right. " +
-		"Transliterate the romaji syllables literally as Hepburn Japanese, not as an English word: Rena → 레나 (NOT 레이나), Reina → 레이나, Yuu → 유우. " +
+		"Transliterate the romaji syllables literally as Hepburn Japanese, not as an English word: Rena → 레나 (NOT 레이나), Reina → 레이나. " +
+		"Do NOT write Japanese long vowels in Korean — drop the lengthening vowel: Yuu → 유 (NOT 유우), Tarou → 타로, Reena → 레나, Ohno → 오노. Keep distinct vowels (Yui → 유이, Aoi → 아오이). " +
 		"The OUTPUT must be written in the target language's script (Hangul for a Korean target) — returning the romaji/Latin input unchanged is an ERROR: Miyashita Rena → 미야시타 레나, never Miyashita Rena. " +
 		"Ignore non-name extras such as age (歳), cup size, height, or occupation. If the field contains no personal name at all, return an empty string for it. " +
 		"Also apply this rule to a <<<title>>> that is a short personal-name-like Japanese string (especially kana-only). "
 	properNounRule := "Proper-noun rule: fields labeled <<<maker>>>, <<<label>>>, or <<<director>>> are studio/brand/person names. Transliterate them phonetically; do NOT translate their meaning and do NOT embellish them into marketing copy. "
 	titleCleanupRule := "Title cleanup rule: fields labeled <<<title>>> may include VR format labels such as [VR], 【VR】, 【8K VR】, or similar bracketed VR markers. Exclude those VR labels entirely; do NOT translate, keep, or add them. "
 	descriptionCleanupRule := "Description cleanup rule: fields labeled <<<description>>> may contain platform notices or store promotions. Exclude those phrases entirely; do NOT translate or keep them. Examples to exclude include binaural/playback/device notices such as この作品はバイノーラル録音, この商品は専用プレイヤー, VR専用作品, 動作環境・対応デバイス, 配信方法によって収録内容が異なる場合があります, and store campaign text such as 最新作やセール商品など、お得な情報満載 and KMPストアはこちら. If the description contains only excluded material, return an empty string for <<<description>>>. "
+	embeddedHangulRule := "Embedded-Hangul rule: any Hangul (Korean script) text already present in the input is final translated content — copy it into the output verbatim, never alter, re-transliterate, or translate it. "
+	placeholderRule := "Placeholder rule: tokens of the form ⟦N⟧ (a digit inside these bracket characters) are protected placeholders standing in for a name. Reproduce each token EXACTLY as-is (same bracket characters, same digit) in a natural position in the output; never translate, transliterate, remove, renumber, or add spaces inside them. "
 
 	systemPrompt := fmt.Sprintf("You are a translator specializing in Japanese adult video (JAV) content metadata. Translate each labeled section into natural, engaging promotional copy — not a literal word-for-word translation. Titles should be concise and enticing; descriptions should read as sensual, persuasive marketing blurbs in the target language. Follow these terminology rules: "+
 		terminologyRules+
@@ -98,6 +101,8 @@ func buildLLMTranslationPrompts(sourceLang, targetLang string, texts []string, f
 		properNounRule+
 		titleCleanupRule+
 		descriptionCleanupRule+
+		embeddedHangulRule+
+		placeholderRule+
 		"CRITICAL labeling rule: translate the text under each <<<label>>> and return it under the SAME <<<label>>> — never merge multiple sections into one label, never omit a label, never swap labels. "+
 		"Return ONLY the labeled output markers with their translations. Do not use JSON. Do not add commentary. Keep each translation on a single logical line; if needed, replace internal newlines with spaces. Source language: %s. Target language: %s.", sourceLang, targetLang)
 

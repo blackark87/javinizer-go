@@ -11,6 +11,8 @@ func RegisterRoutes(protected *gin.RouterGroup, deps *core.ServerDependencies) {
 	protected.POST("/actresses", createActress(deps.ActressRepo))
 	protected.PUT("/actresses/:id", updateActress(deps.ActressRepo))
 	protected.DELETE("/actresses/:id", deleteActress(deps.ActressRepo))
+	protected.POST("/actresses/bulk-delete", bulkDeleteActresses(deps.ActressRepo))
+	protected.POST("/actresses/delete-all", deleteAllActresses(deps.ActressRepo))
 	protected.GET("/actresses/search", searchActresses(deps.ActressRepo))
 	protected.POST("/actresses/merge/preview", previewActressMerge(deps.ActressRepo))
 	protected.POST("/actresses/merge", mergeActresses(deps.ActressRepo))

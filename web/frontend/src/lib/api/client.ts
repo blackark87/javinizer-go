@@ -417,6 +417,21 @@ class APIClient {
 		await this.request(`/api/v1/actresses/${id}`, { method: 'DELETE' });
 	}
 
+	// Bulk delete actresses by ID
+	async bulkDeleteActresses(ids: number[]): Promise<{ deleted: number }> {
+		return this.request<{ deleted: number }>('/api/v1/actresses/bulk-delete', {
+			method: 'POST',
+			body: JSON.stringify({ ids })
+		});
+	}
+
+	// Delete every actress record
+	async deleteAllActresses(): Promise<{ deleted: number }> {
+		return this.request<{ deleted: number }>('/api/v1/actresses/delete-all', {
+			method: 'POST'
+		});
+	}
+
 	// Preview merge result between two actresses
 	async previewActressMerge(request: ActressMergePreviewRequest): Promise<ActressMergePreviewResponse> {
 		return this.request<ActressMergePreviewResponse>('/api/v1/actresses/merge/preview', {

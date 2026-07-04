@@ -98,6 +98,39 @@ export function createActressStore() {
 		}
 	}));
 
+	const bulkDeleteActressesMutation = createMutation(() => ({
+		mutationFn: (ids: number[]) => apiClient.bulkDeleteActresses(ids),
+		onSuccess: (result, ids) => {
+			toastStore.success(`Deleted ${result.deleted} actress(es)`);
+			selectedIds = [];
+			// Step back a page when every row on the current page was deleted.
+			const deleted = new Set(ids);
+			const currentActresses = actressesQuery.data?.actresses ?? [];
+			if (offset > 0 && currentActresses.every((a) => a.id === undefined || deleted.has(a.id))) {
+				offset = Math.max(0, offset - limit);
+			}
+			resetForm();
+			queryClient.invalidateQueries({ queryKey: ['actresses'] });
+		},
+		onError: (err: Error) => {
+			toastStore.error(err.message);
+		}
+	}));
+
+	const deleteAllActressesMutation = createMutation(() => ({
+		mutationFn: () => apiClient.deleteAllActresses(),
+		onSuccess: (result) => {
+			toastStore.success(`Deleted all ${result.deleted} actress(es)`);
+			selectedIds = [];
+			offset = 0;
+			resetForm();
+			queryClient.invalidateQueries({ queryKey: ['actresses'] });
+		},
+		onError: (err: Error) => {
+			toastStore.error(err.message);
+		}
+	}));
+
 	$effect(() => {
 		const data = actressesQuery.data;
 		if (!data || showMergeModal) return;
@@ -298,6 +331,20 @@ export function createActressStore() {
 		deleteActressMutation.mutate(actress.id);
 	}
 
+	async function removeSelected() {
+		if (selectedIds.length === 0 || bulkDeleteActressesMutation.isPending) return;
+		const message = `Delete ${selectedIds.length} selected actress(es)? Their movie links are removed as well.`;
+		if (!(await confirmDialog('Delete Selected Actresses', message, { variant: 'danger', confirmLabel: 'Delete' }))) return;
+		bulkDeleteActressesMutation.mutate([...selectedIds]);
+	}
+
+	async function removeAll() {
+		if (deleteAllActressesMutation.isPending) return;
+		const message = `Delete ALL ${total} actress(es) in the database? This cannot be undone.`;
+		if (!(await confirmDialog('Delete All Actresses', message, { variant: 'danger', confirmLabel: 'Delete All' }))) return;
+		deleteAllActressesMutation.mutate();
+	}
+
 	function applySearch() {
 		activeQuery = queryInput.trim();
 		offset = 0;
@@ -423,6 +470,8 @@ export function createActressStore() {
 		get isRefreshing() { return isRefreshing; },
 		get saveActressMutation() { return saveActressMutation; },
 		get deleteActressMutation() { return deleteActressMutation; },
+		get bulkDeleteActressesMutation() { return bulkDeleteActressesMutation; },
+		get deleteAllActressesMutation() { return deleteAllActressesMutation; },
 		get showMergeModal() { return showMergeModal; },
 		set showMergeModal(v: boolean) { showMergeModal = v; },
 		get mergePrimaryId() { return mergePrimaryId; },
@@ -451,6 +500,8 @@ export function createActressStore() {
 		startEdit,
 		saveActress,
 		removeActress,
+		removeSelected,
+		removeAll,
 		applySearch,
 		clearSearch,
 		toggleSortOrder,

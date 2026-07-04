@@ -315,6 +315,67 @@ func deleteActress(actressRepo *database.ActressRepository) gin.HandlerFunc {
 	}
 }
 
+type bulkDeleteActressesRequest struct {
+	IDs []uint `json:"ids"`
+}
+
+type deleteActressesResponse struct {
+	Deleted int64 `json:"deleted"`
+}
+
+// bulkDeleteActresses godoc
+// @Summary Bulk delete actresses
+// @Description Delete multiple actress records (and their movie associations) by ID
+// @Tags actress
+// @Accept json
+// @Produce json
+// @Param request body bulkDeleteActressesRequest true "Actress IDs to delete"
+// @Success 200 {object} deleteActressesResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/actresses/bulk-delete [post]
+func bulkDeleteActresses(actressRepo *database.ActressRepository) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req bulkDeleteActressesRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+			return
+		}
+		if len(req.IDs) == 0 {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "ids is required"})
+			return
+		}
+
+		deleted, err := actressRepo.DeleteByIDs(req.IDs)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, deleteActressesResponse{Deleted: deleted})
+	}
+}
+
+// deleteAllActresses godoc
+// @Summary Delete all actresses
+// @Description Delete every actress record and all movie associations
+// @Tags actress
+// @Produce json
+// @Success 200 {object} deleteActressesResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/actresses/delete-all [post]
+func deleteAllActresses(actressRepo *database.ActressRepository) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		deleted, err := actressRepo.DeleteAll()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, deleteActressesResponse{Deleted: deleted})
+	}
+}
+
 type actressesImportRequest struct {
 	Actresses []actressImportItem `json:"actresses"`
 }

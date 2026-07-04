@@ -1289,7 +1289,8 @@ func TestTranslateMovie_KoreanPersonNameHangulValidation(t *testing.T) {
 			if len(req.Messages) > 0 {
 				requests = append(requests, req.Messages[len(req.Messages)-1].Content)
 			}
-			// Model preserves ⟦0⟧ in both title and description slots.
+			// Model preserves ⟦0⟧ but picks the wrong subject particle 가 after the
+			// opaque token; restoration corrects it to 이 for the consonant-final 렌.
 			respond(w, "<<<title>>>\n⟦0⟧의 유혹\n<<<description>>>\n⟦0⟧가 등장하는 작품\n")
 		}))
 		defer server.Close()
@@ -1315,9 +1316,10 @@ func TestTranslateMovie_KoreanPersonNameHangulValidation(t *testing.T) {
 		assert.Contains(t, requests[0], "⟦0⟧")
 		assert.NotContains(t, requests[0], "響蓮")
 
-		// Both fields restore to the same Hangul reading as the actress.
+		// Both fields restore to the same Hangul reading as the actress, and the
+		// subject particle agrees with 렌 (가 → 이).
 		assert.Equal(t, "히비키 렌의 유혹", movie.Title)
-		assert.Equal(t, "히비키 렌가 등장하는 작품", movie.Description)
+		assert.Equal(t, "히비키 렌이 등장하는 작품", movie.Description)
 		assert.Equal(t, "히비키 렌", result[0].Actresses[0])
 	})
 

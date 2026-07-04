@@ -735,9 +735,92 @@ func restoreNamePlaceholders(text string, placeholders map[string]string) (strin
 			ok = false
 			continue
 		}
-		text = strings.ReplaceAll(text, token, hangul)
+		text = replaceNameToken(text, token, hangul)
 	}
 	return text, ok
+}
+
+// replaceNameToken replaces every occurrence of token with hangul and, because the
+// LLM chose any following Korean particle to agree with the opaque token (not the
+// real name), fixes that particle to agree with the restored name's final syllable
+// (이토 마유키 + 이 → 가).
+func replaceNameToken(text, token, hangul string) string {
+	hasBatchim, jong := lastSyllableBatchim(hangul)
+	var b strings.Builder
+	for {
+		idx := strings.Index(text, token)
+		if idx < 0 {
+			b.WriteString(text)
+			break
+		}
+		b.WriteString(text[:idx])
+		b.WriteString(hangul)
+		text = correctLeadingParticle(text[idx+len(token):], hasBatchim, jong)
+	}
+	return b.String()
+}
+
+// lastSyllableBatchim reports whether the last Hangul syllable of s has a final
+// consonant (batchim) and that consonant's jongseong index (8 == ㄹ).
+func lastSyllableBatchim(s string) (bool, int) {
+	var last rune
+	for _, r := range s {
+		if r >= 0xAC00 && r <= 0xD7A3 {
+			last = r
+		}
+	}
+	if last == 0 {
+		return false, 0
+	}
+	jong := int((last - 0xAC00) % 28)
+	return jong != 0, jong
+}
+
+// koParticlePairs maps each allomorph of a Korean particle to {batchimForm,
+// vowelForm}. The correct form depends on whether the preceding noun ends in a
+// final consonant.
+var koParticlePairs = map[rune][2]rune{
+	'은': {'은', '는'}, '는': {'은', '는'}, // topic
+	'이': {'이', '가'}, '가': {'이', '가'}, // subject
+	'을': {'을', '를'}, '를': {'을', '를'}, // object
+	'과': {'과', '와'}, '와': {'과', '와'}, // and/with
+	'아': {'아', '야'}, '야': {'아', '야'}, // vocative
+}
+
+// correctLeadingParticle fixes a Korean particle at the start of s so it agrees
+// with a preceding noun whose final consonant is described by hasBatchim/jong.
+// Only a particle directly attached to the name (no space) is touched.
+func correctLeadingParticle(s string, hasBatchim bool, jong int) string {
+	if s == "" {
+		return s
+	}
+
+	// 으로 / 로 (means/direction): ㄹ-batchim (jong 8) behaves like no batchim.
+	if strings.HasPrefix(s, "으로") || strings.HasPrefix(s, "로") {
+		body := strings.TrimPrefix(s, "으로")
+		if body == s {
+			body = strings.TrimPrefix(s, "로")
+		}
+		if hasBatchim && jong != 8 {
+			return "으로" + body
+		}
+		return "로" + body
+	}
+
+	// Single-syllable allomorph particles.
+	for _, r := range s {
+		if pair, ok := koParticlePairs[r]; ok {
+			want := pair[1]
+			if hasBatchim {
+				want = pair[0]
+			}
+			if want != r {
+				return string(want) + s[len(string(r)):]
+			}
+		}
+		break
+	}
+	return s
 }
 
 // isPersonNameField reports whether the labeled slot carries a performer's name:

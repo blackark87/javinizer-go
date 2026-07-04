@@ -13,6 +13,7 @@ import (
 	apiserver "github.com/javinizer/javinizer-go/internal/api/server"
 	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/logging"
+	"github.com/javinizer/javinizer-go/internal/system"
 )
 
 var (
@@ -79,6 +80,12 @@ func StartServer(ctx context.Context, configFile string) (*ServerInstance, error
 		return nil, err
 	}
 	authManager.SetApiTokenRepo(deps.Repos.ApiTokenRepo)
+
+	// This binary is a desktop build (the file is compiled with the desktop
+	// build tag), so the upgrade UX must point users at a new bundle rather
+	// than an in-place self-swap. Recorded once at bootstrap so the /version
+	// handler can surface it without importing internal/desktop (import cycle).
+	deps.CoreDeps.SetInstallEnvironment(system.EnvironmentDesktop)
 
 	router := apiserver.NewServer(rt)
 	apiserver.LogServerInfo(cfg)

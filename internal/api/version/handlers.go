@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/javinizer/javinizer-go/internal/commandutil"
+	"github.com/javinizer/javinizer-go/internal/system"
 	"github.com/javinizer/javinizer-go/internal/update"
 	"github.com/javinizer/javinizer-go/internal/version"
 )
@@ -21,7 +22,27 @@ type VersionStatusResponse struct {
 	Prerelease      bool   `json:"prerelease"`       // Whether latest is a prerelease
 	CheckedAt       string `json:"checked_at"`       // When the check was performed
 	Source          string `json:"source"`           // "cached" or "fresh"
-	Error           string `json:"error,omitempty"`  // Error message if any
+	// InstallEnvironment reports how javinizer is running ("docker", "desktop",
+	// or "cli") so the UI can render the right upgrade path: docker images can't
+	// self-swap (read-only image), desktop apps need a new bundle, only cli
+	// builds self-upgrade in place.
+	InstallEnvironment string `json:"install_environment"`
+	// UpgradeInstructions carries environment-specific guidance verbatim (e.g.
+	// the `docker pull` command for docker, the releases URL for desktop, the
+	// `javinizer upgrade` command for cli) so the frontend doesn't have to
+	// hardcode the image ref or rebuild steps per environment.
+	UpgradeInstructions string `json:"upgrade_instructions,omitempty"`
+	Error               string `json:"error,omitempty"` // Error message if any
+}
+
+// applyEnvironment stamps the response with the detected install environment
+// and its upgrade instructions. Called on every response path so the UI always
+// knows whether to offer `docker pull`, a releases link, or `javinizer upgrade`.
+// The environment is computed once at bootstrap (where desktop.IsDesktopBuild()
+// is reachable without an import cycle) and injected via CoreDeps.
+func applyEnvironment(response *VersionStatusResponse, env system.Environment) {
+	response.InstallEnvironment = string(env)
+	response.UpgradeInstructions = system.UpgradeInstructions(env)
 }
 
 // versionStatus godoc
@@ -55,6 +76,7 @@ func versionStatus(deps commandutil.CoreDepsReader) gin.HandlerFunc {
 			BuildDate: buildDate,
 			Source:    string(update.UpdateSourceCached),
 		}
+		applyEnvironment(response, deps.InstallEnvironment())
 
 		if err != nil {
 			response.Error = err.Error()
@@ -127,6 +149,7 @@ func versionCheck(deps commandutil.CoreDepsReader) gin.HandlerFunc {
 			Latest:     "",
 			Prerelease: false,
 		}
+		applyEnvironment(response, deps.InstallEnvironment())
 
 		if err != nil {
 			response.Source = string(update.UpdateSourceError)

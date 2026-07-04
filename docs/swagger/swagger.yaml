@@ -2841,6 +2841,13 @@ definitions:
       error:
         description: Error message if any
         type: string
+      install_environment:
+        description: |-
+          InstallEnvironment reports how javinizer is running ("docker", "desktop",
+          or "cli") so the UI can render the right upgrade path: docker images can't
+          self-swap (read-only image), desktop apps need a new bundle, only cli
+          builds self-upgrade in place.
+        type: string
       latest:
         description: Latest available version
         type: string
@@ -2853,6 +2860,13 @@ definitions:
       update_available:
         description: Whether an update is available
         type: boolean
+      upgrade_instructions:
+        description: |-
+          UpgradeInstructions carries environment-specific guidance verbatim (e.g.
+          the `docker pull` command for docker, the releases URL for desktop, the
+          `javinizer upgrade` command for cli) so the frontend doesn't have to
+          hardcode the image ref or rebuild steps per environment.
+        type: string
     type: object
 host: localhost:8080
 info:

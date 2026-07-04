@@ -1175,6 +1175,8 @@ export interface VersionStatusResponse {
 	prerelease: boolean;
 	checked_at: string;
 	source: string;
+	install_environment: 'docker' | 'desktop' | 'cli';
+	upgrade_instructions?: string;
 	error?: string;
 }
 

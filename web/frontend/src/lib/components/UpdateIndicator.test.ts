@@ -50,6 +50,7 @@ function makeStatus(overrides: Partial<VersionStatusResponse> = {}): VersionStat
 		prerelease: true,
 		checked_at: '2026-06-27T23:21:20Z',
 		source: 'fresh',
+		install_environment: 'cli',
 		...overrides,
 	};
 }
@@ -129,6 +130,32 @@ describe('UpdateIndicator', () => {
 			expect(container.textContent).toContain('prerelease');
 			expect(container.textContent).toContain('View release');
 			expect(container.textContent).toContain('Check again');
+		});
+	});
+
+	it('shows docker pull guidance when running in Docker', async () => {
+		const { container } = renderWithClient(
+			makeStatus({
+				install_environment: 'docker',
+				upgrade_instructions:
+					'Running in Docker. Pull the latest image and recreate the container:\n  docker pull ghcr.io/javinizer/javinizer-go:latest',
+				prerelease: false,
+				latest: 'v1.1.0',
+			}),
+		);
+		let button: HTMLButtonElement | null = null;
+		await waitFor(() => {
+			button = container.querySelector('button[aria-label="Update available"]');
+			expect(button).toBeTruthy();
+		});
+		await fireEvent.click(button!);
+
+		await waitFor(() => {
+			// Environment badge labels the install type so the user knows why the
+			// guidance differs from a normal self-upgrade.
+			expect(container.textContent).toContain('Running in Docker');
+			// The backend-provided instructions surface the copy-pasteable command.
+			expect(container.textContent).toContain('docker pull ghcr.io/javinizer/javinizer-go');
 		});
 	});
 

@@ -11,7 +11,10 @@ import (
 	apicore "github.com/javinizer/javinizer-go/internal/api/core"
 	apiserver "github.com/javinizer/javinizer-go/internal/api/server"
 	"github.com/javinizer/javinizer-go/internal/config"
+	"github.com/javinizer/javinizer-go/internal/desktop"
 	"github.com/javinizer/javinizer-go/internal/logging"
+	"github.com/javinizer/javinizer-go/internal/system"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 
 	_ "github.com/javinizer/javinizer-go/docs/swagger" // Import generated docs
@@ -97,6 +100,14 @@ func Run(cmd *cobra.Command, configFile string, hostFlag string, portFlag int) (
 	}
 
 	authManager.SetApiTokenRepo(apiDeps.Repos.ApiTokenRepo)
+
+	// Classify the running build (docker/cli; desktop is impossible here — the
+	// desktop bundle uses internal/desktop.StartServer, not this command) so
+	// the /version handler can surface environment-specific upgrade guidance
+	// (docker users must `docker pull`; cli users can self-upgrade). Computed
+	// once at bootstrap and injected via CoreDeps because the API layer cannot
+	// import internal/desktop without an import cycle.
+	apiDeps.CoreDeps.SetInstallEnvironment(system.DetectEnvironment(afero.NewOsFs(), desktop.IsDesktopBuild()))
 
 	return apiDeps, rt, nil
 }

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/javinizer/javinizer-go/internal/models"
+	"github.com/javinizer/javinizer-go/internal/system"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,7 +57,7 @@ func TestValidateBrowserURL_IPv4WithPort(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// --- isRunningInContainer: env var combinations ---
+// --- system.IsRunningInContainer: env var combinations ---
 
 func TestIsRunningInContainer_ChromeEnvsAreNotAContainerSignal(t *testing.T) {
 	// CHROME_BIN/CHROME_PATH point at the Chrome binary location and are set
@@ -81,7 +82,7 @@ func TestIsRunningInContainer_ChromeEnvsAreNotAContainerSignal(t *testing.T) {
 		}
 	}()
 
-	result := isRunningInContainer(afero.NewMemMapFs())
+	result := system.IsRunningInContainer(afero.NewMemMapFs())
 	assert.False(t, result, "CHROME_BIN/CHROME_PATH must not imply a container")
 }
 

@@ -124,6 +124,7 @@ func (a *Aggregator) aggregateWithPriority(results []*models.ScraperResult, prio
 	movie.RatingWarning = ratingWarning
 
 	movie.Actresses = a.getActressesByPriority(resultsBySource, priorityFunc("Actress"))
+	a.enrichActressReadings(movie.Actresses)
 
 	genreNames := a.getGenresByPriority(resultsBySource, priorityFunc("Genre"))
 	movie.Genres = make([]models.Genre, 0, len(genreNames))
@@ -454,6 +455,84 @@ func (a *Aggregator) getActressesByPriority(
 	}
 
 	return []models.Actress{}
+}
+
+// actressHasUsableReading reports whether the actress already carries a phonetic
+// reading — a DMM actjpgs thumbnail (romaji filename), an ASCII romaji name, or a
+// Hangul name. If not, only the kanji is known and translation must guess it.
+func actressHasUsableReading(a models.Actress) bool {
+	if strings.Contains(a.ThumbURL, "actjpgs/") {
+		return true
+	}
+	return isASCIILettersName(a.FirstName) || nameContainsHangul(a.FirstName+a.LastName)
+}
+
+// isASCIILettersName reports whether s is non-empty, pure ASCII, and has a letter.
+func isASCIILettersName(s string) bool {
+	hasLetter := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 0x80 {
+			return false
+		}
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
+			hasLetter = true
+		}
+	}
+	return hasLetter
+}
+
+// nameContainsHangul reports whether s contains at least one Hangul syllable.
+func nameContainsHangul(s string) bool {
+	for _, r := range s {
+		if r >= 0xAC00 && r <= 0xD7A3 {
+			return true
+		}
+	}
+	return false
+}
+
+// enrichActressReadings fills in a phonetic reading for actresses that reached
+// aggregation with only a kanji name, by looking them up in the stored actress
+// table (populated by earlier scrapes with DMM/r18 romaji). Only empty fields are
+// filled — scraped data is never overwritten. Without this, a kanji-only actress
+// (common in VR titles) gets her name guessed by the LLM (伊藤舞雪 → 마이세츠 이토).
+func (a *Aggregator) enrichActressReadings(actresses []models.Actress) {
+	if a.actressLookupRepo == nil {
+		return
+	}
+	for i := range actresses {
+		act := &actresses[i]
+		if models.IsUnknownActressFields(act.LastName, act.FirstName, act.JapaneseName) {
+			continue
+		}
+		if actressHasUsableReading(*act) {
+			continue
+		}
+
+		var stored *models.Actress
+		var err error
+		if act.DMMID > 0 {
+			stored, err = a.actressLookupRepo.FindByDMMID(act.DMMID)
+		}
+		if (stored == nil || err != nil) && strings.TrimSpace(act.JapaneseName) != "" {
+			stored, err = a.actressLookupRepo.FindByJapaneseName(strings.TrimSpace(act.JapaneseName))
+		}
+		if err != nil || stored == nil {
+			continue
+		}
+
+		if act.FirstName == "" && stored.FirstName != "" {
+			act.FirstName = stored.FirstName
+		}
+		if act.LastName == "" && stored.LastName != "" {
+			act.LastName = stored.LastName
+		}
+		if act.ThumbURL == "" && stored.ThumbURL != "" {
+			act.ThumbURL = stored.ThumbURL
+		}
+		logging.Debugf("Aggregation: enriched actress %q reading from DB (First=%q Last=%q Thumb=%q)", act.JapaneseName, act.FirstName, act.LastName, act.ThumbURL)
+	}
 }
 
 // getGenresByPriority retrieves genres based on priority

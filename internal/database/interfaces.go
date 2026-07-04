@@ -77,6 +77,14 @@ type ActressAliasRepositoryInterface interface {
 	GetAliasMap() (map[string]string, error)
 }
 
+// ActressLookupRepositoryInterface defines the read-only contract for looking up
+// a stored actress record to enrich a scrape that lacks a romaji/Hangul reading.
+// *ActressRepository satisfies it.
+type ActressLookupRepositoryInterface interface {
+	FindByDMMID(dmmID int) (*models.Actress, error)
+	FindByJapaneseName(name string) (*models.Actress, error)
+}
+
 // WordReplacementRepositoryInterface defines the contract for word replacement operations
 type WordReplacementRepositoryInterface interface {
 	Create(replacement *models.WordReplacement) error

@@ -37,6 +37,11 @@ type AggregatorOptions struct {
 	// If non-nil, actress aliases are loaded from the repository during initialization.
 	ActressAliasRepo database.ActressAliasRepositoryInterface
 
+	// ActressLookupRepo is an optional actress lookup repository. When non-nil,
+	// actresses that reach aggregation without a romaji/Hangul reading are enriched
+	// from previously stored records (by DMMID or Japanese name).
+	ActressLookupRepo database.ActressLookupRepositoryInterface
+
 	// WordReplacementRepo is an optional word replacement repository for tests.
 	// If nil, loadWordReplacementCache() is skipped (empty cache).
 	// If non-nil, word replacements are loaded from the repository during initialization.
@@ -84,6 +89,7 @@ type Aggregator struct {
 	wordReplacementSorted []struct{ orig, repl string } // Pre-sorted longest-first
 	wordCacheMutex        sync.RWMutex                  // Protects wordReplacementCache and wordReplacementSorted from concurrent access
 	actressAliasRepo      database.ActressAliasRepositoryInterface
+	actressLookupRepo     database.ActressLookupRepositoryInterface
 	actressAliasCache     map[string]string   // Maps alias name to canonical name
 	aliasCacheMutex       sync.RWMutex        // Protects actressAliasCache from concurrent access
 	resolvedPriorities    map[string][]string // Cached resolved priorities for each field
@@ -160,6 +166,11 @@ func NewWithOptions(cfg *config.Config, opts *AggregatorOptions) *Aggregator {
 		agg.actressAliasRepo = opts.ActressAliasRepo
 	}
 
+	// Use injected actress lookup repository or skip
+	if opts != nil && opts.ActressLookupRepo != nil {
+		agg.actressLookupRepo = opts.ActressLookupRepo
+	}
+
 	// Use injected word replacement repository or skip
 	if opts != nil && opts.WordReplacementRepo != nil {
 		agg.wordReplacementRepo = opts.WordReplacementRepo
@@ -212,6 +223,7 @@ func NewWithDatabase(cfg *config.Config, db *database.DB) *Aggregator {
 		GenreReplacementRepo: database.NewGenreReplacementRepository(db),
 		WordReplacementRepo:  database.NewWordReplacementRepository(db),
 		ActressAliasRepo:     database.NewActressAliasRepository(db),
+		ActressLookupRepo:    database.NewActressRepository(db),
 		TemplateEngine:       nil,
 	})
 }

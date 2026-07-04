@@ -727,6 +727,18 @@ func TestBuildLLMTranslationPrompts_Rules(t *testing.T) {
 		assert.Contains(t, systemPrompt, "⟦N⟧")
 	})
 
+	t.Run("prompt includes adult-slang terminology and spelling rules", func(t *testing.T) {
+		systemPrompt, _, _, err := buildLLMTranslationPrompts("ja", "ko", []string{"説明"}, []string{"description"})
+		require.NoError(t, err)
+
+		assert.Contains(t, systemPrompt, "中出し → 질내 사정")
+		assert.Contains(t, systemPrompt, "騎乗位 → 기승위")
+		assert.Contains(t, systemPrompt, "デカ尻 → 큰 엉덩이")
+		assert.Contains(t, systemPrompt, "ぶっかけ → 부카케")
+		assert.Contains(t, systemPrompt, "NOT 버카케")
+		assert.Contains(t, systemPrompt, "엉덩이 (NOT 엉둥이)")
+	})
+
 	t.Run("prompt includes proper-noun rule for maker/label/director", func(t *testing.T) {
 		systemPrompt, _, _, err := buildLLMTranslationPrompts("ja", "ko", []string{"アタッカーズ"}, []string{"maker"})
 		require.NoError(t, err)
@@ -1262,6 +1274,77 @@ func TestTranslateMovie_KoreanPersonNameHangulValidation(t *testing.T) {
 		// Fallback keeps the correct name (surrounding text may stay untranslated).
 		assert.Equal(t, "官能的な히비키 렌の誘惑", movie.Title)
 		assert.Equal(t, "히비키 렌", result[0].Actresses[0])
+	})
+
+	t.Run("actress name in description is protected by a placeholder", func(t *testing.T) {
+		var requests []string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req struct {
+				Messages []struct {
+					Content string `json:"content"`
+				} `json:"messages"`
+			}
+			body, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(body, &req)
+			if len(req.Messages) > 0 {
+				requests = append(requests, req.Messages[len(req.Messages)-1].Content)
+			}
+			// Model preserves ⟦0⟧ but picks the wrong subject particle 가 after the
+			// opaque token; restoration corrects it to 이 for the consonant-final 렌.
+			respond(w, "<<<title>>>\n⟦0⟧의 유혹\n<<<description>>>\n⟦0⟧가 등장하는 작품\n")
+		}))
+		defer server.Close()
+
+		cfg := newConfig(server.URL)
+		cfg.Fields.Description = true
+		s := New(cfg)
+		movie := &models.Movie{
+			Title:       "響蓮の誘惑",
+			Description: "本編に響蓮が登場する",
+			Actresses: []models.Actress{
+				{JapaneseName: "響蓮", ThumbURL: "https://pics.dmm.co.jp/mono/actjpgs/hibiki_ren.jpg"},
+			},
+		}
+
+		result, warning, err := s.TranslateMovie(context.Background(), movie, "")
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		assert.Empty(t, warning)
+
+		// The description slot carried an opaque placeholder, never the kanji name.
+		require.Len(t, requests, 1)
+		assert.Contains(t, requests[0], "⟦0⟧")
+		assert.NotContains(t, requests[0], "響蓮")
+
+		// Both fields restore to the same Hangul reading as the actress, and the
+		// subject particle agrees with 렌 (가 → 이).
+		assert.Equal(t, "히비키 렌의 유혹", movie.Title)
+		assert.Equal(t, "히비키 렌이 등장하는 작품", movie.Description)
+		assert.Equal(t, "히비키 렌", result[0].Actresses[0])
+	})
+
+	t.Run("dropped description placeholder falls back to direct Hangul", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			respond(w, "<<<description>>>\n작품 설명\n")
+		}))
+		defer server.Close()
+
+		cfg := newConfig(server.URL)
+		cfg.Fields.Title = false
+		cfg.Fields.Description = true
+		s := New(cfg)
+		movie := &models.Movie{
+			Description: "本編に響蓮が登場する",
+			Actresses: []models.Actress{
+				{JapaneseName: "響蓮", ThumbURL: "https://pics.dmm.co.jp/mono/actjpgs/hibiki_ren.jpg"},
+			},
+		}
+
+		result, _, err := s.TranslateMovie(context.Background(), movie, "")
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		assert.Equal(t, "本編に히비키 렌が登場する", movie.Description)
 	})
 }
 

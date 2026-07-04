@@ -230,6 +230,13 @@ func loadConfig() (*config.Config, error) {
 	cfg.Output.Template.FolderFormat = "<ID>"
 	cfg.Output.Template.FileFormat = "<ID>"
 	cfg.Output.Operation.RenameFile = true
+	// Enable revert so the full-stack Playwright suite can exercise the
+	// /jobs/:id revert UI flow (RevertConfirmationModal + OperationRow). The
+	// flag is opt-in by default (false) for safety; the e2e backend turns it
+	// on because the revert pipeline is a first-class user-visible feature
+	// that needs real-backend coverage. Specs that don't revert are
+	// unaffected — the flag only gates the revert endpoints + UI button.
+	cfg.Output.Operation.AllowRevert = true
 	cfg.Output.MediaFormat.PosterFormat = "<ID>-poster.jpg"
 	cfg.Output.MediaFormat.FanartFormat = "<ID>-fanart.jpg"
 	cfg.Output.MediaFormat.ScreenshotFolder = "extrafanart"

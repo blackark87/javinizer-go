@@ -60,16 +60,37 @@ func IsUnknownActressFields(lastName, firstName, japaneseName string) bool {
 	return hasPlaceholder
 }
 
-// descriptiveNonNameMarkers are substrings that appear in scraper "actress" values
-// that are actually promotional description blurbs, not real names — e.g.
-// "【あいちゃん/24歳/173cm！！Iカップの美女OL！！】…". Real actress names never contain
+// descriptiveNonNameMarkers are structural substrings that appear in scraper
+// "actress" values that are actually promotional description blurbs, not real names —
+// e.g. "【あいちゃん/24歳/173cm！！Iカップの美女OL！！】…". Real actress names never contain
 // these, so their presence reliably flags a non-name value.
 var descriptiveNonNameMarkers = []string{
 	"【", "】", "［", "］", // bracketed blurb segments
-	"歳", "才", // age
-	"カップ", "ｶｯﾌﾟ", // cup size
 	"！！", // promotional double-exclamation
-	"cm", "ｃｍ", // height
+}
+
+// descriptorKeywords are relation/occupation/attribute terms scrapers append to (or
+// substitute for) amateur names — age, cup size, height, marital/occupation labels,
+// etc. They are used both to strip decorated tokens from a name and to flag a value
+// that is a description with no name at all ("欲求不満セレブ妻"). Kept to strong terms
+// that essentially never occur inside a real personal name.
+var descriptorKeywords = []string{
+	"歳", "才", "カップ", "ｶｯﾌﾟ", "cm", "ｃｍ", // age / cup / height
+	"妻", "人妻", "若妻", "熟女", "主婦", "奥さん", // marital / relation
+	"セレブ", "嬢", "キャバ", "ラウンジ", "勤務", // occupation / venue
+	"女子大生", "大学", "年生", "専門学生", "職業", // student / occupation
+	"OL", "ＯＬ", "素人", // office lady / amateur
+}
+
+// ContainsDescriptorKeyword reports whether s contains any relation/occupation/
+// attribute descriptor keyword.
+func ContainsDescriptorKeyword(s string) bool {
+	for _, kw := range descriptorKeywords {
+		if strings.Contains(s, kw) {
+			return true
+		}
+	}
+	return false
 }
 
 // descriptiveNonNameMaxRunes is a length backstop: real actress names never approach
@@ -91,6 +112,9 @@ func IsDescriptiveNonName(lastName, firstName, japaneseName string) bool {
 			if strings.Contains(field, marker) {
 				return true
 			}
+		}
+		if ContainsDescriptorKeyword(field) {
+			return true
 		}
 		if len([]rune(field)) > descriptiveNonNameMaxRunes {
 			return true

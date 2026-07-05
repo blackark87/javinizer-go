@@ -349,16 +349,21 @@ func TestCleanActressNameForTranslation(t *testing.T) {
 		// middle-dot stripping (new)
 		{"りむ・Hカップ 20歳 コンカフェ店員", "りむ"},
 		{"りむ・Hカップ", "りむ"},
-		// age suffix stripping (new)
+		// age suffix stripping + honorific removal (honorifics are now stripped)
 		{"カレン 25歳 歯科衛生士", "カレン"},
-		{"ひとみさん 27歳 探偵", "ひとみさん"},
-		{"あおいちゃん 22歳 地下アイドル", "あおいちゃん"},
-		{"ミウちゃん 22歳 職業不詳SSS級ギャル", "ミウちゃん"},
-		{"まひるちゃん 22歳 美容師のアシスタント", "まひるちゃん"},
+		{"ひとみさん 27歳 探偵", "ひとみ"},
+		{"あおいちゃん 22歳 地下アイドル", "あおい"},
+		{"ミウちゃん 22歳 職業不詳SSS級ギャル", "ミウ"},
+		{"まひるちゃん 22歳 美容師のアシスタント", "まひる"},
 		{"カレン ２５歳 歯科衛生士", "カレン"}, // full-width digits
-		// honorific-based name extraction from trailing token (new)
-		{"高身長172cmショート× Gカップ豹変アクメギャル メイちゃん", "メイちゃん"},
-		{"デカパイ美容師 ひとみさん", "ひとみさん"},
+		// honorific-based name extraction from trailing token, then honorific stripped
+		{"高身長172cmショート× Gカップ豹変アクメギャル メイちゃん", "メイ"},
+		{"デカパイ美容師 ひとみさん", "ひとみ"},
+		// trailing honorific on a bare single-token name is stripped
+		{"ありささん", "ありさ"},
+		{"あいちゃん", "あい"},
+		// occupation/location descriptor token stripped, name kept
+		{"愛梨沙 西麻布ラウンジ勤務", "愛梨沙"},
 		// entirely description — no extraction possible, pass through as-is
 		{"某高級ホテル従業員", "某高級ホテル従業員"},
 		{"植え込みに頭突っ込んでたデカパイ女", "植え込みに頭突っ込んでたデカパイ女"},

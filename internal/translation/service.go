@@ -575,12 +575,13 @@ func cleanActressNameForTranslation(name string) string {
 	// "カレン 25歳 歯科衛生士" → "カレン"  (age suffix and everything after)
 	name = strings.TrimSpace(ageOccupationSuffixRE.ReplaceAllString(name, ""))
 
-	// "高身長172cmショート× Gカップ豹変アクメギャル メイちゃん" → "メイちゃん"
-	// When multiple space-separated tokens remain and the last ends with a Japanese
-	// name honorific, the description precedes the name — use only the last token.
+	honorifics := []string{"ちゃん", "くん", "さん", "様", "氏", "君"}
+
+	// "高身長172cmショート× Gカップ豹変アクメギャル メイちゃん" → "メイちゃん": a trailing token
+	// that ends with a Japanese honorific IS the name; preceding tokens are description.
 	if tokens := strings.Fields(name); len(tokens) > 1 {
 		last := tokens[len(tokens)-1]
-		for _, sfx := range []string{"ちゃん", "さん", "くん"} {
+		for _, sfx := range honorifics {
 			if strings.HasSuffix(last, sfx) {
 				name = last
 				break
@@ -588,7 +589,34 @@ func cleanActressNameForTranslation(name string) string {
 		}
 	}
 
-	return name
+	// Drop occupation/attribute descriptor tokens, keeping the name token(s):
+	// "愛梨沙 西麻布ラウンジ勤務" → "愛梨沙". Japanese (kana/kanji) values only, so a
+	// romanized "Yui Hatano" keeps both name parts.
+	if containsResidualJapanese(name) {
+		if tokens := strings.Fields(name); len(tokens) > 1 {
+			kept := make([]string, 0, len(tokens))
+			for _, t := range tokens {
+				if models.ContainsDescriptorKeyword(t) {
+					continue
+				}
+				kept = append(kept, t)
+			}
+			if len(kept) > 0 {
+				name = strings.Join(kept, " ")
+			}
+		}
+	}
+
+	// Strip a trailing honorific attached to the bare name: "ありささん" → "ありさ",
+	// "メイちゃん" → "メイ". Longest suffix checked first.
+	for _, sfx := range honorifics {
+		if strings.HasSuffix(name, sfx) && len([]rune(name)) > len([]rune(sfx)) {
+			name = strings.TrimSuffix(name, sfx)
+			break
+		}
+	}
+
+	return strings.TrimSpace(name)
 }
 
 var descriptionPromoStoreRE = regexp.MustCompile(`(?:特集\s*)?最新作やセール商品など、お得な情報満載[の의]\s*『[^』]*KMPストア[^』]*』はこちら！?`)

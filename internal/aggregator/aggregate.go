@@ -443,7 +443,7 @@ func (a *Aggregator) getActressesByPriority(
 			actresses = append(actresses, *actress)
 		}
 
-		return actresses
+		return dropRedundantUnknowns(actresses)
 	}
 
 	// If no actresses found and unknown actress text is set, add unknown
@@ -523,6 +523,31 @@ func cleanActressInfoName(info *models.ActressInfo) {
 		info.JapaneseName = models.UnknownActressName
 		info.ThumbURL = ""
 	}
+}
+
+// dropRedundantUnknowns removes Unknown placeholder entries when at least one real
+// actress is present, so a mis-scraped description that became Unknown (e.g.
+// "欲求不満セレブ妻") doesn't clutter the list alongside the real name. When no real
+// actress exists the list is returned unchanged (fallback Unknown is preserved).
+func dropRedundantUnknowns(actresses []models.Actress) []models.Actress {
+	hasReal := false
+	for i := range actresses {
+		if !models.IsUnknownActressFields(actresses[i].LastName, actresses[i].FirstName, actresses[i].JapaneseName) {
+			hasReal = true
+			break
+		}
+	}
+	if !hasReal {
+		return actresses
+	}
+	filtered := actresses[:0]
+	for _, act := range actresses {
+		if models.IsUnknownActressFields(act.LastName, act.FirstName, act.JapaneseName) {
+			continue
+		}
+		filtered = append(filtered, act)
+	}
+	return filtered
 }
 
 func (a *Aggregator) enrichActressReadings(actresses []models.Actress) {

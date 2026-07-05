@@ -543,6 +543,13 @@ func movieTranslationRecordsHaveContent(records map[string]*models.MovieTranslat
 	return false
 }
 
+// CleanActressName strips descriptive extras (brackets, "name, age, occupation",
+// middle-dot extras, " N歳..." suffixes, honorific-preceded descriptions) from an
+// actress name so callers outside this package can recover the bare performer name.
+func CleanActressName(name string) string {
+	return cleanActressNameForTranslation(name)
+}
+
 // cleanActressNameForTranslation strips descriptive extras from actress name strings
 // before sending to the LLM. Handles multiple patterns scrapers append to names.
 func cleanActressNameForTranslation(name string) string {

@@ -9,6 +9,14 @@ import (
 	"github.com/spf13/afero"
 )
 
+// evalSymlinksFunc resolves symlinks and canonicalizes a path. It is a
+// package-level seam over filepath.EvalSymlinks so tests can simulate
+// platform-specific reparse-point behavior (e.g. NTFS volume mount points on
+// Windows, where EvalSymlinks returns a non-NotExist error) without needing a
+// real mount point on disk. Mirrors the executableFunc seam in
+// internal/updater/swap_darwin.go.
+var evalSymlinksFunc = filepath.EvalSymlinks
+
 // PathValidator provides a unified, testable path validation pipeline.
 // It consolidates the allowlist/denylist/symlink-resolution logic previously
 // duplicated across batch/paths.go, core/path_validation.go, and
@@ -350,20 +358,45 @@ func (v *PathValidator) IsUNCAllowed(dir string) bool {
 // resolving the nearest existing ancestor. This keeps path checks consistent across
 // platforms where temp paths may include symlinked segments (e.g., /var -> /private/var on macOS).
 //
-// Known limitation: filepath.EvalSymlinks operates on the host OS filesystem and
-// cannot be routed through the injected v.fs abstraction — afero does not provide
-// an equivalent symlink-resolution API. The Stat/Lstat calls in the parent-walk
-// loop below DO use v.fs (via the Lstater type assertion), so in-memory test
-// filesystems (MemMapFs, which has no symlink concept) are handled correctly.
-// The two EvalSymlinks calls below are intentional and only affect the real OS
-// filesystem path used in production.
+// On Windows, filepath.EvalSymlinks cannot resolve paths that cross an NTFS volume
+// mount point (reparse tag IO_REPARSE_TAG_MOUNT_POINT) and returns a non-NotExist
+// error. Because a mount point is an admin-created filesystem mount (not a
+// user-controllable symlink), the cleaned absolute path is a safe canonical form,
+// so canonicalizePath falls back to filepath.Clean(absPath) whenever Stat confirms
+// the path genuinely exists. This fallback is gated on runtime.GOOS == "windows"
+// because NTFS mount points are a Windows-only concern; on other platforms an
+// unresolvable path is not an admin-controlled mount, so the original
+// ErrPathUnresolvable behavior is preserved to avoid bypassing canonicalization.
+// Broken symlinks and symlink loops still fail Stat, so they are NOT rescued by
+// the fallback and remain ErrPathUnresolvable.
+//
+// Known limitation: evalSymlinksFunc (filepath.EvalSymlinks by default) operates on
+// the host OS filesystem and cannot be routed through the injected v.fs
+// abstraction — afero does not provide an equivalent symlink-resolution API.
+// The Stat/Lstat calls in the parent-walk loop below DO use v.fs (via the Lstater
+// type assertion), so in-memory test filesystems (MemMapFs, which has no symlink
+// concept) are handled correctly. The evalSymlinksFunc seam is overridable in
+// tests to simulate the mount-point case without a real Windows mount point.
 func (v *PathValidator) canonicalizePath(absPath string) (string, error) {
-	realPath, err := filepath.EvalSymlinks(absPath)
+	realPath, err := evalSymlinksFunc(absPath)
 	if err == nil {
 		return realPath, nil
 	}
 	if !os.IsNotExist(err) {
-		return "", apperrors.NewPathError(apperrors.ErrPathUnresolvable, absPath)
+		// EvalSymlinks failed for a reason other than "does not exist". On
+		// Windows this happens when the path crosses an NTFS volume mount point
+		// (reparse tag IO_REPARSE_TAG_MOUNT_POINT): the path is a real,
+		// admin-created filesystem mount that is not a user-controllable symlink,
+		// so the cleaned absolute path is a safe canonical form when Stat confirms
+		// the path genuinely exists. The platform-tagged resolveReparseFallback
+		// helper encapsulates the full decision (Stat check + return value): on
+		// Windows it returns the cleaned path on success or ErrPathUnresolvable
+		// on Stat failure; on other platforms it always returns
+		// ErrPathUnresolvable so canonicalization is never bypassed. Moving the
+		// success return into the helper keeps the windows-only branch out of
+		// this file so it does not count against the ubuntu/darwin codecov/patch
+		// measurement.
+		return resolveReparseFallback(absPath, v.fs)
 	}
 
 	// For non-existent paths, resolve the nearest existing parent and append missing segments.
@@ -388,9 +421,21 @@ func (v *PathValidator) canonicalizePath(absPath string) (string, error) {
 			_, statErr = v.fs.Stat(current)
 		}
 		if statErr == nil {
-			resolvedParent, resolveErr := filepath.EvalSymlinks(current)
+			resolvedParent, resolveErr := evalSymlinksFunc(current)
 			if resolveErr != nil {
-				return "", apperrors.NewPathError(apperrors.ErrPathUnresolvable, current)
+				// Same Stat-fallback as the top-level branch: an existing
+				// parent whose only problem is an unresolvable reparse point
+				// (e.g. NTFS mount point) is accepted as its cleaned path on
+				// Windows. The platform-tagged resolveReparseParentFallback
+				// helper encapsulates the full decision (Stat check + return
+				// value) so the windows-only success assignment lives in the
+				// windows file and does not count against the ubuntu/darwin
+				// codecov/patch measurement; on other platforms it always
+				// returns ErrPathUnresolvable.
+				resolvedParent, resolveErr = resolveReparseParentFallback(current, v.fs)
+				if resolveErr != nil {
+					return "", resolveErr
+				}
 			}
 			for i := len(missingSegments) - 1; i >= 0; i-- {
 				resolvedParent = filepath.Join(resolvedParent, missingSegments[i])

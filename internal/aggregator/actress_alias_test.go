@@ -209,8 +209,8 @@ func TestActressAliasConversion(t *testing.T) {
 						LastName:  "Hatano",
 					},
 					{
-						FirstName: "Unknown",
-						LastName:  "Actress",
+						FirstName: "Miku",
+						LastName:  "Sato",
 					},
 					{
 						FirstName: "Jun",
@@ -232,10 +232,10 @@ func TestActressAliasConversion(t *testing.T) {
 				// Converted from "Yui Hatano" to canonical "Hatano Yui"
 				assert.Equal(t, "Yui", actress.FirstName)
 				assert.Equal(t, "Hatano", actress.LastName)
-			case "Actress Unknown":
-				// Not converted (no alias) - FullName() returns LastName + " " + FirstName
-				assert.Equal(t, "Unknown", actress.FirstName)
-				assert.Equal(t, "Actress", actress.LastName)
+			case "Sato Miku":
+				// Not converted (no alias registered) - FullName() returns LastName + " " + FirstName
+				assert.Equal(t, "Miku", actress.FirstName)
+				assert.Equal(t, "Sato", actress.LastName)
 			case "Amamiya Jun":
 				// Converted from "Jun Amamiya" to canonical "Amamiya Jun"
 				assert.Equal(t, "Jun", actress.FirstName)

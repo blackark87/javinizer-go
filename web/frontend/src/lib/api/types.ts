@@ -859,6 +859,8 @@ export interface ScrapersConfig {
 	priority?: string[];
 	flaresolverr?: FlareSolverrConfig;
 	scrape_actress?: boolean;
+	early_stop?: boolean;
+	early_stop_min_results?: number;
 	browser?: BrowserConfig;
 	proxy?: ProxyConfig;
 	[key: string]: ScraperSettings | string | number | boolean | null | string[] | FlareSolverrConfig | BrowserConfig | ProxyConfig | undefined;

@@ -37,6 +37,14 @@ type ScrapersConfig struct {
 	// NEW: Global scrape_actress default (opt-out behavior, default: true)
 	ScrapeActress bool `yaml:"scrape_actress" json:"scrape_actress"`
 
+	// EarlyStop, when true, stops querying lower-priority scrapers once
+	// EarlyStopMinResults successful results are collected AND all configured
+	// metadata.required_fields are covered by those results. Default: false.
+	EarlyStop bool `yaml:"early_stop" json:"early_stop"`
+	// EarlyStopMinResults is the number of successful scraper results to collect
+	// before stopping early. Default: 2 (a second result confirms the first).
+	EarlyStopMinResults int `yaml:"early_stop_min_results" json:"early_stop_min_results"`
+
 	// NEW: Global Browser configuration block
 	Browser     BrowserConfig               `yaml:"browser" json:"browser"`
 	Proxy       ProxyConfig                 `yaml:"proxy" json:"proxy"` // Default HTTP/SOCKS5 proxy for scraper requests

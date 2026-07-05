@@ -135,6 +135,14 @@ func queryScrapers(
 		if outcome.failure != nil {
 			scraperFailures = append(scraperFailures, *outcome.failure)
 		}
+
+		// Early-stop: once enough results are collected and required fields are
+		// covered, skip the remaining lower-priority scrapers.
+		if shouldEarlyStop(cfg, results) {
+			logging.Debugf("[Batch %s] File %d: Early-stop after %d results (min=%d, required fields covered), skipping remaining scrapers",
+				job.ID, fileIndex, len(results), earlyStopMin(cfg))
+			break
+		}
 	}
 
 	return results, scraperFailures, nil, nil

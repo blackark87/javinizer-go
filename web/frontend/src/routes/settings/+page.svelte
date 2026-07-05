@@ -163,6 +163,20 @@
 					}}
 				/>
 			</div>
+
+			<div class="pt-4 border-t mt-4">
+				<FormToggle
+					id="global-early-stop"
+					label="Early-stop scraping"
+					description="Stop querying lower-priority scrapers once enough results are collected (2 by default), instead of always querying every provider. Any fields listed in required_fields are still filled by continuing until covered."
+					checked={settings.config?.scrapers?.early_stop ?? false}
+					onchange={(val) => {
+						if (!settings.config) return;
+						if (!settings.config.scrapers) settings.config.scrapers = {};
+						settings.config.scrapers.early_stop = val;
+					}}
+				/>
+			</div>
 		</SettingsSection>
 
 	<BrowserSettingsSection 

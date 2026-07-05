@@ -1539,6 +1539,51 @@ func TestExtractCandidateURLs_BaseIDMatching(t *testing.T) {
 			shouldMatch: true,
 			description: "Should match exact content ID 'ipx00535'",
 		},
+		{
+			name: "Rejects extra alphabetic prefix (emag001 for mag001)",
+			html: `
+				<a href="https://www.dmm.co.jp/mono/dvd/-/detail/=/cid=emag001/">Wrong EMAG label</a>
+			`,
+			contentID:   "mag001",
+			shouldMatch: false,
+			description: "'emag001' is a different label and must not match base 'mag001'",
+		},
+		{
+			name: "Rejects rental-prefixed alphabetic mismatch (2emag001)",
+			html: `
+				<a href="https://www.dmm.co.jp/mono/dvd/-/detail/=/cid=2emag001/">Wrong</a>
+			`,
+			contentID:   "mag001",
+			shouldMatch: false,
+			description: "'2emag001' strips to 'emag001', still not 'mag001'",
+		},
+		{
+			name: "Accepts numeric-prefixed same base (118mag001)",
+			html: `
+				<a href="https://www.dmm.co.jp/mono/dvd/-/detail/=/cid=118mag001/">Right</a>
+			`,
+			contentID:   "mag001",
+			shouldMatch: true,
+			description: "numeric DMM prefix strips to 'mag001' and should match",
+		},
+		{
+			name: "Accepts single-letter variant suffix (mag001a)",
+			html: `
+				<a href="https://www.dmm.co.jp/mono/dvd/-/detail/=/cid=mag001a/">Variant</a>
+			`,
+			contentID:   "mag001",
+			shouldMatch: true,
+			description: "variant edition suffix 'a' should still match",
+		},
+		{
+			name: "Excludes non-AV pcgame floor even with same base code",
+			html: `
+				<a href="https://www.dmm.co.jp/mono/pcgame/-/detail/=/cid=1028mag001/">PC game</a>
+			`,
+			contentID:   "mag001",
+			shouldMatch: false,
+			description: "'1028mag001' is a PC game, not the AV — excluded floor",
+		},
 	}
 
 	for _, tt := range tests {

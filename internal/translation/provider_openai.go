@@ -79,7 +79,7 @@ func buildLLMTranslationPrompts(sourceLang, targetLang string, texts []string, f
 	terminologyRules := "(1) Body measurements: use natural target-language equivalents (e.g. 股下 → 다리 길이, NOT 가랑이 길이). " +
 		"(2) Kanji adult slang: translate by meaning using vocabulary natural to adult content in the target language — never just read the characters (e.g. 美脚 → 각선미; 爆乳 → 폭유; 神乳 → 신의 가슴; 中出し → 질내 사정; 騎乗位 → 기승위; 背面騎乗位 → 후배위 기승위; 杭打ち騎乗位 → 말뚝박기 기승위; デカ尻 → 큰 엉덩이; 尻コキ → 엉덩이 성교). " +
 		"(3) Japanese kana loanwords commonly borrowed into the target language: keep the standard phonetic form (e.g. パパ活 → 파파카츠, NOT 파파활; ぶっかけ → 부카케, NOT 버카케; フェラ → 펠라). " +
-		"(4) Translate ALL text in each item, including any Latin or English portions — do not leave any part untranslated. " +
+		"(4) Translate ALL text in each item, including any Latin or English portions, and every Japanese word — leave NO Japanese hiragana, katakana, or kanji in the output; even grammatical suffixes such as すぎる must be fully translated. Do not leave any part untranslated. " +
 		"(5) Use correct, standard target-language spelling — for Korean write 엉덩이 (NOT 엉둥이), 가슴, 사정. Do not invent or misspell words. "
 	personNameRule := "Person-name rule: fields labeled <<<actress[N]>>> or <<<title_as_name>>> contain a performer's name. Transliterate it phonetically into the target language — never translate its meaning (for Korean use Hangul: なつ → 나츠 and 夏 → 나츠, NOT 여름). " +
 		"Keep Japanese name order: FamilyName GivenName (e.g. 하타노 유이, not 유이 하타노). " +

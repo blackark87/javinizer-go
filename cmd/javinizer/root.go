@@ -63,6 +63,11 @@ func initDesktopDefault() {
 	}
 }
 
+// cleanupStaleWindowsOldExe removes a leftover <exe>.old from a prior
+// interrupted desktop self-upgrade (Windows can't overwrite a running exe).
+// The Windows implementation lives in cleanup_windows.go; on other platforms
+// it is a no-op (cleanup_unix.go).
+
 func init() {
 	// Customize version template
 	rootCmd.SetVersionTemplate(version.Info() + "\n")
@@ -78,6 +83,7 @@ func init() {
 	// config init so ApplyEnvironmentOverrides picks the portable paths up.
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
 		if desktop.IsDesktopBuild() {
+			cleanupStaleWindowsOldExe()
 			// Only set up the portable env when the user did not pass a custom
 			// --config. With a custom config, the user owns their data layout;
 			// injecting JAVINIZER_DB/LOG_DIR here would have ApplyEnvironmentOverrides

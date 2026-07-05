@@ -151,6 +151,12 @@ func (s *Scraper) extractCandidateURLs(doc *goquery.Document, contentID string) 
 		"/-/search/",           // Mono search pages
 		"/-/list/",             // Monthly list pages
 		"/service/-/exchange/", // Exchange/redirect pages
+		// Non-AV product floors: same base code can exist as a game/doujin/anime
+		// (e.g. "1028mag001" is a PC game, not the AV "mag001"). Never scrape these.
+		"/mono/pcgame/",
+		"/mono/doujin/",
+		"/mono/anime/",
+		"/mono/game/",
 	}
 
 	// Only exclude video.dmm.co.jp if browser mode is disabled
@@ -179,23 +185,16 @@ func (s *Scraper) extractCandidateURLs(doc *goquery.Document, contentID string) 
 		baseID = contentIDLower // No prefix, use as-is
 	}
 
+	// Target IDs the candidate's own content-id must match (exactly, or with DMM's
+	// single-letter variant suffix). Used for strict matching below.
+	searchIDs := uniqueNonEmptyStrings([]string{contentIDLower, baseID})
+
 	logging.Debugf("DMM: extractCandidateURLs looking for contentID=%s, baseID=%s", contentIDLower, baseID)
 	logging.Debugf("DMM: Browser mode enabled=%v, excludePatterns=%v", s.useBrowser, excludePatterns)
 
 	doc.Find("a").Each(func(i int, sel *goquery.Selection) {
 		href, exists := sel.Attr("href")
 		if !exists {
-			return
-		}
-
-		// Check if this link contains our canonical content-ID or base ID
-		// DMM product pages can use different ID formats (e.g., sone860, 4sone860, tksone860)
-		// Use lowercase canonical forms for consistent matching
-		hrefLower := strings.ToLower(href)
-		logging.Debugf("DMM: Checking link href=%s, contains contentID=%v, contains baseID=%v",
-			hrefLower, strings.Contains(hrefLower, contentIDLower), strings.Contains(hrefLower, baseID))
-		containsID := strings.Contains(hrefLower, contentIDLower) || strings.Contains(hrefLower, baseID)
-		if !containsID {
 			return
 		}
 
@@ -222,13 +221,26 @@ func (s *Scraper) extractCandidateURLs(doc *goquery.Document, contentID string) 
 			return
 		}
 
-		priority := urlPriority(fullURL)
-
 		// Extract content ID from URL for comparison
 		extractedID := extractContentIDFromURL(fullURL)
 		if strings.Contains(fullURL, "/rental/") {
 			extractedID = stripRentalSuffix(extractedID)
 		}
+
+		// Strict match: the candidate's own content-id — with DMM numeric/h_ prefix and
+		// rental suffix stripped — must equal a target id (allowing a single-letter
+		// variant suffix). This rejects false substring matches such as "emag001" for
+		// base "mag001" (a different EMAG-label work), while still accepting numeric
+		// prefixes like "118mag001" and variant suffixes like "mag001a".
+		cleanURLCID := cleanPrefixRegex.ReplaceAllString(
+			strings.ReplaceAll(strings.ToLower(stripRentalSuffix(extractedID)), "-", ""), "$1")
+		if !matchesWithVariantSuffix(cleanURLCID, searchIDs...) {
+			logging.Debugf("DMM: Skipping non-matching candidate cid=%q (clean=%q) for %v: %s",
+				extractedID, cleanURLCID, searchIDs, fullURL)
+			return
+		}
+
+		priority := urlPriority(fullURL)
 		idLen := len(extractedID)
 
 		candidates = append(candidates, urlCandidate{

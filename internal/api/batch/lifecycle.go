@@ -7,6 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/javinizer/javinizer-go/internal/api/contracts"
+	"github.com/javinizer/javinizer-go/internal/config"
+	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/logging"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/nfo"
@@ -142,6 +144,15 @@ func getBatchJobFull(deps *ServerDependencies, c *gin.Context, jobID string) {
 	logging.Debugf("[GET /batch/%s] Returning full job with %d results, completed=%d, failed=%d",
 		jobID, len(job.Results), job.Completed, job.Failed)
 
+	// Backfill actress images/fields from the actress DB for the editor view. The
+	// stored movie snapshot reflects scrape-time state, so actresses registered (or
+	// given an image) after the scrape would otherwise show a "No Image" placeholder.
+	cfg := deps.GetConfig()
+	var actressRepo *database.ActressRepository
+	if cfg != nil && cfg.Metadata.ActressDatabase.Enabled && deps.MovieRepo != nil {
+		actressRepo = database.NewActressRepository(deps.MovieRepo.GetDB())
+	}
+
 	var completedAt *string
 	if job.CompletedAt != nil {
 		str := job.CompletedAt.Format("2006-01-02T15:04:05Z07:00")
@@ -164,7 +175,7 @@ func getBatchJobFull(deps *ServerDependencies, c *gin.Context, jobID string) {
 			Error:          fileResult.Error,
 			FieldSources:   fileResult.FieldSources,
 			ActressSources: fileResult.ActressSources,
-			Data:           fileResult.Data,
+			Data:           enrichActressesForResponse(fileResult.Data, actressRepo, cfg),
 			StartedAt:      fileResult.StartedAt.Format("2006-01-02T15:04:05Z07:00"),
 			EndedAt:        endedAt,
 			IsMultiPart:    fileResult.IsMultiPart,
@@ -190,6 +201,26 @@ func getBatchJobFull(deps *ServerDependencies, c *gin.Context, jobID string) {
 		Update:                job.Update,
 		PersistError:          job.PersistError,
 	})
+}
+
+// enrichActressesForResponse returns a copy of the result's movie with actress
+// thumbnails/name fields backfilled from the actress DB, without mutating the shared
+// in-memory job state. Non-movie data or a nil repo is returned unchanged.
+func enrichActressesForResponse(data interface{}, actressRepo *database.ActressRepository, cfg *config.Config) interface{} {
+	if actressRepo == nil {
+		return data
+	}
+	movie, ok := data.(*models.Movie)
+	if !ok || movie == nil || len(movie.Actresses) == 0 {
+		return data
+	}
+
+	movieCopy := *movie
+	movieCopy.Actresses = make([]models.Actress, len(movie.Actresses))
+	copy(movieCopy.Actresses, movie.Actresses)
+
+	worker.EnrichActressesFromDB(&movieCopy, actressRepo, cfg)
+	return &movieCopy
 }
 
 func getBatchJobSlim(deps *ServerDependencies, c *gin.Context, jobID string) {

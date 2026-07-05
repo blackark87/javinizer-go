@@ -356,39 +356,68 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 			return nil, "", fmt.Errorf("translation provider returned %d items for %d inputs", len(translatedTexts), len(indexes))
 		}
 
-		// Person-name slots for a Korean target must come back in Hangul. Models —
-		// local ones especially — may echo the romaji input unchanged instead of
-		// transliterating it. Retry those slots individually; if the echo persists,
-		// keep the source name and surface a warning rather than failing the batch.
-		if lang == "ko" {
-			var retryPos []int
+		// Per-slot quality retries for non-Japanese targets:
+		//   - person-name slots (Korean) that came back without Hangul — the model
+		//     echoed the romaji input instead of transliterating it.
+		//   - free-text slots that still contain untranslated Japanese kana/kanji
+		//     (the model translated most of the text but left fragments, e.g. すぎる).
+		// Both retry the offending slots individually; on persistent failure we keep
+		// the best available text rather than failing the batch.
+		if normalizeLanguage(lang) != "ja" {
+			var retries []slotRetry
 			for i, reqIdx := range indexes {
 				translated := strings.TrimSpace(translatedTexts[i])
-				if translated != "" && isPersonNameField(requests[reqIdx].fieldName) && !containsHangul(translated) {
+				if translated == "" {
+					continue
+				}
+				switch {
+				case lang == "ko" && isPersonNameField(requests[reqIdx].fieldName) && !containsHangul(translated):
 					logging.Debugf("Translation[%s]: non-Hangul result %q for %s, retrying slot individually", movieID, translated, requests[reqIdx].fieldName)
-					retryPos = append(retryPos, i)
+					retries = append(retries, slotRetry{pos: i, kind: retryPersonName})
+				case !isPersonNameField(requests[reqIdx].fieldName) && containsResidualJapanese(translated):
+					logging.Debugf("Translation[%s]: residual Japanese in %s result %q, retrying slot individually", movieID, requests[reqIdx].fieldName, translated)
+					retries = append(retries, slotRetry{pos: i, kind: retryResidual})
 				}
 			}
-			if len(retryPos) > 0 {
-				retryTexts := make([]string, len(retryPos))
-				retryFields := make([]string, len(retryPos))
-				for j, pos := range retryPos {
-					retryTexts[j] = requests[indexes[pos]].text
-					retryFields[j] = requests[indexes[pos]].fieldName
+			if len(retries) > 0 {
+				retryTexts := make([]string, len(retries))
+				retryFields := make([]string, len(retries))
+				for j, r := range retries {
+					retryTexts[j] = requests[indexes[r.pos]].text
+					retryFields[j] = requests[indexes[r.pos]].fieldName
 				}
 				retried, retryErr := s.translateTextsOneByOne(ctx, sourceLang, lang, retryTexts, retryFields)
 				if retryErr != nil {
-					logging.Debugf("Translation[%s]: per-slot Hangul retry failed: %v", movieID, retryErr)
+					logging.Debugf("Translation[%s]: per-slot retry failed: %v", movieID, retryErr)
 				}
-				for j, pos := range retryPos {
+				for j, r := range retries {
+					fieldName := requests[indexes[r.pos]].fieldName
+					var retryVal string
 					if retryErr == nil {
-						if r := strings.TrimSpace(retried[j]); containsHangul(r) {
-							translatedTexts[pos] = r
+						retryVal = strings.TrimSpace(retried[j])
+					}
+					switch r.kind {
+					case retryPersonName:
+						if retryVal != "" && containsHangul(retryVal) {
+							translatedTexts[r.pos] = retryVal
 							continue
 						}
+						translatedTexts[r.pos] = requests[indexes[r.pos]].text
+						warnings = append(warnings, fmt.Sprintf("%s: LLM returned non-Hangul, kept source name", fieldName))
+					case retryResidual:
+						// Accept the retry only if it removed all residual Japanese.
+						if retryVal != "" && !containsResidualJapanese(retryVal) {
+							translatedTexts[r.pos] = retryVal
+							continue
+						}
+						// Otherwise keep whichever partial has less leftover Japanese —
+						// never revert to the fully-Japanese source text.
+						current := strings.TrimSpace(translatedTexts[r.pos])
+						if retryVal != "" && countResidualJapanese(retryVal) < countResidualJapanese(current) {
+							translatedTexts[r.pos] = retryVal
+						}
+						warnings = append(warnings, fmt.Sprintf("%s: LLM left untranslated Japanese, kept best partial", fieldName))
 					}
-					translatedTexts[pos] = requests[indexes[pos]].text
-					warnings = append(warnings, fmt.Sprintf("%s: LLM returned non-Hangul, kept source name", requests[indexes[pos]].fieldName))
 				}
 			}
 		}
@@ -841,6 +870,58 @@ func containsHangul(s string) bool {
 		}
 	}
 	return false
+}
+
+// retryKind distinguishes the two per-slot translation retries.
+type retryKind int
+
+const (
+	retryPersonName retryKind = iota // Korean person-name slot returned without Hangul
+	retryResidual                    // free-text slot still contains untranslated Japanese
+)
+
+// slotRetry identifies a translated slot to re-request individually and why.
+type slotRetry struct {
+	pos  int
+	kind retryKind
+}
+
+// isResidualJapaneseRune reports whether r is Japanese kana or kanji — script that
+// must not remain in a translated (non-Japanese) output. Latin is excluded so brand
+// names / "www" don't count as untranslated.
+func isResidualJapaneseRune(r rune) bool {
+	switch {
+	case r >= 0x3040 && r <= 0x309F: // hiragana
+		return true
+	case r >= 0x30A0 && r <= 0x30FF: // katakana
+		return true
+	case r >= 0x3400 && r <= 0x4DBF, r >= 0x4E00 && r <= 0x9FFF: // kanji (CJK ideographs)
+		return true
+	}
+	return false
+}
+
+// containsResidualJapanese reports whether s still contains untranslated Japanese
+// kana or kanji.
+func containsResidualJapanese(s string) bool {
+	for _, r := range s {
+		if isResidualJapaneseRune(r) {
+			return true
+		}
+	}
+	return false
+}
+
+// countResidualJapanese counts the Japanese kana/kanji runes in s, used to pick the
+// less-untranslated of two candidate results.
+func countResidualJapanese(s string) int {
+	n := 0
+	for _, r := range s {
+		if isResidualJapaneseRune(r) {
+			n++
+		}
+	}
+	return n
 }
 
 // hangulActressName returns a Hangul reading already present on the actress

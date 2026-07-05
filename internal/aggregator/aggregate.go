@@ -123,7 +123,7 @@ func (a *Aggregator) aggregateWithPriority(results []*models.ScraperResult, prio
 	movie.RatingVotes = ratingVotes
 	movie.RatingWarning = ratingWarning
 
-	movie.Actresses = a.getActressesByPriority(resultsBySource, priorityFunc("Actress"))
+	movie.Actresses = a.canonicalizeDescriptiveActresses(a.getActressesByPriority(resultsBySource, priorityFunc("Actress")))
 	a.enrichActressReadings(movie.Actresses)
 
 	genreNames := a.getGenresByPriority(resultsBySource, priorityFunc("Genre"))
@@ -497,6 +497,33 @@ func nameContainsHangul(s string) bool {
 // table (populated by earlier scrapes with DMM/r18 romaji). Only empty fields are
 // filled — scraped data is never overwritten. Without this, a kanji-only actress
 // (common in VR titles) gets her name guessed by the LLM (伊藤舞雪 → 마이세츠 이토).
+// canonicalizeDescriptiveActresses replaces any actress entry whose "name" is really
+// a promotional description blurb (e.g. "【あいちゃん/24歳/173cm！！…】") with the Unknown
+// placeholder, before DB enrichment/transliteration/persistence run. Multiple blurbs
+// collapse into a single Unknown so the output isn't cluttered with duplicates.
+func (a *Aggregator) canonicalizeDescriptiveActresses(actresses []models.Actress) []models.Actress {
+	result := make([]models.Actress, 0, len(actresses))
+	sawUnknown := false
+	for i := range actresses {
+		act := actresses[i]
+		if models.IsDescriptiveNonName(act.LastName, act.FirstName, act.JapaneseName) {
+			logging.Debugf("Aggregation: actress value %q looks like a description, not a name — setting Unknown", act.JapaneseName)
+			act.FirstName = models.UnknownActressName
+			act.LastName = ""
+			act.JapaneseName = models.UnknownActressName
+			act.ThumbURL = ""
+		}
+		if models.IsUnknownActressFields(act.LastName, act.FirstName, act.JapaneseName) {
+			if sawUnknown {
+				continue
+			}
+			sawUnknown = true
+		}
+		result = append(result, act)
+	}
+	return result
+}
+
 func (a *Aggregator) enrichActressReadings(actresses []models.Actress) {
 	if a.actressLookupRepo == nil {
 		return

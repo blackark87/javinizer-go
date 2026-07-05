@@ -6,6 +6,31 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestIsDescriptiveNonName(t *testing.T) {
+	tests := []struct {
+		name                  string
+		last, first, japanese string
+		want                  bool
+	}{
+		{"real kanji name", "", "", "波多野結衣", false},
+		{"real kana nickname", "", "", "あいちゃん", false},
+		{"real kanji name 2", "", "", "藤原絵理香", false},
+		{"romaji name", "Hatano", "Yui", "", false},
+		{"blurb with brackets/age/cup", "", "", "【あいちゃん/24歳/173cm！！超美巨Iカップのガチ美女OL！！】【のんちゃん/22歳/Gカップの美爆乳OL！！】神スタイル美女2人の大乱れ！！一挙配信SP！！", true},
+		{"short bracket blurb", "", "", "【あいちゃん", true},
+		{"age marker only", "", "", "カレン25歳", true},
+		{"cup marker only", "", "", "みおGカップ", true},
+		{"20 runes is within limit", "", "", "あいうえおかきくけこさしすせそたちつてと", false}, // exactly 20 runes, not > 20
+		{"over 20 runes flagged", "", "", "あいうえおかきくけこさしすせそたちつてとなに", true},   // 22 runes > 20
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsDescriptiveNonName(tt.last, tt.first, tt.japanese)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestIsUnknownActressName(t *testing.T) {
 	tests := []struct {
 		name string

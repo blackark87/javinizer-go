@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/javinizer/javinizer-go/internal/api/contracts"
-	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/logging"
 	"github.com/javinizer/javinizer-go/internal/models"
@@ -144,12 +144,13 @@ func getBatchJobFull(deps *ServerDependencies, c *gin.Context, jobID string) {
 	logging.Debugf("[GET /batch/%s] Returning full job with %d results, completed=%d, failed=%d",
 		jobID, len(job.Results), job.Completed, job.Failed)
 
-	// Backfill actress images/fields from the actress DB for the editor view. The
-	// stored movie snapshot reflects scrape-time state, so actresses registered (or
-	// given an image) after the scrape would otherwise show a "No Image" placeholder.
-	cfg := deps.GetConfig()
+	// Backfill actress thumbnails from the actress DB for the editor view. The stored
+	// movie snapshot reflects scrape-time state, so actresses registered (or given an
+	// image) after the scrape would otherwise show a "No Image" placeholder. This is a
+	// display-only convenience, so it is NOT gated on the ActressDatabase.Enabled
+	// metadata-enrichment flag — only on the repository being available.
 	var actressRepo *database.ActressRepository
-	if cfg != nil && cfg.Metadata.ActressDatabase.Enabled && deps.MovieRepo != nil {
+	if deps.MovieRepo != nil {
 		actressRepo = database.NewActressRepository(deps.MovieRepo.GetDB())
 	}
 
@@ -175,7 +176,7 @@ func getBatchJobFull(deps *ServerDependencies, c *gin.Context, jobID string) {
 			Error:          fileResult.Error,
 			FieldSources:   fileResult.FieldSources,
 			ActressSources: fileResult.ActressSources,
-			Data:           enrichActressesForResponse(fileResult.Data, actressRepo, cfg),
+			Data:           enrichActressesForResponse(fileResult.Data, actressRepo),
 			StartedAt:      fileResult.StartedAt.Format("2006-01-02T15:04:05Z07:00"),
 			EndedAt:        endedAt,
 			IsMultiPart:    fileResult.IsMultiPart,
@@ -203,10 +204,10 @@ func getBatchJobFull(deps *ServerDependencies, c *gin.Context, jobID string) {
 	})
 }
 
-// enrichActressesForResponse returns a copy of the result's movie with actress
-// thumbnails/name fields backfilled from the actress DB, without mutating the shared
-// in-memory job state. Non-movie data or a nil repo is returned unchanged.
-func enrichActressesForResponse(data interface{}, actressRepo *database.ActressRepository, cfg *config.Config) interface{} {
+// enrichActressesForResponse returns a copy of the result's movie with empty actress
+// thumbnails backfilled from the actress DB, without mutating the shared in-memory job
+// state. Non-movie data or a nil repo is returned unchanged.
+func enrichActressesForResponse(data interface{}, actressRepo *database.ActressRepository) interface{} {
 	if actressRepo == nil {
 		return data
 	}
@@ -219,8 +220,41 @@ func enrichActressesForResponse(data interface{}, actressRepo *database.ActressR
 	movieCopy.Actresses = make([]models.Actress, len(movie.Actresses))
 	copy(movieCopy.Actresses, movie.Actresses)
 
-	worker.EnrichActressesFromDB(&movieCopy, actressRepo, cfg)
+	for i := range movieCopy.Actresses {
+		backfillActressThumb(&movieCopy.Actresses[i], actressRepo)
+	}
 	return &movieCopy
+}
+
+// backfillActressThumb fills an empty actress thumbnail from the registered actress DB
+// (looked up by DMM id, then Japanese name, then romanized name). Display-only; it
+// never overwrites a thumbnail the scrape already produced.
+func backfillActressThumb(a *models.Actress, repo *database.ActressRepository) {
+	if a == nil || a.ThumbURL != "" {
+		return
+	}
+	if models.IsUnknownActressFields(a.LastName, a.FirstName, a.JapaneseName) {
+		return
+	}
+	var found *models.Actress
+	if a.DMMID > 0 {
+		if got, err := repo.FindByDMMID(a.DMMID); err == nil {
+			found = got
+		}
+	}
+	if found == nil && strings.TrimSpace(a.JapaneseName) != "" {
+		if got, err := repo.FindByJapaneseName(strings.TrimSpace(a.JapaneseName)); err == nil {
+			found = got
+		}
+	}
+	if found == nil && a.FirstName != "" && a.LastName != "" {
+		if got, err := repo.FindByFirstNameLastName(a.FirstName, a.LastName); err == nil {
+			found = got
+		}
+	}
+	if found != nil && found.ThumbURL != "" {
+		a.ThumbURL = found.ThumbURL
+	}
 }
 
 func getBatchJobSlim(deps *ServerDependencies, c *gin.Context, jobID string) {

@@ -9,6 +9,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/logging"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/template"
+	"github.com/javinizer/javinizer-go/internal/translation"
 )
 
 // fc2NoPPVRegex matches FC2 IDs that are missing the PPV token (e.g. "FC2-2314275").
@@ -123,7 +124,7 @@ func (a *Aggregator) aggregateWithPriority(results []*models.ScraperResult, prio
 	movie.RatingVotes = ratingVotes
 	movie.RatingWarning = ratingWarning
 
-	movie.Actresses = a.canonicalizeDescriptiveActresses(a.getActressesByPriority(resultsBySource, priorityFunc("Actress")))
+	movie.Actresses = a.getActressesByPriority(resultsBySource, priorityFunc("Actress"))
 	a.enrichActressReadings(movie.Actresses)
 
 	genreNames := a.getGenresByPriority(resultsBySource, priorityFunc("Genre"))
@@ -343,6 +344,7 @@ func (a *Aggregator) getActressesByPriority(
 		for _, info := range result.Actresses {
 			hadAnyActressFromScrapers = true
 			models.CanonicalizeUnknownActressInfo(&info)
+			cleanActressInfoName(&info)
 
 			nameKey := resolveNameKey(info.JapaneseName, info.FirstName, info.LastName)
 
@@ -497,31 +499,30 @@ func nameContainsHangul(s string) bool {
 // table (populated by earlier scrapes with DMM/r18 romaji). Only empty fields are
 // filled — scraped data is never overwritten. Without this, a kanji-only actress
 // (common in VR titles) gets her name guessed by the LLM (伊藤舞雪 → 마이세츠 이토).
-// canonicalizeDescriptiveActresses replaces any actress entry whose "name" is really
-// a promotional description blurb (e.g. "【あいちゃん/24歳/173cm！！…】") with the Unknown
-// placeholder, before DB enrichment/transliteration/persistence run. Multiple blurbs
-// collapse into a single Unknown so the output isn't cluttered with duplicates.
-func (a *Aggregator) canonicalizeDescriptiveActresses(actresses []models.Actress) []models.Actress {
-	result := make([]models.Actress, 0, len(actresses))
-	sawUnknown := false
-	for i := range actresses {
-		act := actresses[i]
-		if models.IsDescriptiveNonName(act.LastName, act.FirstName, act.JapaneseName) {
-			logging.Debugf("Aggregation: actress value %q looks like a description, not a name — setting Unknown", act.JapaneseName)
-			act.FirstName = models.UnknownActressName
-			act.LastName = ""
-			act.JapaneseName = models.UnknownActressName
-			act.ThumbURL = ""
-		}
-		if models.IsUnknownActressFields(act.LastName, act.FirstName, act.JapaneseName) {
-			if sawUnknown {
-				continue
-			}
-			sawUnknown = true
-		}
-		result = append(result, act)
+// cleanActressInfoName recovers the bare performer name from a decorated scraper
+// value ("あいり 21歳 大学3年生" → "あいり") so the same person merges regardless of how
+// a scraper labeled her. If nothing name-like survives cleaning — a promotional
+// blurb such as "【あいちゃん/24歳/173cm！！…】【のんちゃん/…】…" — the entry is replaced with
+// the Unknown placeholder so it is neither transliterated verbatim nor persisted.
+// Runs before name-key dedup so decorated and plain forms of one name collapse.
+func cleanActressInfoName(info *models.ActressInfo) {
+	if info.JapaneseName != "" {
+		info.JapaneseName = translation.CleanActressName(info.JapaneseName)
 	}
-	return result
+	if info.FirstName != "" {
+		info.FirstName = translation.CleanActressName(info.FirstName)
+	}
+	if info.LastName != "" {
+		info.LastName = translation.CleanActressName(info.LastName)
+	}
+	if models.IsDescriptiveNonName(info.LastName, info.FirstName, info.JapaneseName) {
+		logging.Debugf("Aggregation: actress value %q/%q/%q has no usable name after cleaning — treating as Unknown",
+			info.LastName, info.FirstName, info.JapaneseName)
+		info.FirstName = models.UnknownActressName
+		info.LastName = ""
+		info.JapaneseName = models.UnknownActressName
+		info.ThumbURL = ""
+	}
 }
 
 func (a *Aggregator) enrichActressReadings(actresses []models.Actress) {

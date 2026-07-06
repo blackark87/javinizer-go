@@ -96,7 +96,7 @@ var commandFlags = map[string][]flagSpec{
 		{"scalar-strategy", ""},
 		{"array-strategy", ""},
 	},
-	"api": {
+	"web": {
 		{"host", ""},
 		{"port", ""},
 	},

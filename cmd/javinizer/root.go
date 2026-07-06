@@ -63,12 +63,25 @@ func initDesktopDefault() {
 	}
 }
 
+// disableMousetrapForDesktopBuild clears cobra's mousetrap help text for
+// desktop builds so double-click launches open the GUI instead of showing
+// cobra's "This is a command line tool..." dialog and exiting. Extracted from
+// init() so it can be tested: init() runs before any test can toggle
+// BuildDesktop, so the body would otherwise be unreachable in coverage.
+func disableMousetrapForDesktopBuild() {
+	if !desktop.IsDesktopBuild() {
+		return
+	}
+	cobra.MousetrapHelpText = ""
+}
+
 // cleanupStaleWindowsOldExe removes a leftover <exe>.old from a prior
 // interrupted desktop self-upgrade (Windows can't overwrite a running exe).
 // The Windows implementation lives in cleanup_windows.go; on other platforms
 // it is a no-op (cleanup_unix.go).
 
 func init() {
+	disableMousetrapForDesktopBuild()
 	// Customize version template
 	rootCmd.SetVersionTemplate(version.Info() + "\n")
 

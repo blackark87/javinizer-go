@@ -12,7 +12,7 @@ func TestNewCommandStructureDeep(t *testing.T) {
 	cmd := apicmd.NewCommand()
 
 	require.NotNil(t, cmd)
-	assert.Contains(t, cmd.Use, "api", "command Use should contain 'api'")
+	assert.Equal(t, "web", cmd.Use, "command Use should be 'web'")
 	assert.NotEmpty(t, cmd.Short)
 	assert.NotNil(t, cmd.RunE, "RunE should be set")
 

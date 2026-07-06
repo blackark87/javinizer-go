@@ -117,9 +117,9 @@ build: web-build
 run:
 	go run ./cmd/javinizer
 
-# Run the API server using subcommand
+# Run the web/API server using subcommand
 run-api:
-	go run ./cmd/javinizer api
+	go run ./cmd/javinizer web
 
 # Run API with hot reload (requires air, falls back to go run air)
 run-api-dev:

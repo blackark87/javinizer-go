@@ -94,7 +94,7 @@ The manifest installs the prebuilt `javinizer-windows-amd64.exe` and shims it as
 
 ### Desktop app (clickable GUI)
 
-The desktop app opens a native window over the embedded API server and Web UI — the same surface as `javinizer api`, no browser needed. CLI and TUI subcommands remain available inside the same binary. It is a **separate package** from the CLI so both can coexist; see [Desktop App (macOS / Windows / Linux)](17-desktop-app.md) for details.
+The desktop app opens a native window over the embedded API server and Web UI — the same surface as `javinizer web`, no browser needed. CLI and TUI subcommands remain available inside the same binary. It is a **separate package** from the CLI so both can coexist; see [Desktop App (macOS / Windows / Linux)](17-desktop-app.md) for details.
 
 ```bash
 # macOS — Homebrew Cask (installs Javinizer.app to /Applications)

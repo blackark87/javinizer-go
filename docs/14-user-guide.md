@@ -95,7 +95,7 @@ This is designed for files that already have an NFO you want to update rather th
 
 ## Web UI Flows
 
-The web UI (`javinizer web` / `javinizer api`) drives the batch workflows through a few routes:
+The web UI (`javinizer web`) drives the batch workflows through a few routes:
 
 ### Browse (`/browse`)
 

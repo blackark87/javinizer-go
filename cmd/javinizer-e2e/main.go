@@ -5,7 +5,7 @@
 // code exercised by the real SvelteKit frontend + Playwright full-stack E2E
 // tests.
 //
-// It is the test-only twin of `javinizer api`. Production code paths wire
+// It is the test-only twin of `javinizer web`. Production code paths wire
 // all real scrapers (r18dev, dmm, ...) via internal/scraper/registration.go;
 // this binary instead injects a registry pre-populated with the single
 // "e2emock" scraper registered in internal/scraper/e2emock/. The mock returns
@@ -56,7 +56,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/scraperutil"
 
 	// Generated swagger docs (side-effect import matching the production
-	// `javinizer api` command — keeps the API docs endpoint functional).
+	// `javinizer web` command — keeps the API docs endpoint functional).
 	_ "github.com/javinizer/javinizer-go/docs/swagger"
 )
 

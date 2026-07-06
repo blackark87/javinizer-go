@@ -1,6 +1,6 @@
 config_version: 3
 # API authentication credentials are stored in `auth.credentials.json` next to this file.
-# To reset credentials, stop the server, delete that file, then restart `javinizer api`.
+# To reset credentials, stop the server, delete that file, then restart `javinizer web`.
 #
 # Setup endpoint protection (first-arriver takeover prevention):
 # Set JAVINIZER_SETUP_SECRET environment variable to require a bootstrap secret

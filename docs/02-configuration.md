@@ -1499,7 +1499,7 @@ Use environment variables to override settings per environment:
 export LOG_LEVEL=debug
 export JAVINIZER_DB=data/javinizer-dev.db
 export JAVINIZER_TEMP_DIR=/tmp/javinizer-dev
-javinizer api
+javinizer web
 ```
 
 **Production:**
@@ -1507,7 +1507,7 @@ javinizer api
 export LOG_LEVEL=info
 export JAVINIZER_DB=/var/lib/javinizer/javinizer.db
 export UMASK=022
-javinizer api
+javinizer web
 ```
 
 ### Docker Environment Configuration
@@ -1555,11 +1555,11 @@ configs/
 
 # Development
 export JAVINIZER_CONFIG=configs/dev/config.yaml
-javinizer api
+javinizer web
 
 # Production
 export JAVINIZER_CONFIG=configs/prod/config.yaml
-javinizer api
+javinizer web
 ```
 
 ### Docker Volume Strategy

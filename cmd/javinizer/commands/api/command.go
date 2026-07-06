@@ -43,10 +43,9 @@ func NewCommand() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:     "api",
-		Aliases: []string{"web"},
-		Short:   "Start the Javinizer API server (web alias: javinizer web)",
-		Long:    `Start a REST API server for scraping and retrieving JAV metadata`,
+		Use:   "web",
+		Short: "Start the Javinizer web/API server",
+		Long:  `Start a REST API server for scraping and retrieving JAV metadata`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			configFile, _ := cmd.Flags().GetString("config")
 			return run(cmd, configFile, host, port)

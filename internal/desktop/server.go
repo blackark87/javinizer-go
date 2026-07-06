@@ -25,7 +25,7 @@ var (
 
 // ServerInstance is a running API server bound to a free localhost port.
 // It serves the REST API and the embedded Web UI (web/dist) — the same surface
-// the `javinizer api` command exposes — so the desktop webview can load it.
+// the `javinizer web` command exposes — so the desktop webview can load it.
 type ServerInstance struct {
 	baseURL     string
 	srv         *http.Server
@@ -39,7 +39,7 @@ type ServerInstance struct {
 
 // StartServer bootstraps and starts the API server on a free 127.0.0.1 port.
 // It mirrors cmd/javinizer/commands/api.run but (a) binds to an OS-assigned
-// free port so it never collides with a running `javinizer api`, (b) returns
+// free port so it never collides with a running `javinizer web`, (b) returns
 // immediately so the caller (the Wails window) can open at the returned URL,
 // and (c) exposes a Shutdown that drains in-flight requests.
 //

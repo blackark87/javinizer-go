@@ -117,7 +117,7 @@ The manifest installs the prebuilt `javinizer-windows-amd64.exe` and shims it as
 
 ### Desktop app (clickable GUI)
 
-The desktop app is a single clickable application that opens a native window over the embedded API server and Web UI — the same surface as `javinizer api`, no browser needed. It is a **separate package** from the CLI so both can coexist:
+The desktop app is a single clickable application that opens a native window over the embedded API server and Web UI — the same surface as `javinizer web`, no browser needed. It is a **separate package** from the CLI so both can coexist:
 
 ```bash
 # macOS — Homebrew Cask (installs Javinizer.app to /Applications)
@@ -260,7 +260,7 @@ javinizer web           # starts the server at http://localhost:8080
 javinizer web --host 0.0.0.0 --port 8081
 ```
 
-`web` is an alias of `api` — same server. Use `web` for the embedded UI entrypoint, `api` for backend/frontend-dev workflows. On first startup, the web UI prompts you to create an admin login (stored in `auth.credentials.json` next to your config). Delete that file to reset the password.
+`javinizer web` starts the API server and embedded Web UI. On first startup, the web UI prompts you to create an admin login (stored in `auth.credentials.json` next to your config). Delete that file to reset the password.
 
 ### Organize a folder
 
@@ -352,7 +352,7 @@ make build && javinizer web
 
 **Dev mode (hot reload):**
 ```bash
-javinizer api        # terminal 1: backend
+javinizer web        # terminal 1: backend
 make web-dev         # terminal 2: frontend at http://localhost:5174 (proxies API to :8080)
 ```
 

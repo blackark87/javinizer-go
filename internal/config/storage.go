@@ -319,7 +319,7 @@ func isNotExist(err error) bool {
 // Update atomically reads, mutates, and writes the config under an exclusive
 // file lock. Use this instead of Load+Save when persisting a single setting
 // to avoid a TOCTOU race where a concurrent writer's changes (e.g. from
-// `javinizer api`) between the read and write are silently reverted.
+// `javinizer web`) between the read and write are silently reverted.
 func Update(path string, mutate func(*Config)) error {
 	if mutate == nil {
 		return fmt.Errorf("config.Update: mutate callback must not be nil")

@@ -29,7 +29,7 @@ trap cleanup EXIT
 # Check if port 8080 is available (exclude CLOSE_WAIT connections)
 if lsof -ti:$PORT -sTCP:LISTEN >/dev/null 2>&1; then
   echo "[e2e-runner] ERROR: Port $PORT is already in use."
-  echo "[e2e-runner] Stop your dev backend first (kill Air or stop your javinizer api process)."
+  echo "[e2e-runner] Stop your dev backend first (kill Air or stop your javinizer web process)."
   echo "[e2e-runner] Running on port $PORT: $(lsof -ti:$PORT | xargs ps -p 2>/dev/null | head -3)"
   exit 1
 fi
@@ -45,7 +45,7 @@ JAVINIZER_E2E_AUTH=true \
 JAVINIZER_E2E_USERNAME=admin \
 JAVINIZER_E2E_PASSWORD=adminpassword123 \
 LOG_LEVEL=error \
-go run ./cmd/javinizer api --config "$CONFIG_PATH" &
+go run ./cmd/javinizer web --config "$CONFIG_PATH" &
 E2E_PID=$!
 
 echo "[e2e-runner] Backend PID: $E2E_PID"

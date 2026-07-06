@@ -970,12 +970,11 @@ javinizer --config ~/configs/complete.yaml sort ~/Special
 
 ## API Server
 
-### `api` (alias: `web`)
+### `web`
 
 Start a REST API server for programmatic access to Javinizer functionality.
 
 ```bash
-javinizer api [flags]
 javinizer web [flags]
 ```
 
@@ -989,16 +988,13 @@ javinizer web [flags]
 
 ```bash
 # Start with defaults (localhost:8080)
-javinizer api
-
-# Equivalent alias
 javinizer web
 
 # Custom host and port
-javinizer api --host 0.0.0.0 --port 9000
+javinizer web --host 0.0.0.0 --port 9000
 
 # With verbose logging
-javinizer api --verbose
+javinizer web --verbose
 ```
 
 Once running, the interactive Web UI is available at `http://localhost:8080/`. See the [API Reference](./07-api-reference.md) for the full list of REST endpoints, request/response schemas, and the Scalar/Swagger docs at `/docs` and `/swagger/index.html`.

@@ -23,12 +23,12 @@ docker run --rm -p 8080:8080 \
 
 **Using CLI:**
 ```bash
-javinizer api
+javinizer web
 ```
 
 **Custom port:**
 ```bash
-javinizer api --port 9000
+javinizer web --port 9000
 ```
 Or set `server.port` in `config.yaml` (default `8080`).
 
@@ -49,7 +49,7 @@ These interfaces provide:
 
 On first startup, protected API routes return `503` until credentials are configured.
 
-1. Start server: `javinizer api`
+1. Start server: `javinizer web`
 2. Open Web UI at `http://localhost:8080/`
 3. Create default username/password in the setup screen
 4. Session cookie is issued automatically after setup

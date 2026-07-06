@@ -50,7 +50,7 @@ import { fileURLToPath } from 'node:url';
 const FRONTEND_DIR = process.env.E2E_FRONTEND_DIR ?? resolve(fileURLToPath(import.meta.url), '..');
 const REPO_ROOT = process.env.E2E_REPO_ROOT ?? resolve(FRONTEND_DIR, '../..'); // web/frontend → javinizer-go root
 const FRONTEND_PORT = Number(process.env.E2E_VITE_PORT ?? 5175);
-const BACKEND_PORT = 18080; // e2e-only port; isolated from developer's `javinizer api` on 8080
+const BACKEND_PORT = 18080; // e2e-only port; isolated from developer's `javinizer web` on 8080
 
 // storageState path — written by global-setup.ts (setup project) once per
 // run, reused by the chromium project's `page` + `request` fixtures via

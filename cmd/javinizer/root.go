@@ -108,7 +108,7 @@ func init() {
 				cfgFile = desktop.DefaultConfigPath()
 			}
 			// Write the resolved path back to the flag so subcommands that read
-			// cmd.Flags().GetString("config") (api, app, tui, …) see the portable
+			// cmd.Flags().GetString("config") (web, app, tui, …) see the portable
 			// path, not the default "configs/config.yaml".
 			_ = cmd.Flags().Set("config", cfgFile)
 		}

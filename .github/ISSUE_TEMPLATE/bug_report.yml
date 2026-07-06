@@ -39,7 +39,7 @@ body:
         - CLI (javinizer scrape)
         - CLI (javinizer sort)
         - TUI (javinizer tui)
-        - API / Web UI (javinizer api)
+        - API / Web UI (javinizer web)
         - Other
     validations:
       required: true

@@ -4,7 +4,7 @@
  * Identical to vite.config.ts (the production dev config) except it points
  * the /api + /ws + /health proxy at port 18080 instead of 8080 — the port
  * cmd/javinizer-e2e binds by default. Keeps the e2e backend isolated from
- * any developer's running `javinizer api` dev instance on 8080.
+ * any developer's running `javinizer web` dev instance on 8080.
  *
  * It also overrides VITE_API_URL / VITE_WS_URL to empty so the frontend
  * issues relative requests (e2emock flow) instead of absolute ones. The

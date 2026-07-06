@@ -252,8 +252,8 @@ func TestNewCommand_Structure(t *testing.T) {
 	cmd := api.NewCommand()
 
 	require.NotNil(t, cmd)
-	assert.Equal(t, "api", cmd.Use)
-	assert.Contains(t, cmd.Aliases, "web", "web alias should be registered")
+	assert.Equal(t, "web", cmd.Use)
+	assert.Empty(t, cmd.Aliases, "no aliases should be registered")
 	assert.NotEmpty(t, cmd.Short)
 	assert.NotEmpty(t, cmd.Long)
 

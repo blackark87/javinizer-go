@@ -5,15 +5,15 @@
     "license": "MIT",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/javinizer/javinizer-go/releases/download/v__VERSION__/Javinizer.exe",
+            "url": "https://github.com/javinizer/javinizer-go/releases/download/v__VERSION__/javinizer-desktop-windows-amd64.exe",
             "hash": "__APP_HASH__"
         }
     },
     "bin": [
-        ["Javinizer.exe", "javinizer-app"]
+        ["javinizer-desktop-windows-amd64.exe", "javinizer-app"]
     ],
     "shortcuts": [
-        ["Javinizer.exe", "Javinizer"]
+        ["javinizer-desktop-windows-amd64.exe", "Javinizer"]
     ],
     "notes": "The Javinizer app is unsigned. Windows Smart App Control or Defender may warn on first launch; this is expected. The CLI (javinizer) is a separate package: scoop install javinizer. See: https://github.com/javinizer/javinizer-go/blob/main/docs/17-desktop-app.md",
     "checkver": {
@@ -23,10 +23,10 @@
     "autoupdate": {
         "architecture": {
             "64bit": {
-                "url": "https://github.com/javinizer/javinizer-go/releases/download/v$version/Javinizer.exe",
+                "url": "https://github.com/javinizer/javinizer-go/releases/download/v$version/javinizer-desktop-windows-amd64.exe",
                 "hash": {
                     "url": "$baseurl/checksums.txt",
-                    "regex": "^([a-fA-F0-9]{64})\\s+\\*?Javinizer\\.exe$"
+                    "regex": "^([a-fA-F0-9]{64})\\s+\\*?javinizer-desktop-windows-amd64\\.exe$"
                 }
             }
         }

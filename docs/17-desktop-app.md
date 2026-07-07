@@ -27,7 +27,7 @@ scoop install javinizer-app
 ```bash
 # Linux — AppImage (direct download; self-contained, no package manager needed)
 curl -L -o Javinizer.AppImage \
-  https://github.com/javinizer/javinizer-go/releases/latest/download/Javinizer-linux-x86_64.AppImage
+  https://github.com/javinizer/javinizer-go/releases/latest/download/javinizer-desktop-linux-x86_64.AppImage
 chmod +x Javinizer.AppImage
 ./Javinizer.AppImage
 ```
@@ -79,7 +79,7 @@ reach them):
 |----------------|-----------------|
 | macOS Cask | `brew upgrade --cask javinizer-app` |
 | Windows Scoop | `scoop update javinizer-app` |
-| Linux AppImage | Download the latest `Javinizer-linux-x86_64.AppImage` from the [releases page](https://github.com/javinizer/javinizer-go/releases) and replace the old file |
+| Linux AppImage | Download the latest `javinizer-desktop-linux-x86_64.AppImage` from the [releases page](https://github.com/javinizer/javinizer-go/releases) and replace the old file |
 
 For arm64 Linux, swap `x86_64` for `aarch64` in the asset name. Quit the
 running app before replacing the bundle manually.

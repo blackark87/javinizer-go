@@ -564,7 +564,11 @@ jobs:
           set -euo pipefail
           ./scripts/package-app-darwin.sh dist/javinizer-app-darwin-universal dist/Javinizer.app "${VERSION}" internal/desktop/icons/javinizer.icns
           # Release assets must be flat files; zip the .app bundle.
-          cd dist && ditto -c -k --keepParent Javinizer.app Javinizer-macos-universal.zip
+          # The .app bundle inside stays "Javinizer.app" (what the cask's
+          # `app "Javinizer.app"` installs); only the release asset filename
+          # uses the javinizer-desktop-* scheme to distinguish it from CLI
+          # binaries on the releases page.
+          cd dist && ditto -c -k --keepParent Javinizer.app javinizer-desktop-macos-universal.zip
           rm -rf Javinizer.app javinizer-app-darwin-universal
 
       - name: Upload artifact
@@ -644,7 +648,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           # See build-desktop-darwin for the tags/ldflags rationale.
-          go build -trimpath -tags 'desktop,production' -ldflags "-w -s -H windowsgui -X github.com/javinizer/javinizer-go/internal/version.Version=$env:VERSION -X github.com/javinizer/javinizer-go/internal/version.Commit=$env:COMMIT -X github.com/javinizer/javinizer-go/internal/version.BuildDate=$env:BUILD_DATE -X github.com/javinizer/javinizer-go/internal/desktop.BuildDesktop=1" -o "dist/Javinizer.exe" ./cmd/javinizer
+          go build -trimpath -tags 'desktop,production' -ldflags "-w -s -H windowsgui -X github.com/javinizer/javinizer-go/internal/version.Version=$env:VERSION -X github.com/javinizer/javinizer-go/internal/version.Commit=$env:COMMIT -X github.com/javinizer/javinizer-go/internal/version.BuildDate=$env:BUILD_DATE -X github.com/javinizer/javinizer-go/internal/desktop.BuildDesktop=1" -o "dist/javinizer-desktop-windows-amd64.exe" ./cmd/javinizer
 
       - name: Upload artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -742,7 +746,7 @@ jobs:
         run: |
           set -euo pipefail
           ./scripts/package-app-linux.sh "dist/javinizer-app-linux-${{ matrix.arch }}" \
-            "dist/Javinizer-linux-${{ matrix.appimage_arch }}.AppImage" "${VERSION}" internal/desktop/icons/javinizer.png
+            "dist/javinizer-desktop-linux-${{ matrix.appimage_arch }}.AppImage" "${VERSION}" internal/desktop/icons/javinizer.png
           rm -f "dist/javinizer-app-linux-${{ matrix.arch }}"
 
       - name: Upload artifact

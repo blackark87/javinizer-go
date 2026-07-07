@@ -29,9 +29,9 @@ if [[ -z "$hash" ]]; then
     exit 1
 fi
 
-app_hash="$(sha_for 'Javinizer.exe')"
+app_hash="$(sha_for 'javinizer-desktop-windows-amd64.exe')"
 if [[ -z "$app_hash" ]]; then
-    echo "error: missing desktop-app checksum (Javinizer.exe) in $checksums" >&2
+    echo "error: missing desktop-app checksum (javinizer-desktop-windows-amd64.exe) in $checksums" >&2
     echo "  This is required to render the javinizer-app manifest. If this release did" >&2
     echo "  not build the desktop app, the manifest cannot be published." >&2
     exit 1

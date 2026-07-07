@@ -19,15 +19,15 @@ func BundleAssetName(goos, goarch string) (string, error) {
 	switch goos {
 	case "darwin":
 		// Universal zip (amd64+arm64) — one asset for both arches.
-		return "Javinizer-macos-universal.zip", nil
+		return "javinizer-desktop-macos-universal.zip", nil
 	case "windows":
 		if goarch == "amd64" {
-			return "Javinizer.exe", nil
+			return "javinizer-desktop-windows-amd64.exe", nil
 		}
 	case "linux":
 		arch, ok := appImageArch(goarch)
 		if ok {
-			return "Javinizer-linux-" + arch + ".AppImage", nil
+			return "javinizer-desktop-linux-" + arch + ".AppImage", nil
 		}
 	}
 	return "", fmt.Errorf("no desktop bundle asset for %s/%s", goos, goarch)

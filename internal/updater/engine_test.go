@@ -286,11 +286,11 @@ func TestBundleAssetName(t *testing.T) {
 	cases := []struct {
 		goos, goarch, want string
 	}{
-		{"darwin", "amd64", "Javinizer-macos-universal.zip"},
-		{"darwin", "arm64", "Javinizer-macos-universal.zip"},
-		{"windows", "amd64", "Javinizer.exe"},
-		{"linux", "amd64", "Javinizer-linux-x86_64.AppImage"},
-		{"linux", "arm64", "Javinizer-linux-aarch64.AppImage"},
+		{"darwin", "amd64", "javinizer-desktop-macos-universal.zip"},
+		{"darwin", "arm64", "javinizer-desktop-macos-universal.zip"},
+		{"windows", "amd64", "javinizer-desktop-windows-amd64.exe"},
+		{"linux", "amd64", "javinizer-desktop-linux-x86_64.AppImage"},
+		{"linux", "arm64", "javinizer-desktop-linux-aarch64.AppImage"},
 	}
 	for _, c := range cases {
 		got, err := BundleAssetName(c.goos, c.goarch)

@@ -151,7 +151,7 @@ scoop install javinizer-app
 
 ```bash
 # Linux — AppImage (direct download; self-contained, no package manager needed)
-curl -L -o Javinizer.AppImage https://github.com/javinizer/javinizer-go/releases/latest/download/Javinizer-linux-x86_64.AppImage
+curl -L -o Javinizer.AppImage https://github.com/javinizer/javinizer-go/releases/latest/download/javinizer-desktop-linux-x86_64.AppImage
 chmod +x Javinizer.AppImage
 ./Javinizer.AppImage
 

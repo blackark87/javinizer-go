@@ -13,7 +13,28 @@ A metadata scraper and file organizer for Japanese Adult Videos (JAV), with CLI,
 
 ## Quick Start
 
-The fastest way to try Javinizer is Docker — one command gives you the web UI:
+The fastest way to try Javinizer is to grab a binary and start the web UI:
+
+```bash
+# 1. Download the latest stable binary for your platform:
+curl -L -o javinizer https://github.com/javinizer/javinizer-go/releases/latest/download/javinizer-linux-amd64
+chmod +x javinizer
+
+# 2. Initialize a config + database, then start the web UI:
+./javinizer init
+./javinizer web
+```
+
+Open **http://localhost:8080**, create your admin login on first startup, and start scraping.
+
+- On macOS, swap the asset for `javinizer-darwin-universal`; on Windows, download `javinizer-windows-amd64.exe` and run `.\javinizer.exe web`.
+- Prefer the [desktop app](#desktop-app-clickable-gui) (clickable GUI, no terminal), [Docker](#docker-recommended), a [one-shot installer](#one-shot-install-linux--macos--windows), [Homebrew](#homebrew-macos--linux), or [build from source](#build-from-source) for other setups.
+
+> **First time?** Skim [Features](#features) to see what it does, then jump to [Usage](#usage) or the [Web UI](#web-ui) section.
+
+### Docker (alternative)
+
+Prefer a container? One command gives you the web UI with no binary to install:
 
 ```bash
 mkdir -p ./data
@@ -28,13 +49,8 @@ docker run --rm \
   ghcr.io/javinizer/javinizer-go:latest
 ```
 
-Open **http://localhost:8080**, create your admin login on first startup, and start scraping.
-
 - Replace `/path/to/your/media` with your JAV library path.
 - On Unraid, use `--user 99:100`.
-- Prefer the [desktop app](#desktop-app-clickable-gui) (clickable GUI), [Homebrew](#homebrew-macos--linux), a [one-shot installer](#one-shot-install-linux--macos--windows), a [binary](#prebuilt-binaries-manual-download), or [build from source](#build-from-source) for a native install.
-
-> **First time?** Skim [Features](#features) to see what it does, then jump to [Usage](#usage) or the [Web UI](#web-ui) section.
 
 ---
 
@@ -73,7 +89,7 @@ Open **http://localhost:8080**, create your admin login on first startup, and st
 
 ## Installation
 
-### Docker (Recommended)
+### Docker
 
 See [Quick Start](#quick-start) above. For a complete setup with optional FlareSolverr support, use Docker Compose:
 

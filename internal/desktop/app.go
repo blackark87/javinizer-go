@@ -15,6 +15,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/linux"
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // Run starts the embedded API server (REST + Web UI) on a free localhost port
@@ -44,10 +45,20 @@ func Run(opts Options) error {
 		updater.WithRelauncher(relauncher),
 	))
 
+	state, _ := LoadWindowState()
+	width, height := 1280, 800
+	startState := options.Normal
+	if state.Width > 0 && state.Height > 0 {
+		width, height = state.Width, state.Height
+	}
+	if state.Maximised {
+		startState = options.Maximised
+	}
+
 	return wails.Run(&options.App{
 		Title:                    "Javinizer",
-		Width:                    1280,
-		Height:                   800,
+		Width:                    width,
+		Height:                   height,
 		MinWidth:                 900,
 		MinHeight:                600,
 		BackgroundColour:         options.NewRGB(245, 245, 247),
@@ -55,8 +66,20 @@ func Run(opts Options) error {
 		LogLevel:                 logger.INFO,
 		LogLevelProduction:       logger.WARNING,
 		EnableDefaultContextMenu: true,
+		WindowStartState:         startState,
 		OnStartup: func(wctx context.Context) {
 			relauncher.setContext(wctx)
+		},
+		OnBeforeClose: func(wctx context.Context) bool {
+			w, h := wailsruntime.WindowGetSize(wctx)
+			if err := SaveWindowState(WindowState{
+				Width:     w,
+				Height:    h,
+				Maximised: wailsruntime.WindowIsMaximised(wctx),
+			}); err != nil {
+				logging.Errorf("desktop: failed to save window state: %v", err)
+			}
+			return false
 		},
 		OnShutdown: func(_ context.Context) {
 			_ = srv.Shutdown()

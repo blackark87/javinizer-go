@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -142,6 +143,9 @@ func TestSaveWindowState_AtomicRename(t *testing.T) {
 }
 
 func TestSaveWindowState_Perm0600(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not enforce Unix-style file permissions")
+	}
 	dir := withTempUserDataDir(t)
 
 	if err := SaveWindowState(WindowState{Width: 1280, Height: 800}); err != nil {

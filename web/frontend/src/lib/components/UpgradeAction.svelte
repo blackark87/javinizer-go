@@ -21,9 +21,14 @@
 		// Optional callback fired when the CTA is clicked (e.g. to close a
 		// popover after the user opens the releases link).
 		onActivate?: () => void;
+		// Visual scale: 'sm' (default) matches the nav popover's compact
+		// "Check again" button; 'md' matches the settings card's text-sm scale.
+		size?: 'sm' | 'md';
 	}
 
-	let { status, onUpgradingChange, onActivate }: Props = $props();
+	// Visual scale: 'sm' matches the nav popover's compact "Check again"
+	// button; 'md' matches the settings card's `text-sm` control scale.
+	let { status, onUpgradingChange, onActivate, size = 'sm' }: Props = $props();
 
 	let upgrading = $state(false);
 
@@ -58,6 +63,12 @@
 	const releaseUrl = $derived(
 		status?.latest ? `${REPO_RELEASE_TAG_URL}/${status.latest}` : REPO_RELEASES_URL
 	);
+
+	const sizeClass = $derived(
+		size === 'md'
+			? 'px-3 py-1.5 rounded-md text-sm'
+			: 'px-2.5 py-1.5 rounded-md text-xs font-medium'
+	);
 </script>
 
 {#if isDesktop}
@@ -66,7 +77,7 @@
 		onclick={handleUpgrade}
 		disabled={upgrading}
 		aria-label="Update and restart"
-		class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-150 bg-primary text-primary-foreground hover:opacity-90 hover:translate-x-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-x-0"
+		class="flex items-center gap-1.5 {sizeClass} transition-all duration-150 bg-primary text-primary-foreground hover:opacity-90 hover:translate-x-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-x-0"
 	>
 		<RefreshCw class="h-3.5 w-3.5 {upgrading ? 'animate-spin' : ''}" />
 		{upgrading ? 'Restarting…' : 'Update & restart'}
@@ -77,7 +88,7 @@
 		target="_blank"
 		rel="noopener noreferrer"
 		onclick={onActivate}
-		class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-150 bg-primary text-primary-foreground hover:opacity-90 hover:translate-x-0.5"
+		class="flex items-center gap-1.5 {sizeClass} transition-all duration-150 bg-primary text-primary-foreground hover:opacity-90 hover:translate-x-0.5"
 	>
 		<ExternalLink class="h-3.5 w-3.5" />
 		View release

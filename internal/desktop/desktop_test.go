@@ -36,6 +36,7 @@ func TestDefaultConfigPath_UnderUserDataDir(t *testing.T) {
 func TestSetupPortableEnv_SetsEnvWhenAbsent(t *testing.T) {
 	t.Setenv("JAVINIZER_DB", "")
 	t.Setenv("JAVINIZER_LOG_DIR", "")
+	t.Setenv("JAVINIZER_DATA_DIR", "")
 
 	if err := SetupPortableEnv(); err != nil {
 		t.Fatalf("SetupPortableEnv() error: %v", err)
@@ -44,6 +45,7 @@ func TestSetupPortableEnv_SetsEnvWhenAbsent(t *testing.T) {
 	dir, _ := UserDataDir()
 	wantDB := filepath.Join(dir, "data", "javinizer.db")
 	wantLogDir := filepath.Join(dir, "data", "logs")
+	wantDataDir := filepath.Join(dir, "data")
 
 	if got := os.Getenv("JAVINIZER_DB"); got != wantDB {
 		t.Errorf("JAVINIZER_DB = %q, want %q", got, wantDB)
@@ -51,11 +53,15 @@ func TestSetupPortableEnv_SetsEnvWhenAbsent(t *testing.T) {
 	if got := os.Getenv("JAVINIZER_LOG_DIR"); got != wantLogDir {
 		t.Errorf("JAVINIZER_LOG_DIR = %q, want %q", got, wantLogDir)
 	}
+	if got := os.Getenv("JAVINIZER_DATA_DIR"); got != wantDataDir {
+		t.Errorf("JAVINIZER_DATA_DIR = %q, want %q (update cache must be portable, not CWD-relative)", got, wantDataDir)
+	}
 }
 
 func TestSetupPortableEnv_PreservesExistingEnv(t *testing.T) {
 	t.Setenv("JAVINIZER_DB", "/custom/db.sqlite")
 	t.Setenv("JAVINIZER_LOG_DIR", "/custom/logs")
+	t.Setenv("JAVINIZER_DATA_DIR", "/custom/data")
 
 	if err := SetupPortableEnv(); err != nil {
 		t.Fatalf("SetupPortableEnv() error: %v", err)
@@ -66,6 +72,9 @@ func TestSetupPortableEnv_PreservesExistingEnv(t *testing.T) {
 	}
 	if got := os.Getenv("JAVINIZER_LOG_DIR"); got != "/custom/logs" {
 		t.Errorf("JAVINIZER_LOG_DIR = %q, want /custom/logs (existing value must be preserved)", got)
+	}
+	if got := os.Getenv("JAVINIZER_DATA_DIR"); got != "/custom/data" {
+		t.Errorf("JAVINIZER_DATA_DIR = %q, want /custom/data (existing value must be preserved)", got)
 	}
 }
 

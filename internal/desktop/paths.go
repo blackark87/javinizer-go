@@ -72,5 +72,16 @@ func SetupPortableEnv() error {
 	if os.Getenv("JAVINIZER_LOG_DIR") == "" {
 		_ = os.Setenv("JAVINIZER_LOG_DIR", logDir)
 	}
+	// JAVINIZER_DATA_DIR is the update package's portable cache location
+	// (internal/update/paths.go: dataDir()). Without it the update cache falls
+	// back to a CWD-relative "data/" path, which is unwritable when the app is
+	// launched from Finder/Explorer (CWD is "/" or the bundle dir) — the
+	// startup check logs "Update available" but the cache write silently fails,
+	// so /version returns source=none and the in-app update indicator never
+	// appears. Pointing it at the same portable data dir as the DB/logs makes
+	// the cache persist across launches on every platform.
+	if os.Getenv("JAVINIZER_DATA_DIR") == "" {
+		_ = os.Setenv("JAVINIZER_DATA_DIR", dataDir)
+	}
 	return nil
 }

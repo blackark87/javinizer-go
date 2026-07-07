@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { RefreshCw, ArrowUpCircle } from 'lucide-svelte';
 	import SettingsSection from '$lib/components/settings/SettingsSection.svelte';
+	import UpgradeAction from '$lib/components/UpgradeAction.svelte';
 	import { apiClient } from '$lib/api/client';
 	import { toastStore } from '$lib/stores/toast';
 	import type { VersionStatusResponse, SettingsConfig } from '$lib/api/types';
@@ -87,6 +88,15 @@
 					{isCheckingVersion ? 'Checking...' : 'Check for Updates'}
 				</button>
 			</div>
+			{#if versionStatus?.update_available}
+				<!-- Surface the same in-app self-upgrade CTA the nav notification offers:
+				desktop installs get an "Update & restart" button here (so a user who
+				runs a check from Settings can act on it without hunting for the nav
+				indicator); non-desktop installs get the "View release" link. -->
+				<div class="flex items-center gap-2">
+					<UpgradeAction status={versionStatus} />
+				</div>
+			{/if}
 			<div class="space-y-3">
 				<div class="flex items-center gap-2">
 					<input

@@ -2,16 +2,12 @@
 	import { cubicOut } from 'svelte/easing';
 	import { fly } from 'svelte/transition';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
-	import { ArrowUpCircle, RefreshCw, ExternalLink, ChevronDown, Container, Monitor, Terminal } from 'lucide-svelte';
+	import { ArrowUpCircle, RefreshCw, ChevronDown, Container, Monitor, Terminal } from 'lucide-svelte';
 	import { createVersionStatusQuery } from '$lib/query/queries';
 	import { apiClient } from '$lib/api/client';
 	import { toastStore } from '$lib/stores/toast';
 	import type { VersionStatusResponse } from '$lib/api/types';
-
-	// GitHub release URL for the Go rewrite. The latest tag is appended when
-	// available so the "view release" link deep-links to the actual release.
-	const REPO_RELEASES_URL = 'https://github.com/javinizer/javinizer-go/releases';
-	const REPO_RELEASE_TAG_URL = 'https://github.com/javinizer/javinizer-go/releases/tag';
+	import UpgradeAction from '$lib/components/UpgradeAction.svelte';
 
 	const queryClient = useQueryClient();
 	const versionQuery = $derived(createVersionStatusQuery());
@@ -27,9 +23,9 @@
 
 	let popoverOpen = $state(false);
 
-	// Desktop self-upgrade state. While true the popover shows a "Restarting…"
-	// spinner and all interaction is disabled; the old window closes and a new
-	// one opens (redirector self-heals the webview), so we just hold this state.
+	// Desktop self-upgrade state. Driven by UpgradeAction's onUpgradingChange
+	// callback so this popover stays locked (no toggling/closing) while the
+	// relaunch is underway: the old window closes and a new one opens.
 	let upgrading = $state(false);
 
 	// Force a fresh check (POST /api/v1/version/check hits GitHub with the
@@ -80,30 +76,7 @@
 		checkMutation.mutate();
 	}
 
-	async function handleUpgrade(event: MouseEvent) {
-		event.stopPropagation();
-		if (upgrading) return;
-		upgrading = true;
-		try {
-			const response = await apiClient.upgradeDesktop({ force: false });
-			if (response.status === 'up-to-date') {
-				upgrading = false;
-				toastStore.info('Already up to date');
-				return;
-			}
-			// On 200 'relaunching' the relaunch is already underway: hold the
-			// "Restarting…" state while the old window closes and the new one opens.
-		} catch (error) {
-			upgrading = false;
-			const message = error instanceof Error ? error.message : 'Desktop upgrade failed';
-			toastStore.error(`Update failed: ${message}`);
-		}
-	}
-
 	const checking = $derived(checkMutation.isPending);
-	const releaseUrl = $derived(
-		status?.latest ? `${REPO_RELEASE_TAG_URL}/${status.latest}` : REPO_RELEASES_URL
-	);
 
 	// Environment label + icon for the "running in" badge. The backend classifies
 	// docker/desktop/cli so the notification can tell a Docker user to `docker pull`
@@ -186,11 +159,16 @@
 					</div>
 				</div>
 
-				{#if status?.upgrade_instructions}
+				{#if status?.upgrade_instructions && status?.install_environment !== 'desktop'}
 					<!-- Backend-provided, environment-specific guidance: docker users see
-					`docker pull`, desktop users see the releases link, CLI users see
-					`javinizer upgrade`. Rendered verbatim (pre-wrap) so the indented
-					commands stay readable. -->
+					`docker pull`, CLI users see `javinizer upgrade`. Rendered verbatim
+					(pre-wrap) so the indented commands stay readable. Desktop is
+					excluded here: the "Update & restart" button below IS the
+					self-upgrade, so a text block restating "click the button" (plus a
+					long GitHub-download fallback) is redundant and noisy. The API
+					still returns desktop guidance for the CLI `javinizer upgrade`
+					handoff path (internal/update/upgrade.go), which has no button to
+					defer to. -->
 					<pre
 						class="mt-2 px-2 py-1.5 rounded text-[11px] leading-relaxed whitespace-pre-wrap break-all bg-muted text-muted-foreground border border-border"
 					>{status.upgrade_instructions}</pre
@@ -198,29 +176,11 @@
 				{/if}
 
 				<div class="mt-3 flex items-center gap-2">
-					{#if status?.install_environment === 'desktop'}
-						<button
-							type="button"
-							onclick={handleUpgrade}
-							disabled={upgrading || checking}
-							aria-label="Update and restart"
-							class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-150 bg-primary text-primary-foreground hover:opacity-90 hover:translate-x-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-x-0"
-						>
-							<RefreshCw class="h-3.5 w-3.5 {upgrading ? 'animate-spin' : ''}" />
-							{upgrading ? 'Restarting…' : 'Update & restart'}
-						</button>
-					{:else}
-						<a
-							href={releaseUrl}
-							target="_blank"
-							rel="noopener noreferrer"
-							onclick={closePopover}
-							class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-150 bg-primary text-primary-foreground hover:opacity-90 hover:translate-x-0.5"
-						>
-							<ExternalLink class="h-3.5 w-3.5" />
-							View release
-						</a>
-					{/if}
+					<UpgradeAction
+						{status}
+						onUpgradingChange={(u) => (upgrading = u)}
+						onActivate={closePopover}
+					/>
 					<button
 						type="button"
 						onclick={handleCheckNow}

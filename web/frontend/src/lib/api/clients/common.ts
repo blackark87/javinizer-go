@@ -101,7 +101,16 @@ export class BaseClient {
 // In production (Docker/deployed), frontend and backend are same-origin, so we use ''
 // In dev mode with Vite proxy, we also use '' (proxy handles forwarding to backend)
 // VITE_API_URL can override this for custom setups.
+//
+// In the desktop app (Wails webview) the SPA loads from wails://wails.localhost
+// and must use same-origin relative URLs so requests route through the embedded
+// reverse proxy to the API server on its random localhost port. A dev .env may
+// bake VITE_API_URL=http://localhost:8080 into the bundle; that would make the
+// SPA fetch cross-origin (and to the wrong port), which WKWebView blocks with
+// "Load failed". Force same-origin in the desktop context regardless of the
+// baked-in env value.
 export function getAPIBaseURL(): string {
+	if (isDesktopApp()) return '';
 	if (import.meta.env.VITE_API_URL) {
 		return import.meta.env.VITE_API_URL;
 	}

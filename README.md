@@ -56,6 +56,7 @@ curl -o ./data/config.yaml \
   https://raw.githubusercontent.com/javinizer/javinizer-go/main/configs/config.yaml.example
 
 docker run --rm \
+  -e JAVINIZER_SETUP_TRUSTED_CIDRS=172.16.0.0/12 \
   --user "$(id -u):$(id -g)" \
   -p 8080:8080 \
   -v "$(pwd)/data:/javinizer" \
@@ -111,7 +112,7 @@ See [Quick Start](#quick-start) above. For a complete setup with optional FlareS
 curl -o .env https://raw.githubusercontent.com/javinizer/javinizer-go/main/.env.example
 curl -o docker-compose.yml https://raw.githubusercontent.com/javinizer/javinizer-go/main/docker-compose.yml
 # Edit .env: MEDIA_PATH=/path/to/your/library, PUID, PGID, TZ
-docker-compose up -d
+docker compose up -d
 ```
 
 The compose file includes **javinizer** (API + web UI) and an optional **flaresolverr** (Cloudflare solver for JavDB/JavLibrary). See the [Docker Deployment Guide](./docs/docker-deployment.md) for details.
@@ -443,7 +444,7 @@ See the [Template System](./docs/04-template-system.md) for full syntax and func
 
 ## Environment Variables
 
-Docker deployments support environment-variable overrides.
+Docker deployments support environment-variable overrides. Defaults shown are for Docker; outside Docker, paths resolve relative to your config/data directory.
 
 ### Core
 
@@ -478,6 +479,7 @@ Docker deployments support environment-variable overrides.
 ```bash
 docker run --rm \
   -e LOG_LEVEL=debug -e TZ=Asia/Tokyo \
+  -e JAVINIZER_SETUP_TRUSTED_CIDRS=172.16.0.0/12 \
   -p 9000:8080 \
   -v "$(pwd)/data:/javinizer" -v "/media/jav:/media" \
   ghcr.io/javinizer/javinizer-go:latest

@@ -38,7 +38,7 @@ cp .env.example .env
 # Edit .env to set your PUID, PGID, and MEDIA_PATH
 
 # 3. Run with Docker Compose (pulls the pre-built image from GHCR)
-docker-compose up -d
+docker compose up -d
 
 # 4. Access the web UI
 open http://localhost:8080
@@ -93,29 +93,29 @@ The `docker-compose.yml` provides a production-ready setup:
 
 ```bash
 # Start the container
-docker-compose up -d
+docker compose up -d
 
 # View logs
-docker-compose logs -f
+docker compose logs -f
 
 # Stop the container
-docker-compose down
+docker compose down
 
 # Restart the container
-docker-compose restart
+docker compose restart
 ```
 
 ### Updating the Application
 
 ```bash
 # Pull the latest image from GHCR
-docker-compose pull
+docker compose pull
 
 # Restart with the new image
-docker-compose up -d
+docker compose up -d
 ```
 
-If you build locally (the `build:` section enabled in `docker-compose.yml`), use `docker-compose build` instead of `docker-compose pull`.
+If you build locally (the `build:` section enabled in `docker-compose.yml`), use `docker compose build` instead of `docker compose pull`.
 
 ---
 
@@ -149,7 +149,7 @@ Javinizer uses a `.env` file to configure Docker Compose variables. This makes i
 
 3. **Start the container**:
    ```bash
-   docker-compose up -d
+   docker compose up -d
    ```
 
 ### Available Variables
@@ -178,7 +178,7 @@ Javinizer uses a `.env` file to configure Docker Compose variables. This makes i
 You can also set variables on the command line (overrides `.env`):
 
 ```bash
-PUID=$(id -u) PGID=$(id -g) docker-compose up -d
+PUID=$(id -u) PGID=$(id -g) docker compose up -d
 ```
 
 ---
@@ -304,7 +304,7 @@ output:
 
 **Changes take effect** after restarting the container:
 ```bash
-docker-compose restart
+docker compose restart
 ```
 
 ### Port Mapping
@@ -330,7 +330,7 @@ For frontend development with live reload:
 
 ```bash
 # Start development container
-docker-compose --profile dev up
+docker compose --profile dev up
 
 # Changes to web/frontend/ will trigger hot reload
 ```
@@ -345,7 +345,7 @@ This mounts the frontend source directory into the container for live developmen
 
 Check logs:
 ```bash
-docker-compose logs
+docker compose logs
 ```
 
 Common issues:
@@ -365,20 +365,20 @@ curl http://localhost:8080/health
 If SQLite database is locked:
 ```bash
 # Stop container
-docker-compose down
+docker compose down
 
 # Remove lock file
 rm ./data/javinizer.db-shm ./data/javinizer.db-wal
 
 # Restart
-docker-compose up -d
+docker compose up -d
 ```
 
 ### Viewing Container Internals
 
 ```bash
 # Enter the running container
-docker-compose exec javinizer sh
+docker compose exec javinizer sh
 
 # Check binary version
 javinizer --version
@@ -395,13 +395,13 @@ ps aux
 To start fresh (⚠️ **deletes all cached metadata**):
 ```bash
 # Stop container
-docker-compose down
+docker compose down
 
 # Remove application state
 rm -rf ./data
 
 # Restart (will create fresh state)
-docker-compose up -d
+docker compose up -d
 ```
 
 ---
@@ -441,13 +441,13 @@ docker export javinizer > javinizer-backup.tar
 
 ```bash
 # Follow logs in real-time
-docker-compose logs -f --tail=100
+docker compose logs -f --tail=100
 
 # View logs for specific timeframe
-docker-compose logs --since 30m
+docker compose logs --since 30m
 
 # View resource usage
-docker-compose stats
+docker compose stats
 
 # Inspect container
 docker inspect javinizer
@@ -470,7 +470,7 @@ PGID=1000      # Get with: id -g
 
 **Alternative**: Set via command line:
 ```bash
-PUID=$(id -u) PGID=$(id -g) docker-compose up -d
+PUID=$(id -u) PGID=$(id -g) docker compose up -d
 ```
 
 **Why this matters**: Matching the container UID/GID to your host user prevents permission issues when the container writes to mounted volumes (`./data` and `/media`). Without this, you may see "permission denied" errors or files owned by the wrong user.
@@ -543,7 +543,7 @@ services:
 **Usage**:
 ```bash
 # Set user/group to match your host user
-PUID=$(id -u) PGID=$(id -g) docker-compose up -d
+PUID=$(id -u) PGID=$(id -g) docker compose up -d
 ```
 
 ---
@@ -663,7 +663,7 @@ If a deployment encounters issues, you can revert to a previous version:
 
 1. **Stop the current container**:
    ```bash
-   docker-compose down
+   docker compose down
    ```
 
 2. **Identify the previous image version**:
@@ -680,21 +680,21 @@ If a deployment encounters issues, you can revert to a previous version:
    # Option 1: Pin a specific version tag in docker-compose.yml
    # Edit the `image:` line to the desired version, e.g.:
    #   image: ghcr.io/javinizer/javinizer-go:v1.2.3
-   docker-compose pull
-   docker-compose up -d
+   docker compose pull
+   docker compose up -d
    
    # Option 2: Build from a previous Git tag
    # Enable the `build:` section in docker-compose.yml (comment out `image:`), then:
    git checkout v1.2.3
-   docker-compose build
-   docker-compose up -d
+   docker compose build
+   docker compose up -d
    git checkout main  # Return to the main branch
    ```
 
 4. **Verify the rollback**:
    ```bash
    # Check container version
-   docker-compose exec javinizer javinizer --version
+   docker compose exec javinizer javinizer --version
    
    # Verify web UI is accessible
    curl http://localhost:8080/health
@@ -765,7 +765,7 @@ Javinizer does not currently include built-in monitoring or observability integr
 - Structured JSON logging to stdout
 - Configurable log levels: `debug`, `info`, `warn`, `error`
 - Log file output via `logging.output` configuration
-- Container logs accessible via `docker-compose logs`
+- Container logs accessible via `docker compose logs`
 
 **Metrics**:
 - No built-in metrics collection

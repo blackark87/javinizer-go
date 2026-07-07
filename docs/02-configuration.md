@@ -1534,10 +1534,10 @@ Use with Docker Compose:
 
 ```bash
 # Development
-docker-compose --env-file .env.dev up
+docker compose --env-file .env.dev up
 
 # Production
-docker-compose --env-file .env.prod up
+docker compose --env-file .env.prod up
 ```
 
 ### Config File Location Strategy

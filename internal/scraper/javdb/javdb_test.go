@@ -101,6 +101,7 @@ func TestSearch_Success(t *testing.T) {
 	assert.Equal(t, "Label Name", result.Label)
 	assert.Equal(t, "Series Name", result.Series)
 	assert.Equal(t, "https://img.example.com/cover.jpg", result.CoverURL)
+	assert.True(t, result.ShouldCropPoster, "cover reused as poster must flag for cropping")
 	assert.Equal(t, "https://video.example.com/trailer.mp4", result.TrailerURL)
 	assert.Len(t, result.ScreenshotURL, 2)
 	assert.Len(t, result.Genres, 2)

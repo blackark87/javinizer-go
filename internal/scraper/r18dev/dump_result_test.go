@@ -146,7 +146,9 @@ func TestSearchFromDump_NilDumpFallsBackToHTTP(t *testing.T) {
 }
 
 // TestResultFromDump_PosterFallback verifies that when JacketThumbURL is empty,
-// the poster falls back to the cover URL.
+// the poster falls back to the cover URL and ShouldCropPoster is set so the
+// frontend right-crops the landscape cover into a portrait (instead of
+// letterboxing the full cover).
 func TestResultFromDump_PosterFallback(t *testing.T) {
 	cfg := createTestSettings(true)
 	s := newScraper(&cfg, testGlobalProxy, testGlobalFlareSolverr, nil)
@@ -158,6 +160,7 @@ func TestResultFromDump_PosterFallback(t *testing.T) {
 	result := s.resultFromDump(d)
 	assert.NotEmpty(t, result.CoverURL)
 	assert.Equal(t, result.CoverURL, result.PosterURL, "poster should fall back to cover when thumb is absent")
+	assert.True(t, result.ShouldCropPoster, "cover-as-poster fallback must flag for cropping")
 }
 
 // TestResultFromDump_PosterFromThumbOnly verifies that when JacketFullURL is
@@ -175,6 +178,7 @@ func TestResultFromDump_PosterFromThumbOnly(t *testing.T) {
 	result := s.resultFromDump(d)
 	assert.Empty(t, result.CoverURL, "cover should be empty when JacketFullURL is absent")
 	assert.Contains(t, result.PosterURL, "118abw00013ps.jpg", "poster should resolve from thumb even without a cover")
+	assert.False(t, result.ShouldCropPoster, "portrait thumb poster should not be flagged for cropping")
 }
 
 // TestResultFromDump_TrailerFallback verifies that when TrailerURL is empty,

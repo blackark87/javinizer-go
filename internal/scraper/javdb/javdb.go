@@ -687,6 +687,7 @@ func (s *scraper) parseDetailPage(doc *goquery.Document, sourceURL, fallbackID s
 		".video-meta-panel img.video-cover",
 	}, s.baseURL)
 	result.PosterURL = result.CoverURL
+	result.ShouldCropPoster = true
 	result.TrailerURL = extractTrailerURL(doc, s.baseURL)
 	result.ScreenshotURL = extractScreenshotURLs(doc, s.baseURL)
 

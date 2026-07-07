@@ -29,6 +29,54 @@ export interface PosterCropState {
 const LANDSCAPE_CROP_WIDTH_RATIO = 0.472;
 const POSTER_TARGET_ASPECT_RATIO = 2 / 3;
 
+/**
+ * Resolves the poster URL for preview display, preferring (in order):
+ *   1. a client-side posterPreviewOverride URL (unsaved edit)
+ *   2. the movie's cropped_poster_url (server-side temp poster)
+ *   3. the movie's poster_url (original scraped URL)
+ *
+ * When a posterPreviewOverride is present, a cache-busting `v=<version>` query
+ * param is appended so the browser re-fetches the edited image.
+ *
+ * Desktop WKWebView quirk: cookies for the Wails asset scheme aren't reliably
+ * persisted, so protected `/api/v1/` URLs (the temp-poster endpoint) need the
+ * session ID appended as a `?session=` query param to authenticate. Without
+ * this the request 401s and the poster <img> falls back to "No Poster".
+ * External image URLs are proxied through getPreviewImageURL() elsewhere,
+ * which appends session itself, so only `/api/v1/` paths are session-tagged
+ * here. `getSessionID` is injected (rather than imported) so the pure helper
+ * stays testable without a DOM/localStorage environment.
+ */
+export function resolvePosterUrl(
+	movie: { cropped_poster_url?: string; poster_url?: string },
+	filePath: string,
+	overrides: Map<string, PosterPreviewOverride>,
+	getSessionID: () => string | null,
+): string | undefined {
+	const override = overrides.get(filePath);
+	const baseURL = override?.url || movie.cropped_poster_url || movie.poster_url;
+	if (!baseURL) return undefined;
+
+	let resolved: string;
+	if (!override) {
+		resolved = baseURL;
+	} else if (baseURL.includes('v=')) {
+		resolved = baseURL;
+	} else {
+		const separator = baseURL.includes('?') ? '&' : '?';
+		resolved = `${baseURL}${separator}v=${override.version}`;
+	}
+
+	if (resolved.startsWith('/api/v1/')) {
+		const sid = getSessionID();
+		if (sid) {
+			const sep = resolved.includes('?') ? '&' : '?';
+			resolved = `${resolved}${sep}session=${encodeURIComponent(sid)}`;
+		}
+	}
+	return resolved;
+}
+
 export function truncatePath(path: string, maxLength: number = 80): string {
 	if (path.length <= maxLength) return path;
 

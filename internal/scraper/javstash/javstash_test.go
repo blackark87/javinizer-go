@@ -180,6 +180,7 @@ func TestScraper_Search_Success(t *testing.T) {
 	assert.Len(t, result.Genres, 2)
 	assert.Equal(t, "Tag1", result.Genres[0])
 	assert.Equal(t, "Tag2", result.Genres[1])
+	assert.True(t, result.ShouldCropPoster, "cover reused as poster must flag for cropping")
 }
 
 func TestExtractDMMContentID(t *testing.T) {

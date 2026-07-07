@@ -314,6 +314,9 @@ func (s *scraper) parseScene(scene *scene, searchID string) (*models.ScraperResu
 			result.PosterURL = scene.Images[0].URL
 			result.CoverURL = scene.Images[0].URL
 		}
+		if result.PosterURL != "" && result.PosterURL == result.CoverURL {
+			result.ShouldCropPoster = true
+		}
 	}
 
 	if len(scene.URLs) > 0 {

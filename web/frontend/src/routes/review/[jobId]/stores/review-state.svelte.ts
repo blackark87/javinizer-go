@@ -5,6 +5,7 @@ import { goto } from '$app/navigation';
 import type { Page } from '@sveltejs/kit';
 import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 import { apiClient } from '$lib/api/client';
+import { BaseClient } from '$lib/api/clients/common';
 import { createConfigQuery } from '$lib/query/queries';
 import type {
 	BatchJobResponse,
@@ -34,6 +35,7 @@ import {
 import { createReviewPageController } from '../logic/review-page-controller';
 import {
 	normalizeCropBox,
+	resolvePosterUrl as resolvePosterUrlPure,
 	type PosterCropBox,
 	type PosterCropMetrics,
 	type PosterCropState,
@@ -265,13 +267,9 @@ export function createReviewState(pageStore: Page) {
 	}
 
 	function resolvePosterUrl(movie: Movie, filePath: string): string | undefined {
-		const override = posterPreviewOverrides.get(filePath);
-		const baseURL = override?.url || movie.cropped_poster_url || movie.poster_url;
-		if (!baseURL) return undefined;
-		if (!override) return baseURL;
-		if (baseURL.includes('v=')) return baseURL;
-		const separator = baseURL.includes('?') ? '&' : '?';
-		return `${baseURL}${separator}v=${override.version}`;
+		return resolvePosterUrlPure(movie, filePath, posterPreviewOverrides, () =>
+			BaseClient.getSessionID(),
+		);
 	}
 
 	const displayPosterUrl = $derived<string | undefined>(

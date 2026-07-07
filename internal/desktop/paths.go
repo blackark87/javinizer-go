@@ -61,7 +61,8 @@ func SetupPortableEnv() error {
 	}
 	dataDir := filepath.Join(dir, "data")
 	logDir := filepath.Join(dataDir, "logs")
-	for _, sub := range []string{dataDir, logDir} {
+	tempDir := filepath.Join(dataDir, "temp")
+	for _, sub := range []string{dataDir, logDir, tempDir} {
 		if err := os.MkdirAll(sub, 0o750); err != nil {
 			return fmt.Errorf("desktop: cannot create %s: %w", sub, err)
 		}
@@ -71,6 +72,15 @@ func SetupPortableEnv() error {
 	}
 	if os.Getenv("JAVINIZER_LOG_DIR") == "" {
 		_ = os.Setenv("JAVINIZER_LOG_DIR", logDir)
+	}
+	// JAVINIZER_TEMP_DIR points temp poster generation at an absolute, writable
+	// path under the portable data dir. Without it the config default
+	// "data/temp" stays relative and resolves against CWD — which is "/" or the
+	// bundle dir when launched from Finder/Explorer — so temp posters can't be
+	// written (poster generation fails silently) and the review-page crop modal
+	// 404s on the -full.jpg source it expects to find there.
+	if os.Getenv("JAVINIZER_TEMP_DIR") == "" {
+		_ = os.Setenv("JAVINIZER_TEMP_DIR", tempDir)
 	}
 	// JAVINIZER_DATA_DIR is the update package's portable cache location
 	// (internal/update/paths.go: dataDir()). Without it the update cache falls

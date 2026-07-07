@@ -37,6 +37,7 @@ func TestSetupPortableEnv_SetsEnvWhenAbsent(t *testing.T) {
 	t.Setenv("JAVINIZER_DB", "")
 	t.Setenv("JAVINIZER_LOG_DIR", "")
 	t.Setenv("JAVINIZER_DATA_DIR", "")
+	t.Setenv("JAVINIZER_TEMP_DIR", "")
 
 	if err := SetupPortableEnv(); err != nil {
 		t.Fatalf("SetupPortableEnv() error: %v", err)
@@ -46,6 +47,7 @@ func TestSetupPortableEnv_SetsEnvWhenAbsent(t *testing.T) {
 	wantDB := filepath.Join(dir, "data", "javinizer.db")
 	wantLogDir := filepath.Join(dir, "data", "logs")
 	wantDataDir := filepath.Join(dir, "data")
+	wantTempDir := filepath.Join(dir, "data", "temp")
 
 	if got := os.Getenv("JAVINIZER_DB"); got != wantDB {
 		t.Errorf("JAVINIZER_DB = %q, want %q", got, wantDB)
@@ -56,12 +58,16 @@ func TestSetupPortableEnv_SetsEnvWhenAbsent(t *testing.T) {
 	if got := os.Getenv("JAVINIZER_DATA_DIR"); got != wantDataDir {
 		t.Errorf("JAVINIZER_DATA_DIR = %q, want %q (update cache must be portable, not CWD-relative)", got, wantDataDir)
 	}
+	if got := os.Getenv("JAVINIZER_TEMP_DIR"); got != wantTempDir {
+		t.Errorf("JAVINIZER_TEMP_DIR = %q, want %q (temp posters must be portable, not CWD-relative)", got, wantTempDir)
+	}
 }
 
 func TestSetupPortableEnv_PreservesExistingEnv(t *testing.T) {
 	t.Setenv("JAVINIZER_DB", "/custom/db.sqlite")
 	t.Setenv("JAVINIZER_LOG_DIR", "/custom/logs")
 	t.Setenv("JAVINIZER_DATA_DIR", "/custom/data")
+	t.Setenv("JAVINIZER_TEMP_DIR", "/custom/temp")
 
 	if err := SetupPortableEnv(); err != nil {
 		t.Fatalf("SetupPortableEnv() error: %v", err)
@@ -75,6 +81,9 @@ func TestSetupPortableEnv_PreservesExistingEnv(t *testing.T) {
 	}
 	if got := os.Getenv("JAVINIZER_DATA_DIR"); got != "/custom/data" {
 		t.Errorf("JAVINIZER_DATA_DIR = %q, want /custom/data (existing value must be preserved)", got)
+	}
+	if got := os.Getenv("JAVINIZER_TEMP_DIR"); got != "/custom/temp" {
+		t.Errorf("JAVINIZER_TEMP_DIR = %q, want /custom/temp (existing value must be preserved)", got)
 	}
 }
 

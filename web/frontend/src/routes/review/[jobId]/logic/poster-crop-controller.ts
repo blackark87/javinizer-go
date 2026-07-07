@@ -119,7 +119,7 @@ export function createPosterCropController(deps: PosterCropControllerDeps) {
 		if (currentMovie && deps.getCropSourceURL().includes('-full.jpg')) {
 			const posterMovieId = deps.getCurrentResult()?.movie_id ?? currentMovie.id;
 			const fallbackURL = `/api/v1/temp/posters/${deps.getJobId()}/${posterMovieId}.jpg${sessionParam()}`;
-			deps.setCropSourceURL(`${fallbackURL}?v=${now()}`);
+			deps.setCropSourceURL(`${fallbackURL}${fallbackURL.includes('?') ? '&' : '?'}v=${now()}`);
 			return;
 		}
 
@@ -145,7 +145,7 @@ export function createPosterCropController(deps: PosterCropControllerDeps) {
 			const fullPosterURL = `/api/v1/temp/posters/${deps.getJobId()}/${posterMovieId}-full.jpg${sessionParam()}`;
 			sourceURL = fullPosterURL;
 		}
-		deps.setCropSourceURL(`${sourceURL}?v=${now()}`);
+		deps.setCropSourceURL(`${sourceURL}${sourceURL.includes('?') ? '&' : '?'}v=${now()}`);
 		deps.setPosterCropLoadError(null);
 		deps.setCropMetrics(null);
 		deps.setCropBox(null);

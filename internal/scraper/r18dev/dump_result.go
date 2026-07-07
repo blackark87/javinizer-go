@@ -220,12 +220,22 @@ func (s *scraper) resolveDumpMediaURLs(d *models.DumpMovie, result *models.Scrap
 	// Poster: the dump's jacket_thumb_url is the "ps" (small/poster) variant.
 	// Resolved independently of the cover so a row with only a thumb still
 	// gets a poster. Falls back to the cover URL when no thumb is available.
+	//
+	// The online path (r18dev.go) probes the awsimgsrc poster dimensions via
+	// GetOptimalPosterURL and sets ShouldCropPoster accordingly; the dump path
+	// is zero-HTTP so it can't probe. The ps.jpg thumb is conventionally a
+	// portrait poster, so shouldCrop stays false when a thumb is present.
+	// When the thumb is missing and we fall back to the landscape cover,
+	// ShouldCropPoster must be true so the frontend right-crops the cover
+	// into a portrait (otherwise it letterboxes the full cover — see the
+	// matching logic in r18dev.go's shouldCrop branch).
 	posterURL := r18devdump.NormalizeDumpURL(d.JacketThumbURL)
 	if posterURL != "" {
 		posterURL = imageutil.NormalizeDMMScreenshotURL(posterURL)
 		result.PosterURL = posterURL
 	} else if coverURL != "" {
 		result.PosterURL = coverURL
+		result.ShouldCropPoster = true
 	}
 
 	// Screenshots: expand the dump's gallery range into individual URLs.

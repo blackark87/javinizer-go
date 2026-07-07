@@ -98,20 +98,27 @@ export class BaseClient {
 }
 
 // Build API base URL dynamically from browser location.
-// In production (Docker/deployed), frontend and backend are same-origin, so we use ''
-// In dev mode with Vite proxy, we also use '' (proxy handles forwarding to backend)
-// VITE_API_URL can override this for custom setups.
+// In production (Docker/deployed, CLI `web` subcommand) frontend and backend
+// are same-origin, so we use '' (relative URLs). In dev mode with the Vite
+// proxy, VITE_API_URL can point the browser at a different host/port.
 //
 // In the desktop app (Wails webview) the SPA loads from wails://wails.localhost
 // and must use same-origin relative URLs so requests route through the embedded
 // reverse proxy to the API server on its random localhost port. A dev .env may
 // bake VITE_API_URL=http://localhost:8080 into the bundle; that would make the
-// SPA fetch cross-origin (and to the wrong port), which WKWebView blocks with
+// SPA fetch cross-origin (and to the wrong port — the desktop binary's config
+// binds a random high port, not 8080), which WKWebView blocks with
 // "Load failed". Force same-origin in the desktop context regardless of the
 // baked-in env value.
+//
+// VITE_API_URL is honored ONLY in dev (import.meta.env.DEV). A production build
+// with VITE_API_URL baked in would otherwise pin the API client to a fixed
+// host:port that won't match the server's actual bind address — e.g. running
+// the desktop binary's `web` subcommand (which reads the portable config's
+// random port) against a bundle baked with :8080 produces "Failed to fetch".
 export function getAPIBaseURL(): string {
 	if (isDesktopApp()) return '';
-	if (import.meta.env.VITE_API_URL) {
+	if (import.meta.env.DEV && import.meta.env.VITE_API_URL) {
 		return import.meta.env.VITE_API_URL;
 	}
 	return '';

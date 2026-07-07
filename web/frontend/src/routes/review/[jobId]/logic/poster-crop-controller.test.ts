@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createPosterCropController, type PosterCropDragState } from './poster-crop-controller';
+import { BaseClient } from '$lib/api/clients/common';
 import type { FileResult, Movie } from '$lib/api/types';
 import type { PosterCropBox, PosterCropMetrics, PosterCropState } from '../review-utils';
 
@@ -152,5 +153,90 @@ describe('applyPosterCrop — persist edited URL before cropping (issue #37)', (
 		expect(log.applyPosterFromUrlAsync).not.toHaveBeenCalled();
 		expect(log.mutatePosterCropAsync).not.toHaveBeenCalled();
 		expect(log.setCropApplying).not.toHaveBeenCalled();
+	});
+});
+
+describe('openPosterCropModal — crop source URL formation (poster rendering regressions)', () => {
+	// Regression: openPosterCropModal built the source URL with a duplicated
+	// '?' separator (...?session=abc?v=123), corrupting the session value →
+	// 401 → onerror → "Poster source is not available for manual cropping".
+	// The fix uses the correct separator ('&' when '?' is already present).
+	// These tests pin the URL shape by capturing setCropSourceURL calls.
+
+	afterEach(() => {
+		BaseClient.setSessionID(null);
+	});
+
+	function makeCropController() {
+		BaseClient.setSessionID('sid-abc');
+		const setCropSourceURL = vi.fn();
+		const movie: Movie = {
+			id: 'GOOD-001',
+			title: 'Test Movie',
+			poster_url: 'https://dmm/poster-GOOD-001.jpg',
+		};
+		const result: FileResult = {
+			result_id: 'res-1',
+			file_path: '/tmp/GOOD-001.mp4',
+			movie_id: 'GOOD-001',
+			status: 'completed',
+			started_at: '',
+			is_multi_part: false,
+			part_number: 0,
+			part_suffix: '',
+			movie: { id: 'GOOD-001', title: 'Test Movie', poster_url: 'https://dmm/poster-GOOD-001.jpg' },
+		};
+		const controller = createPosterCropController({
+			getBrowser: () => true,
+			getJobId: () => 'job-1',
+			getCurrentMovie: () => movie,
+			getCurrentResult: () => result,
+			getShowPosterCropModal: () => false,
+			setShowPosterCropModal: () => {},
+			setPosterCropLoadError: () => {},
+			getCropSourceURL: () => '',
+			setCropSourceURL,
+			getCropImageElement: () => null,
+			setCropImageElement: () => {},
+			getCropMetrics: () => null,
+			setCropMetrics: () => {},
+			getCropBox: () => null,
+			setCropBox: () => {},
+			getMaxPosterHeight: () => null,
+			setMaxPosterHeight: () => {},
+			getCropDragState: () => null,
+			setCropDragState: () => {},
+			getPosterCropStates: () => new Map<string, PosterCropState>(),
+			applyPosterFromUrlAsync: vi.fn(async () => {}),
+			mutatePosterCropAsync: vi.fn(async () => {}),
+			setCropApplying: () => {},
+			now: () => 12345,
+		});
+		return { controller, setCropSourceURL };
+	}
+
+	it('builds the crop source URL with at most one ? separator and includes the session param (no duplicated ? corrupting the query string)', () => {
+		const { controller, setCropSourceURL } = makeCropController();
+		controller.openPosterCropModal();
+
+		expect(setCropSourceURL).toHaveBeenCalledTimes(1);
+		const url = setCropSourceURL.mock.calls[0][0] as string;
+		expect(url, 'crop source URL must be populated').toBeTruthy();
+		expect(url, 'crop source URL must include the session param').toContain('session=sid-abc');
+		expect((url.match(/\?/g) ?? []).length, `crop source URL must have at most one "?", got: ${url}`).toBeLessThanOrEqual(1);
+	});
+
+	it('uses the correct separator when appending the cache-busting v= param to a session-tagged URL', () => {
+		const { controller, setCropSourceURL } = makeCropController();
+		controller.openPosterCropModal();
+
+		const url = setCropSourceURL.mock.calls[0][0] as string;
+		expect(url, 'crop source URL must include the session param').toContain('session=sid-abc');
+		expect(url, 'crop source URL must include the cache-busting v= param').toContain('v=12345');
+		// The temp-poster URL carries ?session=... ; the v= cache-buster must
+		// be appended with '&' (not '?'), producing ?session=...&v=12345.
+		// A regression producing ?session=...?v=12345 (two '?') would fail
+		// both this assertion and the at-most-one-? assertion above.
+		expect(url, 'session + v params must be joined with &, not a duplicated ?').toMatch(/[?&]v=12345/);
 	});
 });

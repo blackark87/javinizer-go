@@ -141,6 +141,20 @@ test.describe('Update indicator: real update.Service + real GitHub API → nav i
 			await expect(releaseLink).toHaveAttribute('target', '_blank');
 			await expect(releaseLink).toHaveAttribute('rel', 'noopener noreferrer');
 
+			// The e2e backend reports install_environment="cli" (cmd/javinizer-e2e
+			// never calls SetInstallEnvironment, so CoreDeps defaults to CLI).
+			// For non-desktop envs the backend-provided upgrade_instructions <pre>
+			// MUST render (the `install_environment !== 'desktop'` guard hides it
+			// only for desktop, where the in-app "Update & restart" button IS the
+			// self-upgrade). Pin the guard's non-desktop branch: instructions visible.
+			const instructionsPre = popover.locator('pre');
+			await expect(instructionsPre).toBeVisible();
+			await expect(instructionsPre).toContainText('javinizer upgrade');
+
+			// Non-desktop env offers the releases link, NOT the in-app self-upgrade
+			// button. Pin the env-based CTA: "Update & restart" is desktop-only.
+			await expect(popover.getByRole('button', { name: /update.*restart/i })).toHaveCount(0);
+
 			// "Check again" button is present and triggers a force-check.
 			const checkAgainButton = popover.getByText('Check again');
 			await expect(checkAgainButton).toBeVisible();

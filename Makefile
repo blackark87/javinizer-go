@@ -1,6 +1,6 @@
 .PHONY: help build run run-api run-api-dev test test-short test-race test-verbose bench clean clean-all deps install web-dev web-build web-preview web-install web-clean web-restore-placeholder web-test
 .PHONY: coverage coverage-fast coverage-html coverage-check coverage-pkg coverage-patch coverage-patch-check coverage-func ci ci-full config-drift config-sync check-import-guard check-mocks simulate-ci
-.PHONY: fmt lint vet vuln swagger docs mocks test-e2e-fullstack test-e2e-field-drop test-e2e-cli test-e2e-live test-coverage
+.PHONY: fmt lint vet vuln swagger docs mocks test-e2e-fullstack test-e2e-frontend test-e2e-field-drop test-e2e-cli test-e2e-live test-coverage
 .PHONY: build-cli-linux build-cli-darwin build-cli-windows build-cli-all
 .PHONY: build-app-darwin build-app-windows build-app-linux build-app-all
 .PHONY: act-list act-test act-build act-lint act-docker act-cli-release act-ci act-dry act-help
@@ -360,6 +360,16 @@ web-test:
 # — see playwright.fullstack.config.ts header for the directory map.
 test-e2e-fullstack:
 	cd web/frontend && npx playwright test --config=playwright.fullstack.config.ts
+
+# Frontend-only E2E suite — mocked API (page.route), NO backend. Spawns
+# only the Vite dev server (port 5176). Fast + deterministic: pins pure
+# frontend rendering + interaction logic + env-gated UI states (e.g.
+# install_environment=desktop) without a real Go server. Specs MUST mock
+# every /api endpoint they touch (including /api/v1/auth/status). Spec
+# layout lives under web/frontend/tests/frontend/ — see
+# playwright.frontend.config.ts header for the 3-suite distinction map.
+test-e2e-frontend:
+	cd web/frontend && npx playwright test --config=playwright.frontend.config.ts
 
 # Backward-compat alias — the field-drop regression suite runs as part
 # of the general fullstack suite now. Redirects to the new target.

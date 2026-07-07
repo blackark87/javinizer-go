@@ -13,9 +13,10 @@
 // are stable + offline — no real network scraper calls.
 //
 // Auth is auto-initialized via JAVINIZER_E2E_AUTH=true with admin /
-// adminpassword123 (the standard credentials set by web/frontend/tests/e2e/
-// global-setup.ts), and rate-limiting is disabled so the Playwright
-// repeated-login loop can iterate without lockouts.
+// adminpassword123 (the standard credentials set by
+// web/frontend/tests/fullstack/global-setup.ts), and rate-limiting is
+// disabled so the Playwright repeated-login loop can iterate without
+// lockouts.
 //
 // The binary listens on port 18080 by default (JAVINIZER_E2E_PORT env
 // override). The Vite dev server's proxy config forwards /api + /ws + /health
@@ -283,7 +284,8 @@ func loadConfig() (*config.Config, error) {
 	cfg.Performance.WorkerTimeout = 30
 
 	// Auto-init auth for the E2E flow — admin/adminpassword123 is the
-	// standard the existing web/frontend/tests/e2e/global-setup.ts expects.
+	// standard the existing web/frontend/tests/fullstack/global-setup.ts
+	// expects.
 	if err := os.Setenv("JAVINIZER_E2E_AUTH", "true"); err != nil {
 		return nil, fmt.Errorf("set JAVINIZER_E2E_AUTH: %w", err)
 	}

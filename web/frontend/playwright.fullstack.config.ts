@@ -1,7 +1,8 @@
 /**
  * Full-stack Playwright config.
  *
- * Unlike the existing playwright.config.ts (which mocks all /api routes via
+ * Unlike the frontend-only config (playwright.frontend.config.ts, which
+ * mocks all /api routes via
  * page.route), this config spawns REAL backend + frontend processes via
  * Playwright's `webServer` option. Every assertion exercises the real
  * Hauptstrasse: browser → real SvelteKit frontend → real HTTP transport →

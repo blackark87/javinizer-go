@@ -9,7 +9,8 @@
  * manager + real SQLite session table.
  *
  * Why APIRequestContext login + manual cookie injection (instead of the
- * tests/e2e/global-setup.ts pattern of filling the login form via DOM):
+ * the legacy DOM-form-login pattern (filling the login form via DOM) —
+ * the legacy suite used flaky DOM-form login; this uses the API:
  * the real SvelteKit frontend's auth gate diverges from the mocked-API
  * flow once the backend pre-initializes the admin user — debugging showed
  * the form-fill path unreliable on the live backend, while the API

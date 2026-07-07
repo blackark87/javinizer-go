@@ -10,7 +10,7 @@
  * Why this matters: the token API gates programmatic API access (an
  * alternative to session-cookie auth used by the WebUI). The existing
  * token-management.spec.ts covers the /settings API Tokens section UI
- * against a developer-run backend (tests/e2e/ config — NOT the fullstack
+ * against a developer-run backend (now moved into the fullstack suite) —
  * e2emock). A regression in the token handler wiring (create/revoke/
  * regenerate), the TokenService, or the ApiTokenRepository is invisible
  * to the fullstack suite. This spec ports the core contract to the

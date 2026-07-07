@@ -1227,9 +1227,9 @@ jobs:
           # Fetch the published release so we can mirror its body, author,
           # and publish timestamp in the Discord embed.
           release_json="$(gh api "repos/${REPO}/releases/tags/${TAG}" 2>/dev/null || echo '{}')"
-          body="$(printf '%s' "${release_json}" | jq -r '.body // "")"
-          author_login="$(printf '%s' "${release_json}" | jq -r '.author.login // "")"
-          author_avatar="$(printf '%s' "${release_json}" | jq -r '.author.avatar_url // "")"
+          body="$(printf '%s' "${release_json}" | jq -r '.body // ""')"
+          author_login="$(printf '%s' "${release_json}" | jq -r '.author.login // ""')"
+          author_avatar="$(printf '%s' "${release_json}" | jq -r '.author.avatar_url // ""')"
           published_at="$(printf '%s' "${release_json}" | jq -r '.published_at // (now | todate)')"
 
           # Truncate the release notes so the embed stays compact. Discord

@@ -13,7 +13,21 @@ A metadata scraper and file organizer for Japanese Adult Videos (JAV), with CLI,
 
 ## Quick Start
 
-The fastest way to try Javinizer is to grab a binary and start the web UI:
+The fastest way to try Javinizer is the desktop app — a one-liner downloads, verifies, and installs it:
+
+**macOS / Linux:**
+```bash
+curl -sSL https://raw.githubusercontent.com/javinizer/javinizer-go/main/scripts/install-app.sh | bash
+```
+
+**Windows** (PowerShell):
+```powershell
+irm https://raw.githubusercontent.com/javinizer/javinizer-go/main/scripts/install-app.ps1 | iex
+```
+
+Launch Javinizer from your app launcher / Start Menu, create your admin login on first startup, and start scraping.
+
+Prefer the terminal? Grab a CLI binary and start the web UI:
 
 ```bash
 # 1. Download the latest stable binary for your platform:
@@ -28,7 +42,7 @@ chmod +x javinizer
 Open **http://localhost:8080**, create your admin login on first startup, and start scraping.
 
 - On macOS, swap the asset for `javinizer-darwin-universal`; on Windows, download `javinizer-windows-amd64.exe` and run `.\javinizer.exe web`.
-- Prefer the [desktop app](#desktop-app-clickable-gui) (clickable GUI, no terminal; [one-liner installer](#desktop-app-clickable-gui) for macOS/Linux), [Docker](#docker), a [one-shot installer](#one-shot-install-linux--macos--windows), [Homebrew](#homebrew-macos--linux), a [binary](#prebuilt-binaries-manual-download), or [build from source](#build-from-source) for other setups.
+- Prefer [Docker](#docker), a [one-shot installer](#one-shot-install-linux--macos--windows), [Homebrew](#homebrew-macos--linux), a [binary](#prebuilt-binaries-manual-download), or [build from source](#build-from-source) for other setups.
 
 > **First time?** Skim [Features](#features) to see what it does, then jump to [Usage](#usage) or the [Web UI](#web-ui) section.
 

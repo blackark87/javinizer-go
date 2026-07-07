@@ -622,12 +622,15 @@ jobs:
         shell: pwsh
         run: |
           # Generate a .syso COFF resource from the .ico so `go build`
-          # embeds it into the .exe (Explorer/taskbar shows the app icon).
-          # rsrc is pinned via `go run`; the .syso must live in the main
-          # package dir (cmd/javinizer) for go build to link it.
-          go run github.com/akavel/rsrc@v0.10.2 `
+          # embeds it into the .exe. genicon (internal/desktop/icons/genicon)
+          # embeds the icon as RT_GROUP_ICON at resource ID 3 — the ID Wails'
+          # window manager loads (AppIconID = 3), so both the .exe/taskbar
+          # icon and the in-app window title-bar icon resolve. rsrc -ico
+          # assigns ID 1, which leaves the window icon generic.
+          # The .syso must live in the main package dir (cmd/javinizer).
+          go run ./internal/desktop/icons/genicon `
             -ico internal/desktop/icons/javinizer.ico `
-            -o cmd/javinizer/javinizer.syso
+            -o cmd/javinizer/javinizer.syso -arch amd64
 
       - name: Build desktop binary
         shell: pwsh

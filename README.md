@@ -32,7 +32,7 @@ Open **http://localhost:8080**, create your admin login on first startup, and st
 
 - Replace `/path/to/your/media` with your JAV library path.
 - On Unraid, use `--user 99:100`.
-- Prefer [Homebrew](#homebrew-macos--linux), a [one-shot installer](#one-shot-install-linux--macos--windows), a [binary](#prebuilt-binaries-manual-download), or [build from source](#build-from-source) for a native install.
+- Prefer the [desktop app](#desktop-app-clickable-gui) (clickable GUI), [Homebrew](#homebrew-macos--linux), a [one-shot installer](#one-shot-install-linux--macos--windows), a [binary](#prebuilt-binaries-manual-download), or [build from source](#build-from-source) for a native install.
 
 > **First time?** Skim [Features](#features) to see what it does, then jump to [Usage](#usage) or the [Web UI](#web-ui) section.
 
@@ -48,7 +48,7 @@ Open **http://localhost:8080**, create your admin login on first startup, and st
 | NFO generation | Creates Kodi/Plex-compatible NFO metadata files. | Improves media center indexing and display quality. |
 | Media downloads | Downloads cover, poster, fanart, trailer, and actress images. | Produces complete, polished library entries. |
 | Manual scrape | Per-file ID/URL overrides before a batch runs. | Handle files whose filenames have no usable JAV ID. |
-| Multiple interfaces | Use CLI, interactive TUI, REST API, or web UI. | Fast automation or manual review — your choice. |
+| Multiple interfaces | Use CLI, interactive TUI, REST API, web UI, or a native desktop app. | Fast automation or manual review — your choice. |
 
 ## Supported Scrapers
 
@@ -225,7 +225,7 @@ javinizer upgrade --prerelease  # upgrade to the newest release, including prere
 
 The new binary is verified against the release `checksums.txt` before the swap. If javinizer was installed via **Homebrew** or **Scoop**, `upgrade` detects that and tells you to use `brew upgrade javinizer` / `scoop update javinizer` instead, so it never clobbers a package-manager install.
 
-`upgrade` is also **environment-aware**: inside a **Docker** container it refuses the in-place swap (the image is read-only and a replace would be lost on the next recreate) and prints the `docker pull ghcr.io/javinizer/javinizer-go:latest` command instead; in the **desktop app** it points you to the [releases page](https://github.com/javinizer/javinizer-go/releases) (a bare binary swap would orphan the `.app`/`.exe`/`.AppImage` wrapper). The Web UI's update banner shows the same guidance with a "Running in Docker" / "Desktop app" / "CLI install" badge so you always know which upgrade path applies.
+`upgrade` is also **environment-aware**: inside a **Docker** container it refuses the in-place swap (the image is read-only and a replace would be lost on the next recreate) and prints the `docker pull ghcr.io/javinizer/javinizer-go:latest` command instead; in the **desktop app** it points you to the in-app **"Update & restart"** button (a CLI process can't quit the running GUI or swap its own `.app`/`.exe`/`.AppImage` bundle — see [Desktop App updates](./docs/17-desktop-app.md#updating)). The desktop app itself self-updates in place: the Web UI's update banner shows an "Update & restart" button that downloads, verifies, swaps, and relaunches the bundle with no terminal required. The banner's badge ("Running in Docker" / "Desktop app" / "CLI install") reflects which upgrade path applies.
 
 By default `upgrade` targets the latest **stable** release. Add `--prerelease` to jump to a newer release candidate (e.g. `v1.1.0-rc1`) when you want to track prereleases.
 

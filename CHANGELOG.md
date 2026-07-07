@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.1.0] - 2026-07-07
+
+### Added
+
+- Package as clickable desktop app for macOS, Windows, and Linux (#84)
+- Add desktop bundle self-upgrade (#89)
+- Add environment-aware upgrade UX (docker/desktop/cli)
+- Add UI and API for managing allowed_directories (#93)
+- Add allowed_directories to first-run setup (#94)
+- Embed Windows app icon via genicon .syso resource
+- Extract UpgradeAction and force same-origin API in desktop webview
+- Add per-field source override with source-merge modal (#80)
+- Add local dump lookup with zero-HTTP fast path for r18dev (#76)
+
+### Fixed
+
+- Fix desktop Windows launch, WebSocket progress, and browse security model (#99)
+- Redesign allowed directories editor and fix PathInput Enter behavior (#98)
+- Reverse-proxy through Wails asset server instead of redirecting (#96)
+- Add desktop app icon and fix web favicon (#95)
+- Resolve NTFS volume mount points in canonicalizePath (#92)
+- Make hot_reload atomic across registry/config/factories (#82)
+- Fail-closed on nil auth manager (#81)
+- Give "Remember me" sessions a longer TTL than ephemeral ones
+- Detect podman/nerdctl containers and document cgroup v2 limit
+- Persist window geometry across launches
+- Point JAVINIZER_DATA_DIR at the portable data dir
+- Use OS-correct separator in organize preview folder names
+- Use 'web' subcommand in CLI flag e2e test
+- Skip window-state perm test on Windows
+
+### Changed
+
+- Rename 'api' subcommand to 'web'
+- Introduce DTOs for MovieView nested collections (#83)
+- Add make config-sync to mirror the embedded config master
+- Move Discord notify into cli-release workflow
+- Add brew trust step for Homebrew 6.0+ tap-trust requirement
+- Document environment-aware upgrade behavior
+- Post-v1.0.0 housekeeping
+- Split e2e suites into frontend/fullstack/live and add upgrade-CTA coverage
+- Expand fullstack e2e coverage to scrape pipeline and APIs
+- Cover PersistentSessionTTL getter, NoOpAuth mock, and clamp guard
+- Cover container-detected branch in fetchWithBrowser
+- Rename pendingCount to revertEligibleCount to match semantics
+
 ## [v1.0.0] - 2026-07-03
 
 ### Added

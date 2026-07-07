@@ -28,7 +28,7 @@ chmod +x javinizer
 Open **http://localhost:8080**, create your admin login on first startup, and start scraping.
 
 - On macOS, swap the asset for `javinizer-darwin-universal`; on Windows, download `javinizer-windows-amd64.exe` and run `.\javinizer.exe web`.
-- Prefer the [desktop app](#desktop-app-clickable-gui) (clickable GUI, no terminal), [Docker](#docker-recommended), a [one-shot installer](#one-shot-install-linux--macos--windows), [Homebrew](#homebrew-macos--linux), or [build from source](#build-from-source) for other setups.
+- Prefer the [desktop app](#desktop-app-clickable-gui) (clickable GUI, no terminal; [one-liner installer](#desktop-app-clickable-gui) for macOS/Linux), [Docker](#docker), a [one-shot installer](#one-shot-install-linux--macos--windows), [Homebrew](#homebrew-macos--linux), a [binary](#prebuilt-binaries-manual-download), or [build from source](#build-from-source) for other setups.
 
 > **First time?** Skim [Features](#features) to see what it does, then jump to [Usage](#usage) or the [Web UI](#web-ui) section.
 
@@ -133,7 +133,27 @@ The manifest installs the prebuilt `javinizer-windows-amd64.exe` and shims it as
 
 ### Desktop app (clickable GUI)
 
-The desktop app is a single clickable application that opens a native window over the embedded API server and Web UI — the same surface as `javinizer web`, no browser needed. It is a **separate package** from the CLI so both can coexist:
+The desktop app is a single clickable application that opens a native window over the embedded API server and Web UI — the same surface as `javinizer web`, no browser needed. It is a **separate package** from the CLI so both can coexist.
+
+**macOS / Linux — one-liner** (detects OS + arch, verifies the SHA256, installs to `/Applications` or `~/Applications`):
+
+```bash
+curl -sSL https://raw.githubusercontent.com/javinizer/javinizer-go/main/scripts/install-app.sh | bash
+# install the newest release including prereleases:
+curl -sSL https://raw.githubusercontent.com/javinizer/javinizer-go/main/scripts/install-app.sh | bash -s -- --pre-release
+```
+
+**Windows** — one-liner (PowerShell; verifies SHA256, removes Mark-of-the-Web so Smart App Control won't block it, creates a Start Menu shortcut):
+
+```powershell
+irm https://raw.githubusercontent.com/javinizer/javinizer-go/main/scripts/install-app.ps1 | iex
+# install the newest release including prereleases:
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/javinizer/javinizer-go/main/scripts/install-app.ps1))) -PreRelease
+```
+
+Or download `javinizer-desktop-windows-amd64.exe` from the [Releases page](https://github.com/javinizer/javinizer-go/releases).
+
+**Prefer a package manager or manual download?**
 
 ```bash
 # macOS — Homebrew Cask (installs Javinizer.app to /Applications)
@@ -144,7 +164,7 @@ brew install --cask javinizer-app
 ```
 
 ```powershell
-# Windows — Scoop (shim: javinizer-app; Start Menu shortcut: Javinizer)
+# Windows — Scoop (creates Start Menu shortcut)
 scoop bucket add javinizer https://github.com/javinizer/scoop-javinizer
 scoop install javinizer-app
 ```

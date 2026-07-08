@@ -6,9 +6,11 @@ subcommands remain available inside the same binary.
 
 ## Installation
 
-The desktop app is a **separate package** from the CLI so both can coexist. It
-is published to the same package-manager taps on each **stable** release
-(prereleases never reach them):
+The desktop app is the same binary as the CLI — all CLI and TUI subcommands
+remain available inside it. It is published as a **separate distribution
+package** from the CLI-only release so both can be installed alongside each
+other without conflict. The desktop package is pushed to the same
+package-manager taps on each **stable** release (prereleases never reach them):
 
 ```bash
 # macOS — Homebrew Cask (installs Javinizer.app to /Applications)
@@ -174,6 +176,21 @@ CLI and TUI subcommands are still available inside the desktop binary:
 bin/Javinizer.app/Contents/MacOS/Javinizer tui ~/Videos
 bin/Javinizer.app/Contents/MacOS/Javinizer scrape IPX-123
 ```
+
+On macOS you must invoke the inner binary path — `Javinizer.app` is a
+directory bundle, so `./Javinizer.app --help` fails with "permission denied"
+(or "is a directory"), and `open Javinizer.app` launches the GUI and does not
+attach stdout to your terminal. Add a shell alias for convenience:
+
+```bash
+# ~/.zshrc or ~/.bashrc
+alias javinizer="/Applications/Javinizer.app/Contents/MacOS/Javinizer"
+```
+
+Then `javinizer --help`, `javinizer scrape IPX-123`, etc. work as normal CLI
+commands, and a bare `javinizer` (no args) opens the GUI window. On Windows
+and Linux the executable itself (`Javinizer.exe` / the AppImage) is invoked
+directly.
 
 For development, you can point the desktop binary at the worktree's config and
 database instead of the portable location:

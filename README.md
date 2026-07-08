@@ -148,7 +148,7 @@ The manifest installs the prebuilt `javinizer-windows-amd64.exe` and shims it as
 
 ### Desktop app (clickable GUI)
 
-The desktop app is a single clickable application that opens a native window over the embedded API server and Web UI — the same surface as `javinizer web`, no browser needed. It is a **separate package** from the CLI so both can coexist.
+The desktop app is a single clickable application that opens a native window over the embedded API server and Web UI — the same surface as `javinizer web`, no browser needed. It is the same binary as the CLI: all CLI and TUI subcommands remain available (e.g. `Javinizer.app/Contents/MacOS/Javinizer scrape IPX-123` — on macOS you must invoke the inner binary, since `Javinizer.app` is a directory bundle, not an executable). It is published as a **separate distribution package** from the CLI-only release so both can be installed alongside each other without conflict.
 
 **macOS / Linux — one-liner** (detects OS + arch, verifies the SHA256, installs to `/Applications` or `~/Applications`):
 

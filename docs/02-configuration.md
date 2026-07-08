@@ -396,6 +396,36 @@ metadata:
 
 **required_fields**: Fields that must have data for the movie to be considered valid. If any required field is missing, the aggregation may fail or warn.
 
+### Local R18.dev Dump Lookup
+
+Javinizer can download a snapshot of the r18.dev database into a local
+SQLite sidecar. When present, the `r18dev` scraper resolves DMM
+`content_id`s with a single local lookup instead of issuing the slow,
+rate-limit-prone HTTP probes that are normally the slowest step of a scrape.
+
+```yaml
+metadata:
+  r18dev_dump:
+    enabled: true                                # Activates automatically once the dump is downloaded (default: true)
+    path: data/r18dev/r18dev_dump.db             # Sidecar SQLite path (relative to working dir)
+```
+
+**enabled**: Whether the scraper consults the local dump. Defaults to `true`
+— it is a no-op until the dump file exists, so it is safe to leave on. When
+the file is absent, the scraper silently falls back to HTTP probing, so this
+flag never blocks scraping.
+
+**path**: Where the SQLite sidecar lives. Defaults to
+`data/r18dev/r18dev_dump.db` (relative to the working directory, like the main
+DB). Point this at a shared location to reuse one dump across multiple
+Javinizer installs.
+
+The dump is managed with the `javinizer dump` command group — see
+[`dump` in the CLI Reference](./03-cli-reference.md#dump) for `download`,
+`update`, `status`, and `search`. The dump URL can be overridden with the
+`JAVINIZER_R18DEV_DUMP_URL` environment variable (e.g. to use a mirror or
+cache).
+
 ### CSV Settings (Legacy — Removed)
 
 Javinizer Go replaced the PowerShell version's CSV-based actress/genre thumbprints with a SQLite database. The legacy `metadata.thumb_csv` and `metadata.genre_csv` keys are **not part of the config schema** and are silently ignored — they are not "maintained for backward compatibility". Use the database-backed features instead:

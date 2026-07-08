@@ -10,6 +10,7 @@ Complete command-line interface reference for Javinizer Go.
   - [scrape](#scrape)
   - [sort](#sort)
   - [update](#update)
+  - [dump](#dump)
   - [tui](#tui)
   - [actress](#actress)
   - [genre](#genre)
@@ -366,6 +367,64 @@ javinizer update ~/Videos --preset gap-fill
 3. Merges scraper data with the existing NFO using the selected strategy
 4. Writes the updated NFO next to the source file
 5. Downloads media (cover, poster, screenshots, etc.) — no file moves or renames
+
+---
+
+### `dump`
+
+Manage the local r18.dev database dump, a SQLite sidecar that maps DMM
+`content_id`s to display `dvd_id`s. When present, the `r18dev` scraper
+consults it for exact `content_id` resolution instead of issuing
+rate-limit-prone HTTP probes — a single local lookup replaces the slowest
+step of a scrape. The feature activates automatically once the dump is
+downloaded; when the file is absent the scraper silently falls back to HTTP.
+
+```bash
+javinizer dump download          # Fetch the latest dump and build the lookup database
+javinizer dump update            # Re-download only if a newer dump is available
+javinizer dump status            # Show row count, source date, and database size
+javinizer dump search <id>       # Look up a dvd_id or content_id locally (for verification)
+```
+
+**Subcommands:**
+- `download` — Fetch the latest dump from `https://r18.dev/dumps/latest`,
+  gunzip it, and import it into the local SQLite sidecar.
+- `update` — Like `download`, but skips the transfer when the remote dump is
+  unchanged since your last import (compares the dated source URL).
+- `status` — Print the sidecar path, row count, source date/URL, import time,
+  and file size. Reports "No local dump found" when not yet downloaded.
+- `search <id>` — Resolve a `dvd_id` to its `content_id` or vice versa
+  against the local dump. Useful for verifying a lookup before scraping.
+
+**Configuration** (`config.yaml`, under `metadata`):
+
+```yaml
+metadata:
+  r18dev_dump:
+    enabled: true                                      # Activates automatically once the dump is downloaded
+    path: data/r18dev/r18dev_dump.db                   # Sidecar SQLite path (relative to working dir)
+```
+
+`enabled: true` is the default; the lookup is a no-op until the file exists,
+so it is safe to leave on. Point `path` at a custom location to share one
+dump across multiple Javinizer installs. The dump URL can be overridden with
+the `JAVINIZER_R18DEV_DUMP_URL` environment variable (e.g. to use a mirror).
+
+**Examples:**
+
+```bash
+# First-time setup: download and build the lookup database
+javinizer dump download
+
+# Check what version you have and how many rows
+javinizer dump status
+
+# Refresh only if a newer dump has been published
+javinizer dump update
+
+# Verify a lookup before scraping
+javinizer dump search IPX-123
+```
 
 ---
 

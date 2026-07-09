@@ -3,6 +3,7 @@ package testkit
 import (
 	"context"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -175,6 +176,14 @@ func CreateTestDeps(t *testing.T, cfg *config.Config, configFile string) *core.A
 		if err := db.Close(); err != nil {
 			t.Logf("Warning: failed to close test database: %v", err)
 		}
+		// On Windows, SQLite's file handles (and WAL sidecar files) may not be
+		// released the instant db.Close() returns. database/sql closes pooled
+		// connections, but the OS can hold the file open briefly, causing the
+		// subsequent t.TempDir() RemoveAll to fail with "The process cannot access
+		// the file because it is being used by another process." Wait for the DB
+		// file to become removable (or timeout) so the LIFO RemoveAll cleanup
+		// registered by t.TempDir() (which runs after this) succeeds.
+		waitForFileRelease(t, dbPath)
 	})
 
 	if err := db.RunMigrationsOnStartup(context.Background()); err != nil {
@@ -309,4 +318,109 @@ func CleanupServerHub(t *testing.T, rt *core.APIRuntime) {
 		rtState.Shutdown()
 	}
 	time.Sleep(100 * time.Millisecond)
+}
+
+// waitForFileRelease waits until the SQLite DB file and its WAL/SHM sidecars
+// can be removed, which on Windows may lag behind db.Close() because the OS
+// holds file handles open briefly. It polls at a fixed 20ms interval (capped to
+// the remaining deadline) for up to ~2s.
+// On Unix this is effectively a no-op (files are deletable while open) but it
+// runs unconditionally to keep the code path uniform.
+//
+// This directly addresses the Windows CI flake where t.TempDir()'s auto-
+// RemoveAll failed with "The process cannot access the file because it is being
+// used by another process" on test.db during teardown of batch tests that
+// exercise the apply phase (which opens pooled SQLite connections).
+//
+// Probe strategy: os.Rename fails on Windows when the source file is open by
+// another process (sharing violation), so renaming the DB file to a sibling
+// and back is a faithful test of "is this file removable" without actually
+// deleting it (the LIFO t.TempDir() RemoveAll owns deletion). The -wal/-shm
+// sidecars are probed directly with os.Remove (SQLite recreates them as
+// needed, so removing them is safe and matches the exact RemoveAll failure
+// mode on those files).
+var (
+	// waitForFileReleaseDeadline is the maximum time waitForFileRelease polls
+	// before giving up. Overridable in tests to keep the suite fast.
+	waitForFileReleaseDeadline = 2 * time.Second
+	// waitForFileReleasePollInterval is the sleep between polls.
+	waitForFileReleasePollInterval = 20 * time.Millisecond
+)
+
+func waitForFileRelease(t *testing.T, dbPath string) {
+	t.Helper()
+	deadline := time.Now().Add(waitForFileReleaseDeadline)
+	sidecars := []string{dbPath + "-wal", dbPath + "-shm"}
+	for time.Now().Before(deadline) {
+		if dbFileReleased(dbPath) && allSidecarsRemoved(sidecars) {
+			return
+		}
+		// Sleep with a cap so a long step can't overshoot the deadline.
+		remaining := time.Until(deadline)
+		sleep := waitForFileReleasePollInterval
+		if sleep > remaining {
+			sleep = remaining
+		}
+		time.Sleep(sleep)
+	}
+	t.Logf("waitForFileRelease: DB file still locked after %s; teardown RemoveAll may fail on Windows", waitForFileReleaseDeadline)
+}
+
+// dbFileReleased reports whether the main DB file is removable on Windows by
+// attempting a rename to a sibling path and back. os.Rename fails with a
+// sharing violation on Windows if any process still holds the file open.
+// renameFunc is the os.Rename seam, overridable in tests to simulate restore
+// failures that are otherwise impossible to trigger deterministically
+// single-threaded (the rename-back happens inside dbFileReleased).
+var renameFunc = os.Rename
+
+func dbFileReleased(dbPath string) bool {
+	// A stranded probe from a prior restore-failure means the DB is still
+	// locked: clean it up before deciding, otherwise the absent-DB fast path
+	// below would return true while the probe file lingers and trips the
+	// RemoveAll this helper exists to protect.
+	probe := dbPath + ".release-probe"
+	if _, err := os.Stat(probe); err == nil {
+		if err := os.Remove(probe); err != nil {
+			return false // still locked — keep polling
+		}
+	} else if !os.IsNotExist(err) {
+		// A non-IsNotExist stat error (permission/IO) means we can't determine
+		// whether a stranded probe exists — treat as not-released so polling
+		// continues rather than risk returning true while the probe lingers.
+		return false
+	}
+	// An absent DB file has nothing to unlock — treat it as released so
+	// waitForFileRelease returns immediately instead of spinning to the deadline.
+	if _, err := os.Stat(dbPath); err != nil && os.IsNotExist(err) {
+		return true
+	}
+	if err := renameFunc(dbPath, probe); err != nil {
+		return false
+	}
+	// Restore the file to its original path. If this fails the DB is stranded
+	// at the probe path, so report not-released so the caller keeps polling
+	// (and eventually logs) rather than masking the restore failure.
+	if err := renameFunc(probe, dbPath); err != nil {
+		// Best-effort cleanup of the stranded probe so the next poll is clean.
+		_ = os.Remove(probe)
+		return false
+	}
+	return true
+}
+
+// allSidecarsRemoved attempts to remove each sidecar file, returning true only
+// when all are gone (already absent or successfully removed here). It ignores
+// only os.IsNotExist errors; any other remove error (e.g. a transient Windows
+// sharing violation) is treated as "still locked" so waitForFileRelease keeps
+// polling rather than returning early and reintroducing the RemoveAll flake.
+// The -wal/-shm files are safe to delete because SQLite recreates them on
+// next access, and t.TempDir()'s RemoveAll would delete them anyway.
+func allSidecarsRemoved(sidecars []string) bool {
+	for _, p := range sidecars {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			return false
+		}
+	}
+	return true
 }

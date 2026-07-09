@@ -187,6 +187,7 @@ export interface ScrapeCandidate {
 	source: string;
 	movie_id?: string;
 	title?: string;
+	original_title?: string;
 	actress_count: number;
 	poster_url?: string;
 }

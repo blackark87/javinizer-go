@@ -21,6 +21,8 @@ func saveScrapedResult(
 	movieRepo *database.MovieRepository,
 	fieldSources map[string]string,
 	actressSources map[string]string,
+	candidates []models.ScrapeCandidate,
+	hasConflict bool,
 	posterErr *string,
 	translationWarning string,
 	matchResultPtr *matcher.MatchResult,
@@ -77,8 +79,6 @@ func saveScrapedResult(
 			finalMovie = movie
 		}
 	}
-
-	candidates, hasConflict := buildScrapeCandidates(results)
 
 	now := time.Now()
 	fileResult := &FileResult{

@@ -298,10 +298,13 @@
 												type="button"
 												class="text-left rounded-md border p-3 hover:bg-muted transition-colors disabled:opacity-50"
 												disabled={s.rescrapingStates.get(s.currentResult?.result_id || '') || false}
-												onclick={() => s.currentResult && s.selectCandidateProvider(s.currentResult.movie_id, cand.source)}
+												onclick={() => s.currentResult && s.selectCandidateProvider(s.currentResult.result_id, cand.source)}
 											>
 												<div class="text-xs font-medium uppercase text-muted-foreground">{cand.source}</div>
 												<div class="text-sm font-medium truncate" title={cand.title}>{cand.title || '(no title)'}</div>
+												{#if cand.original_title && cand.original_title !== cand.title}
+													<div class="text-xs text-muted-foreground truncate" title={cand.original_title}>{cand.original_title}</div>
+												{/if}
 												<div class="text-xs text-muted-foreground">{cand.actress_count} actress{cand.actress_count === 1 ? '' : 'es'}</div>
 											</button>
 										{/each}

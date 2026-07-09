@@ -706,8 +706,8 @@ export function createReviewState(pageStore: Page) {
 		await rescrapeController.executeRescrape(mode);
 	}
 
-	async function selectCandidateProvider(movieId: string, provider: string) {
-		await rescrapeController.selectCandidateProvider(movieId, provider);
+	async function selectCandidateProvider(resultId: string, provider: string) {
+		await rescrapeController.selectCandidateProvider(resultId, provider);
 	}
 
 	async function organizeAll() {

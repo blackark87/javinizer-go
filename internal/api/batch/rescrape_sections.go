@@ -74,9 +74,66 @@ func restoreUnselectedSections(newMovie, oldMovie *models.Movie, selected []stri
 		newMovie.CoverURL = oldMovie.CoverURL
 		newMovie.CroppedPosterURL = oldMovie.CroppedPosterURL
 		newMovie.ShouldCropPoster = oldMovie.ShouldCropPoster
+		newMovie.OriginalPosterURL = oldMovie.OriginalPosterURL
+		newMovie.OriginalCroppedPosterURL = oldMovie.OriginalCroppedPosterURL
+		newMovie.OriginalShouldCropPoster = oldMovie.OriginalShouldCropPoster
 	}
 	if !sel["media"] {
 		newMovie.Screenshots = oldMovie.Screenshots
 		newMovie.TrailerURL = oldMovie.TrailerURL
 	}
+
+	restoreUnselectedTranslations(newMovie, oldMovie, sel)
+}
+
+// restoreUnselectedTranslations keeps the per-language translation records unchanged
+// for unselected sections. MovieTranslation only carries the title/credits/actresses
+// sections. When none of those text sections are selected the whole array is restored;
+// otherwise the unselected sub-fields are restored from the matching-language old
+// record (blanked when the old record is absent, so no fresh translation leaks in).
+func restoreUnselectedTranslations(newMovie, oldMovie *models.Movie, sel map[string]bool) {
+	if sel["title"] || sel["credits"] || sel["actresses"] {
+		oldByLang := make(map[string]*models.MovieTranslation, len(oldMovie.Translations))
+		for i := range oldMovie.Translations {
+			oldByLang[oldMovie.Translations[i].Language] = &oldMovie.Translations[i]
+		}
+		for i := range newMovie.Translations {
+			nt := &newMovie.Translations[i]
+			ot := oldByLang[nt.Language]
+			if !sel["title"] {
+				nt.Title, nt.OriginalTitle, nt.Description = pick3(ot, func(o *models.MovieTranslation) (string, string, string) {
+					return o.Title, o.OriginalTitle, o.Description
+				})
+			}
+			if !sel["credits"] {
+				nt.Director, nt.Maker, nt.Label, nt.Series = pick4(ot, func(o *models.MovieTranslation) (string, string, string, string) {
+					return o.Director, o.Maker, o.Label, o.Series
+				})
+			}
+			if !sel["actresses"] {
+				if ot != nil {
+					nt.Actresses = ot.Actresses
+				} else {
+					nt.Actresses = nil
+				}
+			}
+		}
+		return
+	}
+	// No translated section changed — keep the previous translations verbatim.
+	newMovie.Translations = oldMovie.Translations
+}
+
+func pick3(o *models.MovieTranslation, f func(*models.MovieTranslation) (string, string, string)) (string, string, string) {
+	if o == nil {
+		return "", "", ""
+	}
+	return f(o)
+}
+
+func pick4(o *models.MovieTranslation, f func(*models.MovieTranslation) (string, string, string, string)) (string, string, string, string) {
+	if o == nil {
+		return "", "", "", ""
+	}
+	return f(o)
 }

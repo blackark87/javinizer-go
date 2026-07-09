@@ -176,6 +176,8 @@ func getBatchJobFull(deps *ServerDependencies, c *gin.Context, jobID string) {
 			Error:          fileResult.Error,
 			FieldSources:   fileResult.FieldSources,
 			ActressSources: fileResult.ActressSources,
+			Candidates:     fileResult.Candidates,
+			HasConflict:    fileResult.HasConflict,
 			Data:           enrichActressesForResponse(fileResult.Data, actressRepo),
 			StartedAt:      fileResult.StartedAt.Format("2006-01-02T15:04:05Z07:00"),
 			EndedAt:        endedAt,

@@ -159,6 +159,20 @@ func (s *ScrapersConfig) decodeFromGeneric(generic map[string]any, format scrape
 			}
 			s.ScrapeActress = v
 
+		// Early-stop scraping controls
+		case "early_stop":
+			v, ok := value.(bool)
+			if !ok {
+				return fmt.Errorf("early_stop must be a boolean")
+			}
+			s.EarlyStop = v
+		case "early_stop_min_results":
+			v, ok := toInt(value)
+			if !ok {
+				return fmt.Errorf("early_stop_min_results must be an integer")
+			}
+			s.EarlyStopMinResults = v
+
 		// NEW: Handle browser
 		case "browser":
 			data, err := marshalByFormat(format, value)
@@ -487,6 +501,8 @@ func (s *ScrapersConfig) MarshalJSON() ([]byte, error) {
 
 	// NEW: Include scrape_actress and browser
 	m["scrape_actress"] = s.ScrapeActress
+	m["early_stop"] = s.EarlyStop
+	m["early_stop_min_results"] = s.EarlyStopMinResults
 	m["browser"] = s.Browser
 
 	for name, settings := range s.Overrides {
@@ -512,6 +528,8 @@ func (s *ScrapersConfig) MarshalYAML() (interface{}, error) {
 
 	// NEW: Include scrape_actress and browser
 	m["scrape_actress"] = s.ScrapeActress
+	m["early_stop"] = s.EarlyStop
+	m["early_stop_min_results"] = s.EarlyStopMinResults
 	m["browser"] = s.Browser
 
 	for name, settings := range s.Overrides {

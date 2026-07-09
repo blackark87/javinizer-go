@@ -69,6 +69,7 @@ func validateJobState(job *worker.BatchJob) (isGone bool, httpStatus int, errMsg
 type fileLookupResult struct {
 	foundFilePath    string
 	oldMovieID       string
+	oldMovie         *models.Movie
 	capturedRevision uint64
 }
 
@@ -80,12 +81,14 @@ func findFileForResultID(job *worker.BatchJob, resultID string) (*fileLookupResu
 
 	var capturedRevision uint64
 	var oldMovieID string
+	var oldMovie *models.Movie
 
 	capturedRevision = result.Revision
 
 	if result.Data != nil {
-		if oldMovie, ok := result.Data.(*models.Movie); ok {
-			oldMovieID = oldMovie.ID
+		if m, ok := result.Data.(*models.Movie); ok {
+			oldMovie = m
+			oldMovieID = m.ID
 		}
 	}
 	if oldMovieID == "" {
@@ -95,6 +98,7 @@ func findFileForResultID(job *worker.BatchJob, resultID string) (*fileLookupResu
 	return &fileLookupResult{
 		foundFilePath:    filePath,
 		oldMovieID:       oldMovieID,
+		oldMovie:         oldMovie,
 		capturedRevision: capturedRevision,
 	}, 0, ""
 }

@@ -32,6 +32,8 @@ interface RescrapeControllerDeps {
 	setRescrapeScalarStrategy: (strategy: ScalarStrategy) => void;
 	getRescrapeArrayStrategy: () => ArrayStrategy;
 	setRescrapeArrayStrategy: (strategy: ArrayStrategy) => void;
+	getRescrapeSelectedSections: () => string[];
+	setRescrapeSelectedSections: (sections: string[]) => void;
 	getRescrapingStates: () => Map<string, boolean>;
 	toastSuccess: (message: string, duration?: number) => void;
 	toastError: (message: string, duration?: number) => void;
@@ -47,6 +49,7 @@ interface RescrapeControllerDeps {
 				preset?: 'conservative' | 'gap-fill' | 'aggressive';
 				scalar_strategy?: Exclude<ScalarStrategy, ''>;
 				array_strategy?: Exclude<ArrayStrategy, ''>;
+				sections?: string[];
 			}
 		) => Promise<BatchRescrapeResponse>;
 	};
@@ -99,6 +102,7 @@ export function createRescrapeController(deps: RescrapeControllerDeps) {
 		);
 		deps.setManualSearchMode(false);
 		deps.setManualSearchInput('');
+		deps.setRescrapeSelectedSections([]); // default: no sections selected = full rescrape
 		deps.setShowRescrapeModal(true);
 	}
 
@@ -133,6 +137,7 @@ export function createRescrapeController(deps: RescrapeControllerDeps) {
 		try {
 			const scalarStrategy = deps.getRescrapeScalarStrategy();
 			const arrayStrategy = deps.getRescrapeArrayStrategy();
+			const selectedSections = deps.getRescrapeSelectedSections();
 
 			const response = await deps.api.rescrapeBatchMovie(deps.getJobId(), rescrapeMovieId, {
 				force: true,
@@ -146,7 +151,8 @@ export function createRescrapeController(deps: RescrapeControllerDeps) {
 						? undefined
 						: (scalarStrategy as Exclude<ScalarStrategy, ''>),
 				array_strategy:
-					arrayStrategy === '' ? undefined : (arrayStrategy as Exclude<ArrayStrategy, ''>)
+					arrayStrategy === '' ? undefined : (arrayStrategy as Exclude<ArrayStrategy, ''>),
+				sections: selectedSections.length > 0 ? selectedSections : undefined
 			});
 
 			const updatedMovie = response.movie;
@@ -183,9 +189,29 @@ export function createRescrapeController(deps: RescrapeControllerDeps) {
 		}
 	}
 
+	// selectCandidateProvider re-scrapes using only the chosen provider, so the user can
+	// resolve a multi-result conflict by picking one provider's whole result.
+	async function selectCandidateProvider(movieId: string, provider: string) {
+		if (deps.getAvailableScrapers().length === 0) {
+			try {
+				deps.setAvailableScrapers(await deps.api.getScrapers());
+			} catch {
+				deps.toastError('Failed to load scrapers');
+				return;
+			}
+		}
+		deps.setRescrapeMovieId(movieId);
+		deps.setSelectedScrapers([provider]);
+		deps.setRescrapeSelectedSections([]); // full result from the chosen provider
+		deps.setManualSearchMode(false);
+		deps.setManualSearchInput('');
+		await executeRescrape({ manualSearchMode: false, manualSearchInput: '' });
+	}
+
 	return {
 		applyRescrapePreset,
 		openRescrapeModal,
-		executeRescrape
+		executeRescrape,
+		selectCandidateProvider
 	};
 }

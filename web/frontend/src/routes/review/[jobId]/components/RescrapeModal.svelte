@@ -22,6 +22,7 @@
 		manualSearchInput: string;
 		rescrapePreset?: string;
 		rescrapeScalarStrategy: ScalarStrategy;
+		selectedSections?: string[];
 		onApplyPreset: (preset: 'conservative' | 'gap-fill' | 'aggressive') => void;
 		onExecute: (mode: { manualSearchMode: boolean; manualSearchInput: string }) => void;
 	}
@@ -38,9 +39,31 @@
 		manualSearchInput = $bindable(''),
 		rescrapePreset = $bindable(undefined),
 		rescrapeScalarStrategy = $bindable('prefer-nfo'),
+		selectedSections = $bindable([]),
 		onApplyPreset,
 		onExecute
 	}: Props = $props();
+
+	// Selectable metadata sections. When none are checked the rescrape is full
+	// (all sections); checking some limits the rescrape to those, preserving the rest.
+	const RESCRAPE_SECTIONS: { key: string; label: string }[] = [
+		{ key: 'title', label: 'Title / Description' },
+		{ key: 'actresses', label: 'Actresses' },
+		{ key: 'genres', label: 'Genres' },
+		{ key: 'credits', label: 'Director / Maker / Label / Series' },
+		{ key: 'rating', label: 'Rating' },
+		{ key: 'release', label: 'Release date / Runtime' },
+		{ key: 'images', label: 'Poster / Cover' },
+		{ key: 'media', label: 'Screenshots / Trailer' }
+	];
+
+	function toggleSection(key: string) {
+		if (selectedSections.includes(key)) {
+			selectedSections = selectedSections.filter((s) => s !== key);
+		} else {
+			selectedSections = [...selectedSections, key];
+		}
+	}
 
 	function close() {
 		if (rescraping) return;
@@ -135,6 +158,29 @@
 							bind:selected={selectedScrapers}
 							disabled={false}
 						/>
+					{/if}
+
+					{#if !bulkMovieCount}
+						<div class="mt-6 space-y-3">
+							<div>
+								<h3 class="font-semibold mb-1">Sections to update</h3>
+								<p class="text-sm text-muted-foreground">
+									Leave all unchecked to rescrape everything. Check specific sections to update only those — the rest keep their current values.
+								</p>
+							</div>
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+								{#each RESCRAPE_SECTIONS as section (section.key)}
+									<label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+										<input
+											type="checkbox"
+											checked={selectedSections.includes(section.key)}
+											onchange={() => toggleSection(section.key)}
+										/>
+										{section.label}
+									</label>
+								{/each}
+							</div>
+						</div>
 					{/if}
 
 					<div class="mt-6 space-y-4">

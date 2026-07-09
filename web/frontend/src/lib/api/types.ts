@@ -102,6 +102,9 @@ export interface BatchRescrapeRequest {
 	preset?: 'conservative' | 'gap-fill' | 'aggressive'; // Merge strategy preset (overrides scalar/array)
 	scalar_strategy?: 'prefer-nfo' | 'prefer-scraper' | 'preserve-existing' | 'fill-missing-only';
 	array_strategy?: 'merge' | 'replace';
+	// Limit the rescrape to specific metadata sections; empty/omitted = full rescrape.
+	// Keys: title, actresses, genres, credits, rating, release, images, media.
+	sections?: string[];
 }
 
 export interface BatchRescrapeResponse {
@@ -180,6 +183,14 @@ export interface BatchScrapeResponse {
 	job_id: string;
 }
 
+export interface ScrapeCandidate {
+	source: string;
+	movie_id?: string;
+	title?: string;
+	actress_count: number;
+	poster_url?: string;
+}
+
 export interface FileResult {
 	result_id: string;
 	file_path: string;
@@ -190,6 +201,8 @@ export interface FileResult {
 	translation_warning?: string;
 	field_sources?: Record<string, string>;
 	actress_sources?: Record<string, string>;
+	candidates?: ScrapeCandidate[];
+	has_conflict?: boolean;
 	data?: Movie;
 	started_at: string;
 	ended_at?: string;

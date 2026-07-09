@@ -74,13 +74,18 @@ type FileResult struct {
 	TranslationWarning *string           `json:"translation_warning,omitempty"`
 	FieldSources       map[string]string `json:"field_sources,omitempty"`
 	ActressSources     map[string]string `json:"actress_sources,omitempty"`
-	DataType           string            `json:"data_type,omitempty"`
-	Data               interface{}       `json:"data,omitempty"`
-	StartedAt          time.Time         `json:"started_at"`
-	EndedAt            *time.Time        `json:"ended_at,omitempty"`
-	IsMultiPart        bool              `json:"is_multi_part,omitempty"`
-	PartNumber         int               `json:"part_number,omitempty"`
-	PartSuffix         string            `json:"part_suffix,omitempty"`
+	// Candidates holds a per-scraper summary of the collected results; HasConflict is
+	// true when the providers disagree on the movie (different normalized title/ID),
+	// so the UI can offer a selection instead of the auto-merged result.
+	Candidates  []models.ScrapeCandidate `json:"candidates,omitempty"`
+	HasConflict bool                     `json:"has_conflict,omitempty"`
+	DataType    string            `json:"data_type,omitempty"`
+	Data        interface{}       `json:"data,omitempty"`
+	StartedAt   time.Time         `json:"started_at"`
+	EndedAt     *time.Time        `json:"ended_at,omitempty"`
+	IsMultiPart bool              `json:"is_multi_part,omitempty"`
+	PartNumber  int               `json:"part_number,omitempty"`
+	PartSuffix  string            `json:"part_suffix,omitempty"`
 }
 
 func deepCopyFileResult(src *FileResult) *FileResult {

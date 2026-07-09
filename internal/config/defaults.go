@@ -90,6 +90,9 @@ func DefaultConfig() *Config {
 			},
 			// NEW: Global scrape_actress default (opt-out behavior)
 			ScrapeActress: true,
+			// Early-stop scraping: opt-in, and when on, collect 2 results before stopping.
+			EarlyStop:           false,
+			EarlyStopMinResults: 2,
 			// NEW: Global Browser configuration
 			Browser: BrowserConfig{
 				Enabled:      false, // Opt-in

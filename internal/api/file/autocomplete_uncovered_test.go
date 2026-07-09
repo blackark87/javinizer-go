@@ -30,20 +30,20 @@ func TestHasTrailingPathSeparator_Uncovered(t *testing.T) {
 }
 
 func TestResolveAutocompleteBasePath_EmptyPath(t *testing.T) {
-	_, _, err := resolveAutocompleteBasePath("", nil)
+	_, _, err := resolveAutocompleteBasePath("", nil, "")
 	assert.Error(t, err)
 }
 
 func TestResolveAutocompleteBasePath_WhitespaceOnlyPath(t *testing.T) {
-	_, _, err := resolveAutocompleteBasePath("   ", nil)
+	_, _, err := resolveAutocompleteBasePath("   ", nil, "")
 	assert.Error(t, err)
 }
 
 func TestResolveAutocompleteBasePath_WithSecurityConfig(t *testing.T) {
-	// Path with nil security config will panic on ValidateScanPath,
-	// so we provide an empty config
+	// Path with nil security config causes ValidateScanPath to return an error
+	// (not panic), so we provide an empty config
 	cfg := &core.SecurityNarrowConfig{}
-	basePath, fragment, err := resolveAutocompleteBasePath("/home/use", cfg)
+	basePath, fragment, err := resolveAutocompleteBasePath("/home/use", cfg, "")
 	if err != nil {
 		// Validation may fail depending on OS, but should not panic
 		return

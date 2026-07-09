@@ -167,6 +167,7 @@ export function createReviewState(pageStore: Page) {
 	let rescrapePreset: string | undefined = $state(undefined);
 	let rescrapeScalarStrategy: ScalarStrategy = $state('prefer-nfo');
 	let rescrapeArrayStrategy: ArrayStrategy = $state('merge');
+	let rescrapeSelectedSections: string[] = $state([]);
 
 	let bulkRescraping = $state(false);
 	let bulkRescrapeProgress: { movie_id: string; status: string; error?: string }[] = $state([]);
@@ -606,6 +607,8 @@ export function createReviewState(pageStore: Page) {
 		setRescrapeScalarStrategy: (strategy) => { rescrapeScalarStrategy = strategy; },
 		getRescrapeArrayStrategy: () => rescrapeArrayStrategy,
 		setRescrapeArrayStrategy: (strategy) => { rescrapeArrayStrategy = strategy; },
+		getRescrapeSelectedSections: () => rescrapeSelectedSections,
+		setRescrapeSelectedSections: (sections) => { rescrapeSelectedSections = sections; },
 		getRescrapingStates: () => rescrapingStates,
 		toastSuccess: (message, duration) => toastStore.success(message, duration),
 		toastError: (message, duration) => toastStore.error(message, duration),
@@ -701,6 +704,10 @@ export function createReviewState(pageStore: Page) {
 
 	async function executeRescrape(mode?: { manualSearchMode: boolean; manualSearchInput: string }) {
 		await rescrapeController.executeRescrape(mode);
+	}
+
+	async function selectCandidateProvider(movieId: string, provider: string) {
+		await rescrapeController.selectCandidateProvider(movieId, provider);
 	}
 
 	async function organizeAll() {
@@ -954,6 +961,8 @@ export function createReviewState(pageStore: Page) {
 		set rescrapeScalarStrategy(v) { rescrapeScalarStrategy = v; },
 		get rescrapeArrayStrategy() { return rescrapeArrayStrategy; },
 		set rescrapeArrayStrategy(v) { rescrapeArrayStrategy = v; },
+		get rescrapeSelectedSections() { return rescrapeSelectedSections; },
+		set rescrapeSelectedSections(v) { rescrapeSelectedSections = v; },
 		get movieGroups() { return movieGroups; },
 		get failedResults() { return failedResults; },
 		get movieResults() { return movieResults; },
@@ -1003,6 +1012,7 @@ export function createReviewState(pageStore: Page) {
 		openRescrapeModal,
 		openRescrapeModalForFailed,
 		executeRescrape,
+		selectCandidateProvider,
 		organizeAll,
 		updateAll,
 		retryFailed,

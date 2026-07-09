@@ -78,6 +78,8 @@ func saveScrapedResult(
 		}
 	}
 
+	candidates, hasConflict := buildScrapeCandidates(results)
+
 	now := time.Now()
 	fileResult := &FileResult{
 		FilePath:       filePath,
@@ -86,6 +88,8 @@ func saveScrapedResult(
 		Data:           finalMovie,
 		FieldSources:   fieldSources,
 		ActressSources: actressSources,
+		Candidates:     candidates,
+		HasConflict:    hasConflict,
 		PosterError:    posterErr,
 		StartedAt:      startTime,
 		EndedAt:        &now,

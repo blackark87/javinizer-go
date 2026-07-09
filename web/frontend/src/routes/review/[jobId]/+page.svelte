@@ -284,6 +284,31 @@
 								/>
 							{/if}
 
+							{#if s.currentResult.has_conflict && (s.currentResult.candidates?.length ?? 0) > 1}
+								<div class="rounded-lg border-2 border-amber-500/50 bg-amber-500/5 p-4 space-y-3">
+									<div>
+										<h3 class="font-semibold text-amber-700 dark:text-amber-400">Multiple results found</h3>
+										<p class="text-sm text-muted-foreground">
+											Providers returned different movies. Pick one to use that provider's result, or keep the merged result below.
+										</p>
+									</div>
+									<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+										{#each s.currentResult.candidates ?? [] as cand (cand.source)}
+											<button
+												type="button"
+												class="text-left rounded-md border p-3 hover:bg-muted transition-colors disabled:opacity-50"
+												disabled={s.rescrapingStates.get(s.currentResult?.result_id || '') || false}
+												onclick={() => s.currentResult && s.selectCandidateProvider(s.currentResult.movie_id, cand.source)}
+											>
+												<div class="text-xs font-medium uppercase text-muted-foreground">{cand.source}</div>
+												<div class="text-sm font-medium truncate" title={cand.title}>{cand.title || '(no title)'}</div>
+												<div class="text-xs text-muted-foreground">{cand.actress_count} actress{cand.actress_count === 1 ? '' : 'es'}</div>
+											</button>
+										{/each}
+									</div>
+								</div>
+							{/if}
+
 							<MovieMetadataCard
 								currentMovie={s.currentMovie}
 								currentResult={s.currentResult}
@@ -414,6 +439,7 @@
 	bind:manualSearchInput={s.manualSearchInput}
 	bind:rescrapePreset={s.rescrapePreset}
 	bind:rescrapeScalarStrategy={s.rescrapeScalarStrategy}
+	bind:selectedSections={s.rescrapeSelectedSections}
 	onApplyPreset={(preset) => s.applyRescrapePreset(preset)}
 	onExecute={s.bulkRescrapeMovieIds.length > 0 ? s.executeBulkRescrape : s.executeRescrape}
 />

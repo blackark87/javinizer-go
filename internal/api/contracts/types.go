@@ -244,12 +244,16 @@ type BatchFileResult struct {
 	Error          string            `json:"error,omitempty"`
 	FieldSources   map[string]string `json:"field_sources,omitempty"`   // Field-level source by scraper/NFO
 	ActressSources map[string]string `json:"actress_sources,omitempty"` // Actress-level source by scraper/NFO
-	Data           interface{}       `json:"data,omitempty"`            // Movie data
-	StartedAt      string            `json:"started_at"`
-	EndedAt        *string           `json:"ended_at,omitempty"`
-	IsMultiPart    bool              `json:"is_multi_part,omitempty"`
-	PartNumber     int               `json:"part_number,omitempty"`
-	PartSuffix     string            `json:"part_suffix,omitempty"`
+	// Candidates is a per-scraper summary; HasConflict is true when providers disagree
+	// on the movie, so the UI can offer a selection instead of the auto-merged result.
+	Candidates  []models.ScrapeCandidate `json:"candidates,omitempty"`
+	HasConflict bool                     `json:"has_conflict,omitempty"`
+	Data        interface{}              `json:"data,omitempty"` // Movie data
+	StartedAt   string                   `json:"started_at"`
+	EndedAt     *string                  `json:"ended_at,omitempty"`
+	IsMultiPart bool                     `json:"is_multi_part,omitempty"`
+	PartNumber  int                      `json:"part_number,omitempty"`
+	PartSuffix  string                   `json:"part_suffix,omitempty"`
 }
 
 // BatchFileResultSlim is a lightweight BatchFileResult without the Data field
@@ -386,6 +390,10 @@ type BatchRescrapeRequest struct {
 	Preset            string   `json:"preset,omitempty" example:"conservative"`        // Merge strategy preset: conservative, gap-fill, aggressive (overrides scalar/array strategies)
 	ScalarStrategy    string   `json:"scalar_strategy,omitempty" example:"prefer-nfo"` // For Update mode: prefer-nfo, prefer-scraper, preserve-existing, fill-missing-only
 	ArrayStrategy     string   `json:"array_strategy,omitempty" example:"merge"`       // For Update mode: merge, replace
+	// Sections limits the rescrape to specific metadata sections; unselected sections
+	// keep their current values. Empty/omitted means a full rescrape (all sections).
+	// Valid keys: title, actresses, genres, credits, rating, release, images, media.
+	Sections []string `json:"sections,omitempty" example:"actresses,images"`
 }
 
 // BatchRescrapeResponse represents a batch rescrape response with movie

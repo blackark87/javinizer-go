@@ -500,6 +500,45 @@ func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, setti
 	return out, warning, nil
 }
 
+// TranslateTitles translates a batch of standalone titles into the primary target
+// language, returning translated titles and falling back to the original text on any
+// failure. Used to make multi-result candidate titles readable in the picker.
+func (s *Service) TranslateTitles(ctx context.Context, texts []string) ([]string, error) {
+	if s == nil || !s.cfg.Enabled || len(texts) == 0 {
+		return texts, nil
+	}
+	targets := s.targetLanguages()
+	if len(targets) == 0 {
+		return texts, nil
+	}
+	targetLang := targets[0]
+	sourceLang := normalizeLanguage(s.cfg.SourceLanguage)
+	if sourceLang == "" {
+		sourceLang = sourceLangAuto
+	}
+	if sourceLang != sourceLangAuto && sourceLang == normalizeLanguage(targetLang) {
+		return texts, nil
+	}
+
+	fieldNames := make([]string, len(texts))
+	for i := range fieldNames {
+		fieldNames[i] = "title"
+	}
+	translated, err := s.translateTexts(ctx, sourceLang, targetLang, texts, fieldNames)
+	if err != nil || len(translated) != len(texts) {
+		return texts, err
+	}
+	out := make([]string, len(texts))
+	for i := range texts {
+		if t := strings.TrimSpace(translated[i]); t != "" {
+			out[i] = t
+		} else {
+			out[i] = texts[i]
+		}
+	}
+	return out, nil
+}
+
 func (s *Service) targetLanguages() []string {
 	if len(s.cfg.TargetLanguages) == 0 {
 		lang := normalizeLanguage(s.cfg.TargetLanguage)

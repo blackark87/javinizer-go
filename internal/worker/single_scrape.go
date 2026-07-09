@@ -213,5 +213,12 @@ func RunBatchScrapeOnce(
 
 	posterErr := generateScrapedPoster(ctx, job, fileIndex, movie, httpClient, userAgent, referer, processedMovieIDs, cfg)
 
-	return saveScrapedResult(job, fileIndex, filePath, movie, query.movieID, query.resolvedID, results, movieRepo, fieldSources, actressSources, posterErr, translationWarning, query.matchResultPtr, startTime)
+	// Per-scraper candidate summaries for the multi-result picker. Titles are translated
+	// (one batch call) only when the providers disagree, so the picker is readable.
+	candidates, hasConflict := buildScrapeCandidates(results)
+	if hasConflict {
+		translateCandidateTitles(ctx, cfg, candidates)
+	}
+
+	return saveScrapedResult(job, fileIndex, filePath, movie, query.movieID, query.resolvedID, results, movieRepo, fieldSources, actressSources, candidates, hasConflict, posterErr, translationWarning, query.matchResultPtr, startTime)
 }

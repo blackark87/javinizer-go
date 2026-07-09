@@ -190,8 +190,10 @@ export function createRescrapeController(deps: RescrapeControllerDeps) {
 	}
 
 	// selectCandidateProvider re-scrapes using only the chosen provider, so the user can
-	// resolve a multi-result conflict by picking one provider's whole result.
-	async function selectCandidateProvider(movieId: string, provider: string) {
+	// resolve a multi-result conflict by picking one provider's whole result. resultId is
+	// the batch result id (UUID) the rescrape endpoint keys on — the same value the
+	// rescrapeMovieId state carries in the normal flow.
+	async function selectCandidateProvider(resultId: string, provider: string) {
 		if (deps.getAvailableScrapers().length === 0) {
 			try {
 				deps.setAvailableScrapers(await deps.api.getScrapers());
@@ -200,7 +202,7 @@ export function createRescrapeController(deps: RescrapeControllerDeps) {
 				return;
 			}
 		}
-		deps.setRescrapeMovieId(movieId);
+		deps.setRescrapeMovieId(resultId);
 		deps.setSelectedScrapers([provider]);
 		deps.setRescrapeSelectedSections([]); // full result from the chosen provider
 		deps.setManualSearchMode(false);

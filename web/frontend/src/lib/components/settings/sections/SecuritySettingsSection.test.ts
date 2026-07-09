@@ -200,7 +200,6 @@ describe('SecuritySettingsSection', () => {
 		await waitFor(() => expect(errorSpy).toHaveBeenCalled());
 		expect(mockUpdateSecurityConfig).toHaveBeenCalledTimes(1);
 	});
-});
 
 	it('rehydrates the draft from the fresh config query after a successful save', async () => {
 		mockUpdateSecurityConfig.mockResolvedValue({
@@ -241,3 +240,25 @@ describe('SecuritySettingsSection', () => {
 		await waitFor(() => expect(container.textContent).toContain('/persisted'));
 		await waitFor(() => expect(save.hasAttribute('disabled')).toBe(true));
 	});
+
+	it('propagates draft edits into the shared config so the top-level Save Changes persists them', async () => {
+		// Regression: the section kept a local draft that was never written back
+		// to the parent config, so the whole-config PUT ("Save Changes" button)
+		// would clobber a just-added directory with the stale value. The sync
+		// effect must mirror draft edits into config.api.security.
+		const config = makeConfig({ allowed_directories: [] });
+		const { container } = renderSection(config);
+		await expandSection(container);
+
+		const input = container.querySelector('input[placeholder*="Add a directory"]') as HTMLInputElement;
+		expect(input).toBeTruthy();
+		await fireEvent.input(input, { target: { value: '/mnt/videos' } });
+		const addBtn = container.querySelector('button[title="Add allowed directory"]') as HTMLButtonElement;
+		await fireEvent.click(addBtn);
+
+		await waitFor(() =>
+			expect(config.api.security.allowed_directories).toEqual(['/mnt/videos']),
+		);
+	});
+
+});

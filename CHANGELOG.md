@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.2.0] - 2026-07-10
+
+### Added
+
+- Single-line progress bar to r18dev dump download
+- First-run setup as a 3-step wizard
+- Ignore-list and favorites UI to genre management
+
+### Fixed
+
+- Recover orphaned running/pending jobs on startup
+- Deny root-resolving allowed_directories entries
+- Pin actions/github-script to v7 tag
+- Make TestAcquireConfigFileLock_Contention deterministic
+- CORS preflight, default port, `<img>` auth in dev environment
+- Browse box focus ring + allowed_directories persistence
+- Windows CI flake: SQLite file handle race in batch test teardown
+- Boundary-aware word replacement for censored tokens
+- Ship metadata.priority.* as inherited by default
+
+### Changed
+
+- Add CLI-to-Desktop migration guide with Windows paths
+- Harden path picker: autocomplete stays alive + browse respects allowed_directories
+- Bump Go to 1.26.5 to clear govulncheck GO-2026-5856
+- Clarify desktop/CLI relationship, document r18.dev dump
+- Add anti-spam filter for unauthorized patch/attachment drops on issue comments
+
 ## [v1.1.1] - 2026-07-07
 
 ### Added

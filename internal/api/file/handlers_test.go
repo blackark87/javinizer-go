@@ -3,6 +3,8 @@ package file
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -339,6 +341,55 @@ func TestGetCurrentWorkingDirectory(t *testing.T) {
 		assert.Contains(t, response, "path")
 		// Should return first allowed directory
 		assert.Equal(t, "/media", response["path"])
+	})
+
+	t.Run("returns empty path when working directory is root", func(t *testing.T) {
+		// The desktop app launched from Finder/Explorer runs with CWD="/" (or
+		// a Windows drive root). Such a path is useless as a library default, so
+		// the endpoint returns an empty string rather than pre-filling "/".
+		origGetwd := osGetwd
+		t.Cleanup(func() { osGetwd = origGetwd })
+
+		osGetwd = func() (string, error) { return "/", nil }
+
+		cfg := config.DefaultConfig(nil, nil)
+		cfg.API.Security.AllowedDirectories = []string{}
+
+		deps := newTestDepsFromConfig(cfg)
+		router := gin.New()
+		router.GET("/cwd", getCurrentWorkingDirectory(testkit.GetTestRuntime(deps)))
+
+		req := httptest.NewRequest("GET", "/cwd", nil)
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, 200, w.Code)
+
+		var response map[string]string
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+		assert.Equal(t, "", response["path"])
+	})
+
+	t.Run("returns 500 when working directory cannot be resolved", func(t *testing.T) {
+		origGetwd := osGetwd
+		t.Cleanup(func() { osGetwd = origGetwd })
+
+		osGetwd = func() (string, error) { return "", errors.New("getwd: no such directory") }
+
+		cfg := config.DefaultConfig(nil, nil)
+		cfg.API.Security.AllowedDirectories = []string{}
+
+		deps := newTestDepsFromConfig(cfg)
+		router := gin.New()
+		router.GET("/cwd", getCurrentWorkingDirectory(testkit.GetTestRuntime(deps)))
+
+		req := httptest.NewRequest("GET", "/cwd", nil)
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
 	})
 }
 
@@ -956,4 +1007,75 @@ func TestScanDirectory_FilterFlag(t *testing.T) {
 		// Should still find IPX files (case insensitive)
 		assert.Equal(t, 2, response.Count, "Lowercase filter should match uppercase directories/files")
 	})
+}
+
+func TestIsRootPath(t *testing.T) {
+	assert.True(t, isRootPath("/"), "Unix root should be a root path")
+	assert.True(t, isRootPath("C:\\"), "Windows drive root C:\\ should be a root path")
+	assert.True(t, isRootPath("C:/"), "Windows drive root C:/ should be a root path")
+	assert.True(t, isRootPath("D:\\"), "Windows drive root D:\\ should be a root path")
+	assert.False(t, isRootPath("/home"), "Non-root path should not be a root path")
+	assert.False(t, isRootPath(""), "Empty string should not be a root path")
+	assert.False(t, isRootPath("."), "Relative dot should not be a root path")
+}
+
+func TestIsHomeDirectory(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	if home != "" {
+		assert.True(t, isHomeDirectory(home), "user's home dir should be detected as home")
+	}
+	assert.False(t, isHomeDirectory("/tmp"), "/tmp should not be home")
+	assert.False(t, isHomeDirectory("/"), "root should not be home")
+	assert.False(t, isHomeDirectory(""), "empty should not be home")
+}
+
+func TestGetCurrentWorkingDirectory_HomeCWDReturnsEmpty(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		t.Skip("could not resolve home dir")
+	}
+
+	origGetwd := osGetwd
+	t.Cleanup(func() { osGetwd = origGetwd })
+	osGetwd = func() (string, error) { return home, nil }
+
+	cfg := config.DefaultConfig(nil, nil)
+	cfg.API.Security.AllowedDirectories = []string{}
+
+	deps := newTestDepsFromConfig(cfg)
+	router := gin.New()
+	router.GET("/cwd", getCurrentWorkingDirectory(testkit.GetTestRuntime(deps)))
+
+	req := httptest.NewRequest("GET", "/cwd", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var response map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	assert.Equal(t, "", response["path"], "home dir as CWD should return empty (not safe to prefill)")
+}
+
+func TestIsHomeDirectory_HomeDirUnresolvable(t *testing.T) {
+	origHomeDir := osUserHomeDir
+	t.Cleanup(func() { osUserHomeDir = origHomeDir })
+	osUserHomeDir = func() (string, error) { return "", errors.New("home: unresolvable") }
+
+	assert.True(t, isHomeDirectory("/any/path"), "should return true (fail-closed) when home dir can't be resolved")
+}
+
+func TestIsHomeDirectory_SymlinkAlias(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		t.Skip("could not resolve home dir")
+	}
+
+	linkDir := t.TempDir()
+	homeLink := filepath.Join(linkDir, "home_link")
+	require.NoError(t, os.Symlink(home, homeLink))
+	t.Cleanup(func() { _ = os.Remove(homeLink) })
+
+	assert.True(t, isHomeDirectory(homeLink),
+		"symlink to home dir should be detected as home after canonicalization")
 }

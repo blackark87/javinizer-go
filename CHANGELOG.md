@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.2.1] - 2026-07-11
+
+### Added
+
+- Display actress names in first-name order when config enabled (#127)
+
+### Fixed
+
+- Respect actress_language_ja preference in name display (#129)
+- Run organize step for in-place rename modes (#125)
+- Upgrade DMM covers/posters to high-res awsimgsrc CDN (#124)
+
+### Changed
+
+- Add Codex review label sync workflow (#126)
+
 ## [v1.2.0] - 2026-07-10
 
 ### Added

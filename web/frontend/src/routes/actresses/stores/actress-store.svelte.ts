@@ -4,6 +4,7 @@ import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-qu
 import { apiClient } from '$lib/api/client';
 import { toastStore } from '$lib/stores/toast';
 import type { Actress, ActressUpsertRequest, ActressMergeResolution } from '$lib/api/types';
+import { formatActressName } from '$lib/utils/actress';
 
 export type ActressForm = {
 	dmm_id: string;
@@ -223,18 +224,14 @@ export function createActressStore() {
 		};
 	}
 
-	function getDisplayName(actress: Actress): string {
-		if (actress.last_name && actress.first_name)
-			return `${actress.last_name} ${actress.first_name}`;
-		if (actress.first_name) return actress.first_name;
-		if (actress.japanese_name) return actress.japanese_name;
-		return 'Unnamed';
+	function getDisplayName(actress: Actress, firstNameOrder: boolean): string {
+		return formatActressName(actress, firstNameOrder);
 	}
 
-	function getActressLabelByID(id: number): string {
+	function getActressLabelByID(id: number, firstNameOrder: boolean): string {
 		const actress = actresses.find((item) => item.id === id);
 		if (!actress) return `Actress #${id}`;
-		return `#${id} - ${getDisplayName(actress)}`;
+		return `#${id} - ${getDisplayName(actress, firstNameOrder)}`;
 	}
 
 	function isSelected(actress: Actress): boolean {
@@ -309,9 +306,9 @@ export function createActressStore() {
 		saveActressMutation.mutate(toPayload());
 	}
 
-	async function removeActress(actress: Actress) {
+	async function removeActress(actress: Actress, firstNameOrder: boolean) {
 		if (!actress.id) return;
-		const name = getDisplayName(actress);
+		const name = getDisplayName(actress, firstNameOrder);
 		if (
 			!(await confirmDialog('Delete Actress', `Delete actress "${name}"?`, {
 				confirmLabel: 'Delete',

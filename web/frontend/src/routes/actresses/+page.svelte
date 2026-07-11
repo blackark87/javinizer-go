@@ -16,9 +16,12 @@
 	import ActressTableView from './components/ActressTableView.svelte';
 	import ActressMergeModal from './components/ActressMergeModal.svelte';
 	import ActressPagination from './components/ActressPagination.svelte';
+	import { createConfigQuery } from '$lib/query/queries';
 
 	const store = createActressStore();
 	const queryClient = useQueryClient();
+	const configQuery = createConfigQuery();
+	let firstNameOrder = $derived(configQuery.data?.output?.first_name_order ?? false);
 	let importFile = $state<HTMLInputElement | null>(null);
 
 	const exportMutation = createMutation(() => ({
@@ -200,33 +203,33 @@
 									actresses={store.actresses}
 									selectedIds={store.selectedIds}
 									itemDelay={store.itemDelay}
-									getDisplayName={store.getDisplayName}
+									getDisplayName={(actress) => store.getDisplayName(actress, firstNameOrder)}
 									isSelected={store.isSelected}
 									onToggleSelection={store.toggleSelection}
 									onStartEdit={store.startEdit}
-									onRemoveActress={store.removeActress}
+									onRemoveActress={(actress) => store.removeActress(actress, firstNameOrder)}
 									deletePending={store.deleteActressMutation.isPending}
 								/>
 							{:else if store.viewMode === 'compact'}
 								<ActressCompactView
 									actresses={store.actresses}
 									itemDelay={store.itemDelay}
-									getDisplayName={store.getDisplayName}
+									getDisplayName={(actress) => store.getDisplayName(actress, firstNameOrder)}
 									isSelected={store.isSelected}
 									onToggleSelection={store.toggleSelection}
 									onStartEdit={store.startEdit}
-									onRemoveActress={store.removeActress}
+									onRemoveActress={(actress) => store.removeActress(actress, firstNameOrder)}
 									deletePending={store.deleteActressMutation.isPending}
 								/>
 							{:else}
 								<ActressTableView
 									actresses={store.actresses}
 									itemDelay={store.itemDelay}
-									getDisplayName={store.getDisplayName}
+									getDisplayName={(actress) => store.getDisplayName(actress, firstNameOrder)}
 									isSelected={store.isSelected}
 									onToggleSelection={store.toggleSelection}
 									onStartEdit={store.startEdit}
-									onRemoveActress={store.removeActress}
+									onRemoveActress={(actress) => store.removeActress(actress, firstNameOrder)}
 									deletePending={store.deleteActressMutation.isPending}
 								/>
 							{/if}
@@ -258,7 +261,7 @@
 	mergePreviewFetching={store.mergePreviewQuery.isFetching}
 	mergeSummary={store.mergeSummary}
 	mergePending={store.mergeActressMutation.isPending}
-	getActressLabelByID={store.getActressLabelByID}
+	getActressLabelByID={(id) => store.getActressLabelByID(id, firstNameOrder)}
 	onCloseMergeModal={store.closeMergeModal}
 	onResetMergeQueueAndPreview={store.resetMergeQueueAndPreview}
 	onApplyCurrentMerge={store.applyCurrentMerge}

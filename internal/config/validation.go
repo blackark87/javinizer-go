@@ -3,10 +3,84 @@ package config
 import (
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/javinizer/javinizer-go/internal/models"
 )
+
+// ConfigWarning represents a non-blocking validation warning about a
+// potentially misconfigured setting. Warnings are surfaced via the API
+// and WebUI but do not block config loading or scraping.
+type ConfigWarning struct {
+	Field    string   `json:"field"`
+	Scrapers []string `json:"scrapers"`
+	Message  string   `json:"message"`
+}
+
+// ValidatePriorityOverrides checks per-field metadata priority overrides
+// and returns warnings when an override points exclusively at scrapers
+// that are all disabled. A warning is generated only when ALL known
+// scrapers in the override are disabled (if at least one is enabled, the
+// field can still get data). Unknown scrapers (not in Overrides) are
+// skipped — they may be registered later. The __skip__ sentinel and
+// empty [] overrides are also skipped (intentional suppression / inherit
+// global). Results are sorted by field name for deterministic ordering.
+func ValidatePriorityOverrides(cfg *Config) []ConfigWarning {
+	if cfg == nil || cfg.Metadata.Priority.Fields == nil {
+		return nil
+	}
+
+	var fields []string
+	for field := range cfg.Metadata.Priority.Fields {
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+
+	var warnings []ConfigWarning
+	for _, field := range fields {
+		scrapers := cfg.Metadata.Priority.Fields[field]
+		if len(scrapers) == 0 {
+			continue
+		}
+		// Skip exact __skip__ sentinel.
+		if len(scrapers) == 1 && scrapers[0] == "__skip__" {
+			continue
+		}
+
+		var unqueryable []string
+		hasQueryable := false
+		for _, name := range scrapers {
+			settings, ok := cfg.Scrapers.Overrides[name]
+			if !ok || settings == nil {
+				continue
+			}
+			if settings.Enabled && scraperInPriority(cfg.Scrapers.Priority, name) {
+				hasQueryable = true
+			} else {
+				unqueryable = append(unqueryable, name)
+			}
+		}
+
+		if !hasQueryable && len(unqueryable) > 0 {
+			var reasons []string
+			for _, name := range unqueryable {
+				settings := cfg.Scrapers.Overrides[name]
+				if settings != nil && !settings.Enabled {
+					reasons = append(reasons, fmt.Sprintf("%s is disabled", name))
+				} else {
+					reasons = append(reasons, fmt.Sprintf("%s is not in scrapers.priority", name))
+				}
+			}
+			warnings = append(warnings, ConfigWarning{
+				Field:    field,
+				Scrapers: unqueryable,
+				Message:  fmt.Sprintf("metadata.priority.%s is set to [%s] but all listed scrapers are unqueryable (%s) — this field will be empty", field, strings.Join(scrapers, ", "), strings.Join(reasons, ", ")),
+			})
+		}
+	}
+	return warnings
+}
 
 // validateHTTPBaseURL validates that a URL has an http or https scheme and a host.
 func validateHTTPBaseURL(path, raw string) error {
@@ -265,4 +339,19 @@ func validateTranslationProviderInternal(c *Config) error {
 	}
 
 	return nil
+}
+
+// scraperInPriority checks if a scraper name is in the scraper priority list.
+// If the priority list is empty, all scrapers are considered in priority
+// (the default order is applied by the registry at runtime).
+func scraperInPriority(priority []string, name string) bool {
+	if len(priority) == 0 {
+		return true
+	}
+	for _, p := range priority {
+		if p == name {
+			return true
+		}
+	}
+	return false
 }

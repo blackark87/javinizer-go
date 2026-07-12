@@ -145,14 +145,6 @@
 	// formatScraperName lives in ./scraperNames.ts (shared with FieldRow).
 
 	// Get list of enabled scrapers
-	function getEnabledScrapers(): string[] {
-		const allScrapers = getGlobalPriority(config);
-		return allScrapers.filter((scraperName) => {
-			const scraperCfg = config?.scrapers?.[scraperName];
-			return (scraperCfg as ScraperSettings)?.enabled !== false;
-		});
-	}
-
 	// Filter priority list to only include enabled scrapers
 	function filterEnabledScrapers(priority: string[]): string[] {
 		return priority.filter((scraperName) => {
@@ -260,11 +252,10 @@
 	}
 
 	// Scrapers available to add back: global scrapers not currently in the
-	// editing list (enabled ones first for relevance, but disabled ones are
-	// offered too so a user can re-add a since-disabled scraper).
+	// editing list, filtered to only enabled scrapers.
 	const availableScrapersToAdd = $derived(
 		editingField
-			? getGlobalPriority(config).filter((s) => !editingPriority.includes(s))
+			? filterEnabledScrapers(getGlobalPriority(config)).filter((s) => !editingPriority.includes(s))
 			: []
 	);
 
@@ -460,8 +451,8 @@
 									<FieldRow
 										fieldName={field.key}
 										fieldLabel={field.label}
-										priority={getFieldPriority(config, field.key)}
-										globalPriority={getGlobalPriority(config)}
+										priority={filterEnabledScrapers(getFieldPriority(config, field.key))}
+										globalPriority={filterEnabledScrapers(getGlobalPriority(config))}
 										status={getFieldStatus(config, field.key)}
 										onEdit={() => openFieldEditor(field.key)}
 										onReset={() => resetFieldToGlobal(field.key)}

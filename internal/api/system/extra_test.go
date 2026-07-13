@@ -146,6 +146,20 @@ func TestGetAvailableScrapers_AdditionalOptionSets(t *testing.T) {
 				"download_proxy.profile",
 			},
 		},
+		{
+			name:        "sougouwiki options",
+			scraperName: "sougouwiki",
+			wantLabel:   "SougouWiki actress resolver",
+			wantKeys: []string{
+				"base_url",
+				"request_delay",
+				"user_agent",
+				"proxy.enabled",
+				"proxy.profile",
+				"download_proxy.enabled",
+				"download_proxy.profile",
+			},
+		},
 	}
 
 	for _, tt := range tests {

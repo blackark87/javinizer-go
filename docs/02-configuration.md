@@ -154,6 +154,28 @@ scrapers:
 - Slower (HTML parsing)
 - May require more requests
 
+### SougouWiki Actress Resolver
+
+SougouWiki is an optional actress-only resolver. It is queried after regular
+metadata scrapers only when no returned actress has a valid DMM ID. A verified
+Wiki result replaces the aggregated actress list while leaving title, artwork,
+genres, and all other movie fields unchanged.
+
+```yaml
+scrapers:
+  priority:
+    - r18dev
+    - sougouwiki
+  sougouwiki:
+    enabled: true
+    base_url: "https://seesaawiki.jp/w/sougouwiki/"
+    request_delay: 1000
+```
+
+Existing configuration files must add `sougouwiki` to `scrapers.priority` as
+well as enabling it. Existing cached movies are not modified automatically;
+force a new scrape to apply the resolver.
+
 ### JavLibrary Scraper
 
 JavLibrary is useful as a supplemental source and often benefits from FlareSolverr.
@@ -1165,6 +1187,7 @@ scrapers:
   priority:
     - dmm
     - r18dev
+    - sougouwiki
     - libredmm
     - mgstage
     - javlibrary

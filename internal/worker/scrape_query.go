@@ -109,25 +109,26 @@ func queryScrapers(
 	scraperPriorityOverride []string,
 	cfg *config.Config,
 	startTime time.Time,
-) ([]*models.ScraperResult, []scraperFailure, *FileResult, error) {
+) ([]*models.ScraperResult, []scraperFailure, string, *FileResult, error) {
 	results := make([]*models.ScraperResult, 0)
 	scraperFailures := make([]scraperFailure, 0)
 
 	scrapersToUse, earlyResult := resolveScrapersToUse(ctx, job, fileIndex, query, registry, selectedScrapers, scraperPriorityOverride, cfg, startTime)
 	if earlyResult != nil {
-		return nil, nil, earlyResult, errors.New(earlyResult.Error)
+		return nil, nil, "", earlyResult, errors.New(earlyResult.Error)
 	}
+	regularScrapers, actressResolvers := partitionActressResolvers(scrapersToUse)
 
-	for _, s := range scrapersToUse {
+	for _, s := range regularScrapers {
 		select {
 		case <-ctx.Done():
-			return nil, nil, newCancelledFileResult(filePath, query.movieID, startTime), ctx.Err()
+			return nil, nil, "", newCancelledFileResult(filePath, query.movieID, startTime), ctx.Err()
 		default:
 		}
 
 		outcome := processSingleScraper(ctx, job, fileIndex, query, queryOverride, s, startTime)
 		if outcome.cancel != nil {
-			return nil, nil, outcome.cancel, ctx.Err()
+			return nil, nil, "", outcome.cancel, ctx.Err()
 		}
 		if outcome.result != nil {
 			results = append(results, outcome.result)
@@ -145,7 +146,115 @@ func queryScrapers(
 		}
 	}
 
-	return results, scraperFailures, nil, nil
+	if !needsActressResolution(results) {
+		return results, scraperFailures, "", nil, nil
+	}
+
+	thumbnailResolver := findActressThumbnailResolver(registry)
+	for _, scraper := range actressResolvers {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, "", newCancelledFileResult(filePath, query.movieID, startTime), err
+		}
+
+		resolver := scraper.(models.ActressResolver)
+		logging.Debugf("[Batch %s] File %d: Querying actress resolver %s for %s",
+			job.ID, fileIndex, scraper.Name(), query.movieID)
+		resolverResult, err := safeResolveActresses(ctx, resolver, query.movieID)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, nil, "", newCancelledFileResult(filePath, query.movieID, startTime), ctx.Err()
+			}
+			logging.Debugf("[Batch %s] File %d: Optional actress resolver %s failed: %v",
+				job.ID, fileIndex, scraper.Name(), err)
+			scraperFailures = append(scraperFailures, scraperFailure{Scraper: scraper.Name(), Err: err})
+			continue
+		}
+		if !hasVerifiedActresses(resolverResult) {
+			err := fmt.Errorf("actress resolver returned no verified DMM actresses")
+			scraperFailures = append(scraperFailures, scraperFailure{Scraper: scraper.Name(), Err: err})
+			continue
+		}
+
+		if thumbnailResolver != nil {
+			for index := range resolverResult.Actresses {
+				if resolverResult.Actresses[index].ThumbURL != "" {
+					continue
+				}
+				resolverResult.Actresses[index].ThumbURL = safeResolveActressThumbnail(
+					ctx, thumbnailResolver, resolverResult.Actresses[index],
+				)
+				if ctx.Err() != nil {
+					return nil, nil, "", newCancelledFileResult(filePath, query.movieID, startTime), ctx.Err()
+				}
+			}
+		}
+
+		results = append(results, resolverResult)
+		logging.Debugf("[Batch %s] File %d: Actress resolver %s verified %d actresses",
+			job.ID, fileIndex, scraper.Name(), len(resolverResult.Actresses))
+		return results, scraperFailures, scraper.Name(), nil, nil
+	}
+
+	return results, scraperFailures, "", nil, nil
+}
+
+func partitionActressResolvers(scrapers []models.Scraper) ([]models.Scraper, []models.Scraper) {
+	regular := make([]models.Scraper, 0, len(scrapers))
+	resolvers := make([]models.Scraper, 0)
+	for _, scraper := range scrapers {
+		if _, ok := scraper.(models.ActressResolver); ok {
+			resolvers = append(resolvers, scraper)
+			continue
+		}
+		regular = append(regular, scraper)
+	}
+	return regular, resolvers
+}
+
+func needsActressResolution(results []*models.ScraperResult) bool {
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		for _, actress := range result.Actresses {
+			if actress.DMMID > 0 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func hasVerifiedActresses(result *models.ScraperResult) bool {
+	if result == nil || len(result.Actresses) == 0 {
+		return false
+	}
+	for _, actress := range result.Actresses {
+		hasName := strings.TrimSpace(actress.JapaneseName) != "" ||
+			strings.TrimSpace(actress.FirstName) != "" ||
+			strings.TrimSpace(actress.LastName) != ""
+		if actress.DMMID <= 0 || !hasName {
+			return false
+		}
+	}
+	return true
+}
+
+func findActressThumbnailResolver(registry *models.ScraperRegistry) models.ActressThumbnailResolver {
+	if registry == nil {
+		return nil
+	}
+	if dmmScraper, ok := registry.Get("dmm"); ok {
+		if resolver, ok := dmmScraper.(models.ActressThumbnailResolver); ok {
+			return resolver
+		}
+	}
+	for _, scraper := range registry.GetAll() {
+		if resolver, ok := scraper.(models.ActressThumbnailResolver); ok {
+			return resolver
+		}
+	}
+	return nil
 }
 
 func resolveScrapersToUse(

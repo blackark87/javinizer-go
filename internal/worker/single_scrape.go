@@ -56,6 +56,35 @@ func safeScrapeURL(ctx context.Context, scraper models.DirectURLScraper, url str
 	return result, err
 }
 
+func safeResolveActresses(ctx context.Context, resolver models.ActressResolver, id string) (result *models.ScraperResult, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("actress resolver panic: %v", r)
+		}
+	}()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	result, err = resolver.ResolveActresses(ctx, id)
+	if result != nil {
+		result.NormalizeMediaURLs()
+	}
+	return result, err
+}
+
+func safeResolveActressThumbnail(ctx context.Context, resolver models.ActressThumbnailResolver, actress models.ActressInfo) (thumbnail string) {
+	defer func() {
+		if r := recover(); r != nil {
+			logging.Debugf("Actress thumbnail resolver panic for DMM ID %d: %v", actress.DMMID, r)
+			thumbnail = ""
+		}
+	}()
+	if ctx.Err() != nil {
+		return ""
+	}
+	return resolver.ResolveActressThumbnail(ctx, actress)
+}
+
 func scraperListContains(scrapers []string, target string) bool {
 	for _, scraper := range scrapers {
 		if strings.EqualFold(strings.TrimSpace(scraper), target) {
@@ -155,7 +184,7 @@ func RunBatchScrapeOnce(
 
 	query.resolvedID = resolveDMMContentID(job, fileIndex, query.movieID, queryOverride, query.matcherMissFallback, selectedScrapers, registry, query)
 
-	results, scraperFailures, cancelResult, queryErr := queryScrapers(ctx, job, filePath, fileIndex, query, queryOverride, registry, selectedScrapers, scraperPriorityOverride, cfg, startTime)
+	results, scraperFailures, actressOverrideSource, cancelResult, queryErr := queryScrapers(ctx, job, filePath, fileIndex, query, queryOverride, registry, selectedScrapers, scraperPriorityOverride, cfg, startTime)
 	if cancelResult != nil {
 		return nil, cancelResult, queryErr
 	}
@@ -167,13 +196,14 @@ func RunBatchScrapeOnce(
 	}
 
 	logging.Debugf("[Batch %s] File %d: Collected %d results from scrapers", job.ID, fileIndex, len(results))
+	aggregationResults := buildActressOverrideResults(results, actressOverrideSource)
 
 	var movie *models.Movie
 	var translationWarning string
 	if usingCustomScrapers {
-		movie, translationWarning, err = agg.AggregateWithPriority(results, selectedScrapers)
+		movie, translationWarning, err = agg.AggregateWithPriority(aggregationResults, selectedScrapers)
 	} else {
-		movie, translationWarning, err = agg.Aggregate(results)
+		movie, translationWarning, err = agg.Aggregate(aggregationResults)
 	}
 	if err != nil {
 		errMsg := fmt.Sprintf("Failed to aggregate: %v", err)
@@ -190,8 +220,8 @@ func RunBatchScrapeOnce(
 			job.ID, fileIndex, query.resolvedID)
 	}
 
-	fieldSources := buildFieldSourcesFromScrapeResults(results, agg.GetResolvedPriorities(), selectedScrapers)
-	actressSources := buildActressSourcesFromScrapeResults(results, agg.GetResolvedPriorities(), selectedScrapers, movie.Actresses)
+	fieldSources := buildFieldSourcesFromScrapeResults(aggregationResults, agg.GetResolvedPriorities(), selectedScrapers)
+	actressSources := buildActressSourcesFromScrapeResults(aggregationResults, agg.GetResolvedPriorities(), selectedScrapers, movie.Actresses)
 	movie.OriginalFileName = filepath.Base(filePath)
 
 	if actressRepo != nil {
@@ -215,7 +245,8 @@ func RunBatchScrapeOnce(
 
 	// Per-scraper candidate summaries for the multi-result picker. Titles are translated
 	// (one batch call) only when the providers disagree, so the picker is readable.
-	candidates, hasConflict := buildScrapeCandidates(results)
+	candidateResults := buildMovieCandidateResults(results, actressOverrideSource)
+	candidates, hasConflict := buildScrapeCandidates(candidateResults)
 	if hasConflict {
 		translateCandidateTitles(ctx, cfg, candidates)
 	}

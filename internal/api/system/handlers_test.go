@@ -32,6 +32,7 @@ import (
 	_ "github.com/javinizer/javinizer-go/internal/scraper/libredmm"
 	_ "github.com/javinizer/javinizer-go/internal/scraper/mgstage"
 	_ "github.com/javinizer/javinizer-go/internal/scraper/r18dev"
+	_ "github.com/javinizer/javinizer-go/internal/scraper/sougouwiki"
 	_ "github.com/javinizer/javinizer-go/internal/scraper/tokyohot"
 )
 

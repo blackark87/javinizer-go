@@ -423,3 +423,24 @@ func TestIsPlaceholder_EmptyURL(t *testing.T) {
 	assert.False(t, result)
 	assert.Error(t, err)
 }
+
+func TestFilterPlaceholderImageURL_URLPattern(t *testing.T) {
+	scraper := &Scraper{client: resty.New()}
+
+	got := scraper.filterPlaceholderImageURL(context.Background(), "https://pics.dmm.co.jp/digital/video/example/now_print.jpg")
+
+	assert.Empty(t, got)
+}
+
+func TestFilterPlaceholderScreenshots_URLPattern(t *testing.T) {
+	scraper := &Scraper{client: resty.New()}
+	urls := []string{
+		"https://pics.dmm.co.jp/digital/video/example/now-print.jpg",
+		"https://pics.dmm.co.jp/digital/video/example/normaljp-1.jpg",
+		"https://pics.dmm.co.jp/digital/video/example/comingsoon.jpg",
+	}
+
+	got := scraper.filterPlaceholderScreenshots(context.Background(), urls)
+
+	assert.Equal(t, []string{"https://pics.dmm.co.jp/digital/video/example/normaljp-1.jpg"}, got)
+}

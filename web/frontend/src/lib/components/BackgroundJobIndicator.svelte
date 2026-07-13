@@ -3,7 +3,7 @@
 	import { fly, slide } from 'svelte/transition';
 	import { createBatchJobPollingQuery } from '$lib/query/queries';
 	import { getBackgroundJobState } from '$lib/stores/background-job.svelte';
-	import { isTerminalStatus } from '$lib/utils/job-progress';
+	import { computeJobProgress, isTerminalStatus } from '$lib/utils/job-progress';
 	import { LoaderCircle, X, ChevronUp, ChevronDown, Check, XCircle, Ban, FolderInput } from 'lucide-svelte';
 
 	const iconMap = {
@@ -63,6 +63,17 @@
 		}
 	});
 
+	const displayProgress = $derived.by(() => {
+		if (!job) return 0;
+		return computeJobProgress(
+			undefined,
+			job.total_files,
+			job.progress,
+			job.status?.toLowerCase() === 'running',
+			job.completed + job.failed + (job.cancelled ?? 0),
+		);
+	});
+
 	const Icon = $derived(iconMap[statusConfig.icon]);
 </script>
 
@@ -83,7 +94,7 @@
 					{statusConfig.label}
 				</div>
 				<div class="text-xs text-muted-foreground mt-0.5">
-					{job.completed + job.failed + (job.cancelled ?? 0)} / {job.total_files} files &middot; {job.progress.toFixed(0)}%
+					{job.completed + job.failed + (job.cancelled ?? 0)} / {job.total_files} files &middot; {displayProgress.toFixed(0)}%
 				</div>
 			</div>
 		</button>
@@ -121,12 +132,12 @@
 				<div class="space-y-2.5">
 					<div class="flex items-center justify-between text-xs">
 						<span class="text-muted-foreground">Progress</span>
-						<span class="font-medium tabular-nums">{job.progress.toFixed(1)}%</span>
+						<span class="font-medium tabular-nums">{displayProgress.toFixed(1)}%</span>
 					</div>
 					<div class="h-1.5 bg-muted rounded-full overflow-hidden">
 						<div
 							class="h-full {statusConfig.bar} rounded-full transition-all duration-300"
-							style="width: {job.progress}%"
+							style="width: {displayProgress}%"
 						></div>
 					</div>
 					<div class="grid grid-cols-3 gap-2 text-xs text-muted-foreground">

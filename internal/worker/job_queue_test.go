@@ -1513,3 +1513,48 @@ func TestAtomicUpdateFileResult_StatusTransition(t *testing.T) {
 	assert.Equal(t, 1, job.Completed)
 	assert.Equal(t, 0, job.Failed)
 }
+
+func TestBatchJobProgressExcludesQueuedFiles(t *testing.T) {
+	job := &BatchJob{
+		TotalFiles: 10,
+		Results:    make(map[string]*FileResult),
+	}
+
+	for i := 0; i < 5; i++ {
+		filePath := fmt.Sprintf("file%d.mp4", i)
+		job.UpdateFileResult(filePath, &FileResult{FilePath: filePath, Status: JobStatusCompleted, StartedAt: time.Now()})
+	}
+
+	assert.Equal(t, 50.0, job.Progress)
+}
+
+func TestBatchJobProgressIncludesRunningPartialOnly(t *testing.T) {
+	job := &BatchJob{
+		TotalFiles: 10,
+		Results:    make(map[string]*FileResult),
+	}
+
+	for i := 0; i < 5; i++ {
+		filePath := fmt.Sprintf("file%d.mp4", i)
+		job.UpdateFileResult(filePath, &FileResult{FilePath: filePath, Status: JobStatusCompleted, StartedAt: time.Now()})
+	}
+	job.UpdateFileResult("running.mp4", &FileResult{FilePath: "running.mp4", Status: JobStatusRunning, Progress: 50, StartedAt: time.Now()})
+
+	assert.InDelta(t, 55.0, job.Progress, 0.0001)
+}
+
+func TestBatchJobProgressUsesTerminalCounts(t *testing.T) {
+	job := &BatchJob{
+		TotalFiles: 10,
+		Results:    make(map[string]*FileResult),
+	}
+
+	for i := 0; i < 3; i++ {
+		filePath := fmt.Sprintf("completed%d.mp4", i)
+		job.UpdateFileResult(filePath, &FileResult{FilePath: filePath, Status: JobStatusCompleted, StartedAt: time.Now()})
+	}
+	job.UpdateFileResult("failed.mp4", &FileResult{FilePath: "failed.mp4", Status: JobStatusFailed, StartedAt: time.Now()})
+	job.UpdateFileResult("cancelled.mp4", &FileResult{FilePath: "cancelled.mp4", Status: JobStatusCancelled, StartedAt: time.Now()})
+
+	assert.Equal(t, 50.0, job.Progress)
+}

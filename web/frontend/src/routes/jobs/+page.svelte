@@ -89,7 +89,7 @@
 			job.total_files,
 			job.progress,
 			job.status.toLowerCase() === 'running',
-			job.completed + job.failed,
+			job.completed + job.failed + (job.cancelled ?? 0),
 		);
 	}
 

@@ -9,7 +9,7 @@
 	import type { Movie, Actress } from '$lib/api/types';
 	import Button from './ui/Button.svelte';
 	import Card from './ui/Card.svelte';
-	import { Plus, SquarePen, Trash2, X, Save, Search } from 'lucide-svelte';
+	import { Plus, SquarePen, Trash2, X, Save, Search, ImageOff } from 'lucide-svelte';
 
 	interface Props {
 		movie: Movie;
@@ -37,6 +37,9 @@
 	let isSearchFocused = $state(false);
 	let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 	let searchRequestId = 0;
+	let imgErrorKeys = $state(new Set<string>());
+	let searchImgErrorKeys = $state(new Set<string>());
+	let previewImgError = $state(false);
 
 	async function searchActresses(query: string) {
 		const requestId = ++searchRequestId;
@@ -97,6 +100,7 @@
 			japanese_name: '',
 			thumb_url: ''
 		};
+		previewImgError = false;
 		showEditModal = true;
 		loadAllActresses(); // Load actresses when opening modal
 	}
@@ -104,6 +108,7 @@
 	function openEditActress(index: number) {
 		editingIndex = index;
 		editingActress = { ...actresses[index] };
+		previewImgError = false;
 		showEditModal = true;
 		loadAllActresses(); // Load actresses when opening modal
 	}
@@ -147,6 +152,7 @@
 	// Select an actress from search results
 	function selectActressFromSearch(actress: Actress) {
 		editingActress = { ...actress };
+		previewImgError = false;
 		searchQuery = getFullName(actress); // Show selected name in input
 		showSearchResults = false;
 	}
@@ -168,6 +174,12 @@
 	function normalizeName(value: string | undefined): string {
 		if (!value) return '';
 		return value.trim().toLowerCase().split(/\s+/).filter(Boolean).join(' ');
+	}
+
+	function actressImageKey(actress: Actress, index: number, prefix = 'actress'): string {
+		if (actress.id != null) return `${prefix}:id:${actress.id}`;
+		if (actress.dmm_id && actress.dmm_id > 0) return `${prefix}:dmmid:${actress.dmm_id}`;
+		return `${prefix}:${actress.thumb_url || 'no-thumb'}:${index}`;
 	}
 
 	function actressKey(actress: Actress): string {
@@ -241,24 +253,24 @@
 	{:else}
 		<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
 			{#each actresses as actress, index (actress.id || `${actress.first_name}-${actress.last_name}-${actress.japanese_name}-${index}`)}
+				{@const imageKey = actressImageKey(actress, index)}
 				<div animate:flip={{ duration: 220, easing: quintOut }}>
 					<Card class="p-3 hover:shadow-md transition-shadow">
 					<div class="space-y-2">
-						{#if actress.thumb_url}
+						{#if actress.thumb_url && !imgErrorKeys.has(imageKey)}
 							<img
-								src={actress.thumb_url}
+								src={apiClient.getPreviewImageURL(actress.thumb_url)}
 								alt={getFullName(actress)}
 								class="w-full aspect-2/3 object-cover rounded"
-								onerror={(e) => {
-									(e.currentTarget as HTMLImageElement).src =
-										"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='300' fill='%23374151'%3E%3Crect width='200' height='300'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%239CA3AF' font-family='system-ui' font-size='14'%3ENo Image%3C/text%3E%3C/svg%3E";
+								onerror={() => {
+									imgErrorKeys = new Set([...imgErrorKeys, imageKey]);
 								}}
 							/>
 						{:else}
 							<div
-								class="w-full aspect-2/3 bg-accent rounded flex items-center justify-center text-xs text-muted-foreground"
+								class="w-full aspect-2/3 bg-muted rounded flex items-center justify-center text-muted-foreground"
 							>
-								No Image
+								<ImageOff class="h-5 w-5" />
 							</div>
 						{/if}
 
@@ -340,21 +352,25 @@
 						{#if showSearchResults}
 							{#if searchResults.length > 0}
 								<div class="absolute z-10 w-full mt-1 bg-background border rounded-md shadow-lg max-h-64 overflow-y-auto">
-									{#each searchResults as actress}
+									{#each searchResults as actress, index}
+										{@const searchImageKey = actressImageKey(actress, index, 'search')}
 										<button
 											type="button"
 											onclick={() => selectActressFromSearch(actress)}
 											class="w-full px-3 py-2 hover:bg-muted text-left flex items-center gap-3 border-b last:border-b-0 transition-colors cursor-pointer"
 										>
-											{#if actress.thumb_url}
+											{#if actress.thumb_url && !searchImgErrorKeys.has(searchImageKey)}
 												<img
-													src={actress.thumb_url}
+													src={apiClient.getPreviewImageURL(actress.thumb_url)}
 													alt={getFullName(actress)}
 													class="w-12 h-16 object-cover rounded"
+													onerror={() => {
+														searchImgErrorKeys = new Set([...searchImgErrorKeys, searchImageKey]);
+													}}
 												/>
 											{:else}
-												<div class="w-12 h-16 bg-accent rounded flex items-center justify-center text-xs">
-													No Img
+												<div class="w-12 h-16 bg-muted rounded flex items-center justify-center text-muted-foreground">
+													<ImageOff class="h-4 w-4" />
 												</div>
 											{/if}
 											<div class="flex-1">
@@ -433,6 +449,9 @@
 								id="actress-thumb-url"
 								type="url"
 								bind:value={editingActress.thumb_url}
+								oninput={() => {
+									previewImgError = false;
+								}}
 								placeholder="https://..."
 								class="w-full px-3 py-2 border rounded-md bg-background focus:ring-2 focus:ring-primary focus:border-primary transition-all font-mono text-sm"
 							/>
@@ -443,20 +462,20 @@
 					<div>
 						<span class="text-sm font-medium mb-1 block">Preview</span>
 						<Card class="p-3">
-							{#if editingActress.thumb_url}
+							{#if editingActress.thumb_url && !previewImgError}
 								<img
-									src={editingActress.thumb_url}
+									src={apiClient.getPreviewImageURL(editingActress.thumb_url)}
 									alt={getFullName(editingActress) || 'Preview'}
 									class="w-full aspect-2/3 object-cover rounded mb-2"
-									onerror={(e) => {
-										const target = e.currentTarget as HTMLImageElement; target.style.display = 'none';
+									onerror={() => {
+										previewImgError = true;
 									}}
 								/>
 							{:else}
 								<div
-									class="w-full aspect-2/3 bg-accent rounded flex items-center justify-center text-sm text-muted-foreground mb-2"
+									class="w-full aspect-2/3 bg-muted rounded flex items-center justify-center text-muted-foreground mb-2"
 								>
-									No Thumbnail
+									<ImageOff class="h-5 w-5" />
 								</div>
 							{/if}
 							<p class="font-medium text-sm truncate">

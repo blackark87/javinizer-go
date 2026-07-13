@@ -578,6 +578,10 @@ type BulkRescrapeRequest struct {
 	Preset           string   `json:"preset,omitempty" example:"conservative"`
 	ScalarStrategy   string   `json:"scalar_strategy,omitempty" example:"prefer-nfo"`
 	ArrayStrategy    string   `json:"array_strategy,omitempty" example:"merge"`
+	// Sections limits each bulk rescrape to specific metadata sections; unselected
+	// sections keep their current values. Empty/omitted means a full rescrape.
+	// Valid keys: title, actresses, genres, credits, rating, release, images, media.
+	Sections []string `json:"sections,omitempty" example:"actresses,images"`
 }
 
 // BulkRescrapeMovieResult represents the per-movie result of a bulk rescrape operation

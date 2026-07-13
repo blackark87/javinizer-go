@@ -216,12 +216,13 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 	}));
 
 	const bulkRescrapeMutation = createMutation(() => ({
-		mutationFn: async ({ movieIds, selectedScrapers, preset, scalarStrategy, arrayStrategy }: {
+		mutationFn: async ({ movieIds, selectedScrapers, preset, scalarStrategy, arrayStrategy, sections }: {
 			movieIds: string[];
 			selectedScrapers: string[];
 			preset?: string;
 			scalarStrategy?: string;
 			arrayStrategy?: string;
+			sections?: string[];
 		}) => {
 			return deps.bulkRescrapeMovies(deps.getJobId(), {
 				movie_ids: movieIds,
@@ -229,6 +230,7 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 				preset: preset as 'conservative' | 'gap-fill' | 'aggressive' | undefined,
 				scalar_strategy: scalarStrategy as 'prefer-nfo' | 'prefer-scraper' | 'preserve-existing' | 'fill-missing-only' | undefined,
 				array_strategy: arrayStrategy as 'merge' | 'replace' | undefined,
+				sections: sections && sections.length > 0 ? sections : undefined,
 			});
 		},
 		// API returns 202 (async); completion/stats are delivered via WebSocket.

@@ -480,6 +480,7 @@ export function createReviewState(pageStore: Page) {
 		rescrapePreset = undefined;
 		rescrapeScalarStrategy = 'prefer-nfo';
 		rescrapeArrayStrategy = 'merge';
+		rescrapeSelectedSections = [];
 		showRescrapeModal = true;
 	}
 
@@ -503,6 +504,7 @@ export function createReviewState(pageStore: Page) {
 				preset: rescrapePreset,
 				scalarStrategy: rescrapeScalarStrategy || undefined,
 				arrayStrategy: rescrapeArrayStrategy || undefined,
+				sections: rescrapeSelectedSections.length > 0 ? rescrapeSelectedSections : undefined,
 			});
 			// Progress and completion handled via WebSocket messages
 		} catch (error) {

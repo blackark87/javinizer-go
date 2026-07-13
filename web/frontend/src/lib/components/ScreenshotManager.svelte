@@ -2,7 +2,7 @@
 	import { flip } from 'svelte/animate';
 	import { quintOut } from 'svelte/easing';
 	import type { Movie } from '$lib/api/types';
-	import { apiClient } from '$lib/api/client';
+	import { previewImageUrl } from '$lib/utils/image';
 	import { confirmDialog } from '$lib/stores/dialog.svelte';
 	import Button from './ui/Button.svelte';
 	import Card from './ui/Card.svelte';
@@ -119,11 +119,9 @@
 		showViewer = false;
 	}
 
-	function previewImageURL(url: string): string {
-		if (!url) return '';
-		if (url.startsWith('/api/v1/')) return url;
-		if (url.startsWith('/')) return url;
-		return apiClient.getPreviewImageURL(url);
+	function coverViewerImages(): string[] {
+		const url = previewImageUrl(coverUrl);
+		return url ? [url] : [];
 	}
 
 	function sourceText(fieldKey: string): string | null {
@@ -178,7 +176,7 @@
 							<!-- Crop to show only right 47.2% of image (removes promotional text on left) -->
 							<!-- Only apply cropping if displayPosterUrl is not available (displayPosterUrl is already cropped if temp_poster_url) -->
 							<img
-								src={posterUrl}
+								src={previewImageUrl(posterUrl)}
 								alt="Poster"
 								class="absolute h-full"
 								style="right: 0; width: auto; min-width: 211.8%; object-fit: cover; object-position: right center;"
@@ -189,7 +187,7 @@
 						{:else}
 							<!-- Use displayPosterUrl (temp_poster_url if available) or posterUrl directly without cropping -->
 							<img
-								src={displayPosterUrl || posterUrl}
+								src={previewImageUrl(displayPosterUrl || posterUrl)}
 								alt="Poster"
 								class="w-full h-full object-contain"
 								onerror={(e) => {
@@ -245,7 +243,7 @@
 						class="w-full rounded border overflow-hidden hover:opacity-80 transition-opacity cursor-pointer"
 					>
 							<img
-								src={previewImageURL(coverUrl)}
+								src={previewImageUrl(coverUrl)}
 								alt="Cover"
 								class="w-full"
 							onerror={(e) => {
@@ -394,7 +392,7 @@
 							class="w-full cursor-pointer hover:opacity-80 transition-opacity"
 						>
 							<img
-								src={previewImageURL(url)}
+								src={previewImageUrl(url)}
 								alt="Screenshot {index + 1}"
 								class="w-full aspect-video object-cover rounded"
 								onerror={(e) => {
@@ -439,7 +437,7 @@
 <!-- Screenshot Viewer Modal -->
 <ImageViewer
 	bind:show={showViewer}
-	images={screenshots.map((url) => previewImageURL(url))}
+	images={screenshots.map((url) => previewImageUrl(url)).filter((url): url is string => Boolean(url))}
 	initialIndex={viewerIndex}
 	onClose={closeViewer}
 />
@@ -447,7 +445,7 @@
 <!-- Cover Viewer Modal -->
 <ImageViewer
 	bind:show={showCoverViewer}
-	images={[previewImageURL(coverUrl)]}
+	images={coverViewerImages()}
 	initialIndex={0}
 	title="Cover/Fanart"
 	onClose={() => (showCoverViewer = false)}

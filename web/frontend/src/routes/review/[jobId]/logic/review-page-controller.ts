@@ -1,4 +1,5 @@
 import type { BatchJobResponse, Movie } from '$lib/api/types';
+import { previewImageUrl } from '$lib/utils/image';
 
 interface ReviewPageControllerDeps {
 	getJob: () => BatchJobResponse | null;
@@ -15,9 +16,6 @@ interface ReviewPageControllerDeps {
 	setImageViewerIndex: (index: number) => void;
 	setImageViewerTitle: (title: string | undefined) => void;
 	excludeMovie: (jobId: string, resultId: string) => void;
-	api: {
-		getPreviewImageURL: (url: string) => string;
-	};
 }
 
 export function createReviewPageController(deps: ReviewPageControllerDeps) {
@@ -40,10 +38,7 @@ export function createReviewPageController(deps: ReviewPageControllerDeps) {
 	}
 
 	function previewImageURL(url: string | undefined): string {
-		if (!url) return '';
-		if (url.startsWith('/api/v1/')) return url;
-		if (url.startsWith('/')) return url;
-		return deps.api.getPreviewImageURL(url);
+		return previewImageUrl(url) ?? '';
 	}
 
 	function openScreenshotViewer(index: number) {

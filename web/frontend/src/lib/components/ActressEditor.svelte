@@ -6,6 +6,7 @@
 	import { alertDialog, confirmDialog } from '$lib/stores/dialog.svelte';
 	import { portalToBody } from '$lib/actions/portal';
 	import { apiClient } from '$lib/api/client';
+	import { previewImageUrl } from '$lib/utils/image';
 	import type { Movie, Actress } from '$lib/api/types';
 	import Button from './ui/Button.svelte';
 	import Card from './ui/Card.svelte';
@@ -246,7 +247,7 @@
 					<div class="space-y-2">
 						{#if actress.thumb_url}
 							<img
-								src={actress.thumb_url}
+								src={previewImageUrl(actress.thumb_url)}
 								alt={getFullName(actress)}
 								class="w-full aspect-2/3 object-cover rounded"
 								onerror={(e) => {
@@ -348,7 +349,7 @@
 										>
 											{#if actress.thumb_url}
 												<img
-													src={actress.thumb_url}
+													src={previewImageUrl(actress.thumb_url)}
 													alt={getFullName(actress)}
 													class="w-12 h-16 object-cover rounded"
 												/>
@@ -445,7 +446,7 @@
 						<Card class="p-3">
 							{#if editingActress.thumb_url}
 								<img
-									src={editingActress.thumb_url}
+									src={previewImageUrl(editingActress.thumb_url)}
 									alt={getFullName(editingActress) || 'Preview'}
 									class="w-full aspect-2/3 object-cover rounded mb-2"
 									onerror={(e) => {

@@ -148,6 +148,20 @@ type ActressResolver interface {
 	ResolveActresses(ctx context.Context, id string) (*ScraperResult, error)
 }
 
+// ActressIdentityQuery contains the actress data available before a DMM ID is
+// known. Identity resolvers must use these values directly and must not require
+// a linked movie scrape.
+type ActressIdentityQuery struct {
+	Names    []string `json:"names"`
+	ThumbURL string   `json:"thumb_url,omitempty"`
+}
+
+// ActressIdentityResolver is an optional interface for scrapers that can map
+// an actress name or existing profile thumbnail to a verified DMM actress ID.
+type ActressIdentityResolver interface {
+	ResolveActressIdentity(ctx context.Context, query ActressIdentityQuery) (*ScraperResult, error)
+}
+
 // ActressThumbnailResolver is an optional interface for scrapers that can
 // resolve an actress thumbnail independently from a movie scrape.
 type ActressThumbnailResolver interface {

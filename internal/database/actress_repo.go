@@ -184,14 +184,28 @@ func (r *ActressRepository) ListAll() ([]models.Actress, error) {
 // DMM ID or a profile thumbnail. IDs are stable-sorted so callers can process
 // the result deterministically.
 func (r *ActressRepository) ListMissingMetadataIDs() ([]uint, error) {
-	var ids []uint
-	if err := r.GetDB().Model(&models.Actress{}).
-		Where("dmm_id <= 0 OR TRIM(COALESCE(thumb_url, '')) = ''").
-		Order("id ASC").
-		Pluck("id", &ids).Error; err != nil {
-		return nil, wrapDBErr("find", "actresses missing metadata", err)
+	actresses, err := r.ListMissingMetadata()
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]uint, 0, len(actresses))
+	for _, actress := range actresses {
+		ids = append(ids, actress.ID)
 	}
 	return ids, nil
+}
+
+// ListMissingMetadata returns the actress rows used by sync so the UI can show
+// a stable name even when an individual sync request fails.
+func (r *ActressRepository) ListMissingMetadata() ([]models.Actress, error) {
+	var actresses []models.Actress
+	if err := r.GetDB().
+		Where("dmm_id <= 0 OR TRIM(COALESCE(thumb_url, '')) = ''").
+		Order("id ASC").
+		Find(&actresses).Error; err != nil {
+		return nil, wrapDBErr("find", "actresses missing metadata", err)
+	}
+	return actresses, nil
 }
 
 func (r *ActressRepository) FindOrCreate(actress *models.Actress) error {

@@ -2,9 +2,14 @@ import type { ActressSyncResponse, ActressSyncStatus } from '$lib/api/types';
 
 export interface ActressSyncDetail {
 	id: number;
-	status: ActressSyncStatus | 'failed';
-	message: string;
+	label: string;
+	status: ActressSyncStatus;
+	messages: string[];
 	updatedFields: string[];
+	source?: string;
+	sourceQuery?: string;
+	dmmId?: number;
+	thumbURL?: string;
 	conflictActressId?: number;
 }
 
@@ -21,6 +26,7 @@ export interface ActressSyncSummary {
 
 export interface ActressSyncRunnerOptions {
 	shouldStop?: () => boolean;
+	getLabel?: (id: number) => string;
 	onItemStart?: (id: number, summary: ActressSyncSummary) => void;
 	onProgress?: (summary: ActressSyncSummary, detail: ActressSyncDetail) => void;
 	onFinished?: (summary: ActressSyncSummary) => void | Promise<void>;
@@ -30,12 +36,26 @@ function snapshot(summary: ActressSyncSummary): ActressSyncSummary {
 	return { ...summary, details: [...summary.details] };
 }
 
-function responseDetail(id: number, response: ActressSyncResponse): ActressSyncDetail {
+function responseActressLabel(id: number, response: ActressSyncResponse, fallback: string): string {
+	const actress = response.actress;
+	const englishName = [actress.first_name, actress.last_name].filter(Boolean).join(' ').trim();
+	const names = [actress.japanese_name?.trim(), englishName].filter((name, index, all): name is string =>
+		Boolean(name) && all.indexOf(name) === index
+	);
+	return names.length > 0 ? names.join(' / ') : fallback || `Actress #${id}`;
+}
+
+function responseDetail(id: number, response: ActressSyncResponse, fallbackLabel: string): ActressSyncDetail {
 	return {
 		id,
+		label: responseActressLabel(id, response, fallbackLabel),
 		status: response.status,
-		message: response.messages.join(' ') || `Actress #${id}: ${response.status}`,
+		messages: response.messages.length > 0 ? [...response.messages] : [`No detail was returned for ${response.status}`],
 		updatedFields: [...response.updated_fields],
+		source: response.source,
+		sourceQuery: response.source_query,
+		dmmId: response.actress.dmm_id,
+		thumbURL: response.actress.thumb_url,
 		conflictActressId: response.conflict_actress_id
 	};
 }
@@ -67,18 +87,21 @@ export async function runActressSyncQueue(
 			options.onItemStart?.(id, snapshot(summary));
 
 			let detail: ActressSyncDetail;
+			const fallbackLabel = options.getLabel?.(id) || `Actress #${id}`;
 			try {
 				const response = await syncOne(id);
-				detail = responseDetail(id, response);
+				detail = responseDetail(id, response, fallbackLabel);
 				if (response.status === 'updated') summary.updated += 1;
 				else if (response.status === 'skipped') summary.skipped += 1;
-				else summary.conflicts += 1;
+				else if (response.status === 'conflict') summary.conflicts += 1;
+				else summary.failed += 1;
 			} catch (error) {
 				summary.failed += 1;
 				detail = {
 					id,
+					label: fallbackLabel,
 					status: 'failed',
-					message: error instanceof Error ? error.message : String(error),
+					messages: [error instanceof Error ? error.message : String(error)],
 					updatedFields: []
 				};
 			}

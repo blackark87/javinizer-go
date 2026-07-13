@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/javinizer/javinizer-go/internal/api/core"
@@ -32,7 +31,7 @@ func (s *actressSyncAPIResolver) Config() *config.ScraperSettings {
 	return &config.ScraperSettings{Enabled: true}
 }
 func (s *actressSyncAPIResolver) Close() error { return nil }
-func (s *actressSyncAPIResolver) ResolveActresses(context.Context, string) (*models.ScraperResult, error) {
+func (s *actressSyncAPIResolver) ResolveActressIdentity(context.Context, models.ActressIdentityQuery) (*models.ScraperResult, error) {
 	return s.result, nil
 }
 
@@ -68,6 +67,9 @@ func TestListActressSyncCandidates(t *testing.T) {
 	var body actressSyncCandidatesResponse
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
 	assert.Equal(t, []uint{actresses[1].ID, actresses[2].ID}, body.IDs)
+	require.Len(t, body.Actresses, 2)
+	assert.Equal(t, "Missing ID", body.Actresses[0].JapaneseName)
+	assert.Equal(t, "Missing thumbnail", body.Actresses[1].JapaneseName)
 	assert.Equal(t, 2, body.Total)
 }
 
@@ -76,11 +78,8 @@ func TestSyncActressAPIUpdatedSkippedAndConflict(t *testing.T) {
 		router, deps := newActressSyncAPITest(t)
 		actress := &models.Actress{JapaneseName: "Target", ThumbURL: "existing.jpg"}
 		require.NoError(t, deps.ActressRepo.Create(actress))
-		require.NoError(t, deps.MovieRepo.Create(&models.Movie{
-			ContentID: "test001", ID: "TEST-001", ReleaseDate: timePtr(time.Now()), Actresses: []models.Actress{*actress},
-		}))
 		deps.Registry.Register(&actressSyncAPIResolver{result: &models.ScraperResult{
-			Actresses: []models.ActressInfo{{DMMID: 101, JapaneseName: "Target"}},
+			ID: "Target", Actresses: []models.ActressInfo{{DMMID: 101, JapaneseName: "Target"}},
 		}})
 
 		response := performActressSyncAPIRequest(router, http.MethodPost, "/api/v1/actresses/"+uintString(actress.ID)+"/sync")
@@ -109,11 +108,8 @@ func TestSyncActressAPIUpdatedSkippedAndConflict(t *testing.T) {
 		owner := &models.Actress{DMMID: 303, JapaneseName: "Owner", ThumbURL: "owner.jpg"}
 		require.NoError(t, deps.ActressRepo.Create(target))
 		require.NoError(t, deps.ActressRepo.Create(owner))
-		require.NoError(t, deps.MovieRepo.Create(&models.Movie{
-			ContentID: "test003", ID: "TEST-003", ReleaseDate: timePtr(time.Now()), Actresses: []models.Actress{*target},
-		}))
 		deps.Registry.Register(&actressSyncAPIResolver{result: &models.ScraperResult{
-			Actresses: []models.ActressInfo{{DMMID: 303, JapaneseName: "Target"}},
+			ID: "Target", Actresses: []models.ActressInfo{{DMMID: 303, JapaneseName: "Target"}},
 		}})
 
 		response := performActressSyncAPIRequest(router, http.MethodPost, "/api/v1/actresses/"+uintString(target.ID)+"/sync")
@@ -123,6 +119,19 @@ func TestSyncActressAPIUpdatedSkippedAndConflict(t *testing.T) {
 		assert.Equal(t, worker.ActressSyncConflict, body.Status)
 		require.NotNil(t, body.ConflictActressID)
 		assert.Equal(t, owner.ID, *body.ConflictActressID)
+	})
+
+	t.Run("failed", func(t *testing.T) {
+		router, deps := newActressSyncAPITest(t)
+		actress := &models.Actress{JapaneseName: "No Resolver", ThumbURL: "existing.jpg"}
+		require.NoError(t, deps.ActressRepo.Create(actress))
+
+		response := performActressSyncAPIRequest(router, http.MethodPost, "/api/v1/actresses/"+uintString(actress.ID)+"/sync")
+		assert.Equal(t, http.StatusOK, response.Code)
+		var body worker.ActressSyncResult
+		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
+		assert.Equal(t, worker.ActressSyncFailed, body.Status)
+		assert.Contains(t, body.Messages[0], "identity resolver")
 	})
 }
 
@@ -142,6 +151,8 @@ func TestSyncActressAPIErrors(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
 	assert.Equal(t, http.StatusRequestTimeout, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "Canceled")
+	assert.Contains(t, recorder.Body.String(), "sync canceled")
 }
 
 func TestListActressSyncCandidatesDatabaseError(t *testing.T) {
@@ -150,8 +161,6 @@ func TestListActressSyncCandidatesDatabaseError(t *testing.T) {
 	response := performActressSyncAPIRequest(router, http.MethodGet, "/api/v1/actresses/sync-candidates")
 	assert.Equal(t, http.StatusInternalServerError, response.Code)
 }
-
-func timePtr(value time.Time) *time.Time { return &value }
 
 func uintString(value uint) string {
 	const digits = "0123456789"

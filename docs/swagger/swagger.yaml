@@ -1068,7 +1068,9 @@ definitions:
         items:
           type: string
         type: array
-      source_movie_id:
+      source:
+        type: string
+      source_query:
         type: string
       status:
         $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_worker.ActressSyncStatus'
@@ -1082,11 +1084,13 @@ definitions:
     - updated
     - skipped
     - conflict
+    - failed
     type: string
     x-enum-varnames:
     - ActressSyncUpdated
     - ActressSyncSkipped
     - ActressSyncConflict
+    - ActressSyncFailed
   internal_api_actress.Actress:
     properties:
       aliases:
@@ -1218,6 +1222,10 @@ definitions:
     type: object
   internal_api_actress.actressSyncCandidatesResponse:
     properties:
+      actresses:
+        items:
+          $ref: '#/definitions/models.Actress'
+        type: array
       ids:
         items:
           type: integer

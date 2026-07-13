@@ -390,17 +390,19 @@ export interface ActressMoviesResponse {
 
 export interface ActressSyncCandidatesResponse {
 	ids: number[];
+	actresses: Actress[];
 	total: number;
 }
 
-export type ActressSyncStatus = 'updated' | 'skipped' | 'conflict';
+export type ActressSyncStatus = 'updated' | 'skipped' | 'conflict' | 'failed';
 
 export interface ActressSyncResponse {
 	actress: Actress;
 	status: ActressSyncStatus;
 	updated_fields: Array<'dmm_id' | 'thumb_url' | string>;
 	messages: string[];
-	source_movie_id?: string;
+	source?: string;
+	source_query?: string;
 	conflict_actress_id?: number;
 }
 

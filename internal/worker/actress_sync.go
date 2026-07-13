@@ -3,6 +3,8 @@ package worker
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"path"
 	"strings"
 
 	"github.com/javinizer/javinizer-go/internal/database"
@@ -10,14 +12,13 @@ import (
 	"github.com/javinizer/javinizer-go/internal/scraperutil"
 )
 
-const maxActressSyncMovies = 5
-
 type ActressSyncStatus string
 
 const (
 	ActressSyncUpdated  ActressSyncStatus = "updated"
 	ActressSyncSkipped  ActressSyncStatus = "skipped"
 	ActressSyncConflict ActressSyncStatus = "conflict"
+	ActressSyncFailed   ActressSyncStatus = "failed"
 )
 
 // ActressSyncResult describes the outcome of enriching one actress. A conflict
@@ -28,13 +29,15 @@ type ActressSyncResult struct {
 	Status            ActressSyncStatus `json:"status"`
 	UpdatedFields     []string          `json:"updated_fields"`
 	Messages          []string          `json:"messages"`
-	SourceMovieID     string            `json:"source_movie_id,omitempty"`
+	Source            string            `json:"source,omitempty"`
+	SourceQuery       string            `json:"source_query,omitempty"`
 	ConflictActressID *uint             `json:"conflict_actress_id,omitempty"`
 }
 
 type resolvedActressCandidate struct {
-	info    models.ActressInfo
-	movieID string
+	info   models.ActressInfo
+	source string
+	query  string
 }
 
 // SyncActressMetadata fills only a missing DMM ID and/or thumbnail. Names and
@@ -43,7 +46,6 @@ func SyncActressMetadata(
 	ctx context.Context,
 	actressID uint,
 	actressRepo *database.ActressRepository,
-	movieRepo *database.MovieRepository,
 	registry *models.ScraperRegistry,
 	scraperPriority []string,
 ) (*ActressSyncResult, error) {
@@ -70,16 +72,21 @@ func SyncActressMetadata(
 
 	var candidate *resolvedActressCandidate
 	if missingDMMID {
-		candidate, result.Messages, err = resolveMissingActressDMMID(
-			ctx, actress, movieRepo, registry, scraperPriority, result.Messages,
+		var identityFailed bool
+		candidate, result.Messages, identityFailed, err = resolveMissingActressDMMID(
+			ctx, actress, registry, scraperPriority, result.Messages,
 		)
 		if err != nil {
 			return nil, err
 		}
+		if identityFailed {
+			result.Status = ActressSyncFailed
+		}
 	}
 
 	if candidate != nil {
-		result.SourceMovieID = candidate.movieID
+		result.Source = candidate.source
+		result.SourceQuery = candidate.query
 		existing, lookupErr := actressRepo.FindByDMMID(candidate.info.DMMID)
 		switch {
 		case lookupErr == nil && existing.ID != actress.ID:
@@ -97,7 +104,7 @@ func SyncActressMetadata(
 			}
 			result.UpdatedFields = append(result.UpdatedFields, "dmm_id")
 			result.Messages = append(result.Messages,
-				fmt.Sprintf("DMM ID %d verified from movie %s", candidate.info.DMMID, candidate.movieID))
+				fmt.Sprintf("Saved DMM ID %d from %s", candidate.info.DMMID, candidate.source))
 		default:
 			return nil, lookupErr
 		}
@@ -139,78 +146,82 @@ func SyncActressMetadata(
 func resolveMissingActressDMMID(
 	ctx context.Context,
 	actress *models.Actress,
-	movieRepo *database.MovieRepository,
 	registry *models.ScraperRegistry,
 	scraperPriority []string,
 	messages []string,
-) (*resolvedActressCandidate, []string, error) {
-	if movieRepo == nil {
-		return nil, append(messages, "No movie repository is available"), nil
+) (*resolvedActressCandidate, []string, bool, error) {
+	query := models.ActressIdentityQuery{
+		Names:    actressIdentityNames(*actress),
+		ThumbURL: strings.TrimSpace(actress.ThumbURL),
 	}
-	movies, err := movieRepo.ListByActressID(actress.ID, maxActressSyncMovies, 0)
-	if err != nil {
-		return nil, messages, err
-	}
-	if len(movies) == 0 {
-		return nil, append(messages, "No linked movies are available for DMM ID verification"), nil
+	if len(query.Names) == 0 && query.ThumbURL == "" {
+		return nil, append(messages, "No actress name or thumbnail is available for identity lookup"), true, nil
 	}
 
-	sources := enabledActressSources(registry, scraperPriority)
+	sources := enabledActressIdentitySources(registry, scraperPriority)
 	if len(sources) == 0 {
-		return nil, append(messages, "No enabled scraper is available for DMM ID verification"), nil
+		return nil, append(messages, "No enabled actress identity resolver is available"), true, nil
 	}
 
-	for _, movie := range movies {
-		movieID := syncMovieID(movie)
-		if movieID == "" {
+	hadResolverFailure := false
+	for _, source := range sources {
+		if err := ctx.Err(); err != nil {
+			return nil, messages, hadResolverFailure, err
+		}
+		messages = append(messages,
+			fmt.Sprintf("%s: searching %d exact name candidate(s)%s", source.Name(), len(query.Names), thumbnailLookupSuffix(query.ThumbURL)))
+		sourceResult, resolveErr := safeResolveActressIdentity(ctx, source, query)
+		if resolveErr != nil {
+			if err := ctx.Err(); err != nil {
+				return nil, messages, hadResolverFailure, err
+			}
+			if scraperErr, ok := models.AsScraperError(resolveErr); ok && scraperErr.Kind == models.ScraperErrorKindNotFound {
+				messages = append(messages, fmt.Sprintf("%s: no exact actress identity match", source.Name()))
+				continue
+			}
+			hadResolverFailure = true
+			messages = append(messages, fmt.Sprintf("%s: identity lookup failed: %v", source.Name(), resolveErr))
 			continue
 		}
-		for _, source := range sources {
-			if err := ctx.Err(); err != nil {
-				return nil, messages, err
-			}
-			sourceResult, resolveErr := resolveActressesFromSource(ctx, source, movieID)
-			if resolveErr != nil {
-				if err := ctx.Err(); err != nil {
-					return nil, messages, err
-				}
-				messages = append(messages,
-					fmt.Sprintf("Scraper %s failed for movie %s: %v", source.Name(), movieID, resolveErr))
-				continue
-			}
-			if sourceResult == nil {
-				continue
-			}
-			if match, ok := exactActressMatch(*actress, sourceResult.Actresses); ok {
-				return &resolvedActressCandidate{info: match, movieID: movieID}, messages, nil
-			}
-			if match, ok := safeSingleActressMatch(*actress, movie.Actresses, sourceResult.Actresses); ok {
-				return &resolvedActressCandidate{info: match, movieID: movieID}, messages, nil
-			}
+		if sourceResult == nil {
+			messages = append(messages, fmt.Sprintf("%s: identity lookup returned no result", source.Name()))
+			continue
 		}
+		match, ok := exactActressMatch(*actress, sourceResult.Actresses)
+		if !ok {
+			messages = append(messages,
+				fmt.Sprintf("%s: rejected %d result(s) because there was no unique exact name match", source.Name(), len(sourceResult.Actresses)))
+			continue
+		}
+		matchedQuery := strings.TrimSpace(sourceResult.ID)
+		if matchedQuery == "" {
+			matchedQuery = strings.Join(query.Names, " | ")
+		}
+		messages = append(messages,
+			fmt.Sprintf("%s: matched DMM ID %d using %q", source.Name(), match.DMMID, matchedQuery))
+		return &resolvedActressCandidate{info: match, source: source.Name(), query: matchedQuery}, messages, false, nil
 	}
-	return nil, append(messages, "No unambiguous DMM actress match was found"), nil
+	return nil, append(messages, "No unique exact actress identity match was found"), hadResolverFailure, nil
 }
 
-func enabledActressSources(registry *models.ScraperRegistry, priority []string) []models.Scraper {
+func enabledActressIdentitySources(registry *models.ScraperRegistry, priority []string) []models.Scraper {
 	if registry == nil {
 		return nil
 	}
-	return registry.GetByPriority(priority)
+	var sources []models.Scraper
+	for _, scraper := range registry.GetByPriority(priority) {
+		if _, ok := scraper.(models.ActressIdentityResolver); ok {
+			sources = append(sources, scraper)
+		}
+	}
+	return sources
 }
 
-func resolveActressesFromSource(ctx context.Context, source models.Scraper, movieID string) (*models.ScraperResult, error) {
-	if resolver, ok := source.(models.ActressResolver); ok {
-		return safeResolveActresses(ctx, resolver, movieID)
+func thumbnailLookupSuffix(thumbURL string) string {
+	if strings.TrimSpace(thumbURL) != "" {
+		return " and the existing thumbnail URL"
 	}
-	return safeSearch(ctx, source, movieID)
-}
-
-func syncMovieID(movie models.Movie) string {
-	if id := strings.TrimSpace(movie.ID); id != "" {
-		return id
-	}
-	return strings.TrimSpace(movie.ContentID)
+	return ""
 }
 
 func exactActressMatch(target models.Actress, candidates []models.ActressInfo) (models.ActressInfo, bool) {
@@ -234,41 +245,6 @@ func exactActressMatch(target models.Actress, candidates []models.ActressInfo) (
 	return models.ActressInfo{}, false
 }
 
-func safeSingleActressMatch(target models.Actress, linked []models.Actress, candidates []models.ActressInfo) (models.ActressInfo, bool) {
-	missingCount := 0
-	knownOtherDMMIDs := make(map[int]struct{})
-	for _, linkedActress := range linked {
-		if linkedActress.DMMID <= 0 {
-			missingCount++
-			continue
-		}
-		if linkedActress.ID != target.ID {
-			knownOtherDMMIDs[linkedActress.DMMID] = struct{}{}
-		}
-	}
-	if missingCount != 1 {
-		return models.ActressInfo{}, false
-	}
-
-	remaining := make(map[int]models.ActressInfo)
-	for _, candidate := range candidates {
-		if candidate.DMMID <= 0 {
-			continue
-		}
-		if _, known := knownOtherDMMIDs[candidate.DMMID]; known {
-			continue
-		}
-		remaining[candidate.DMMID] = candidate
-	}
-	if len(remaining) != 1 {
-		return models.ActressInfo{}, false
-	}
-	for _, candidate := range remaining {
-		return candidate, true
-	}
-	return models.ActressInfo{}, false
-}
-
 func actressNameKeys(actress models.Actress) map[string]struct{} {
 	keys := make(map[string]struct{})
 	addNameKey(keys, actress.JapaneseName)
@@ -277,6 +253,60 @@ func actressNameKeys(actress models.Actress) map[string]struct{} {
 	}
 	addEnglishNameKeys(keys, actress.FirstName, actress.LastName)
 	return keys
+}
+
+func actressIdentityNames(actress models.Actress) []string {
+	seen := make(map[string]struct{})
+	var names []string
+	add := func(name string) {
+		name = strings.TrimSpace(name)
+		key := normalizeActressSyncName(name)
+		if key == "" {
+			return
+		}
+		if _, exists := seen[key]; exists {
+			return
+		}
+		seen[key] = struct{}{}
+		names = append(names, name)
+	}
+	add(actress.JapaneseName)
+	for _, alias := range strings.Split(actress.Aliases, "|") {
+		add(alias)
+	}
+	firstName := strings.TrimSpace(actress.FirstName)
+	lastName := strings.TrimSpace(actress.LastName)
+	if firstName != "" || lastName != "" {
+		add(strings.TrimSpace(firstName + " " + lastName))
+		add(strings.TrimSpace(lastName + " " + firstName))
+	}
+	for _, thumbnailName := range actressThumbnailNameCandidates(actress.ThumbURL) {
+		add(thumbnailName)
+	}
+	return names
+}
+
+func actressThumbnailNameCandidates(rawURL string) []string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || !strings.Contains(strings.ToLower(parsed.Path), "/actjpgs/") {
+		return nil
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host != "pics.dmm.co.jp" && host != "awsimgsrc.dmm.co.jp" && host != "awsimgsrc.dmm.com" {
+		return nil
+	}
+	filename := path.Base(parsed.Path)
+	name := strings.TrimSuffix(filename, path.Ext(filename))
+	name = strings.TrimSpace(strings.NewReplacer("_", " ", "-", " ").Replace(name))
+	parts := strings.Fields(name)
+	if len(parts) == 0 {
+		return nil
+	}
+	result := []string{strings.Join(parts, " ")}
+	if len(parts) == 2 {
+		result = append(result, parts[1]+" "+parts[0])
+	}
+	return result
 }
 
 func actressInfoNameKeys(actress models.ActressInfo) map[string]struct{} {

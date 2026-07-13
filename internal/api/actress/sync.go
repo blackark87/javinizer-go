@@ -3,18 +3,22 @@ package actress
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/javinizer/javinizer-go/internal/api/core"
 	"github.com/javinizer/javinizer-go/internal/database"
+	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/worker"
 )
 
 type actressSyncCandidatesResponse struct {
-	IDs   []uint `json:"ids"`
-	Total int    `json:"total"`
+	IDs       []uint           `json:"ids"`
+	Actresses []models.Actress `json:"actresses"`
+	Total     int              `json:"total"`
 }
 
 // listActressSyncCandidates godoc
@@ -27,12 +31,16 @@ type actressSyncCandidatesResponse struct {
 // @Router /api/v1/actresses/sync-candidates [get]
 func listActressSyncCandidates(actressRepo *database.ActressRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ids, err := actressRepo.ListMissingMetadataIDs()
+		actresses, err := actressRepo.ListMissingMetadata()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, actressSyncCandidatesResponse{IDs: ids, Total: len(ids)})
+		ids := make([]uint, 0, len(actresses))
+		for _, actress := range actresses {
+			ids = append(ids, actress.ID)
+		}
+		c.JSON(http.StatusOK, actressSyncCandidatesResponse{IDs: ids, Actresses: actresses, Total: len(ids)})
 	}
 }
 
@@ -67,23 +75,34 @@ func syncActress(deps *core.ServerDependencies) gin.HandlerFunc {
 			ctx,
 			id,
 			deps.ActressRepo,
-			deps.MovieRepo,
 			deps.GetRegistry(),
 			cfg.Scrapers.Priority,
 		)
 		if err != nil {
 			switch {
 			case database.IsNotFound(err):
-				c.JSON(http.StatusNotFound, ErrorResponse{Error: "actress not found"})
+				c.JSON(http.StatusNotFound, ErrorResponse{Error: fmt.Sprintf("Actress #%d: actress not found", id)})
 			case errors.Is(err, context.DeadlineExceeded):
-				c.JSON(http.StatusGatewayTimeout, ErrorResponse{Error: "actress sync timed out"})
+				c.JSON(http.StatusGatewayTimeout, ErrorResponse{Error: actressSyncError(deps.ActressRepo, id, "sync timed out")})
 			case errors.Is(err, context.Canceled):
-				c.JSON(http.StatusRequestTimeout, ErrorResponse{Error: "actress sync canceled"})
+				c.JSON(http.StatusRequestTimeout, ErrorResponse{Error: actressSyncError(deps.ActressRepo, id, "sync canceled")})
 			default:
-				c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+				c.JSON(http.StatusInternalServerError, ErrorResponse{Error: actressSyncError(deps.ActressRepo, id, err.Error())})
 			}
 			return
 		}
 		c.JSON(http.StatusOK, result)
 	}
+}
+
+func actressSyncError(repo *database.ActressRepository, id uint, message string) string {
+	label := fmt.Sprintf("Actress #%d", id)
+	if repo != nil {
+		if actress, err := repo.FindByID(id); err == nil {
+			if name := strings.TrimSpace(actress.FullName()); name != "" {
+				label = fmt.Sprintf("%s (#%d)", name, id)
+			}
+		}
+	}
+	return label + ": " + message
 }

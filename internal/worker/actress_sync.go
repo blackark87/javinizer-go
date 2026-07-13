@@ -155,9 +155,9 @@ func resolveMissingActressDMMID(
 		return nil, append(messages, "No linked movies are available for DMM ID verification"), nil
 	}
 
-	resolvers := enabledActressResolvers(registry, scraperPriority)
-	if len(resolvers) == 0 {
-		return nil, append(messages, "No enabled actress resolver is available"), nil
+	sources := enabledActressSources(registry, scraperPriority)
+	if len(sources) == 0 {
+		return nil, append(messages, "No enabled scraper is available for DMM ID verification"), nil
 	}
 
 	for _, movie := range movies {
@@ -165,26 +165,26 @@ func resolveMissingActressDMMID(
 		if movieID == "" {
 			continue
 		}
-		for _, resolver := range resolvers {
+		for _, source := range sources {
 			if err := ctx.Err(); err != nil {
 				return nil, messages, err
 			}
-			resolverResult, resolveErr := safeResolveActresses(ctx, resolver, movieID)
+			sourceResult, resolveErr := resolveActressesFromSource(ctx, source, movieID)
 			if resolveErr != nil {
 				if err := ctx.Err(); err != nil {
 					return nil, messages, err
 				}
 				messages = append(messages,
-					fmt.Sprintf("Resolver %s failed for movie %s: %v", resolverName(resolver), movieID, resolveErr))
+					fmt.Sprintf("Scraper %s failed for movie %s: %v", source.Name(), movieID, resolveErr))
 				continue
 			}
-			if resolverResult == nil {
+			if sourceResult == nil {
 				continue
 			}
-			if match, ok := exactActressMatch(*actress, resolverResult.Actresses); ok {
+			if match, ok := exactActressMatch(*actress, sourceResult.Actresses); ok {
 				return &resolvedActressCandidate{info: match, movieID: movieID}, messages, nil
 			}
-			if match, ok := safeSingleActressMatch(*actress, movie.Actresses, resolverResult.Actresses); ok {
+			if match, ok := safeSingleActressMatch(*actress, movie.Actresses, sourceResult.Actresses); ok {
 				return &resolvedActressCandidate{info: match, movieID: movieID}, messages, nil
 			}
 		}
@@ -192,24 +192,18 @@ func resolveMissingActressDMMID(
 	return nil, append(messages, "No unambiguous DMM actress match was found"), nil
 }
 
-func enabledActressResolvers(registry *models.ScraperRegistry, priority []string) []models.ActressResolver {
+func enabledActressSources(registry *models.ScraperRegistry, priority []string) []models.Scraper {
 	if registry == nil {
 		return nil
 	}
-	var resolvers []models.ActressResolver
-	for _, scraper := range registry.GetByPriority(priority) {
-		if resolver, ok := scraper.(models.ActressResolver); ok {
-			resolvers = append(resolvers, resolver)
-		}
-	}
-	return resolvers
+	return registry.GetByPriority(priority)
 }
 
-func resolverName(resolver models.ActressResolver) string {
-	if scraper, ok := resolver.(models.Scraper); ok {
-		return scraper.Name()
+func resolveActressesFromSource(ctx context.Context, source models.Scraper, movieID string) (*models.ScraperResult, error) {
+	if resolver, ok := source.(models.ActressResolver); ok {
+		return safeResolveActresses(ctx, resolver, movieID)
 	}
-	return "actress resolver"
+	return safeSearch(ctx, source, movieID)
 }
 
 func syncMovieID(movie models.Movie) string {

@@ -29,6 +29,29 @@ type actressSyncTestScraper struct {
 	thumbnailInfos   []models.ActressInfo
 }
 
+type actressSyncRegularScraper struct {
+	name     string
+	enabled  bool
+	result   *models.ScraperResult
+	err      error
+	searched []string
+	searchMu sync.Mutex
+}
+
+func (s *actressSyncRegularScraper) Name() string { return s.name }
+func (s *actressSyncRegularScraper) Search(_ context.Context, id string) (*models.ScraperResult, error) {
+	s.searchMu.Lock()
+	s.searched = append(s.searched, id)
+	s.searchMu.Unlock()
+	return s.result, s.err
+}
+func (s *actressSyncRegularScraper) GetURL(string) (string, error) { return "", nil }
+func (s *actressSyncRegularScraper) IsEnabled() bool               { return s.enabled }
+func (s *actressSyncRegularScraper) Config() *config.ScraperSettings {
+	return &config.ScraperSettings{Enabled: s.enabled}
+}
+func (s *actressSyncRegularScraper) Close() error { return nil }
+
 func (s *actressSyncTestScraper) Name() string { return s.name }
 func (s *actressSyncTestScraper) Search(context.Context, string) (*models.ScraperResult, error) {
 	return nil, nil
@@ -154,6 +177,26 @@ func TestSyncActressMetadataUpdatesOnlyMissingFields(t *testing.T) {
 	assert.Equal(t, 123, thumbnail.thumbnailInfos[0].DMMID)
 }
 
+func TestSyncActressMetadataUsesRegularScraperResultsForMissingDMMID(t *testing.T) {
+	actressRepo, movieRepo := newActressSyncTestRepos(t)
+	actress := &models.Actress{JapaneseName: "波多野結衣", ThumbURL: "existing.jpg"}
+	require.NoError(t, actressRepo.Create(actress))
+	createActressSyncMovie(t, movieRepo, *actress, "TEST-REGULAR-001", time.Now())
+
+	dmm := &actressSyncRegularScraper{name: "dmm", enabled: true, result: &models.ScraperResult{
+		Actresses: []models.ActressInfo{{DMMID: 123, JapaneseName: "波多野結衣"}},
+	}}
+	registry := models.NewScraperRegistry()
+	registry.Register(dmm)
+
+	result, err := SyncActressMetadata(context.Background(), actress.ID, actressRepo, movieRepo, registry, []string{"dmm"})
+	require.NoError(t, err)
+	assert.Equal(t, ActressSyncUpdated, result.Status)
+	assert.Equal(t, []string{"dmm_id"}, result.UpdatedFields)
+	assert.Equal(t, 123, result.Actress.DMMID)
+	assert.Equal(t, []string{"TEST-REGULAR-001"}, dmm.searched)
+}
+
 func TestSyncActressMetadataReportsDMMIDConflictAndCanStillUpdateThumbnail(t *testing.T) {
 	actressRepo, movieRepo := newActressSyncTestRepos(t)
 	target := &models.Actress{JapaneseName: "Target"}
@@ -197,7 +240,7 @@ func TestSyncActressMetadataThumbnailOnlyDoesNotOverwriteDMMIDOrNames(t *testing
 	assert.Equal(t, "Name", result.Actress.LastName)
 }
 
-func TestSyncActressMetadataSkipsWithoutMoviesOrEnabledResolver(t *testing.T) {
+func TestSyncActressMetadataSkipsWithoutMoviesOrEnabledSource(t *testing.T) {
 	actressRepo, movieRepo := newActressSyncTestRepos(t)
 	actress := &models.Actress{JapaneseName: "No Movies", ThumbURL: "existing.jpg"}
 	require.NoError(t, actressRepo.Create(actress))
@@ -214,7 +257,7 @@ func TestSyncActressMetadataSkipsWithoutMoviesOrEnabledResolver(t *testing.T) {
 	result, err = SyncActressMetadata(context.Background(), actress.ID, actressRepo, movieRepo, registry, []string{"sougouwiki"})
 	require.NoError(t, err)
 	assert.Equal(t, ActressSyncSkipped, result.Status)
-	assert.Contains(t, result.Messages[0], "No enabled actress resolver")
+	assert.Contains(t, result.Messages[0], "No enabled scraper")
 
 	failed := &actressSyncTestScraper{name: "sougouwiki", enabled: true, resolveErr: errors.New("resolver failed")}
 	registry = models.NewScraperRegistry()

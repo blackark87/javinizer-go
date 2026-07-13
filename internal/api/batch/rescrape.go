@@ -106,8 +106,7 @@ func rescrapeBatchMovie(deps *ServerDependencies) gin.HandlerFunc {
 
 		// Section-limited rescrape: keep only the selected sections from the fresh
 		// scrape and restore the rest from the previous movie. Empty means full rescrape.
-		if len(req.Sections) > 0 && movie != nil && lookup.oldMovie != nil {
-			restoreUnselectedSections(movie, lookup.oldMovie, req.Sections)
+		if applySectionMask(movie, lookup.oldMovie, req.Sections) {
 			logging.Infof("[Rescrape] Applied section mask for %s: sections=%v", lookup.foundFilePath, req.Sections)
 		}
 

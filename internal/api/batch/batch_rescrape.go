@@ -43,6 +43,7 @@ func batchRescrapeMovies(deps *ServerDependencies) gin.HandlerFunc {
 			Preset:           req.Preset,
 			ScalarStrategy:   req.ScalarStrategy,
 			ArrayStrategy:    req.ArrayStrategy,
+			Sections:         req.Sections,
 		}
 
 		if httpStatus, errMsg := validateRescrapeRequest(rescrapeReq); errMsg != "" {
@@ -197,6 +198,10 @@ func processBulkRescrapeMovie(ctx context.Context, jobID string, movieID string,
 		if m, ok := result.Data.(*models.Movie); ok {
 			movie = m
 		}
+	}
+
+	if applySectionMask(movie, lookup.oldMovie, req.Sections) {
+		logging.Infof("[Bulk Rescrape] Applied section mask for %s: sections=%v", lookup.foundFilePath, req.Sections)
 	}
 
 	updateRes := validateAndUpdateResult(job, result, lookup.foundFilePath, lookup.capturedRevision, movie, lookup.oldMovieID, cfg, jobID)

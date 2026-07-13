@@ -77,7 +77,8 @@ import type {
 	BatchExcludeRequest,
 	BatchExcludeResponse,
 	BulkRescrapeRequest,
-	BulkRescrapeResponse
+	BulkRescrapeResponse,
+	FileResult
 } from './types';
 
 // Build API base URL dynamically from browser location
@@ -202,6 +203,10 @@ class APIClient {
 	async getBatchJob(jobId: string, includeData = false): Promise<BatchJobResponse> {
 		const params = includeData ? '?include_data=true' : '';
 		return this.request<BatchJobResponse>(`/api/v1/batch/${jobId}${params}`);
+	}
+
+	async getBatchJobResult(jobId: string, resultId: string): Promise<FileResult> {
+		return this.request<FileResult>(`/api/v1/batch/${jobId}/results/${resultId}`);
 	}
 
 	// Cancel batch job

@@ -3,6 +3,8 @@ package dmm
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -11,7 +13,6 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/go-resty/resty/v2"
 	"github.com/javinizer/javinizer-go/internal/httpclient"
-	"github.com/javinizer/javinizer-go/internal/imageutil"
 	"github.com/javinizer/javinizer-go/internal/logging"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/scraperutil"
@@ -283,7 +284,36 @@ func normalizeActressThumbURL(rawURL string) string {
 		rawURL = "https://video.dmm.co.jp" + rawURL
 	}
 
-	return imageutil.NormalizeDMMScreenshotURL(rawURL)
+	return normalizeDMMActressImageURL(rawURL)
+}
+
+func normalizeDMMActressImageURL(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return ""
+	}
+
+	if strings.HasPrefix(rawURL, "//") {
+		rawURL = "https:" + rawURL
+	}
+
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+
+	host := strings.ToLower(u.Hostname())
+	if host == "awsimgsrc.dmm.co.jp" && strings.HasPrefix(u.Path, "/pics_dig/") {
+		u.Path = strings.TrimPrefix(u.Path, "/pics_dig")
+	}
+	if host == "pics.dmm.co.jp" || host == "awsimgsrc.dmm.co.jp" {
+		u.Scheme = "https"
+		u.Host = host
+		u.RawQuery = ""
+		u.Fragment = ""
+	}
+
+	return u.String()
 }
 
 func upsertActressInfo(actresses *[]models.ActressInfo, indexByID map[int]int, actress models.ActressInfo) bool {
@@ -316,6 +346,13 @@ func upsertActressInfo(actresses *[]models.ActressInfo, indexByID map[int]int, a
 func (s *Scraper) tryActressThumbURLs(ctx context.Context, firstName, lastName string, dmmID int) string {
 	candidates := make([]string, 0)
 
+	var romajiVariants []string
+	if dmmID > 0 {
+		doc := s.fetchActressPageDoc(ctx, dmmID)
+		candidates = append(candidates, extractActressProfileImageCandidates(doc)...)
+		romajiVariants = extractRomajiVariantsFromActressDoc(doc)
+	}
+
 	if firstName != "" && lastName != "" {
 		firstLower := strings.ToLower(firstName)
 		lastLower := strings.ToLower(lastName)
@@ -326,14 +363,12 @@ func (s *Scraper) tryActressThumbURLs(ctx context.Context, firstName, lastName s
 		)
 	}
 
-	if dmmID > 0 {
-		romajiVariants := s.extractRomajiVariantsFromActressPageCtx(ctx, dmmID)
-		for _, romaji := range romajiVariants {
-			candidates = append(candidates,
-				fmt.Sprintf("https://pics.dmm.co.jp/mono/actjpgs/%s.jpg", romaji),
-			)
-		}
+	for _, romaji := range romajiVariants {
+		candidates = append(candidates,
+			fmt.Sprintf("https://pics.dmm.co.jp/mono/actjpgs/%s.jpg", romaji),
+		)
 	}
+	candidates = dedupeActressImageCandidates(candidates)
 
 	testClient, err := httpclient.NewRestyClient(s.proxyProfile, 5*time.Second, 0)
 	if err != nil {
@@ -343,12 +378,7 @@ func (s *Scraper) tryActressThumbURLs(ctx context.Context, firstName, lastName s
 	testClient.SetRedirectPolicy(resty.NoRedirectPolicy())
 
 	for _, url := range candidates {
-		resp, err := testClient.R().
-			SetContext(ctx).
-			SetDoNotParseResponse(true).
-			Head(url)
-
-		if err == nil && resp.StatusCode() == 200 {
+		if actressImageExists(ctx, testClient, url) {
 			logging.Debugf("DMM: Found actress thumbnail via fallback: %s", url)
 			return url
 		}
@@ -359,6 +389,10 @@ func (s *Scraper) tryActressThumbURLs(ctx context.Context, firstName, lastName s
 }
 
 func (s *Scraper) extractRomajiVariantsFromActressPageCtx(ctx context.Context, dmmID int) []string {
+	return extractRomajiVariantsFromActressDoc(s.fetchActressPageDoc(ctx, dmmID))
+}
+
+func (s *Scraper) fetchActressPageDoc(ctx context.Context, dmmID int) *goquery.Document {
 	url := fmt.Sprintf("https://www.dmm.co.jp/mono/dvd/-/list/=/article=actress/id=%d/", dmmID)
 
 	if err := s.rateLimiter.Wait(ctx); err != nil {
@@ -376,7 +410,13 @@ func (s *Scraper) extractRomajiVariantsFromActressPageCtx(ctx context.Context, d
 	if err != nil {
 		return nil
 	}
+	return doc
+}
 
+func extractRomajiVariantsFromActressDoc(doc *goquery.Document) []string {
+	if doc == nil {
+		return nil
+	}
 	title := doc.Find("title").Text()
 
 	re := regexp.MustCompile(`\(([ぁ-ん]+)\)`)
@@ -411,4 +451,72 @@ func (s *Scraper) extractRomajiVariantsFromActressPageCtx(ctx context.Context, d
 
 	logging.Debugf("DMM: Generated %d romaji variants from hiragana", len(variants))
 	return variants
+}
+
+func extractActressProfileImagesFromDoc(doc *goquery.Document) []string {
+	return extractActressProfileImageCandidates(doc)
+}
+
+func extractActressProfileImageCandidates(doc *goquery.Document) []string {
+	if doc == nil {
+		return nil
+	}
+
+	var awsCandidates []string
+	var otherCandidates []string
+	add := func(raw string) {
+		normalized := normalizeActressThumbURL(raw)
+		if normalized == "" || !strings.Contains(normalized, "/mono/actjpgs/") {
+			return
+		}
+		if strings.Contains(normalized, "awsimgsrc.dmm.co.jp") {
+			awsCandidates = append(awsCandidates, normalized)
+			return
+		}
+		otherCandidates = append(otherCandidates, normalized)
+	}
+
+	doc.Find("img, source").Each(func(i int, sel *goquery.Selection) {
+		for _, attr := range []string{"data-src", "src", "srcset"} {
+			if value, exists := sel.Attr(attr); exists {
+				add(value)
+			}
+		}
+	})
+
+	return dedupeActressImageCandidates(append(awsCandidates, otherCandidates...))
+}
+
+func dedupeActressImageCandidates(candidates []string) []string {
+	seen := make(map[string]struct{}, len(candidates))
+	unique := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		unique = append(unique, candidate)
+	}
+	return unique
+}
+
+func actressImageExists(ctx context.Context, client *resty.Client, candidate string) bool {
+	resp, err := client.R().
+		SetContext(ctx).
+		SetDoNotParseResponse(true).
+		Head(candidate)
+	if err == nil && resp.StatusCode() == 200 {
+		return true
+	}
+	if err == nil && resp.StatusCode() != http.StatusMethodNotAllowed {
+		return false
+	}
+	resp, err = client.R().
+		SetContext(ctx).
+		SetDoNotParseResponse(true).
+		Get(candidate)
+	return err == nil && resp.StatusCode() == 200
 }

@@ -388,6 +388,22 @@ export interface ActressMoviesResponse {
 	offset: number;
 }
 
+export interface ActressSyncCandidatesResponse {
+	ids: number[];
+	total: number;
+}
+
+export type ActressSyncStatus = 'updated' | 'skipped' | 'conflict';
+
+export interface ActressSyncResponse {
+	actress: Actress;
+	status: ActressSyncStatus;
+	updated_fields: Array<'dmm_id' | 'thumb_url' | string>;
+	messages: string[];
+	source_movie_id?: string;
+	conflict_actress_id?: number;
+}
+
 export interface ActressUpsertRequest {
 	dmm_id?: number;
 	first_name?: string;

@@ -377,6 +377,14 @@ export interface ActressListResponse {
 	offset: number;
 }
 
+export interface ActressMoviesResponse {
+	movies: Movie[];
+	count: number;
+	total: number;
+	limit: number;
+	offset: number;
+}
+
 export interface ActressUpsertRequest {
 	dmm_id?: number;
 	first_name?: string;

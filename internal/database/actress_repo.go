@@ -181,15 +181,48 @@ func (r *ActressRepository) ListAll() ([]models.Actress, error) {
 }
 
 func (r *ActressRepository) FindOrCreate(actress *models.Actress) error {
+	if actress.DMMID > 0 {
+		existing, err := r.FindByDMMID(actress.DMMID)
+		if err == nil {
+			return r.reuseActressWithBackfill(actress, existing)
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) && !errors.Is(err, ErrNotFound) {
+			return err
+		}
+	}
+
 	if actress.JapaneseName != "" {
 		existing, err := r.FindByJapaneseName(actress.JapaneseName)
 		if err == nil {
-			*actress = *existing
-			return nil
+			return r.reuseActressWithBackfill(actress, existing)
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+	}
+
+	if actress.FirstName != "" || actress.LastName != "" {
+		existing, err := r.FindByFirstNameLastName(actress.FirstName, actress.LastName)
+		if err == nil {
+			return r.reuseActressWithBackfill(actress, existing)
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
 		}
 	}
 
 	return r.Create(actress)
+}
+
+func (r *ActressRepository) reuseActressWithBackfill(incoming, existing *models.Actress) error {
+	if incoming.ThumbURL != "" && existing.ThumbURL == "" {
+		existing.ThumbURL = incoming.ThumbURL
+		if err := r.Update(existing); err != nil {
+			return err
+		}
+	}
+	*incoming = *existing
+	return nil
 }
 
 func (r *ActressRepository) List(limit, offset int) ([]models.Actress, error) {

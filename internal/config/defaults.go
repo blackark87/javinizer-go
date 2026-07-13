@@ -5,7 +5,7 @@ import (
 )
 
 var defaultScraperPriority = []string{
-	"dmm", "r18dev", "libredmm", "mgstage", "javlibrary",
+	"dmm", "r18dev", "sougouwiki", "libredmm", "mgstage", "javlibrary",
 	"javdb", "javbus", "jav321", "tokyohot", "aventertainment",
 	"dlgetchu", "caribbeancom", "fc2", "javstash",
 }

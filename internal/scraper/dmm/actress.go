@@ -388,6 +388,17 @@ func (s *Scraper) tryActressThumbURLs(ctx context.Context, firstName, lastName s
 	return ""
 }
 
+// ResolveActressThumbnail exposes DMM's existing profile-page and actjpgs
+// lookup as an optional enrichment hook for actress-only resolvers.
+func (s *Scraper) ResolveActressThumbnail(ctx context.Context, actress models.ActressInfo) string {
+	if actress.ThumbURL != "" {
+		return actress.ThumbURL
+	}
+	return s.tryActressThumbURLs(ctx, actress.FirstName, actress.LastName, actress.DMMID)
+}
+
+var _ models.ActressThumbnailResolver = (*Scraper)(nil)
+
 func (s *Scraper) extractRomajiVariantsFromActressPageCtx(ctx context.Context, dmmID int) []string {
 	return extractRomajiVariantsFromActressDoc(s.fetchActressPageDoc(ctx, dmmID))
 }

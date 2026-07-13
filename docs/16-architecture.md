@@ -96,9 +96,11 @@ Optional interfaces extend scraper capabilities:
 - `URLHandler` - Handle direct URL scraping (extract ID from URL)
 - `DirectURLScraper` - Scrape from URL instead of ID search
 - `ScraperQueryResolver` - Normalize non-standard IDs
+- `ActressResolver` - Conditionally replace unverified actress-only results
+- `ActressThumbnailResolver` - Resolve actress images independently of movie scraping
 - `ContentIDResolver` - Resolve JAV ID to DMM content-ID format
 
-**Location:** `internal/models/scraper.go:119-139`
+**Location:** `internal/models/scraper.go`
 
 ### Aggregator Interface (`internal/aggregator/aggregator.go`)
 

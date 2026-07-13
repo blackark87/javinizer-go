@@ -142,6 +142,18 @@ type ScraperQueryResolver interface {
 	ResolveSearchQuery(input string) (string, bool)
 }
 
+// ActressResolver is an optional interface for scrapers that only enrich the
+// actress list of results returned by regular metadata scrapers.
+type ActressResolver interface {
+	ResolveActresses(ctx context.Context, id string) (*ScraperResult, error)
+}
+
+// ActressThumbnailResolver is an optional interface for scrapers that can
+// resolve an actress thumbnail independently from a movie scrape.
+type ActressThumbnailResolver interface {
+	ResolveActressThumbnail(ctx context.Context, actress ActressInfo) string
+}
+
 // ScraperDownloadProxyResolver is an optional hook for scrapers to control
 // media download proxy routing for scraper-specific media/CDN hosts.
 //

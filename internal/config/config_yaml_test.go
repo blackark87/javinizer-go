@@ -19,6 +19,7 @@ import (
 	_ "github.com/javinizer/javinizer-go/internal/scraper/libredmm"
 	_ "github.com/javinizer/javinizer-go/internal/scraper/mgstage"
 	_ "github.com/javinizer/javinizer-go/internal/scraper/r18dev"
+	_ "github.com/javinizer/javinizer-go/internal/scraper/sougouwiki"
 	_ "github.com/javinizer/javinizer-go/internal/scraper/tokyohot"
 )
 
@@ -34,7 +35,7 @@ func TestConfigYAMLLoadAndRoundTrip(t *testing.T) {
 		t.Error("Scrapers.Priority should not be empty")
 	}
 
-	expectedScrapers := []string{"r18dev", "dmm", "mgstage", "javlibrary", "javdb", "javbus", "jav321", "tokyohot", "aventertainment", "dlgetchu", "libredmm", "caribbeancom", "fc2", "javstash"}
+	expectedScrapers := []string{"r18dev", "sougouwiki", "dmm", "mgstage", "javlibrary", "javdb", "javbus", "jav321", "tokyohot", "aventertainment", "dlgetchu", "libredmm", "caribbeancom", "fc2", "javstash"}
 	for _, scraper := range expectedScrapers {
 		if _, ok := cfg.Scrapers.Overrides[scraper]; !ok {
 			t.Errorf("Scraper %q not found in Overrides", scraper)

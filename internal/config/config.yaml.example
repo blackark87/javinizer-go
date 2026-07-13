@@ -80,6 +80,7 @@ scrapers:
     request_timeout_seconds: 60
     priority:
         - r18dev
+        - sougouwiki
         - libredmm
         - dmm
         - javlibrary
@@ -157,6 +158,12 @@ scrapers:
         enabled: false
         request_delay: 500
         base_url: "https://www.libredmm.com"
+    # Optional actress identity resolver. Runs only when regular scraper results
+    # contain no actress with a valid DMM ID.
+    sougouwiki:
+        enabled: false
+        request_delay: 1000
+        base_url: "https://seesaawiki.jp/w/sougouwiki/"
     mgstage:
         enabled: false            # Opt-in: requires age verification cookie (adc=1)
         request_delay: 500        # Delay between requests in milliseconds

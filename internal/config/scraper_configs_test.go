@@ -12,6 +12,7 @@ func RegisterTestScraperConfigs() {
 		priority int
 	}{
 		{"r18dev", 100},
+		{"sougouwiki", 97},
 		{"libredmm", 95},
 		{"dmm", 90},
 		{"javlibrary", 80},
@@ -36,7 +37,7 @@ func RegisterTestScraperConfigs() {
 	}
 
 	for _, name := range []string{
-		"r18dev", "dmm", "libredmm", "mgstage", "javlibrary", "javdb",
+		"r18dev", "sougouwiki", "dmm", "libredmm", "mgstage", "javlibrary", "javdb",
 		"javbus", "jav321", "tokyohot", "aventertainment", "dlgetchu",
 		"caribbeancom", "fc2", "javstash",
 	} {
@@ -66,7 +67,7 @@ func RegisterTestScraperConfigs() {
 	}
 
 	for _, name := range []string{
-		"r18dev", "dmm", "libredmm", "mgstage", "javlibrary", "javdb",
+		"r18dev", "sougouwiki", "dmm", "libredmm", "mgstage", "javlibrary", "javdb",
 		"javbus", "jav321", "tokyohot", "aventertainment", "dlgetchu",
 		"caribbeancom", "fc2", "javstash",
 	} {

@@ -477,3 +477,33 @@ func (r *MovieRepository) List(limit, offset int) ([]models.Movie, error) {
 	}
 	return movies, nil
 }
+
+func (r *MovieRepository) ListByActressID(actressID uint, limit, offset int) ([]models.Movie, error) {
+	var movies []models.Movie
+	query := r.GetDB().
+		Preload("Actresses").
+		Preload("Genres").
+		Preload("Translations", func(db *gorm.DB) *gorm.DB { return db.Order("language ASC") }).
+		Joins("JOIN movie_actresses ON movie_actresses.movie_content_id = movies.content_id").
+		Where("movie_actresses.actress_id = ?", actressID).
+		Order("movies.release_date DESC, movies.content_id ASC")
+	if limit > 0 {
+		query = query.Limit(limit).Offset(offset)
+	}
+	if err := query.Find(&movies).Error; err != nil {
+		return nil, wrapDBErr("find", fmt.Sprintf("movies for actress %d", actressID), err)
+	}
+	return movies, nil
+}
+
+func (r *MovieRepository) CountByActressID(actressID uint) (int64, error) {
+	var count int64
+	err := r.GetDB().Model(&models.Movie{}).
+		Joins("JOIN movie_actresses ON movie_actresses.movie_content_id = movies.content_id").
+		Where("movie_actresses.actress_id = ?", actressID).
+		Count(&count).Error
+	if err != nil {
+		return 0, wrapDBErr("count", fmt.Sprintf("movies for actress %d", actressID), err)
+	}
+	return count, nil
+}

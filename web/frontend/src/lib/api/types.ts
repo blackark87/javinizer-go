@@ -120,6 +120,9 @@ export interface BulkRescrapeRequest {
 	preset?: 'conservative' | 'gap-fill' | 'aggressive';
 	scalar_strategy?: 'prefer-nfo' | 'prefer-scraper' | 'preserve-existing' | 'fill-missing-only';
 	array_strategy?: 'merge' | 'replace';
+	// Limit each bulk rescrape to specific metadata sections; empty/omitted = full rescrape.
+	// Keys: title, actresses, genres, credits, rating, release, images, media.
+	sections?: string[];
 }
 
 export interface BulkRescrapeMovieResult {
@@ -371,6 +374,14 @@ export interface ActressListParams {
 
 export interface ActressListResponse {
 	actresses: Actress[];
+	count: number;
+	total: number;
+	limit: number;
+	offset: number;
+}
+
+export interface ActressMoviesResponse {
+	movies: Movie[];
 	count: number;
 	total: number;
 	limit: number;

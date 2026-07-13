@@ -55,7 +55,13 @@
 							/>
 						</td>
 						<td class="px-3 py-2 text-muted-foreground">{actress.id ?? '-'}</td>
-						<td class="px-3 py-2 font-medium max-w-44 truncate">{getDisplayName(actress)}</td>
+						<td class="px-3 py-2 font-medium max-w-44 truncate">
+							{#if actress.id}
+								<a href={`/actresses/${actress.id}`} class="hover:underline">{getDisplayName(actress)}</a>
+							{:else}
+								{getDisplayName(actress)}
+							{/if}
+						</td>
 						<td class="px-3 py-2 text-muted-foreground max-w-44 truncate">{actress.japanese_name || '-'}</td>
 						<td class="px-3 py-2 text-muted-foreground">{actress.dmm_id && actress.dmm_id > 0 ? actress.dmm_id : '-'}</td>
 						<td class="px-3 py-2 text-muted-foreground max-w-52 truncate">{actress.aliases || '-'}</td>

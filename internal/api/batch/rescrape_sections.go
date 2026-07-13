@@ -137,3 +137,11 @@ func pick4(o *models.MovieTranslation, f func(*models.MovieTranslation) (string,
 	}
 	return f(o)
 }
+
+func applySectionMask(newMovie, oldMovie *models.Movie, selected []string) bool {
+	if len(selected) == 0 || newMovie == nil || oldMovie == nil {
+		return false
+	}
+	restoreUnselectedSections(newMovie, oldMovie, selected)
+	return true
+}

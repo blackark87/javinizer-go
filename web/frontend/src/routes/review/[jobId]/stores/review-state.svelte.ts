@@ -720,9 +720,6 @@ export function createReviewState(pageStore: Page) {
 		setImageViewerTitle: (title) => { imageViewerTitle = title; },
 		excludeMovie: (mutationJobId, resultId) => {
 			mutations.excludeMovieMutation.mutate({ jobId: mutationJobId, resultId });
-		},
-		api: {
-			getPreviewImageURL: (url) => apiClient.getPreviewImageURL(url)
 		}
 	});
 

@@ -6,7 +6,7 @@
 	import Card from '$lib/components/ui/Card.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import type { Actress } from '$lib/api/types';
-	import { apiClient } from '$lib/api/client';
+	import { previewImageUrl } from '$lib/utils/image';
 
 	let {
 		actresses,
@@ -55,7 +55,7 @@
 					{#if actress.thumb_url && !imgErrorKeys.has(actressKey(actress, index))}
 						<a href={actress.id ? `/actresses/${actress.id}` : undefined} aria-label={`View ${getDisplayName(actress)}`}>
 							<img
-								src={apiClient.getPreviewImageURL(actress.thumb_url)}
+								src={previewImageUrl(actress.thumb_url)}
 								alt={getDisplayName(actress)}
 								class="w-20 h-24 rounded object-cover border hover:opacity-90 transition-opacity"
 								onerror={() => {

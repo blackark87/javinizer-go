@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Movie } from '$lib/api/types';
+	import { previewImageUrl } from '$lib/utils/image';
 	import Button from '$lib/components/ui/Button.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 	import { Image as ImageIcon, ImagePlus, Play, RotateCcw } from 'lucide-svelte';
@@ -72,7 +73,7 @@
 				<div class="w-full aspect-2/3 overflow-hidden rounded border relative">
 					{#if currentMovie.should_crop_poster && !currentMovie.cropped_poster_url}
 						<img
-							src={displayPosterUrl}
+							src={previewImageUrl(displayPosterUrl)}
 							alt="Poster"
 							class="absolute h-full"
 							style="right: 0; width: auto; min-width: 211.8%; object-fit: cover; object-position: right center;"
@@ -82,7 +83,7 @@
 						/>
 					{:else}
 						<img
-							src={displayPosterUrl}
+							src={previewImageUrl(displayPosterUrl)}
 							alt="Poster"
 							class="w-full h-full object-contain"
 							onerror={(e) => {

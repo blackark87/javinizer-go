@@ -35,26 +35,49 @@
 	let searchQuery = $state('');
 	let searchResults = $state<Actress[]>([]);
 	let showSearchResults = $state(false);
-	let isSearchFocused = $state(false);
 	let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 	let searchRequestId = 0;
+	let searchTotal = $state(0);
+	let searchLimit = $state(50);
+	let searchOffset = $state(0);
+	let isSearching = $state(false);
 	let imgErrorKeys = $state(new Set<string>());
 	let searchImgErrorKeys = $state(new Set<string>());
 	let previewImgError = $state(false);
 
-	async function searchActresses(query: string) {
+	const ACTRESS_SEARCH_LIMIT = 50;
+
+	let hasMoreSearchResults = $derived(searchResults.length < searchTotal);
+
+	async function searchActresses(query: string, offset = 0, append = false) {
 		const requestId = ++searchRequestId;
+		const q = query.trim();
+		isSearching = true;
+
 		try {
-			const q = query.trim();
-			const url = q ? `/api/v1/actresses/search?q=${encodeURIComponent(q)}` : '/api/v1/actresses/search?q=';
-			const results = await apiClient.request<Actress[]>(url);
+			const response = await apiClient.listActresses({
+				q,
+				limit: ACTRESS_SEARCH_LIMIT,
+				offset,
+				sort_by: 'name',
+				sort_order: 'asc'
+			});
+
 			if (requestId === searchRequestId) {
-				searchResults = results;
+				searchResults = append ? [...searchResults, ...response.actresses] : response.actresses;
+				searchTotal = response.total;
+				searchLimit = response.limit;
+				searchOffset = response.offset;
 			}
 		} catch (error) {
 			if (requestId === searchRequestId) {
 				console.error('Failed to search actresses:', error);
-				searchResults = [];
+				searchResults = append ? searchResults : [];
+				searchTotal = append ? searchTotal : 0;
+			}
+		} finally {
+			if (requestId === searchRequestId) {
+				isSearching = false;
 			}
 		}
 	}
@@ -63,7 +86,12 @@
 		if (searchDebounceTimer) { clearTimeout(searchDebounceTimer); searchDebounceTimer = null; }
 		searchDebounceTimer = setTimeout(() => {
 			searchActresses(searchQuery);
-		}, 200);
+		}, 250);
+	}
+
+	function loadMoreActresses() {
+		if (isSearching || !hasMoreSearchResults) return;
+		searchActresses(searchQuery, searchOffset + searchLimit, true);
 	}
 
 	$effect(() => {
@@ -143,6 +171,8 @@
 		searchQuery = '';
 		showSearchResults = false;
 		searchResults = [];
+		searchTotal = 0;
+		searchOffset = 0;
 	}
 
 	// Load all actresses on modal open
@@ -382,16 +412,26 @@
 											</div>
 										</button>
 									{/each}
-								</div>
-							{:else if searchQuery.trim().length === 0}
-								<div class="absolute z-10 w-full mt-1 bg-background border rounded-md shadow-lg p-3 text-sm text-muted-foreground text-center">
-									No actresses in database yet
-								</div>
-							{:else}
-								<div class="absolute z-10 w-full mt-1 bg-background border rounded-md shadow-lg p-3 text-sm text-muted-foreground text-center">
-									No matches found
-								</div>
-							{/if}
+
+									{#if hasMoreSearchResults}
+										<button
+											type="button"
+											onmousedown={(event) => event.preventDefault()}
+											onclick={loadMoreActresses}
+											disabled={isSearching}
+											class="w-full px-3 py-2 text-sm font-medium text-primary hover:bg-muted disabled:opacity-60 disabled:cursor-not-allowed"
+										>
+											{isSearching ? 'Loading...' : `Show more (${searchResults.length}/${searchTotal})`}
+										</button>
+									{/if}
+								{:else if isSearching}
+									<div class="p-3 text-sm text-muted-foreground text-center">Loading actresses...</div>
+								{:else if searchQuery.trim().length === 0}
+									<div class="p-3 text-sm text-muted-foreground text-center">No actresses in database yet</div>
+								{:else}
+									<div class="p-3 text-sm text-muted-foreground text-center">No matches found</div>
+								{/if}
+							</div>
 						{/if}
 					</div>
 					<p class="text-xs text-muted-foreground">

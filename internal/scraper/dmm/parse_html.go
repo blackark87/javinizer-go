@@ -159,6 +159,8 @@ func (s *Scraper) parseHTML(ctx context.Context, doc *goquery.Document, sourceUR
 		result.CoverURL = s.extractCoverURL(doc, isNewSite, result.ContentID)
 	}
 
+	result.CoverURL = s.filterPlaceholderImageURL(ctx, result.CoverURL)
+
 	if result.CoverURL != "" {
 		posterURL, shouldCrop := imageutil.GetOptimalPosterURL(result.CoverURL, s.client.GetClient())
 		result.ShouldCropPoster = shouldCrop
@@ -167,6 +169,7 @@ func (s *Scraper) parseHTML(ctx context.Context, doc *goquery.Document, sourceUR
 		} else {
 			result.PosterURL = posterURL
 		}
+		result.PosterURL = s.filterPlaceholderImageURL(ctx, result.PosterURL)
 	}
 
 	var screenshots []string

@@ -15,7 +15,7 @@ function isPreviewImageUrl(url: string): boolean {
 export function previewImageUrl(url?: string): string | undefined {
 	if (!url) return undefined;
 	if (isPreviewImageUrl(url)) return url;
-	if (url.startsWith('/')) return url;
+	if (url.startsWith('/') && !url.startsWith('//')) return url;
 
 	return apiClient.getPreviewImageURL(url);
 }

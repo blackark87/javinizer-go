@@ -53,14 +53,16 @@
 						/>
 					</div>
 					{#if actress.thumb_url && !imgErrorKeys.has(actressKey(actress, index))}
-						<img
-							src={apiClient.getPreviewImageURL(actress.thumb_url)}
-							alt={getDisplayName(actress)}
-							class="w-20 h-24 rounded object-cover border"
-							onerror={() => {
-								imgErrorKeys = new Set([...imgErrorKeys, actressKey(actress, index)]);
-							}}
-						/>
+						<a href={actress.id ? `/actresses/${actress.id}` : undefined} aria-label={`View ${getDisplayName(actress)}`}>
+							<img
+								src={apiClient.getPreviewImageURL(actress.thumb_url)}
+								alt={getDisplayName(actress)}
+								class="w-20 h-24 rounded object-cover border hover:opacity-90 transition-opacity"
+								onerror={() => {
+									imgErrorKeys = new Set([...imgErrorKeys, actressKey(actress, index)]);
+								}}
+							/>
+						</a>
 					{:else}
 						<div class="w-20 h-24 rounded border bg-muted flex items-center justify-center text-muted-foreground">
 							<ImageOff class="h-4 w-4" />
@@ -69,7 +71,13 @@
 
 					<div class="flex-1 min-w-0">
 						<div class="flex flex-wrap items-center gap-2">
-							<h3 class="font-semibold truncate">{getDisplayName(actress)}</h3>
+							<h3 class="font-semibold truncate">
+								{#if actress.id}
+									<a href={`/actresses/${actress.id}`} class="hover:underline">{getDisplayName(actress)}</a>
+								{:else}
+									{getDisplayName(actress)}
+								{/if}
+							</h3>
 							{#if actress.id}
 								<span class="text-xs rounded bg-muted px-2 py-0.5">#{actress.id}</span>
 							{/if}

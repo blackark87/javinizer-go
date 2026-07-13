@@ -19,6 +19,11 @@ export function computeJobProgress(
 		return Math.min(Math.round((finishedCount / totalFiles) * 100), 100);
 	}
 	const entries = Object.values(messagesByFile ?? {});
+	if (entries.length === 0) {
+		const countedProgress = (finishedCount / totalFiles) * 100;
+		return Math.min(Math.round(Math.max(restProgress, countedProgress)), 100);
+	}
+
 	let runningProgress = 0;
 	for (const m of entries) {
 		if (!isTerminalStatus(m.status)) {

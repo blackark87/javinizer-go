@@ -259,26 +259,86 @@ func backfillActressThumb(a *models.Actress, repo *database.ActressRepository) {
 	}
 }
 
+func getBatchJobResult(deps *ServerDependencies) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		jobID := c.Param("id")
+		resultID := c.Param("resultId")
+		job, ok := deps.JobQueue.GetJob(jobID)
+		if !ok {
+			c.JSON(404, ErrorResponse{Error: "Job not found"})
+			return
+		}
+
+		fileResult, _, found := job.GetFileResultByResultID(resultID)
+		if !found {
+			c.JSON(404, ErrorResponse{Error: "Result not found"})
+			return
+		}
+
+		var actressRepo *database.ActressRepository
+		if deps.MovieRepo != nil {
+			actressRepo = database.NewActressRepository(deps.MovieRepo.GetDB())
+		}
+
+		var endedAt *string
+		if fileResult.EndedAt != nil {
+			str := fileResult.EndedAt.Format("2006-01-02T15:04:05Z07:00")
+			endedAt = &str
+		}
+
+		c.JSON(200, BatchFileResult{
+			ResultID:       fileResult.ResultID,
+			FilePath:       fileResult.FilePath,
+			MovieID:        fileResult.MovieID,
+			Status:         string(fileResult.Status),
+			Error:          fileResult.Error,
+			FieldSources:   fileResult.FieldSources,
+			ActressSources: fileResult.ActressSources,
+			Candidates:     fileResult.Candidates,
+			HasConflict:    fileResult.HasConflict,
+			Data:           enrichActressesForResponse(fileResult.Data, actressRepo),
+			StartedAt:      fileResult.StartedAt.Format("2006-01-02T15:04:05Z07:00"),
+			EndedAt:        endedAt,
+			IsMultiPart:    fileResult.IsMultiPart,
+			PartNumber:     fileResult.PartNumber,
+			PartSuffix:     fileResult.PartSuffix,
+		})
+	}
+}
+
+func slimMovieSummary(data interface{}) interface{} {
+	movie, ok := data.(*models.Movie)
+	if !ok || movie == nil {
+		return nil
+	}
+	return map[string]interface{}{
+		"id":                 movie.ID,
+		"title":              movie.Title,
+		"display_title":      movie.DisplayTitle,
+		"poster_url":         movie.PosterURL,
+		"cropped_poster_url": movie.CroppedPosterURL,
+		"cover_url":          movie.CoverURL,
+	}
+}
+
 func getBatchJobSlim(deps *ServerDependencies, c *gin.Context, jobID string) {
-	jobPtr, ok := deps.JobQueue.GetJobPointer(jobID)
+	job, ok := deps.JobQueue.GetJob(jobID)
 	if !ok {
 		c.JSON(404, ErrorResponse{Error: "Job not found"})
 		return
 	}
 
-	slim := jobPtr.GetStatusSlim()
-
 	logging.Debugf("[GET /batch/%s] Returning slim job with %d results, completed=%d, failed=%d",
-		jobID, len(slim.Results), slim.Completed, slim.Failed)
+		jobID, len(job.Results), job.Completed, job.Failed)
 
 	var completedAt *string
-	if slim.CompletedAt != nil {
-		str := slim.CompletedAt.Format("2006-01-02T15:04:05Z07:00")
+	if job.CompletedAt != nil {
+		str := job.CompletedAt.Format("2006-01-02T15:04:05Z07:00")
 		completedAt = &str
 	}
 
 	results := make(map[string]*contracts.BatchFileResultSlim)
-	for filePath, fileResult := range slim.Results {
+	for filePath, fileResult := range job.Results {
 		var endedAt *string
 		if fileResult.EndedAt != nil {
 			str := fileResult.EndedAt.Format("2006-01-02T15:04:05Z07:00")
@@ -293,6 +353,7 @@ func getBatchJobSlim(deps *ServerDependencies, c *gin.Context, jobID string) {
 			Error:          fileResult.Error,
 			FieldSources:   fileResult.FieldSources,
 			ActressSources: fileResult.ActressSources,
+			Data:           slimMovieSummary(fileResult.Data),
 			StartedAt:      fileResult.StartedAt.Format("2006-01-02T15:04:05Z07:00"),
 			EndedAt:        endedAt,
 			IsMultiPart:    fileResult.IsMultiPart,
@@ -302,21 +363,21 @@ func getBatchJobSlim(deps *ServerDependencies, c *gin.Context, jobID string) {
 	}
 
 	c.JSON(200, contracts.BatchJobResponseSlim{
-		ID:                    slim.ID,
-		Status:                string(slim.Status),
-		TotalFiles:            slim.TotalFiles,
-		Completed:             slim.Completed,
-		Failed:                slim.Failed,
-		Cancelled:             slim.Cancelled,
-		Excluded:              slim.Excluded,
-		Progress:              slim.Progress,
-		Destination:           slim.Destination,
+		ID:                    job.ID,
+		Status:                string(job.Status),
+		TotalFiles:            job.TotalFiles,
+		Completed:             job.Completed,
+		Failed:                job.Failed,
+		Cancelled:             job.Cancelled,
+		Excluded:              job.Excluded,
+		Progress:              job.Progress,
+		Destination:           job.Destination,
 		Results:               results,
-		StartedAt:             slim.StartedAt.Format("2006-01-02T15:04:05Z07:00"),
+		StartedAt:             job.StartedAt.Format("2006-01-02T15:04:05Z07:00"),
 		CompletedAt:           completedAt,
-		OperationModeOverride: slim.OperationModeOverride,
-		Update:                slim.Update,
-		PersistError:          slim.PersistError,
+		OperationModeOverride: job.OperationModeOverride,
+		Update:                job.Update,
+		PersistError:          job.PersistError,
 	})
 }
 

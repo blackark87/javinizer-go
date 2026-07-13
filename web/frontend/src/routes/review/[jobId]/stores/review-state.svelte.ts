@@ -6,7 +6,7 @@ import type { Page } from '@sveltejs/kit';
 import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 import { apiClient } from '$lib/api/client';
 import { createConfigQuery } from '$lib/query/queries';
-	import type { BatchJobResponse, FileResult, Movie, Scraper, UpdateRequest, CompletenessConfig } from '$lib/api/types';
+import type { BatchJobResponse, FileResult, Movie, Scraper, UpdateRequest, CompletenessConfig } from '$lib/api/types';
 import { toastStore } from '$lib/stores/toast';
 import { confirmDialog } from '$lib/stores/dialog.svelte';
 import { websocketStore } from '$lib/stores/websocket';
@@ -38,7 +38,7 @@ export function createReviewState(pageStore: Page) {
 
 	const jobQuery = createQuery(() => ({
 		queryKey: ['batch-job', jobId],
-		queryFn: () => apiClient.getBatchJob(jobId, true),
+		queryFn: () => apiClient.getBatchJob(jobId),
 		placeholderData: (prev) => prev,
 	}));
 
@@ -55,7 +55,14 @@ export function createReviewState(pageStore: Page) {
 				return;
 			}
 			if (data) {
-				job = JSON.parse(JSON.stringify(data));
+				const previousResults = job?.results ?? {};
+				for (const [filePath, result] of Object.entries(data.results) as [string, FileResult][]) {
+					const previous = previousResults[filePath];
+					if (previous?.data && loadedFullResultIds.has(previous.result_id)) {
+						result.data = previous.data;
+					}
+				}
+				job = data;
 			} else if (isPending && !isPlaceholder) {
 				job = null;
 			}
@@ -132,6 +139,58 @@ export function createReviewState(pageStore: Page) {
 	let cropDragState = $state<PosterCropDragState | null>(null);
 	let posterPreviewOverrides = new SvelteMap<string, PosterPreviewOverride>();
 	let posterCropStates = new SvelteMap<string, PosterCropState>();
+	const DETAIL_CACHE_LIMIT = 5;
+	let resultDetailLRU: string[] = [];
+	let loadingResultId = $state<string | null>(null);
+	let loadedFullResultIds = new SvelteSet<string>();
+
+	function rememberResultDetail(filePath: string) {
+		resultDetailLRU = [...resultDetailLRU.filter((path) => path !== filePath), filePath];
+	}
+
+	function evictResultDetailCache(keepFilePath?: string) {
+		const protectedPaths = new Set<string>([keepFilePath, ...Array.from(editedMovies.keys())].filter(Boolean) as string[]);
+		while (resultDetailLRU.length > DETAIL_CACHE_LIMIT) {
+			const evictPath = resultDetailLRU.find((path) => !protectedPaths.has(path));
+			if (!evictPath) break;
+			resultDetailLRU = resultDetailLRU.filter((path) => path !== evictPath);
+			editedMovies.delete(evictPath);
+			originalPosterState.delete(evictPath);
+			posterPreviewOverrides.delete(evictPath);
+			posterCropStates.delete(evictPath);
+			const cached = job?.results?.[evictPath];
+			if (cached?.data) {
+				delete cached.data;
+				loadedFullResultIds.delete(cached.result_id);
+			}
+		}
+	}
+
+	async function loadResultDetail(result: FileResult | undefined) {
+		if (!result || loadedFullResultIds.has(result.result_id) || loadingResultId === result.result_id) return;
+		loadingResultId = result.result_id;
+		try {
+			const fullResult = await apiClient.getBatchJobResult(jobId, result.result_id);
+			const target = job?.results?.[fullResult.file_path];
+			if (target) {
+				Object.assign(target, fullResult);
+			}
+			if (fullResult.data) {
+				originalPosterState.set(fullResult.file_path, {
+					poster_url: fullResult.data.original_poster_url || fullResult.data.poster_url || '',
+					cropped_poster_url: fullResult.data.original_cropped_poster_url || fullResult.data.cropped_poster_url || '',
+					should_crop_poster: (fullResult.data.original_should_crop_poster ?? fullResult.data.should_crop_poster) ?? false
+				});
+			}
+			loadedFullResultIds.add(fullResult.result_id);
+			rememberResultDetail(fullResult.file_path);
+			evictResultDetailCache(fullResult.file_path);
+		} catch (error) {
+			toastStore.error(`Failed to load result details: ${error instanceof Error ? error.message : String(error)}`);
+		} finally {
+			if (loadingResultId === result.result_id) loadingResultId = null;
+		}
+	}
 
 	$effect(() => {
 		const jobData = jobQuery.data;
@@ -142,7 +201,7 @@ export function createReviewState(pageStore: Page) {
 				}
 				if (originalPosterState.size === 0) {
 					for (const result of Object.values(jobData.results) as FileResult[]) {
-						if (result.data) {
+						if (loadedFullResultIds.has(result.result_id) && result.data) {
 							originalPosterState.set(result.file_path, {
 								poster_url: result.data.original_poster_url || result.data.poster_url || '',
 								cropped_poster_url: result.data.original_cropped_poster_url || result.data.cropped_poster_url || '',
@@ -734,7 +793,27 @@ export function createReviewState(pageStore: Page) {
 	$effect(() => {
 		currentMovieIndex;
 		showFullSourcePath = false;
+		void loadResultDetail(currentResult);
 	});
+
+	async function navigateToMovieIndex(index: number) {
+		const boundedIndex = Math.min(movieResults.length - 1, Math.max(0, index));
+		if (boundedIndex === currentMovieIndex) return;
+		if (currentResult && editedMovies.has(currentResult.file_path)) {
+			const save = await confirmDialog(
+				'Unsaved Changes',
+				'Save changes before leaving this result? Cancel will discard changes.',
+				{ confirmLabel: 'Save', cancelLabel: 'Discard' }
+			);
+			if (save) {
+				await saveAllEdits();
+			} else {
+				editedMovies.delete(currentResult.file_path);
+			}
+		}
+		currentMovieIndex = boundedIndex;
+		evictResultDetailCache(currentResult?.file_path);
+	}
 
 	$effect(() => {
 		if (!browser) return;
@@ -872,7 +951,9 @@ export function createReviewState(pageStore: Page) {
 		get config() { return config; },
 		get completenessConfig() { return completenessConfig; },
 		get currentMovieIndex() { return currentMovieIndex; },
-		set currentMovieIndex(v) { currentMovieIndex = v; },
+		navigateToMovieIndex,
+		get loadingResultId() { return loadingResultId; },
+		set currentMovieIndex(v) { void navigateToMovieIndex(v); },
 		get editedMovies() { return editedMovies; },
 		get organizing() { return organizing; },
 		set organizing(v) { organizing = v; },

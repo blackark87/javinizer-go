@@ -223,7 +223,7 @@
 											if (s.selectionMode) {
 												s.toggleMovieSelection(group.movieId, e.shiftKey);
 											} else {
-												s.currentMovieIndex = s.movieGroups.findIndex(g => g.movieId === group.movieId);
+												void s.navigateToMovieIndex(s.movieGroups.findIndex(g => g.movieId === group.movieId));
 												s.viewMode = 'detail';
 											}
 										}}
@@ -254,7 +254,8 @@
 
 						<div class="space-y-6 min-w-0">
 							<MovieNavigationCard
-								bind:currentMovieIndex={s.currentMovieIndex}
+								currentMovieIndex={s.currentMovieIndex}
+								onNavigate={s.navigateToMovieIndex}
 								movieResultsLength={s.movieResults.length}
 								currentMovieId={s.currentMovie.id}
 								hasChanges={s.reviewPageController.hasChanges(s.currentResult.file_path)}

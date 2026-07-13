@@ -266,6 +266,7 @@ type BatchFileResultSlim struct {
 	Error          string            `json:"error,omitempty"`
 	FieldSources   map[string]string `json:"field_sources,omitempty"`
 	ActressSources map[string]string `json:"actress_sources,omitempty"`
+	Data           interface{}       `json:"data,omitempty"` // Thumbnail/identity summary only; full movie data is loaded per result.
 	StartedAt      string            `json:"started_at"`
 	EndedAt        *string           `json:"ended_at,omitempty"`
 	IsMultiPart    bool              `json:"is_multi_part,omitempty"`

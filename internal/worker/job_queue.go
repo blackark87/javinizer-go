@@ -81,6 +81,7 @@ type FileResult struct {
 	HasConflict bool                     `json:"has_conflict,omitempty"`
 	DataType    string            `json:"data_type,omitempty"`
 	Data        interface{}       `json:"data,omitempty"`
+	Progress    float64           `json:"progress,omitempty"`
 	StartedAt   time.Time         `json:"started_at"`
 	EndedAt     *time.Time        `json:"ended_at,omitempty"`
 	IsMultiPart bool              `json:"is_multi_part,omitempty"`
@@ -154,6 +155,7 @@ func toFileResultSlim(src *FileResult) *FileResultSlim {
 		Status:      src.Status,
 		Error:       src.Error,
 		DataType:    src.DataType,
+		Progress:    src.Progress,
 		StartedAt:   src.StartedAt,
 		IsMultiPart: src.IsMultiPart,
 		PartNumber:  src.PartNumber,
@@ -204,6 +206,7 @@ type FileResultSlim struct {
 	FieldSources       map[string]string `json:"field_sources,omitempty"`
 	ActressSources     map[string]string `json:"actress_sources,omitempty"`
 	DataType           string            `json:"data_type,omitempty"`
+	Progress           float64           `json:"progress,omitempty"`
 	StartedAt          time.Time         `json:"started_at"`
 	EndedAt            *time.Time        `json:"ended_at,omitempty"`
 	IsMultiPart        bool              `json:"is_multi_part,omitempty"`
@@ -777,11 +780,7 @@ func (job *BatchJob) UpdateFileResult(filePath string, result *FileResult) {
 		job.Cancelled++
 	}
 
-	if job.TotalFiles == 0 {
-		job.Progress = 100
-	} else {
-		job.Progress = float64(job.Completed+job.Failed+job.Cancelled) / float64(job.TotalFiles) * 100
-	}
+	job.recalculateProgressLocked()
 }
 
 // AtomicUpdateFileResult performs an atomic read-modify-write on a FileResult
@@ -844,13 +843,44 @@ func (job *BatchJob) AtomicUpdateFileResult(filePath string, updateFn func(*File
 		job.Cancelled++
 	}
 
-	if job.TotalFiles == 0 {
-		job.Progress = 100
-	} else {
-		job.Progress = float64(job.Completed+job.Failed+job.Cancelled) / float64(job.TotalFiles) * 100
-	}
+	job.recalculateProgressLocked()
 
 	return nil
+}
+
+// recalculateProgressLocked updates aggregate progress from terminal file counts
+// plus partial progress for currently running files. Queued files intentionally
+// contribute zero so a batch with queued files cannot report 100% progress.
+// Caller must hold job.mu.
+func (job *BatchJob) recalculateProgressLocked() {
+	if job.TotalFiles == 0 {
+		job.Progress = 100
+		return
+	}
+
+	progressUnits := float64(job.Completed + job.Failed + job.Cancelled)
+	for _, result := range job.Results {
+		if result == nil || result.Status != JobStatusRunning {
+			continue
+		}
+		progressUnits += clampProgressPercent(result.Progress) / 100
+	}
+
+	progress := progressUnits / float64(job.TotalFiles) * 100
+	if progress > 100 {
+		progress = 100
+	}
+	job.Progress = progress
+}
+
+func clampProgressPercent(progress float64) float64 {
+	if progress < 0 {
+		return 0
+	}
+	if progress > 100 {
+		return 100
+	}
+	return progress
 }
 
 // GetFileResultByResultID returns the FileResult and its file path for a given ResultID (thread-safe)

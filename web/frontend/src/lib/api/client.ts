@@ -46,6 +46,7 @@ import type {
 	RevertFileError,
 	ActressListParams,
 	ActressListResponse,
+	ActressMoviesResponse,
 	ActressUpsertRequest,
 	Actress,
 	ActressMergePreviewRequest,
@@ -76,7 +77,8 @@ import type {
 	BatchExcludeRequest,
 	BatchExcludeResponse,
 	BulkRescrapeRequest,
-	BulkRescrapeResponse
+	BulkRescrapeResponse,
+	FileResult
 } from './types';
 
 // Build API base URL dynamically from browser location
@@ -201,6 +203,10 @@ class APIClient {
 	async getBatchJob(jobId: string, includeData = false): Promise<BatchJobResponse> {
 		const params = includeData ? '?include_data=true' : '';
 		return this.request<BatchJobResponse>(`/api/v1/batch/${jobId}${params}`);
+	}
+
+	async getBatchJobResult(jobId: string, resultId: string): Promise<FileResult> {
+		return this.request<FileResult>(`/api/v1/batch/${jobId}/results/${resultId}`);
 	}
 
 	// Cancel batch job
@@ -394,6 +400,15 @@ class APIClient {
 	// Get actress by ID
 	async getActress(id: number): Promise<Actress> {
 		return this.request<Actress>(`/api/v1/actresses/${id}`);
+	}
+
+	// List movies linked to an actress
+	async listActressMovies(id: number, limit?: number, offset?: number): Promise<ActressMoviesResponse> {
+		const params = new URLSearchParams();
+		if (limit) params.set('limit', limit.toString());
+		if (offset) params.set('offset', offset.toString());
+		const query = params.toString() ? `?${params}` : '';
+		return this.request<ActressMoviesResponse>(`/api/v1/actresses/${id}/movies${query}`);
 	}
 
 	// Create actress

@@ -21,6 +21,7 @@
 	import ReviewMediaSidebar from './components/ReviewMediaSidebar.svelte';
 	import RescrapeModal from './components/RescrapeModal.svelte';
 	import BulkRescrapeProgress from './components/BulkRescrapeProgress.svelte';
+	import CandidatePreviewPanel from './components/CandidatePreviewPanel.svelte';
 	import SourceFilesCard from './components/SourceFilesCard.svelte';
 	import UnidentifiedFilesCard from './components/UnidentifiedFilesCard.svelte';
 	import { createReviewState } from './stores/review-state.svelte';
@@ -223,7 +224,7 @@
 											if (s.selectionMode) {
 												s.toggleMovieSelection(group.movieId, e.shiftKey);
 											} else {
-												s.currentMovieIndex = s.movieGroups.findIndex(g => g.movieId === group.movieId);
+												void s.navigateToMovieIndex(s.movieGroups.findIndex(g => g.movieId === group.movieId));
 												s.viewMode = 'detail';
 											}
 										}}
@@ -254,7 +255,8 @@
 
 						<div class="space-y-6 min-w-0">
 							<MovieNavigationCard
-								bind:currentMovieIndex={s.currentMovieIndex}
+								currentMovieIndex={s.currentMovieIndex}
+								onNavigate={s.navigateToMovieIndex}
 								movieResultsLength={s.movieResults.length}
 								currentMovieId={s.currentMovie.id}
 								hasChanges={s.reviewPageController.hasChanges(s.currentResult.file_path)}
@@ -294,19 +296,11 @@
 									</div>
 									<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
 										{#each s.currentResult.candidates ?? [] as cand (cand.source)}
-											<button
-												type="button"
-												class="text-left rounded-md border p-3 hover:bg-muted transition-colors disabled:opacity-50"
+											<CandidatePreviewPanel
+												candidate={cand}
 												disabled={s.rescrapingStates.get(s.currentResult?.result_id || '') || false}
-												onclick={() => s.currentResult && s.selectCandidateProvider(s.currentResult.result_id, cand.source)}
-											>
-												<div class="text-xs font-medium uppercase text-muted-foreground">{cand.source}</div>
-												<div class="text-sm font-medium truncate" title={cand.title}>{cand.title || '(no title)'}</div>
-												{#if cand.original_title && cand.original_title !== cand.title}
-													<div class="text-xs text-muted-foreground truncate" title={cand.original_title}>{cand.original_title}</div>
-												{/if}
-												<div class="text-xs text-muted-foreground">{cand.actress_count} actress{cand.actress_count === 1 ? '' : 'es'}</div>
-											</button>
+												onSelect={(source) => s.currentResult && s.selectCandidateProvider(s.currentResult.result_id, source)}
+											/>
 										{/each}
 									</div>
 								</div>

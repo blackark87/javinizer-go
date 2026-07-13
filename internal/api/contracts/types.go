@@ -266,6 +266,7 @@ type BatchFileResultSlim struct {
 	Error          string            `json:"error,omitempty"`
 	FieldSources   map[string]string `json:"field_sources,omitempty"`
 	ActressSources map[string]string `json:"actress_sources,omitempty"`
+	Data           interface{}       `json:"data,omitempty"` // Thumbnail/identity summary only; full movie data is loaded per result.
 	StartedAt      string            `json:"started_at"`
 	EndedAt        *string           `json:"ended_at,omitempty"`
 	IsMultiPart    bool              `json:"is_multi_part,omitempty"`
@@ -578,6 +579,10 @@ type BulkRescrapeRequest struct {
 	Preset           string   `json:"preset,omitempty" example:"conservative"`
 	ScalarStrategy   string   `json:"scalar_strategy,omitempty" example:"prefer-nfo"`
 	ArrayStrategy    string   `json:"array_strategy,omitempty" example:"merge"`
+	// Sections limits each bulk rescrape to specific metadata sections; unselected
+	// sections keep their current values. Empty/omitted means a full rescrape.
+	// Valid keys: title, actresses, genres, credits, rating, release, images, media.
+	Sections []string `json:"sections,omitempty" example:"actresses,images"`
 }
 
 // BulkRescrapeMovieResult represents the per-movie result of a bulk rescrape operation

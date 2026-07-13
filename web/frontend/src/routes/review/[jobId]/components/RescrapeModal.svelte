@@ -160,28 +160,26 @@
 						/>
 					{/if}
 
-					{#if !bulkMovieCount}
-						<div class="mt-6 space-y-3">
-							<div>
-								<h3 class="font-semibold mb-1">Sections to update</h3>
-								<p class="text-sm text-muted-foreground">
-									Leave all unchecked to rescrape everything. Check specific sections to update only those — the rest keep their current values.
-								</p>
-							</div>
-							<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-								{#each RESCRAPE_SECTIONS as section (section.key)}
-									<label class="flex items-center gap-2 text-sm cursor-pointer select-none">
-										<input
-											type="checkbox"
-											checked={selectedSections.includes(section.key)}
-											onchange={() => toggleSection(section.key)}
-										/>
-										{section.label}
-									</label>
-								{/each}
-							</div>
+					<div class="mt-6 space-y-3">
+						<div>
+							<h3 class="font-semibold mb-1">Sections to update</h3>
+							<p class="text-sm text-muted-foreground">
+								Leave all unchecked to rescrape everything. Check specific sections to update only those — the rest keep their current values.
+							</p>
 						</div>
-					{/if}
+						<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+							{#each RESCRAPE_SECTIONS as section (section.key)}
+								<label class="flex items-center gap-2 text-sm cursor-pointer select-none">
+									<input
+										type="checkbox"
+										checked={selectedSections.includes(section.key)}
+										onchange={() => toggleSection(section.key)}
+									/>
+									{section.label}
+								</label>
+							{/each}
+						</div>
+					</div>
 
 					<div class="mt-6 space-y-4">
 						<div>

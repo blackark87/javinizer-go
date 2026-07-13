@@ -25,6 +25,7 @@
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import RevertConfirmationModal from '$lib/components/RevertConfirmationModal.svelte';
 	import { apiClient } from '$lib/api/client';
+	import { previewImageUrl } from '$lib/utils/image';
 	import { toastStore } from '$lib/stores/toast';
 	import { websocketStore } from '$lib/stores/websocket';
 	import { computeJobProgress } from '$lib/utils/job-progress';
@@ -89,7 +90,7 @@
 			job.total_files,
 			job.progress,
 			job.status.toLowerCase() === 'running',
-			job.completed + job.failed,
+			job.completed + job.failed + (job.cancelled ?? 0),
 		);
 	}
 
@@ -280,7 +281,7 @@
 				return r.data.cropped_poster_url;
 			}
 			if (r.data?.poster_url) {
-				return apiClient.getPreviewImageURL(r.data.poster_url);
+				return previewImageUrl(r.data.poster_url) ?? '';
 			}
 		}
 		return null;

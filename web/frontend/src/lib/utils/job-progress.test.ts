@@ -126,6 +126,27 @@ describe('computeJobProgress', () => {
 		});
 	});
 
+		it('excludes queued files from running progress', () => {
+			const result = computeJobProgress({}, 10, 50, true, 5);
+			expect(result).toBe(50);
+		});
+
+		it('adds only running partial progress to finished count', () => {
+			const messages = {
+				'a': makeMessage({ file_path: 'a', status: 'running', progress: 50 }),
+			};
+			const result = computeJobProgress(messages, 10, 0, true, 5);
+			expect(result).toBe(55);
+		});
+
+		it('does not double count websocket terminal messages over server finished count', () => {
+			const messages = {
+				'a': makeMessage({ file_path: 'a', status: 'completed', progress: 100 }),
+			};
+			const result = computeJobProgress(messages, 10, 0, true, 5);
+			expect(result).toBe(50);
+		});
+
 	describe('regression: matches completed items count', () => {
 		it('31 finished out of 66 files with 5 active at 100% should be ~55%', () => {
 			const messages = {

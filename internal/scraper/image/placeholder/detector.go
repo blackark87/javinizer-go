@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-resty/resty/v2"
 	"github.com/javinizer/javinizer-go/internal/logging"
@@ -22,6 +23,11 @@ func IsPlaceholder(ctx context.Context, client *resty.Client, url string, cfg Co
 
 	if !cfg.Enabled {
 		return false, nil
+	}
+
+	if MatchesURLPattern(url, cfg.URLPatterns) {
+		logging.Debugf("placeholder: Placeholder detected for %s via URL pattern", url)
+		return true, nil
 	}
 
 	hashSet := make(map[string]bool, len(cfg.Hashes))
@@ -155,4 +161,15 @@ func FilterURLs(ctx context.Context, client *resty.Client, urls []string, cfg Co
 	}
 
 	return filtered, filteredCount, nil
+}
+
+func MatchesURLPattern(rawURL string, patterns []string) bool {
+	normalizedURL := strings.ToLower(rawURL)
+	for _, pattern := range patterns {
+		pattern = strings.TrimSpace(strings.ToLower(pattern))
+		if pattern != "" && strings.Contains(normalizedURL, pattern) {
+			return true
+		}
+	}
+	return false
 }

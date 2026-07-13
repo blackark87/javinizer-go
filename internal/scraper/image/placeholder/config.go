@@ -14,16 +14,18 @@ const (
 )
 
 type Config struct {
-	Enabled   bool
-	Threshold int64
-	Hashes    []string
+	Enabled     bool
+	Threshold   int64
+	Hashes      []string
+	URLPatterns []string
 }
 
 func ConfigFromSettings(settings *config.ScraperSettings, defaultHashes []string) Config {
 	cfg := Config{
-		Enabled:   true,
-		Threshold: DefaultThresholdKB * 1024,
-		Hashes:    make([]string, 0),
+		Enabled:     true,
+		Threshold:   DefaultThresholdKB * 1024,
+		Hashes:      make([]string, 0),
+		URLPatterns: DefaultDMMPlaceholderURLPatterns,
 	}
 
 	seen := make(map[string]bool)

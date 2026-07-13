@@ -180,6 +180,20 @@ func (r *ActressRepository) ListAll() ([]models.Actress, error) {
 	return r.BaseRepository.ListAll()
 }
 
+// ListMissingMetadataIDs returns actresses that are missing either a verified
+// DMM ID or a profile thumbnail. IDs are stable-sorted so callers can process
+// the result deterministically.
+func (r *ActressRepository) ListMissingMetadataIDs() ([]uint, error) {
+	var ids []uint
+	if err := r.GetDB().Model(&models.Actress{}).
+		Where("dmm_id <= 0 OR TRIM(COALESCE(thumb_url, '')) = ''").
+		Order("id ASC").
+		Pluck("id", &ids).Error; err != nil {
+		return nil, wrapDBErr("find", "actresses missing metadata", err)
+	}
+	return ids, nil
+}
+
 func (r *ActressRepository) FindOrCreate(actress *models.Actress) error {
 	if actress.DMMID > 0 {
 		existing, err := r.FindByDMMID(actress.DMMID)

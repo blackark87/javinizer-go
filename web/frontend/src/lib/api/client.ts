@@ -47,6 +47,8 @@ import type {
 	ActressListParams,
 	ActressListResponse,
 	ActressMoviesResponse,
+	ActressSyncCandidatesResponse,
+	ActressSyncResponse,
 	ActressUpsertRequest,
 	Actress,
 	ActressMergePreviewRequest,
@@ -409,6 +411,18 @@ class APIClient {
 		if (offset) params.set('offset', offset.toString());
 		const query = params.toString() ? `?${params}` : '';
 		return this.request<ActressMoviesResponse>(`/api/v1/actresses/${id}/movies${query}`);
+	}
+
+	// List actresses missing a DMM ID or profile thumbnail.
+	async listActressSyncCandidates(): Promise<ActressSyncCandidatesResponse> {
+		return this.request<ActressSyncCandidatesResponse>('/api/v1/actresses/sync-candidates');
+	}
+
+	// Safely fill missing metadata for one actress.
+	async syncActress(id: number): Promise<ActressSyncResponse> {
+		return this.request<ActressSyncResponse>(`/api/v1/actresses/${id}/sync`, {
+			method: 'POST'
+		});
 	}
 
 	// Create actress

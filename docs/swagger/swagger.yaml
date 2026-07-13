@@ -29,6 +29,26 @@ definitions:
         description: e.g., claude-sonnet-4-20250514
         type: string
     type: object
+  config.BedrockTranslationConfig:
+    properties:
+      access_key_id:
+        description: AWS access key ID
+        type: string
+      base_url:
+        description: Optional endpoint override
+        type: string
+      model:
+        description: Bedrock model ID, e.g., anthropic.claude-3-5-sonnet-20241022-v2:0
+        type: string
+      region:
+        description: AWS region, e.g., us-east-1
+        type: string
+      secret_access_key:
+        description: AWS secret access key
+        type: string
+      session_token:
+        type: string
+    type: object
   config.BrowserConfig:
     properties:
       binary_path:
@@ -471,6 +491,17 @@ definitions:
         allOf:
         - $ref: '#/definitions/config.BrowserConfig'
         description: 'NEW: Global Browser configuration block'
+      early_stop:
+        description: |-
+          EarlyStop, when true, stops querying lower-priority scrapers once
+          EarlyStopMinResults successful results are collected AND all configured
+          metadata.required_fields are covered by those results. Default: false.
+        type: boolean
+      early_stop_min_results:
+        description: |-
+          EarlyStopMinResults is the number of successful scraper results to collect
+          before stopping early. Default: 2 (a second result confirms the first).
+        type: integer
       flaresolverr:
         allOf:
         - $ref: '#/definitions/config.FlareSolverrConfig'
@@ -576,6 +607,10 @@ definitions:
       apply_to_primary:
         description: Replace primary movie metadata with translated text
         type: boolean
+      bedrock:
+        allOf:
+        - $ref: '#/definitions/config.BedrockTranslationConfig'
+        description: AWS Bedrock provider settings
       deepl:
         allOf:
         - $ref: '#/definitions/config.DeepLTranslationConfig'
@@ -603,7 +638,7 @@ definitions:
         description: Overwrite target-language translation if already present
         type: boolean
       provider:
-        description: openai, openai-compatible, anthropic, deepl, google
+        description: openai, openai-compatible, anthropic, bedrock, deepl, google
         type: string
       source_language:
         description: Source language code (e.g., en, ja, auto)
@@ -611,6 +646,11 @@ definitions:
       target_language:
         description: Target language code (e.g., en, ja, zh)
         type: string
+      target_languages:
+        description: Optional list of target language codes for multi-language output
+        items:
+          type: string
+        type: array
       timeout_seconds:
         description: Request timeout in seconds
         type: integer
@@ -674,6 +714,13 @@ definitions:
           type: string
         description: Actress-level source by scraper/NFO
         type: object
+      candidates:
+        description: |-
+          Candidates is a per-scraper summary; HasConflict is true when providers disagree
+          on the movie, so the UI can offer a selection instead of the auto-merged result.
+        items:
+          $ref: '#/definitions/models.ScrapeCandidate'
+        type: array
       data:
         description: Movie data
       ended_at:
@@ -687,6 +734,8 @@ definitions:
         type: object
       file_path:
         type: string
+      has_conflict:
+        type: boolean
       is_multi_part:
         type: boolean
       movie_id:
@@ -711,6 +760,8 @@ definitions:
     type: object
   github_com_javinizer_javinizer-go_internal_api_contracts.BatchJobResponse:
     properties:
+      cancelled:
+        type: integer
       completed:
         type: integer
       completed_at:
@@ -810,6 +861,9 @@ definitions:
     type: object
   github_com_javinizer_javinizer-go_internal_api_contracts.JobListItem:
     properties:
+      cancelled:
+        example: 0
+        type: integer
       completed:
         example: 9
         type: integer
@@ -1004,6 +1058,35 @@ definitions:
         example: seconds
         type: string
     type: object
+  github_com_javinizer_javinizer-go_internal_worker.ActressSyncResult:
+    properties:
+      actress:
+        $ref: '#/definitions/models.Actress'
+      conflict_actress_id:
+        type: integer
+      messages:
+        items:
+          type: string
+        type: array
+      source_movie_id:
+        type: string
+      status:
+        $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_worker.ActressSyncStatus'
+      updated_fields:
+        items:
+          type: string
+        type: array
+    type: object
+  github_com_javinizer_javinizer-go_internal_worker.ActressSyncStatus:
+    enum:
+    - updated
+    - skipped
+    - conflict
+    type: string
+    x-enum-varnames:
+    - ActressSyncUpdated
+    - ActressSyncSkipped
+    - ActressSyncConflict
   internal_api_actress.Actress:
     properties:
       aliases:
@@ -1103,6 +1186,21 @@ definitions:
           type: string
         type: array
     type: object
+  internal_api_actress.actressMoviesResponse:
+    properties:
+      count:
+        type: integer
+      limit:
+        type: integer
+      movies:
+        items:
+          $ref: '#/definitions/models.Movie'
+        type: array
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
   internal_api_actress.actressRequest:
     properties:
       aliases:
@@ -1118,6 +1216,15 @@ definitions:
       thumb_url:
         type: string
     type: object
+  internal_api_actress.actressSyncCandidatesResponse:
+    properties:
+      ids:
+        items:
+          type: integer
+        type: array
+      total:
+        type: integer
+    type: object
   internal_api_actress.actressesResponse:
     properties:
       actresses:
@@ -1131,6 +1238,18 @@ definitions:
       offset:
         type: integer
       total:
+        type: integer
+    type: object
+  internal_api_actress.bulkDeleteActressesRequest:
+    properties:
+      ids:
+        items:
+          type: integer
+        type: array
+    type: object
+  internal_api_actress.deleteActressesResponse:
+    properties:
+      deleted:
         type: integer
     type: object
   internal_api_auth.AuthCredentialsRequest:
@@ -1197,6 +1316,8 @@ definitions:
     type: object
   internal_api_batch.BatchJobResponse:
     properties:
+      cancelled:
+        type: integer
       completed:
         type: integer
       completed_at:
@@ -1256,6 +1377,17 @@ definitions:
           fill-missing-only'
         example: prefer-nfo
         type: string
+      sections:
+        description: |-
+          Sections limits the rescrape to specific metadata sections; unselected sections
+          keep their current values. Empty/omitted means a full rescrape (all sections).
+          Valid keys: title, actresses, genres, credits, rating, release, images, media.
+        example:
+        - actresses
+        - images
+        items:
+          type: string
+        type: array
       selected_scrapers:
         example:
         - r18dev
@@ -1460,6 +1592,8 @@ definitions:
       operation_mode:
         example: organize
         type: string
+      resume:
+        type: boolean
       skip_download:
         type: boolean
       skip_nfo:
@@ -1770,11 +1904,21 @@ definitions:
         type: object
       failed:
         type: integer
+      failed_7d:
+        type: integer
+      recent_window_days:
+        type: integer
       reverted:
         type: integer
       success:
         type: integer
+      success_7d:
+        type: integer
+      success_rate_7d:
+        type: integer
       total:
+        type: integer
+      total_7d:
         type: integer
     type: object
   internal_api_jobs.ErrorResponse:
@@ -1789,6 +1933,9 @@ definitions:
     type: object
   internal_api_jobs.JobListItem:
     properties:
+      cancelled:
+        example: 0
+        type: integer
       completed:
         example: 9
         type: integer
@@ -2437,6 +2584,11 @@ definitions:
     type: object
   models.MovieTranslation:
     properties:
+      actresses:
+        description: Translated actress names for template rendering
+        items:
+          type: string
+        type: array
       created_at:
         type: string
       description:
@@ -2468,6 +2620,25 @@ definitions:
       title:
         type: string
       updated_at:
+        type: string
+    type: object
+  models.ScrapeCandidate:
+    properties:
+      actress_count:
+        type: integer
+      movie_id:
+        description: MovieID is the scraper-reported id for this candidate.
+        type: string
+      original_title:
+        type: string
+      poster_url:
+        type: string
+      source:
+        type: string
+      title:
+        description: |-
+          Title is the display title — translated when translation is enabled, otherwise
+          the scraper's original title. OriginalTitle always holds the untranslated title.
         type: string
     type: object
   models.ScraperChoice:
@@ -2670,6 +2841,131 @@ paths:
       summary: Update actress
       tags:
       - actress
+  /api/v1/actresses/{id}/movies:
+    get:
+      description: Get a paginated list of movies linked to an actress through movie_actresses
+      parameters:
+      - description: Actress ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - default: 20
+        description: Max results
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Skip results
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_actress.actressMoviesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_actress.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_actress.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_actress.ErrorResponse'
+      summary: List movies for an actress
+      tags:
+      - actress
+  /api/v1/actresses/{id}/sync:
+    post:
+      description: Safely fill only a missing DMM ID and/or profile thumbnail for
+        one actress
+      parameters:
+      - description: Actress ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_worker.ActressSyncResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_actress.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_actress.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_actress.ErrorResponse'
+        "504":
+          description: Gateway Timeout
+          schema:
+            $ref: '#/definitions/internal_api_actress.ErrorResponse'
+      summary: Sync missing actress metadata
+      tags:
+      - actress
+  /api/v1/actresses/bulk-delete:
+    post:
+      consumes:
+      - application/json
+      description: Delete multiple actress records (and their movie associations)
+        by ID
+      parameters:
+      - description: Actress IDs to delete
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api_actress.bulkDeleteActressesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_actress.deleteActressesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_actress.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_actress.ErrorResponse'
+      summary: Bulk delete actresses
+      tags:
+      - actress
+  /api/v1/actresses/delete-all:
+    post:
+      description: Delete every actress record and all movie associations
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_actress.deleteActressesResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_actress.ErrorResponse'
+      summary: Delete all actresses
+      tags:
+      - actress
   /api/v1/actresses/merge:
     post:
       consumes:
@@ -2775,6 +3071,23 @@ paths:
           schema:
             $ref: '#/definitions/internal_api_actress.ErrorResponse'
       summary: Search actresses
+      tags:
+      - actress
+  /api/v1/actresses/sync-candidates:
+    get:
+      description: Return IDs of actresses missing a DMM ID or profile thumbnail
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_actress.actressSyncCandidatesResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_actress.ErrorResponse'
+      summary: List actresses missing metadata
       tags:
       - actress
   /api/v1/auth/login:

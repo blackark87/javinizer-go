@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { fly } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
-	import { Search, ArrowUpDown, GitMerge, Trash2 } from 'lucide-svelte';
+	import { Search, ArrowUpDown, GitMerge, RefreshCw, Trash2 } from 'lucide-svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 
@@ -20,9 +20,11 @@
 		onToggleSortOrder,
 		onSelectCurrentPage,
 		onClearSelection,
+		onSyncSelected,
 		onStartMergeSelected,
 		onDeleteSelected,
-		onDeleteAll
+		onDeleteAll,
+		isSyncing
 	}: {
 		queryInput: string;
 		activeQuery: string;
@@ -38,9 +40,11 @@
 		onToggleSortOrder: () => void;
 		onSelectCurrentPage: () => void;
 		onClearSelection: () => void;
+		onSyncSelected: () => void;
 		onStartMergeSelected: () => void;
 		onDeleteSelected: () => void;
 		onDeleteAll: () => void;
+		isSyncing: boolean;
 	} = $props();
 </script>
 
@@ -128,6 +132,10 @@
 			<Button variant="outline" size="sm" onclick={onSelectCurrentPage}>Select Page</Button>
 			<Button variant="outline" size="sm" onclick={onClearSelection} disabled={selectedIds.length === 0}>
 				Clear
+			</Button>
+			<Button variant="outline" size="sm" onclick={onSyncSelected} disabled={selectedIds.length === 0 || isSyncing}>
+				<RefreshCw class="h-4 w-4 {isSyncing ? 'animate-spin' : ''}" />
+				Sync Selected
 			</Button>
 			<Button size="sm" onclick={onStartMergeSelected} disabled={selectedIds.length < 2}>
 				<GitMerge class="h-4 w-4" />

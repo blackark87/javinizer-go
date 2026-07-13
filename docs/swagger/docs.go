@@ -135,6 +135,78 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/actresses/bulk-delete": {
+            "post": {
+                "description": "Delete multiple actress records (and their movie associations) by ID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actress"
+                ],
+                "summary": "Bulk delete actresses",
+                "parameters": [
+                    {
+                        "description": "Actress IDs to delete",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.bulkDeleteActressesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.deleteActressesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/actresses/delete-all": {
+            "post": {
+                "description": "Delete every actress record and all movie associations",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actress"
+                ],
+                "summary": "Delete all actresses",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.deleteActressesResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/actresses/merge": {
             "post": {
                 "description": "Merge a source actress into a target actress with field-level target/source resolutions.",
@@ -295,6 +367,32 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/actresses/sync-candidates": {
+            "get": {
+                "description": "Return IDs of actresses missing a DMM ID or profile thumbnail",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actress"
+                ],
+                "summary": "List actresses missing metadata",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.actressSyncCandidatesResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/actresses/{id}": {
             "get": {
                 "description": "Retrieve a single actress by their database ID",
@@ -440,6 +538,120 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/actresses/{id}/movies": {
+            "get": {
+                "description": "Get a paginated list of movies linked to an actress through movie_actresses",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actress"
+                ],
+                "summary": "List movies for an actress",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Actress ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Max results",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Skip results",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.actressMoviesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/actresses/{id}/sync": {
+            "post": {
+                "description": "Safely fill only a missing DMM ID and/or profile thumbnail for one actress",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actress"
+                ],
+                "summary": "Sync missing actress metadata",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Actress ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_worker.ActressSyncResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
                         "schema": {
                             "$ref": "#/definitions/internal_api_actress.ErrorResponse"
                         }
@@ -3121,6 +3333,34 @@ const docTemplate = `{
                 }
             }
         },
+        "config.BedrockTranslationConfig": {
+            "type": "object",
+            "properties": {
+                "access_key_id": {
+                    "description": "AWS access key ID",
+                    "type": "string"
+                },
+                "base_url": {
+                    "description": "Optional endpoint override",
+                    "type": "string"
+                },
+                "model": {
+                    "description": "Bedrock model ID, e.g., anthropic.claude-3-5-sonnet-20241022-v2:0",
+                    "type": "string"
+                },
+                "region": {
+                    "description": "AWS region, e.g., us-east-1",
+                    "type": "string"
+                },
+                "secret_access_key": {
+                    "description": "AWS secret access key",
+                    "type": "string"
+                },
+                "session_token": {
+                    "type": "string"
+                }
+            }
+        },
         "config.BrowserConfig": {
             "type": "object",
             "properties": {
@@ -3766,6 +4006,14 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "early_stop": {
+                    "description": "EarlyStop, when true, stops querying lower-priority scrapers once\nEarlyStopMinResults successful results are collected AND all configured\nmetadata.required_fields are covered by those results. Default: false.",
+                    "type": "boolean"
+                },
+                "early_stop_min_results": {
+                    "description": "EarlyStopMinResults is the number of successful scraper results to collect\nbefore stopping early. Default: 2 (a second result confirms the first).",
+                    "type": "integer"
+                },
                 "flaresolverr": {
                     "description": "Global FlareSolverr config for Cloudflare bypass",
                     "allOf": [
@@ -3916,6 +4164,14 @@ const docTemplate = `{
                     "description": "Replace primary movie metadata with translated text",
                     "type": "boolean"
                 },
+                "bedrock": {
+                    "description": "AWS Bedrock provider settings",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/config.BedrockTranslationConfig"
+                        }
+                    ]
+                },
                 "deepl": {
                     "description": "DeepL provider settings",
                     "allOf": [
@@ -3965,7 +4221,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "provider": {
-                    "description": "openai, openai-compatible, anthropic, deepl, google",
+                    "description": "openai, openai-compatible, anthropic, bedrock, deepl, google",
                     "type": "string"
                 },
                 "source_language": {
@@ -3975,6 +4231,13 @@ const docTemplate = `{
                 "target_language": {
                     "description": "Target language code (e.g., en, ja, zh)",
                     "type": "string"
+                },
+                "target_languages": {
+                    "description": "Optional list of target language codes for multi-language output",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "timeout_seconds": {
                     "description": "Request timeout in seconds",
@@ -4069,6 +4332,13 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "candidates": {
+                    "description": "Candidates is a per-scraper summary; HasConflict is true when providers disagree\non the movie, so the UI can offer a selection instead of the auto-merged result.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ScrapeCandidate"
+                    }
+                },
                 "data": {
                     "description": "Movie data"
                 },
@@ -4087,6 +4357,9 @@ const docTemplate = `{
                 },
                 "file_path": {
                     "type": "string"
+                },
+                "has_conflict": {
+                    "type": "boolean"
                 },
                 "is_multi_part": {
                     "type": "boolean"
@@ -4125,6 +4398,9 @@ const docTemplate = `{
         "github_com_javinizer_javinizer-go_internal_api_contracts.BatchJobResponse": {
             "type": "object",
             "properties": {
+                "cancelled": {
+                    "type": "integer"
+                },
                 "completed": {
                     "type": "integer"
                 },
@@ -4265,6 +4541,10 @@ const docTemplate = `{
         "github_com_javinizer_javinizer-go_internal_api_contracts.JobListItem": {
             "type": "object",
             "properties": {
+                "cancelled": {
+                    "type": "integer",
+                    "example": 0
+                },
                 "completed": {
                     "type": "integer",
                     "example": 9
@@ -4534,6 +4814,48 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_javinizer_javinizer-go_internal_worker.ActressSyncResult": {
+            "type": "object",
+            "properties": {
+                "actress": {
+                    "$ref": "#/definitions/models.Actress"
+                },
+                "conflict_actress_id": {
+                    "type": "integer"
+                },
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "source_movie_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_worker.ActressSyncStatus"
+                },
+                "updated_fields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_worker.ActressSyncStatus": {
+            "type": "string",
+            "enum": [
+                "updated",
+                "skipped",
+                "conflict"
+            ],
+            "x-enum-varnames": [
+                "ActressSyncUpdated",
+                "ActressSyncSkipped",
+                "ActressSyncConflict"
+            ]
+        },
         "internal_api_actress.Actress": {
             "type": "object",
             "properties": {
@@ -4677,6 +4999,29 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_actress.actressMoviesResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "movies": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.Movie"
+                    }
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api_actress.actressRequest": {
             "type": "object",
             "properties": {
@@ -4700,6 +5045,20 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_actress.actressSyncCandidatesResponse": {
+            "type": "object",
+            "properties": {
+                "ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_api_actress.actressesResponse": {
             "type": "object",
             "properties": {
@@ -4719,6 +5078,25 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api_actress.bulkDeleteActressesRequest": {
+            "type": "object",
+            "properties": {
+                "ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "internal_api_actress.deleteActressesResponse": {
+            "type": "object",
+            "properties": {
+                "deleted": {
                     "type": "integer"
                 }
             }
@@ -4817,6 +5195,9 @@ const docTemplate = `{
         "internal_api_batch.BatchJobResponse": {
             "type": "object",
             "properties": {
+                "cancelled": {
+                    "type": "integer"
+                },
                 "completed": {
                     "type": "integer"
                 },
@@ -4898,6 +5279,17 @@ const docTemplate = `{
                     "description": "For Update mode: prefer-nfo, prefer-scraper, preserve-existing, fill-missing-only",
                     "type": "string",
                     "example": "prefer-nfo"
+                },
+                "sections": {
+                    "description": "Sections limits the rescrape to specific metadata sections; unselected sections\nkeep their current values. Empty/omitted means a full rescrape (all sections).\nValid keys: title, actresses, genres, credits, rating, release, images, media.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "actresses",
+                        "images"
+                    ]
                 },
                 "selected_scrapers": {
                     "type": "array",
@@ -5185,6 +5577,9 @@ const docTemplate = `{
                 "operation_mode": {
                     "type": "string",
                     "example": "organize"
+                },
+                "resume": {
+                    "type": "boolean"
                 },
                 "skip_download": {
                     "type": "boolean"
@@ -5646,13 +6041,28 @@ const docTemplate = `{
                 "failed": {
                     "type": "integer"
                 },
+                "failed_7d": {
+                    "type": "integer"
+                },
+                "recent_window_days": {
+                    "type": "integer"
+                },
                 "reverted": {
                     "type": "integer"
                 },
                 "success": {
                     "type": "integer"
                 },
+                "success_7d": {
+                    "type": "integer"
+                },
+                "success_rate_7d": {
+                    "type": "integer"
+                },
                 "total": {
+                    "type": "integer"
+                },
+                "total_7d": {
                     "type": "integer"
                 }
             }
@@ -5675,6 +6085,10 @@ const docTemplate = `{
         "internal_api_jobs.JobListItem": {
             "type": "object",
             "properties": {
+                "cancelled": {
+                    "type": "integer",
+                    "example": 0
+                },
                 "completed": {
                     "type": "integer",
                     "example": 9
@@ -6626,6 +7040,13 @@ const docTemplate = `{
         "models.MovieTranslation": {
             "type": "object",
             "properties": {
+                "actresses": {
+                    "description": "Translated actress names for template rendering",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -6670,6 +7091,31 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ScrapeCandidate": {
+            "type": "object",
+            "properties": {
+                "actress_count": {
+                    "type": "integer"
+                },
+                "movie_id": {
+                    "description": "MovieID is the scraper-reported id for this candidate.",
+                    "type": "string"
+                },
+                "original_title": {
+                    "type": "string"
+                },
+                "poster_url": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "title": {
+                    "description": "Title is the display title — translated when translation is enabled, otherwise\nthe scraper's original title. OriginalTitle always holds the untranslated title.",
                     "type": "string"
                 }
             }

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
 	import { cubicOut, quintOut } from 'svelte/easing';
 	import { fade, fly, scale } from 'svelte/transition';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
@@ -6,6 +7,7 @@
 	import { apiClient } from '$lib/api/client';
 	import type { Actress, ActressUpsertRequest, ImportResponse } from '$lib/api/types';
 	import { toastStore } from '$lib/stores/toast';
+	import { confirmDialog } from '$lib/stores/dialog.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import { createActressStore } from './stores/actress-store.svelte';
@@ -16,10 +18,20 @@
 	import ActressTableView from './components/ActressTableView.svelte';
 	import ActressMergeModal from './components/ActressMergeModal.svelte';
 	import ActressPagination from './components/ActressPagination.svelte';
+	import ActressSyncModal from './components/ActressSyncModal.svelte';
+	import { runActressSyncQueue, type ActressSyncSummary } from './sync-runner';
 
 	const store = createActressStore();
 	const queryClient = useQueryClient();
 	let importFile = $state<HTMLInputElement | null>(null);
+	let syncModalOpen = $state(false);
+	let syncRunning = $state(false);
+	let syncPreparing = $state(false);
+	let syncStopRequested = $state(false);
+	let syncCurrentID = $state<number | null>(null);
+	let syncSummary = $state<ActressSyncSummary | null>(null);
+	let syncCurrentLabel = $derived(syncCurrentID ? store.getActressLabelByID(syncCurrentID) : 'Preparing next actress…');
+	let isSyncing = $derived(syncRunning || syncPreparing);
 
 	const exportMutation = createMutation(() => ({
 		mutationFn: () => apiClient.exportActresses(),
@@ -86,6 +98,105 @@
 
 		target.value = '';
 	}
+
+	function emptySyncSummary(total: number): ActressSyncSummary {
+		return {
+			total,
+			processed: 0,
+			updated: 0,
+			skipped: 0,
+			conflicts: 0,
+			failed: 0,
+			stopped: false,
+			details: []
+		};
+	}
+
+	async function runSync(ids: number[]) {
+		syncStopRequested = false;
+		syncCurrentID = null;
+		syncSummary = emptySyncSummary(ids.length);
+		syncModalOpen = true;
+		syncRunning = true;
+
+		try {
+			const finalSummary = await runActressSyncQueue(ids, (id) => apiClient.syncActress(id), {
+				shouldStop: () => syncStopRequested,
+				onItemStart: (id) => {
+					syncCurrentID = id;
+				},
+				onProgress: (progress) => {
+					syncSummary = progress;
+				},
+				onFinished: async () => {
+					await queryClient.invalidateQueries({ queryKey: ['actresses'] });
+				}
+			});
+			syncSummary = finalSummary;
+			syncCurrentID = null;
+			const outcome = finalSummary.stopped ? 'stopped' : 'complete';
+			toastStore.success(
+				`Sync ${outcome} — Updated: ${finalSummary.updated}, Skipped: ${finalSummary.skipped}, Conflicts: ${finalSummary.conflicts}, Failed: ${finalSummary.failed}`,
+				5000
+			);
+		} finally {
+			syncRunning = false;
+		}
+	}
+
+	async function handleSyncMissing() {
+		if (isSyncing) return;
+		syncPreparing = true;
+		try {
+			const candidates = await apiClient.listActressSyncCandidates();
+			if (candidates.total === 0) {
+				toastStore.success('All actresses already have a DMM ID and profile thumbnail');
+				return;
+			}
+			const confirmed = await confirmDialog(
+				'Sync Missing Actress Metadata',
+				`Sync missing metadata for ${candidates.total} actress(es), one at a time?`,
+				{ confirmLabel: 'Start Sync' }
+			);
+			if (confirmed) await runSync(candidates.ids);
+		} catch (error) {
+			toastStore.error(error instanceof Error ? error.message : 'Failed to load sync candidates', 4000);
+		} finally {
+			syncPreparing = false;
+		}
+	}
+
+	async function handleSyncSelected() {
+		if (isSyncing || store.selectedIds.length === 0) return;
+		syncPreparing = true;
+		try {
+			const ids = [...store.selectedIds];
+			const confirmed = await confirmDialog(
+				'Sync Selected Actress Metadata',
+				`Sync missing metadata for ${ids.length} selected actress(es), one at a time?`,
+				{ confirmLabel: 'Start Sync' }
+			);
+			if (confirmed) await runSync(ids);
+		} catch (error) {
+			toastStore.error(error instanceof Error ? error.message : 'Failed to sync selected actresses', 4000);
+		} finally {
+			syncPreparing = false;
+		}
+	}
+
+	function requestSyncStop() {
+		syncStopRequested = true;
+	}
+
+	function closeSyncModal() {
+		if (syncRunning) return;
+		syncModalOpen = false;
+	}
+
+	onDestroy(() => {
+		// Let the in-flight request finish, but never start another item after navigation.
+		syncStopRequested = true;
+	});
 </script>
 
 <div class="container mx-auto px-4 py-8">
@@ -106,6 +217,19 @@
 					onchange={handleImportChange}
 					class="hidden"
 				/>
+				<Button
+					variant="outline"
+					size="sm"
+					onclick={handleSyncMissing}
+					disabled={isSyncing}
+				>
+					{#if syncPreparing}
+						<Loader2 class="h-4 w-4 animate-spin" />
+					{:else}
+						<RefreshCw class="h-4 w-4" />
+					{/if}
+					Sync Missing
+				</Button>
 				<Button
 					variant="outline"
 					size="sm"
@@ -171,9 +295,11 @@
 					onToggleSortOrder={store.toggleSortOrder}
 					onSelectCurrentPage={store.selectCurrentPage}
 					onClearSelection={store.clearSelection}
+					onSyncSelected={handleSyncSelected}
 					onStartMergeSelected={store.startMergeSelected}
 					onDeleteSelected={store.removeSelected}
 					onDeleteAll={store.removeAll}
+					{isSyncing}
 				/>
 
 				{#if store.error}
@@ -268,3 +394,14 @@
 	onSetResolution={store.setResolution}
 	formatMergeValue={store.formatMergeValue}
 />
+
+{#if syncModalOpen && syncSummary}
+	<ActressSyncModal
+		summary={syncSummary}
+		isRunning={syncRunning}
+		stopRequested={syncStopRequested}
+		currentLabel={syncCurrentLabel}
+		onStop={requestSyncStop}
+		onClose={closeSyncModal}
+	/>
+{/if}

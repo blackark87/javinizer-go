@@ -3,6 +3,7 @@ package database
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -505,6 +506,32 @@ func TestActressRepository_FindByFirstNameLastName(t *testing.T) {
 		require.Error(t, err)
 		assert.True(t, IsNotFound(err))
 	})
+}
+
+func TestActressRepository_ListMissingMetadataIDs(t *testing.T) {
+	cfg := &config.Config{
+		Database: config.DatabaseConfig{Type: "sqlite", DSN: filepath.Join(t.TempDir(), "missing-metadata.db")},
+		Logging:  config.LoggingConfig{Level: "error"},
+	}
+	db, err := New(cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, db.AutoMigrate())
+	repo := NewActressRepository(db)
+
+	actresses := []*models.Actress{
+		{DMMID: 10, JapaneseName: "Complete", ThumbURL: "https://example.com/complete.jpg"},
+		{DMMID: 0, JapaneseName: "Missing ID", ThumbURL: "https://example.com/id.jpg"},
+		{DMMID: 20, JapaneseName: "Missing thumbnail", ThumbURL: "  "},
+		{DMMID: 0, JapaneseName: "Missing both"},
+	}
+	for _, actress := range actresses {
+		require.NoError(t, repo.Create(actress))
+	}
+
+	ids, err := repo.ListMissingMetadataIDs()
+	require.NoError(t, err)
+	assert.Equal(t, []uint{actresses[1].ID, actresses[2].ID, actresses[3].ID}, ids)
 }
 
 // TestActressRepository_Search tests search operations

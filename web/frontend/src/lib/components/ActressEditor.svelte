@@ -381,8 +381,8 @@
 						/>
 
 						{#if showSearchResults}
+							<div class="absolute z-10 w-full mt-1 bg-background border rounded-md shadow-lg max-h-64 overflow-y-auto">
 							{#if searchResults.length > 0}
-								<div class="absolute z-10 w-full mt-1 bg-background border rounded-md shadow-lg max-h-64 overflow-y-auto">
 									{#each searchResults as actress, index}
 										{@const searchImageKey = actressImageKey(actress, index, 'search')}
 										<button

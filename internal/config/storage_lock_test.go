@@ -125,6 +125,24 @@ func TestReadFileWithRetry_DoesNotRetryMissingFile(t *testing.T) {
 		"IsNotExist should short-circuit without retry")
 }
 
+func TestReadFileWithRetry_ExhaustsAttempts(t *testing.T) {
+	withRetryEnabled(t)
+
+	var calls int32
+	permanent := errors.New("permission denied")
+	prev := osReadFileFunc
+	osReadFileFunc = func(p string) ([]byte, error) {
+		atomic.AddInt32(&calls, 1)
+		return nil, permanent
+	}
+	t.Cleanup(func() { osReadFileFunc = prev })
+
+	_, err := readFileWithRetry(filepath.Join(t.TempDir(), "lock"))
+	assert.ErrorIs(t, err, permanent)
+	assert.Equal(t, int32(lockRetryAttempts), atomic.LoadInt32(&calls),
+		"should attempt exactly lockRetryAttempts times")
+}
+
 func TestReleaseConfigFileLock_RetriesRemoveOnWindows(t *testing.T) {
 	wasWindows := withRetryEnabled(t)
 

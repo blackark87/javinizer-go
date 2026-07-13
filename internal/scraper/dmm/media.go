@@ -54,6 +54,24 @@ func (s *Scraper) extractScreenshots(doc *goquery.Document, isNewSite bool) []st
 	return screenshots
 }
 
+func (s *Scraper) filterPlaceholderImageURL(ctx context.Context, url string) string {
+	if url == "" {
+		return ""
+	}
+
+	cfg := placeholder.ConfigFromSettings(&s.settings, placeholder.DefaultDMMPlaceholderHashes)
+	isPlaceholder, err := placeholder.IsPlaceholder(ctx, s.client, url, cfg)
+	if err != nil {
+		logging.Warnf("DMM: Placeholder image filter error for %s: %v", url, err)
+		return url
+	}
+	if isPlaceholder {
+		logging.Debugf("DMM: Filtered placeholder image from results: %s", url)
+		return ""
+	}
+	return url
+}
+
 func (s *Scraper) filterPlaceholderScreenshots(ctx context.Context, urls []string) []string {
 	if len(urls) == 0 {
 		return urls

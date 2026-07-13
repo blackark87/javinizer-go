@@ -915,6 +915,12 @@ export interface MetadataConfig {
 	required_fields?: string[];
 	nfo?: NFOConfig;
 	completeness?: CompletenessConfig;
+	r18dev_dump?: R18DevDumpConfig;
+}
+
+export interface R18DevDumpConfig {
+	enabled: boolean;
+	path: string;
 }
 
 export interface MatchingConfig {
@@ -1288,4 +1294,23 @@ export interface BatchExcludeResponse {
 	excluded: string[];
 	failed: BatchExcludeFailed[];
 	job: BatchJobResponse;
+}
+
+export interface DumpStatus {
+	present: boolean;
+	running: boolean;
+	last_error?: string;
+	row_count?: number;
+	source_url?: string;
+	source_date?: string;
+	imported_at?: string;
+	path: string;
+	size_bytes?: number;
+	enabled: boolean;
+}
+
+export interface DumpSearchResult {
+	query: string;
+	content_id: string | null;
+	dvd_id: string | null;
 }

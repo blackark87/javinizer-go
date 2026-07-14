@@ -17,8 +17,12 @@ import (
 )
 
 var (
-	listenFn = func(ctx context.Context) (net.Listener, error) {
-		return (&net.ListenConfig{}).Listen(ctx, "tcp", "127.0.0.1:0")
+	listenFn = func(ctx context.Context, port int) (net.Listener, error) {
+		addr := "127.0.0.1:0"
+		if port > 0 {
+			addr = fmt.Sprintf("127.0.0.1:%d", port)
+		}
+		return (&net.ListenConfig{}).Listen(ctx, "tcp", addr)
 	}
 	loadConfigFn = config.LoadOrCreate
 )
@@ -51,15 +55,25 @@ func StartServer(ctx context.Context, configFile string) (*ServerInstance, error
 	}
 	config.ApplyEnvironmentOverrides(cfg)
 
-	// Bind to a free localhost port. The listener holds the port across the
-	// (slow) bootstrap below, so the URL we report to the window stays valid.
-	ln, err := listenFn(ctx)
+	// Try to reuse the port from config for stable restarts (firewall rules,
+	// bookmarks, etc.). If the configured port is unavailable or zero, fall
+	// back to an OS-assigned free port.
+	cfg.Server.Host = "127.0.0.1"
+	ln, err := listenFn(ctx, cfg.Server.Port)
+	if err != nil && cfg.Server.Port != 0 {
+		logging.Infof("desktop: port %d unavailable, falling back to a free port", cfg.Server.Port)
+		ln, err = listenFn(ctx, 0)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("desktop: failed to find free port: %w", err)
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
-	cfg.Server.Host = "127.0.0.1"
-	cfg.Server.Port = port
+	if cfg.Server.Port != port {
+		cfg.Server.Port = port
+		if saveErr := config.Save(cfg, configFile); saveErr != nil {
+			logging.Warnf("desktop: failed to persist port %d to config: %v", port, saveErr)
+		}
+	}
 
 	if _, err := config.Prepare(cfg); err != nil {
 		_ = ln.Close()

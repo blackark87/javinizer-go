@@ -184,7 +184,7 @@ func TestStartServer_ListenFails(t *testing.T) {
 	origListen, origLoad := listenFn, loadConfigFn
 	t.Cleanup(func() { listenFn, loadConfigFn = origListen, origLoad })
 
-	listenFn = func(ctx context.Context) (net.Listener, error) {
+	listenFn = func(ctx context.Context, port int) (net.Listener, error) {
 		return nil, errors.New("simulated listen failure")
 	}
 	loadConfigFn = func(path string) (*config.Config, error) {
@@ -212,7 +212,7 @@ func TestStartServer_PrepareFails(t *testing.T) {
 	}
 	defer ln.Close() // idempotent; the error path also closes it
 
-	listenFn = func(ctx context.Context) (net.Listener, error) { return ln, nil }
+	listenFn = func(ctx context.Context, port int) (net.Listener, error) { return ln, nil }
 	loadConfigFn = func(path string) (*config.Config, error) {
 		return &config.Config{ConfigVersion: config.CurrentConfigVersion + 1}, nil
 	}
@@ -362,6 +362,82 @@ func TestServerInstance_ContextCancelTriggersShutdown(t *testing.T) {
 	case <-inst.Done():
 	case <-time.After(5 * time.Second):
 		t.Fatal("Done() did not close within 5s after context cancel")
+	}
+}
+
+// TestStartServer_PortReuse verifies that the configured port is reused
+// when available, and that a fallback to a free port is persisted to config.
+func TestStartServer_PortReuse(t *testing.T) {
+	origListen, origLoad := listenFn, loadConfigFn
+	t.Cleanup(func() { listenFn, loadConfigFn = origListen, origLoad })
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("create listener: %v", err)
+	}
+	defer ln.Close()
+
+	requestedPort := 0
+	listenFn = func(ctx context.Context, port int) (net.Listener, error) {
+		requestedPort = port
+		return ln, nil
+	}
+	loadConfigFn = func(path string) (*config.Config, error) {
+		cfg := config.DefaultConfig([]string{"r18dev"}, nil)
+		cfg.Server.Port = 9090
+		cfg.Database.DSN = ":memory:"
+		cfg.Database.Type = "sqlite"
+		return cfg, nil
+	}
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+
+	inst, err := StartServer(context.Background(), configPath)
+	if err != nil {
+		t.Fatalf("StartServer() error: %v", err)
+	}
+	defer inst.Shutdown()
+
+	if requestedPort != 9090 {
+		t.Errorf("listenFn called with port %d, want 9090 (should reuse configured port)", requestedPort)
+	}
+}
+
+// TestStartServer_PortFallback verifies that when the configured port is
+// unavailable, StartServer falls back to a free port.
+func TestStartServer_PortFallback(t *testing.T) {
+	origListen, origLoad := listenFn, loadConfigFn
+	t.Cleanup(func() { listenFn, loadConfigFn = origListen, origLoad })
+
+	fallbackLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("create fallback listener: %v", err)
+	}
+	defer fallbackLn.Close()
+
+	callCount := 0
+	listenFn = func(ctx context.Context, port int) (net.Listener, error) {
+		callCount++
+		if port == 9090 {
+			return nil, errors.New("port in use")
+		}
+		return fallbackLn, nil
+	}
+	loadConfigFn = func(path string) (*config.Config, error) {
+		cfg := config.DefaultConfig([]string{"r18dev"}, nil)
+		cfg.Server.Port = 9090
+		cfg.Database.DSN = ":memory:"
+		cfg.Database.Type = "sqlite"
+		return cfg, nil
+	}
+
+	inst, err := StartServer(context.Background(), filepath.Join(t.TempDir(), "config.yaml"))
+	if err != nil {
+		t.Fatalf("StartServer() error: %v", err)
+	}
+	defer inst.Shutdown()
+
+	if callCount < 2 {
+		t.Errorf("expected at least 2 listen attempts (configured port + fallback), got %d", callCount)
 	}
 }
 

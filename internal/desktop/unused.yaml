@@ -1,0 +1,207 @@
+api:
+    security:
+        allowed_directories: []
+        denied_directories: []
+        max_files_per_scan: 0
+        scan_timeout_seconds: 0
+        allowed_origins: []
+        allow_unc: false
+        allowed_unc_servers: []
+        rate_limit:
+            requests_per_minute: 0
+        trusted_proxies: []
+        force_secure_cookies: false
+config_version: 4
+database:
+    type: ""
+    dsn: ""
+    log_level: ""
+file_matching:
+    extensions: []
+    min_size_mb: 0
+    exclude_patterns: []
+    regex_enabled: false
+    regex_pattern: ""
+logging:
+    level: ""
+    format: ""
+    output: ""
+    max_size_mb: 0
+    max_backups: 0
+    max_age_days: 0
+    compress: false
+mediainfo:
+    cli_enabled: false
+    cli_path: ""
+    cli_timeout: 0
+metadata:
+    priority: {}
+    actress_database:
+        enabled: false
+        auto_add: false
+        convert_alias: false
+    genre_replacement:
+        enabled: false
+        auto_add: false
+    word_replacement:
+        enabled: false
+    tag_database:
+        enabled: false
+    r18dev_dump:
+        enabled: false
+        path: /Users/choong/Library/Application Support/Javinizer/data/r18dev/r18dev_dump.db
+    translation:
+        enabled: false
+        provider: ""
+        source_language: ""
+        target_language: ""
+        timeout_seconds: 0
+        apply_to_primary: false
+        overwrite_existing_target: false
+        fields:
+            title: false
+            original_title: false
+            description: false
+            director: false
+            maker: false
+            label: false
+            series: false
+            genres: false
+            actresses: false
+        openai:
+            base_url: ""
+            api_key: ""
+            model: ""
+        deepl:
+            mode: ""
+            base_url: ""
+            api_key: ""
+        google:
+            mode: ""
+            base_url: ""
+            api_key: ""
+        openai_compatible:
+            base_url: ""
+            api_key: ""
+            model: ""
+            enable_thinking: null
+        anthropic:
+            base_url: ""
+            api_key: ""
+            model: ""
+    ignore_genres: []
+    required_fields: []
+    nfo:
+        enabled: false
+        per_file: false
+        include_fanart: false
+        include_trailer: false
+        include_stream_details: false
+        include_originalpath: false
+        actress_as_tag: false
+        add_generic_role: false
+        alt_name_role: false
+        display_title: ""
+        filename_template: ""
+        first_name_order: false
+        actress_language_ja: false
+        rating_source: ""
+        tagline: ""
+        unknown_actress_mode: ""
+        unknown_actress_text: ""
+        tag: []
+        credits: []
+    completeness:
+        enabled: false
+        tiers:
+            essential:
+                weight: 0
+                fields: []
+            important:
+                weight: 0
+                fields: []
+            nice_to_have:
+                weight: 0
+                fields: []
+output:
+    folder_format: ""
+    file_format: ""
+    subfolder_format: []
+    actress_delimiter: ""
+    max_title_length: 0
+    max_path_length: 0
+    first_name_order: false
+    actress_language_ja: false
+    operation_mode: ""
+    rename_file: false
+    allow_revert: false
+    group_actress: false
+    group_actress_name: ""
+    group_unknown_actress_name: ""
+    move_subtitles: false
+    move_files: false
+    subtitle_extensions: []
+    poster_format: ""
+    max_poster_height: 0
+    fanart_format: ""
+    trailer_format: ""
+    screenshot_format: ""
+    screenshot_folder: ""
+    screenshot_padding: 0
+    actress_folder: ""
+    actress_format: ""
+    download_cover: false
+    download_poster: false
+    download_extrafanart: false
+    download_trailer: false
+    download_actress: false
+    download_timeout: 0
+    download_proxy:
+        enabled: false
+performance:
+    max_workers: 0
+    worker_timeout: 0
+    buffer_size: 0
+    update_interval: 0
+scrapers:
+    browser:
+        enabled: false
+        binary_path: ""
+        timeout: 0
+        max_retries: 0
+        headless: false
+        stealth_mode: false
+        window_width: 0
+        window_height: 0
+        slow_mo: 0
+        block_images: false
+        block_css: false
+        user_agent: ""
+        debug_visible: false
+    flaresolverr:
+        enabled: false
+        url: ""
+        timeout: 0
+        max_retries: 0
+        session_ttl: 0
+    priority: []
+    proxy:
+        enabled: false
+    referer: ""
+    request_timeout_seconds: 0
+    scrape_actress: false
+    timeout_seconds: 0
+    user_agent: ""
+server:
+    host: 127.0.0.1
+    port: 49852
+system:
+    umask: ""
+    version_check_enabled: false
+    version_check_interval_hours: 0
+    version_check_stable_only: false
+    temp_dir: ""
+webui:
+    default_review_view: ""
+    favorites:
+        genre: []

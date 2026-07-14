@@ -17,8 +17,10 @@ javinizer-go
 /javinizer
 /javinizer-e2e
 
+# Node modules (root or any subdirectory)
+node_modules/
+
 # Web build artifacts
-/web/frontend/node_modules/
 /web/frontend/.svelte-kit/
 /web/frontend/build/
 /web/frontend/test-results/

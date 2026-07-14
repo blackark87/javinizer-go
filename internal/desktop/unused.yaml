@@ -194,7 +194,7 @@ scrapers:
     user_agent: ""
 server:
     host: 127.0.0.1
-    port: 49852
+    port: 51400
 system:
     umask: ""
     version_check_enabled: false

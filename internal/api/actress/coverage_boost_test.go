@@ -57,6 +57,10 @@ func (r *failingActressRepo) FindByID(_ context.Context, _ uint) (*models.Actres
 	return &models.Actress{DMMID: 1, FirstName: "Fallback"}, nil
 }
 
+func (r *failingActressRepo) FindByDMMID(_ context.Context, _ int) (*models.Actress, error) {
+	return nil, database.ErrNotFound
+}
+
 func (r *failingActressRepo) Delete(_ context.Context, _ uint) error {
 	if r.deleteErr != nil {
 		return r.deleteErr

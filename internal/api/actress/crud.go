@@ -303,6 +303,20 @@ func updateActress(deps ActressDeps) gin.HandlerFunc {
 		existing.ThumbURL = req.ThumbURL
 		existing.Aliases = req.Aliases
 
+		if req.DMMID > 0 {
+			dup, err := deps.ActressRepo.FindByDMMID(c.Request.Context(), req.DMMID)
+			if err != nil && !database.IsNotFound(err) {
+				c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: err.Error()})
+				return
+			}
+			if dup != nil && dup.ID != existing.ID {
+				c.JSON(http.StatusConflict, contracts.ErrorResponse{
+					Error: fmt.Sprintf("DMM ID %d is already used by actress #%d", req.DMMID, dup.ID),
+				})
+				return
+			}
+		}
+
 		if err := deps.ActressRepo.Update(c.Request.Context(), existing); err != nil {
 			c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: err.Error()})
 			return

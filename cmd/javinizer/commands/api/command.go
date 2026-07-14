@@ -211,7 +211,11 @@ func run(cmd *cobra.Command, configFile string, hostFlag string, portFlag int) e
 	if err != nil {
 		log.Fatalf("Failed to initialize API dependencies: %v", err)
 	}
-	defer func() { _ = apiDeps.DB.Close() }()
+	defer func() {
+		apiDeps.Shutdown()
+		_ = apiDeps.DB.Close()
+	}()
+	apiDeps.EnsureActressSyncManager()
 
 	// Create and configure the server
 	router := apiserver.NewServer(apiDeps)

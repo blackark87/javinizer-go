@@ -626,6 +626,9 @@ definitions:
         allOf:
         - $ref: '#/definitions/config.GoogleTranslationConfig'
         description: Google provider settings
+      max_concurrency:
+        description: Maximum concurrent translation requests
+        type: integer
       openai:
         allOf:
         - $ref: '#/definitions/config.OpenAITranslationConfig'
@@ -1058,6 +1061,17 @@ definitions:
         example: seconds
         type: string
     type: object
+  github_com_javinizer_javinizer-go_internal_worker.ActressSyncCreateRequest:
+    properties:
+      actress_ids:
+        items:
+          type: integer
+        type: array
+      missing:
+        type: boolean
+      scope:
+        type: string
+    type: object
   github_com_javinizer_javinizer-go_internal_worker.ActressSyncResult:
     properties:
       actress:
@@ -1229,6 +1243,27 @@ definitions:
       ids:
         items:
           type: integer
+        type: array
+      total:
+        type: integer
+    type: object
+  internal_api_actress.actressSyncJobResponse:
+    properties:
+      job:
+        $ref: '#/definitions/models.ActressSyncJob'
+    type: object
+  internal_api_actress.actressSyncJobsResponse:
+    properties:
+      jobs:
+        items:
+          $ref: '#/definitions/models.ActressSyncJob'
+        type: array
+    type: object
+  internal_api_actress.actressSyncTasksResponse:
+    properties:
+      tasks:
+        items:
+          $ref: '#/definitions/models.ActressSyncTask'
         type: array
       total:
         type: integer
@@ -2463,6 +2498,88 @@ definitions:
       updated_at:
         type: string
     type: object
+  models.ActressSyncJob:
+    properties:
+      cancel_requested:
+        type: boolean
+      cancelled:
+        type: integer
+      completed:
+        type: integer
+      completed_at:
+        type: string
+      conflicts:
+        type: integer
+      created_at:
+        type: string
+      failed:
+        type: integer
+      id:
+        type: string
+      scope:
+        type: string
+      skipped:
+        type: integer
+      started_at:
+        type: string
+      status:
+        type: string
+      total_tasks:
+        type: integer
+      updated:
+        type: integer
+      warnings:
+        type: integer
+    type: object
+  models.ActressSyncTask:
+    properties:
+      actress_id:
+        type: integer
+      attempts:
+        type: integer
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      dedupe_key:
+        type: string
+      error_message:
+        type: string
+      heartbeat_at:
+        type: string
+      id:
+        type: string
+      job_id:
+        type: string
+      kind:
+        type: string
+      label:
+        type: string
+      lease_expires_at:
+        type: string
+      messages:
+        items:
+          type: string
+        type: array
+      movie_content_id:
+        type: string
+      movie_id:
+        type: string
+      outcome:
+        type: string
+      stage:
+        type: string
+      started_at:
+        type: string
+      status:
+        type: string
+      updated_fields:
+        items:
+          type: string
+        type: array
+      warning:
+        type: string
+    type: object
   models.Event:
     properties:
       context:
@@ -3096,6 +3213,131 @@ paths:
           schema:
             $ref: '#/definitions/internal_api_actress.ErrorResponse'
       summary: List actresses missing metadata
+      tags:
+      - actress
+  /api/v1/actresses/sync-jobs:
+    post:
+      consumes:
+      - application/json
+      description: Queue selected actresses or all actresses with missing metadata
+        for background processing
+      parameters:
+      - description: Sync scope
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_worker.ActressSyncCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/internal_api_actress.actressSyncJobResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_api_actress.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_actress.ErrorResponse'
+      summary: Start a durable actress metadata sync job
+      tags:
+      - actress
+  /api/v1/actresses/sync-jobs/{jobID}:
+    get:
+      parameters:
+      - description: Actress sync job ID
+        in: path
+        name: jobID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_actress.actressSyncJobResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_actress.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_actress.ErrorResponse'
+      summary: Get actress sync job progress
+      tags:
+      - actress
+  /api/v1/actresses/sync-jobs/{jobID}/cancel:
+    post:
+      parameters:
+      - description: Actress sync job ID
+        in: path
+        name: jobID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_actress.actressSyncJobResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_actress.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_actress.ErrorResponse'
+      summary: Stop an actress sync job after currently running items
+      tags:
+      - actress
+  /api/v1/actresses/sync-jobs/{jobID}/tasks:
+    get:
+      parameters:
+      - description: Actress sync job ID
+        in: path
+        name: jobID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_actress.actressSyncTasksResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_api_actress.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_actress.ErrorResponse'
+      summary: List detailed actress sync job tasks
+      tags:
+      - actress
+  /api/v1/actresses/sync-jobs/active:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api_actress.actressSyncJobsResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_api_actress.ErrorResponse'
+      summary: List active actress sync jobs
       tags:
       - actress
   /api/v1/auth/login:

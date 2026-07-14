@@ -49,6 +49,10 @@ import type {
 	ActressMoviesResponse,
 	ActressSyncCandidatesResponse,
 	ActressSyncResponse,
+	ActressSyncJobResponse,
+	ActressSyncJobsResponse,
+	ActressSyncTasksResponse,
+	ActressSyncJobCreateRequest,
 	ActressUpsertRequest,
 	Actress,
 	ActressMergePreviewRequest,
@@ -423,6 +427,29 @@ class APIClient {
 		return this.request<ActressSyncResponse>(`/api/v1/actresses/${id}/sync`, {
 			method: 'POST'
 		});
+	}
+
+	async createActressSyncJob(request: ActressSyncJobCreateRequest): Promise<ActressSyncJobResponse> {
+		return this.request<ActressSyncJobResponse>('/api/v1/actresses/sync-jobs', {
+			method: 'POST',
+			body: JSON.stringify(request)
+		});
+	}
+
+	async listActiveActressSyncJobs(): Promise<ActressSyncJobsResponse> {
+		return this.request<ActressSyncJobsResponse>('/api/v1/actresses/sync-jobs/active');
+	}
+
+	async getActressSyncJob(jobID: string): Promise<ActressSyncJobResponse> {
+		return this.request<ActressSyncJobResponse>(`/api/v1/actresses/sync-jobs/${jobID}`);
+	}
+
+	async listActressSyncJobTasks(jobID: string): Promise<ActressSyncTasksResponse> {
+		return this.request<ActressSyncTasksResponse>(`/api/v1/actresses/sync-jobs/${jobID}/tasks`);
+	}
+
+	async cancelActressSyncJob(jobID: string): Promise<ActressSyncJobResponse> {
+		return this.request<ActressSyncJobResponse>(`/api/v1/actresses/sync-jobs/${jobID}/cancel`, { method: 'POST' });
 	}
 
 	// Create actress

@@ -358,6 +358,13 @@ func (c *Config) validateTranslationConfig() error {
 	if timeoutSeconds < 5 || timeoutSeconds > 300 {
 		return fmt.Errorf("metadata.translation.timeout_seconds must be between 5 and 300")
 	}
+	maxConcurrency := t.MaxConcurrency
+	if maxConcurrency <= 0 {
+		maxConcurrency = 3
+	}
+	if maxConcurrency < 1 || maxConcurrency > 100 {
+		return fmt.Errorf("metadata.translation.max_concurrency must be between 1 and 100")
+	}
 
 	switch provider {
 	case "openai":

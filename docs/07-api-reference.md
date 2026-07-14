@@ -106,6 +106,12 @@ Manage actress database with images and metadata.
 | `POST` | `/api/v1/actresses` | Create new actress entry |
 | `PUT` | `/api/v1/actresses/:id` | Update actress metadata |
 | `DELETE` | `/api/v1/actresses/:id` | Delete actress from database |
+| `GET` | `/api/v1/actresses/sync-candidates` | List actresses missing a DMM ID or thumbnail |
+| `POST` | `/api/v1/actresses/sync-jobs` | Queue a durable background metadata sync |
+| `GET` | `/api/v1/actresses/sync-jobs/active` | List pending or running sync jobs |
+| `GET` | `/api/v1/actresses/sync-jobs/:id` | Get sync progress and counters |
+| `GET` | `/api/v1/actresses/sync-jobs/:id/tasks` | Get item stages and detailed logs |
+| `POST` | `/api/v1/actresses/sync-jobs/:id/cancel` | Cancel queued items after running items finish |
 | `POST` | `/api/v1/actresses/merge/preview` | Preview a target/source merge and field conflicts |
 | `POST` | `/api/v1/actresses/merge` | Apply a target/source merge with conflict resolutions |
 
@@ -113,6 +119,8 @@ Manage actress database with images and metadata.
 ```bash
 curl "http://localhost:8080/api/v1/actresses/search?q=Sakura"
 ```
+
+Sync jobs and their item leases are stored in the database. They continue when the browser closes and recover unfinished running items after a server restart.
 
 **Example - Merge preview:**
 ```bash

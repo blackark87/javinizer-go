@@ -540,6 +540,18 @@
 					}}
 				/>
 
+				<FormNumberInput
+					label="Maximum concurrency"
+					description="Maximum number of translation requests that may run at the same time"
+					value={config.metadata.translation?.max_concurrency ?? 3}
+					min={1}
+					max={100}
+					onchange={(val) => {
+						if (!config.metadata.translation) config.metadata.translation = {} as TranslationConfigType;
+						config.metadata.translation!.max_concurrency = val;
+					}}
+				/>
+
 				<FormToggle
 					label="Apply to primary metadata"
 					description="Replace primary movie fields with translated text"

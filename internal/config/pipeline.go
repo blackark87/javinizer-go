@@ -44,6 +44,10 @@ func normalizeTranslationConfig(t *TranslationConfig) bool {
 		t.TimeoutSeconds = 60
 		changed = true
 	}
+	if t.MaxConcurrency <= 0 {
+		t.MaxConcurrency = 3
+		changed = true
+	}
 
 	return changed
 }

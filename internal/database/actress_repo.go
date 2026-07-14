@@ -3,11 +3,31 @@ package database
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/javinizer/javinizer-go/internal/models"
 	"gorm.io/gorm"
 )
+
+// ActressDMMIDConflictError is returned when an exact-name match points at a
+// different verified DMM identity. Callers must report the conflict instead of
+// merging or creating a duplicate row.
+type ActressDMMIDConflictError struct {
+	IncomingDMMID int
+	ExistingDMMID int
+	ExistingID    uint
+}
+
+func (e *ActressDMMIDConflictError) Error() string {
+	return fmt.Sprintf("DMM ID %d conflicts with actress %d (DMM ID %d)", e.IncomingDMMID, e.ExistingID, e.ExistingDMMID)
+}
+
+func AsActressDMMIDConflict(err error) (*ActressDMMIDConflictError, bool) {
+	var conflict *ActressDMMIDConflictError
+	return conflict, errors.As(err, &conflict)
+}
 
 type ActressRepository struct {
 	*BaseRepository[models.Actress, uint]
@@ -209,6 +229,10 @@ func (r *ActressRepository) ListMissingMetadata() ([]models.Actress, error) {
 }
 
 func (r *ActressRepository) FindOrCreate(actress *models.Actress) error {
+	return retryOnLocked(func() error { return r.findOrCreateOnce(actress) })
+}
+
+func (r *ActressRepository) findOrCreateOnce(actress *models.Actress) error {
 	if actress.DMMID > 0 {
 		existing, err := r.FindByDMMID(actress.DMMID)
 		if err == nil {
@@ -219,38 +243,130 @@ func (r *ActressRepository) FindOrCreate(actress *models.Actress) error {
 		}
 	}
 
-	if actress.JapaneseName != "" {
-		existing, err := r.FindByJapaneseName(actress.JapaneseName)
-		if err == nil {
-			return r.reuseActressWithBackfill(actress, existing)
-		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
+	if existing, err := r.findExactReusableActress(*actress); err != nil {
+		return err
+	} else if existing != nil {
+		return r.reuseActressWithBackfill(actress, existing)
 	}
 
-	if actress.FirstName != "" || actress.LastName != "" {
-		existing, err := r.FindByFirstNameLastName(actress.FirstName, actress.LastName)
-		if err == nil {
+	if err := r.Create(actress); err != nil {
+		// Verified Unknown/movie tasks can resolve the same performer at the same
+		// time. The DMM unique index chooses the winner; all other workers then
+		// reuse and backfill that canonical row.
+		if actress.DMMID > 0 && strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
+			existing, findErr := r.FindByDMMID(actress.DMMID)
+			if findErr != nil {
+				return findErr
+			}
+			actress.ID = 0
 			return r.reuseActressWithBackfill(actress, existing)
 		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
+		return err
 	}
-
-	return r.Create(actress)
+	return nil
 }
 
 func (r *ActressRepository) reuseActressWithBackfill(incoming, existing *models.Actress) error {
+	if incoming.DMMID > 0 && existing.DMMID > 0 && incoming.DMMID != existing.DMMID {
+		return &ActressDMMIDConflictError{IncomingDMMID: incoming.DMMID, ExistingDMMID: existing.DMMID, ExistingID: existing.ID}
+	}
+	changed := false
+	if incoming.DMMID > 0 && existing.DMMID <= 0 {
+		existing.DMMID = incoming.DMMID
+		changed = true
+	}
 	if incoming.ThumbURL != "" && existing.ThumbURL == "" {
 		existing.ThumbURL = incoming.ThumbURL
+		changed = true
+	}
+	if incoming.JapaneseName != "" && (existing.JapaneseName == "" || models.IsUnknownActressName(existing.JapaneseName)) {
+		existing.JapaneseName = incoming.JapaneseName
+		changed = true
+	}
+	incomingHasHangul := containsHangul(incoming.FirstName) || containsHangul(incoming.LastName)
+	existingHasHangul := containsHangul(existing.FirstName) || containsHangul(existing.LastName)
+	if incoming.FirstName != "" && (existing.FirstName == "" || models.IsUnknownActressName(existing.FirstName) || (incomingHasHangul && !existingHasHangul)) {
+		existing.FirstName = incoming.FirstName
+		changed = true
+	}
+	if incoming.LastName != "" && (existing.LastName == "" || models.IsUnknownActressName(existing.LastName) || (incomingHasHangul && !existingHasHangul)) {
+		existing.LastName = incoming.LastName
+		changed = true
+	}
+	if changed {
 		if err := r.Update(existing); err != nil {
 			return err
 		}
 	}
 	*incoming = *existing
 	return nil
+}
+
+// findExactReusableActress applies the non-fuzzy identity order used by actress
+// sync: Japanese name/aliases first, then normalized romanized or Hangul names.
+func (r *ActressRepository) findExactReusableActress(incoming models.Actress) (*models.Actress, error) {
+	var actresses []models.Actress
+	if err := r.GetDB().Order("dmm_id DESC, id ASC").Find(&actresses).Error; err != nil {
+		return nil, wrapDBErr("find", "exact reusable actress", err)
+	}
+
+	incomingJapanese := exactActressAliasKeys(incoming.JapaneseName, incoming.Aliases)
+	if len(incomingJapanese) > 0 {
+		for i := range actresses {
+			if exactKeySetsIntersect(incomingJapanese, exactActressAliasKeys(actresses[i].JapaneseName, actresses[i].Aliases)) {
+				return &actresses[i], nil
+			}
+		}
+	}
+
+	incomingPrimary := exactActressPrimaryKeys(incoming.FirstName, incoming.LastName)
+	if len(incomingPrimary) > 0 {
+		for i := range actresses {
+			if exactKeySetsIntersect(incomingPrimary, exactActressPrimaryKeys(actresses[i].FirstName, actresses[i].LastName)) {
+				return &actresses[i], nil
+			}
+		}
+	}
+	return nil, nil
+}
+
+func exactActressAliasKeys(japaneseName, aliases string) map[string]struct{} {
+	keys := make(map[string]struct{})
+	for _, value := range append([]string{japaneseName}, strings.Split(aliases, "|")...) {
+		if key := normalizeExactActressName(value); key != "" {
+			keys[key] = struct{}{}
+		}
+	}
+	return keys
+}
+
+func exactActressPrimaryKeys(firstName, lastName string) map[string]struct{} {
+	keys := make(map[string]struct{})
+	for _, value := range []string{strings.TrimSpace(firstName + " " + lastName), strings.TrimSpace(lastName + " " + firstName)} {
+		if key := normalizeExactActressName(value); key != "" && !models.IsUnknownActressName(value) {
+			keys[key] = struct{}{}
+		}
+	}
+	return keys
+}
+
+func normalizeExactActressName(value string) string {
+	var normalized strings.Builder
+	for _, char := range strings.ToLower(strings.TrimSpace(value)) {
+		if unicode.IsLetter(char) || unicode.IsNumber(char) {
+			normalized.WriteRune(char)
+		}
+	}
+	return normalized.String()
+}
+
+func exactKeySetsIntersect(left, right map[string]struct{}) bool {
+	for key := range left {
+		if _, exists := right[key]; exists {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *ActressRepository) List(limit, offset int) ([]models.Actress, error) {

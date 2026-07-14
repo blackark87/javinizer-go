@@ -48,6 +48,7 @@ func SyncActressMetadata(
 	actressRepo *database.ActressRepository,
 	registry *models.ScraperRegistry,
 	scraperPriority []string,
+	movieRepos ...*database.MovieRepository,
 ) (*ActressSyncResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -71,6 +72,7 @@ func SyncActressMetadata(
 	}
 
 	var candidate *resolvedActressCandidate
+	var profileCandidate *resolvedActressCandidate
 	if missingDMMID {
 		var identityFailed bool
 		candidate, result.Messages, identityFailed, err = resolveMissingActressDMMID(
@@ -81,6 +83,30 @@ func SyncActressMetadata(
 		}
 		if identityFailed {
 			result.Status = ActressSyncFailed
+		}
+		if candidate == nil && len(movieRepos) > 0 && movieRepos[0] != nil {
+			candidate, result.Messages, err = resolveActressFromRecentMovies(
+				ctx, *actress, movieRepos[0], registry, result.Messages,
+			)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	if missingThumbnail && candidate == nil {
+		profileCandidate, result.Messages = resolveMissingActressProfile(ctx, *actress, registry, scraperPriority, result.Messages)
+		if profileCandidate != nil {
+			if result.Source == "" {
+				result.Source = profileCandidate.source
+				result.SourceQuery = profileCandidate.query
+			}
+			before := len(result.UpdatedFields)
+			fillMissingActressNames(actress, profileCandidate.info, &result.UpdatedFields)
+			if len(result.UpdatedFields) > before {
+				if err := actressRepo.Update(actress); err != nil {
+					return nil, err
+				}
+			}
 		}
 	}
 
@@ -99,6 +125,7 @@ func SyncActressMetadata(
 			// The current row already owns the ID. This is harmless and leaves it unchanged.
 		case database.IsNotFound(lookupErr):
 			actress.DMMID = candidate.info.DMMID
+			fillMissingActressNames(actress, candidate.info, &result.UpdatedFields)
 			if err := actressRepo.Update(actress); err != nil {
 				return nil, err
 			}
@@ -111,25 +138,32 @@ func SyncActressMetadata(
 	}
 
 	if missingThumbnail {
+		thumbnail := ""
+		if candidate != nil {
+			thumbnail = strings.TrimSpace(candidate.info.ThumbURL)
+		}
+		if thumbnail == "" && profileCandidate != nil {
+			thumbnail = strings.TrimSpace(profileCandidate.info.ThumbURL)
+		}
 		thumbnailResolver := findActressThumbnailResolver(registry)
-		if thumbnailResolver == nil {
+		if thumbnail == "" && thumbnailResolver == nil {
 			result.Messages = append(result.Messages, "No actress thumbnail resolver is available")
-		} else {
+		} else if thumbnail == "" {
 			lookupInfo := actressInfoForThumbnail(*actress, candidate)
-			thumbnail := strings.TrimSpace(safeResolveActressThumbnail(ctx, thumbnailResolver, lookupInfo))
+			thumbnail = strings.TrimSpace(safeResolveActressThumbnail(ctx, thumbnailResolver, lookupInfo))
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
-			if thumbnail != "" {
-				actress.ThumbURL = thumbnail
-				if err := actressRepo.Update(actress); err != nil {
-					return nil, err
-				}
-				result.UpdatedFields = append(result.UpdatedFields, "thumb_url")
-				result.Messages = append(result.Messages, "Profile thumbnail resolved")
-			} else {
-				result.Messages = append(result.Messages, "Profile thumbnail could not be resolved")
+		}
+		if thumbnail != "" {
+			actress.ThumbURL = thumbnail
+			if err := actressRepo.Update(actress); err != nil {
+				return nil, err
 			}
+			result.UpdatedFields = append(result.UpdatedFields, "thumb_url")
+			result.Messages = append(result.Messages, "Profile thumbnail resolved")
+		} else if thumbnailResolver != nil {
+			result.Messages = append(result.Messages, "Profile thumbnail could not be resolved")
 		}
 	}
 
@@ -141,6 +175,174 @@ func SyncActressMetadata(
 	}
 	result.Actress = *actress
 	return result, nil
+}
+
+func resolveMissingActressProfile(
+	ctx context.Context,
+	target models.Actress,
+	registry *models.ScraperRegistry,
+	priority []string,
+	messages []string,
+) (*resolvedActressCandidate, []string) {
+	query := models.ActressIdentityQuery{Names: actressIdentityNames(target), ThumbURL: strings.TrimSpace(target.ThumbURL)}
+	for _, source := range enabledActressIdentitySources(registry, priority) {
+		if err := ctx.Err(); err != nil {
+			return nil, messages
+		}
+		resolved, err := safeResolveActressIdentity(ctx, source, query)
+		if err != nil || resolved == nil {
+			continue
+		}
+		candidate, ok := exactActressProfileMatch(target, resolved.Actresses)
+		if !ok || strings.TrimSpace(candidate.ThumbURL) == "" {
+			continue
+		}
+		messages = append(messages, fmt.Sprintf("%s: exact actress profile thumbnail matched", source.Name()))
+		return &resolvedActressCandidate{info: candidate, source: source.Name(), query: strings.TrimSpace(resolved.ID)}, messages
+	}
+	return nil, messages
+}
+
+func exactActressProfileMatch(target models.Actress, candidates []models.ActressInfo) (models.ActressInfo, bool) {
+	targetNames := actressNameKeys(target)
+	var matches []models.ActressInfo
+	for _, candidate := range candidates {
+		if nameSetsIntersect(targetNames, actressInfoNameKeys(candidate)) {
+			matches = append(matches, candidate)
+		}
+	}
+	if len(matches) != 1 {
+		return models.ActressInfo{}, false
+	}
+	return matches[0], true
+}
+
+func fillMissingActressNames(actress *models.Actress, incoming models.ActressInfo, updatedFields *[]string) {
+	if actress == nil {
+		return
+	}
+	wasUnknown := models.IsUnknownActressFields(actress.LastName, actress.FirstName, actress.JapaneseName)
+	if (strings.TrimSpace(actress.JapaneseName) == "" || models.IsUnknownActressName(actress.JapaneseName)) &&
+		strings.TrimSpace(incoming.JapaneseName) != "" && !models.IsUnknownActressName(incoming.JapaneseName) {
+		actress.JapaneseName = strings.TrimSpace(incoming.JapaneseName)
+		*updatedFields = append(*updatedFields, "japanese_name")
+		if wasUnknown {
+			if actress.FirstName != "" {
+				actress.FirstName = ""
+				*updatedFields = append(*updatedFields, "first_name")
+			}
+			if actress.LastName != "" {
+				actress.LastName = ""
+				*updatedFields = append(*updatedFields, "last_name")
+			}
+		}
+	}
+	if (strings.TrimSpace(actress.FirstName) == "" || wasUnknown) && strings.TrimSpace(incoming.FirstName) != "" {
+		actress.FirstName = strings.TrimSpace(incoming.FirstName)
+		*updatedFields = append(*updatedFields, "first_name")
+	}
+	if (strings.TrimSpace(actress.LastName) == "" || wasUnknown) && strings.TrimSpace(incoming.LastName) != "" {
+		actress.LastName = strings.TrimSpace(incoming.LastName)
+		*updatedFields = append(*updatedFields, "last_name")
+	}
+}
+
+func resolveActressFromRecentMovies(
+	ctx context.Context,
+	target models.Actress,
+	movieRepo *database.MovieRepository,
+	registry *models.ScraperRegistry,
+	messages []string,
+) (*resolvedActressCandidate, []string, error) {
+	if registry == nil {
+		return nil, append(messages, "SougouWiki fallback is unavailable"), nil
+	}
+	scraper, ok := registry.Get("sougouwiki")
+	if !ok || scraper == nil || !scraper.IsEnabled() {
+		return nil, append(messages, "SougouWiki fallback is disabled or unavailable"), nil
+	}
+	resolver, ok := scraper.(models.ActressResolver)
+	if !ok {
+		return nil, append(messages, "SougouWiki does not support movie actress resolution"), nil
+	}
+	movies, err := movieRepo.ListByActressID(target.ID, 5, 0)
+	if err != nil {
+		return nil, messages, err
+	}
+	if len(movies) == 0 {
+		return nil, append(messages, "No linked movies are available for SougouWiki fallback"), nil
+	}
+
+	for _, movie := range movies {
+		if err := ctx.Err(); err != nil {
+			return nil, messages, err
+		}
+		queryID := strings.TrimSpace(movie.ID)
+		if queryID == "" {
+			queryID = strings.TrimSpace(movie.ContentID)
+		}
+		messages = append(messages, fmt.Sprintf("sougouwiki: checking linked movie %s", queryID))
+		resolved, resolveErr := safeResolveActresses(ctx, resolver, queryID)
+		if resolveErr != nil {
+			if err := ctx.Err(); err != nil {
+				return nil, messages, err
+			}
+			messages = append(messages, fmt.Sprintf("sougouwiki: %s failed: %v", queryID, resolveErr))
+			continue
+		}
+		if resolved == nil || len(resolved.Actresses) == 0 {
+			messages = append(messages, fmt.Sprintf("sougouwiki: %s returned no actresses", queryID))
+			continue
+		}
+		if match, matched := exactActressMatch(target, resolved.Actresses); matched {
+			messages = append(messages, fmt.Sprintf("sougouwiki: exact actress match found in %s", queryID))
+			return &resolvedActressCandidate{info: match, source: scraper.Name(), query: queryID}, messages, nil
+		}
+		if match, matched := safeSingleRemainingActress(target.ID, movie.Actresses, resolved.Actresses); matched {
+			messages = append(messages, fmt.Sprintf("sougouwiki: unique remaining actress matched in %s", queryID))
+			return &resolvedActressCandidate{info: match, source: scraper.Name(), query: queryID}, messages, nil
+		}
+		messages = append(messages, fmt.Sprintf("sougouwiki: %s was ambiguous", queryID))
+	}
+	return nil, append(messages, "No safe SougouWiki fallback match was found in up to 5 linked movies"), nil
+}
+
+func safeSingleRemainingActress(targetID uint, linked []models.Actress, candidates []models.ActressInfo) (models.ActressInfo, bool) {
+	missing := 0
+	confirmed := make(map[int]struct{})
+	for _, actress := range linked {
+		if actress.ID == targetID {
+			if actress.DMMID <= 0 {
+				missing++
+			}
+			continue
+		}
+		if actress.DMMID > 0 {
+			confirmed[actress.DMMID] = struct{}{}
+		} else {
+			missing++
+		}
+	}
+	if missing != 1 {
+		return models.ActressInfo{}, false
+	}
+	remaining := make(map[int]models.ActressInfo)
+	for _, candidate := range candidates {
+		if candidate.DMMID <= 0 {
+			continue
+		}
+		if _, exists := confirmed[candidate.DMMID]; exists {
+			continue
+		}
+		remaining[candidate.DMMID] = candidate
+	}
+	if len(remaining) != 1 {
+		return models.ActressInfo{}, false
+	}
+	for _, candidate := range remaining {
+		return candidate, true
+	}
+	return models.ActressInfo{}, false
 }
 
 func resolveMissingActressDMMID(

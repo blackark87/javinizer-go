@@ -406,6 +406,56 @@ export interface ActressSyncResponse {
 	conflict_actress_id?: number;
 }
 
+export type ActressSyncJobStatus = 'pending' | 'running' | 'completed' | 'cancelled';
+export type ActressSyncTaskStatus = 'pending' | 'running' | 'completed' | 'skipped' | 'conflict' | 'failed' | 'cancelled';
+
+export interface ActressSyncJob {
+	id: string;
+	status: ActressSyncJobStatus;
+	scope: string;
+	total_tasks: number;
+	completed: number;
+	updated: number;
+	warnings: number;
+	skipped: number;
+	conflicts: number;
+	failed: number;
+	cancelled: number;
+	cancel_requested: boolean;
+	created_at: string;
+	started_at?: string;
+	completed_at?: string;
+}
+
+export interface ActressSyncTask {
+	id: string;
+	job_id: string;
+	kind: 'actress' | 'unknown_movie';
+	actress_id?: number;
+	movie_content_id?: string;
+	movie_id?: string;
+	label: string;
+	dedupe_key: string;
+	status: ActressSyncTaskStatus;
+	stage: 'queued' | 'resolving' | 'romanizing' | 'translating' | 'mapping' | 'nfo' | 'completed' | string;
+	outcome?: 'updated' | 'updated_with_warning' | 'skipped' | 'conflict' | 'failed' | 'cancelled' | string;
+	messages: string[];
+	updated_fields: string[];
+	warning?: string;
+	error_message?: string;
+	lease_expires_at?: string;
+	heartbeat_at?: string;
+	attempts: number;
+	created_at: string;
+	started_at?: string;
+	completed_at?: string;
+}
+
+export interface ActressSyncJobResponse { job: ActressSyncJob; }
+export interface ActressSyncJobsResponse { jobs: ActressSyncJob[]; }
+export interface ActressSyncTasksResponse { tasks: ActressSyncTask[]; total: number; }
+export interface ActressSyncJobCreateRequest { scope?: 'missing' | 'selected'; actress_ids?: number[]; missing?: boolean; }
+
 export interface ActressUpsertRequest {
 	dmm_id?: number;
 	first_name?: string;
@@ -780,6 +830,7 @@ export interface TranslationConfig {
 	target_language?: string;
 	target_languages?: string[];
 	timeout_seconds?: number;
+	max_concurrency?: number;
 	apply_to_primary?: boolean;
 	overwrite_existing_target?: boolean;
 	fields?: TranslationFieldsConfig;

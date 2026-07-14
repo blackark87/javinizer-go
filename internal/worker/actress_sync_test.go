@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -23,10 +24,12 @@ type actressSyncTestScraper struct {
 	identityFn     func(context.Context, models.ActressIdentityQuery) (*models.ScraperResult, error)
 	thumbnailURL   string
 	thumbnailFn    func(context.Context, models.ActressInfo) string
+	resolveFn      func(context.Context, string) (*models.ScraperResult, error)
 
 	mu              sync.Mutex
 	identityQueries []models.ActressIdentityQuery
 	thumbnailInfos  []models.ActressInfo
+	resolveQueries  []string
 }
 
 func (s *actressSyncTestScraper) Name() string { return s.name }
@@ -56,6 +59,15 @@ func (s *actressSyncTestScraper) ResolveActressThumbnail(ctx context.Context, ac
 		return s.thumbnailFn(ctx, actress)
 	}
 	return s.thumbnailURL
+}
+func (s *actressSyncTestScraper) ResolveActresses(ctx context.Context, id string) (*models.ScraperResult, error) {
+	s.mu.Lock()
+	s.resolveQueries = append(s.resolveQueries, id)
+	s.mu.Unlock()
+	if s.resolveFn != nil {
+		return s.resolveFn(ctx, id)
+	}
+	return nil, nil
 }
 
 func newActressSyncTestRepo(t *testing.T) *database.ActressRepository {
@@ -91,6 +103,18 @@ func TestExactActressMatchUsesJapaneseAliasesAndBothEnglishOrders(t *testing.T) 
 		{DMMID: 456, JapaneseName: "波多野結衣"},
 	})
 	assert.False(t, ok, "multiple exact candidates must be rejected")
+}
+
+func TestSafeSingleRemainingActressRequiresOneUnresolvedLinkAndOneCandidate(t *testing.T) {
+	linked := []models.Actress{{ID: 1}, {ID: 2, DMMID: 20}}
+	candidate, ok := safeSingleRemainingActress(1, linked, []models.ActressInfo{{DMMID: 20}, {DMMID: 30, JapaneseName: "対象"}})
+	assert.True(t, ok)
+	assert.Equal(t, 30, candidate.DMMID)
+
+	_, ok = safeSingleRemainingActress(1, append(linked, models.Actress{ID: 3}), []models.ActressInfo{{DMMID: 30}})
+	assert.False(t, ok, "another unresolved linked actress makes the match ambiguous")
+	_, ok = safeSingleRemainingActress(1, linked, []models.ActressInfo{{DMMID: 30}, {DMMID: 40}})
+	assert.False(t, ok, "multiple remaining candidates must be rejected")
 }
 
 func TestActressIdentityNamesIncludesNamesAliasesAndEnglishOrders(t *testing.T) {
@@ -275,4 +299,37 @@ func TestSyncActressMetadataPropagatesTimeoutAndPersistsPartialUpdate(t *testing
 		assert.Equal(t, 808, saved.DMMID)
 		assert.Empty(t, saved.ThumbURL)
 	})
+}
+
+func TestSyncActressMetadataChecksAtMostFiveRecentMoviesAfterDirectLookupFails(t *testing.T) {
+	cfg := &config.Config{Database: config.DatabaseConfig{Type: "sqlite", DSN: filepath.Join(t.TempDir(), "fallback.db")}}
+	db, err := database.New(cfg)
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+	require.NoError(t, db.AutoMigrate())
+	actressRepo := database.NewActressRepository(db)
+	movieRepo := database.NewMovieRepository(db)
+	target := &models.Actress{JapaneseName: "対象女優", ThumbURL: "existing.jpg"}
+	require.NoError(t, actressRepo.Create(target))
+	for index := 1; index <= 6; index++ {
+		movie := &models.Movie{ContentID: fmt.Sprintf("movie-%d", index), ID: fmt.Sprintf("TEST-%03d", index), Actresses: []models.Actress{*target}}
+		require.NoError(t, movieRepo.Create(movie))
+	}
+
+	resolver := &actressSyncTestScraper{
+		name: "sougouwiki", enabled: true,
+		identityErr: models.NewScraperNotFoundError("sougouwiki", "no direct match"),
+		resolveFn: func(_ context.Context, _ string) (*models.ScraperResult, error) {
+			return &models.ScraperResult{Actresses: []models.ActressInfo{
+				{DMMID: 100, JapaneseName: "다른 배우"}, {DMMID: 200, JapaneseName: "또 다른 배우"},
+			}}, nil
+		},
+	}
+	registry := models.NewScraperRegistry()
+	registry.Register(resolver)
+	result, err := SyncActressMetadata(context.Background(), target.ID, actressRepo, registry, []string{"sougouwiki"}, movieRepo)
+	require.NoError(t, err)
+	assert.Equal(t, ActressSyncSkipped, result.Status)
+	assert.Len(t, resolver.resolveQueries, 5)
+	assert.NotContains(t, resolver.resolveQueries, "TEST-006", "the sixth linked movie must not be queried")
 }

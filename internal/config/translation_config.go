@@ -40,6 +40,7 @@ type TranslationConfig struct {
 	TargetLanguage          string                            `yaml:"target_language" json:"target_language"`                     // Target language code (e.g., en, ja, zh)
 	TargetLanguages         []string                          `yaml:"target_languages" json:"target_languages"`                   // Optional list of target language codes for multi-language output
 	TimeoutSeconds          int                               `yaml:"timeout_seconds" json:"timeout_seconds"`                     // Request timeout in seconds
+	MaxConcurrency          int                               `yaml:"max_concurrency" json:"max_concurrency"`                     // Maximum concurrent translation requests
 	ApplyToPrimary          bool                              `yaml:"apply_to_primary" json:"apply_to_primary"`                   // Replace primary movie metadata with translated text
 	OverwriteExistingTarget bool                              `yaml:"overwrite_existing_target" json:"overwrite_existing_target"` // Overwrite target-language translation if already present
 	Fields                  TranslationFieldsConfig           `yaml:"fields" json:"fields"`                                       // Per-field translation controls

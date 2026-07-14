@@ -8,6 +8,11 @@ import (
 func RegisterRoutes(protected *gin.RouterGroup, deps *core.ServerDependencies) {
 	protected.GET("/actresses", listActresses(deps.ActressRepo))
 	protected.GET("/actresses/sync-candidates", listActressSyncCandidates(deps.ActressRepo))
+	protected.POST("/actresses/sync-jobs", createActressSyncJob(deps))
+	protected.GET("/actresses/sync-jobs/active", listActiveActressSyncJobs(deps))
+	protected.GET("/actresses/sync-jobs/:jobID", getActressSyncJob(deps))
+	protected.GET("/actresses/sync-jobs/:jobID/tasks", listActressSyncJobTasks(deps))
+	protected.POST("/actresses/sync-jobs/:jobID/cancel", cancelActressSyncJob(deps))
 	protected.GET("/actresses/:id", getActress(deps.ActressRepo))
 	protected.GET("/actresses/:id/movies", listActressMovies(deps.ActressRepo, deps.MovieRepo))
 	protected.POST("/actresses/:id/sync", syncActress(deps))

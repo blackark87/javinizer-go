@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/go-resty/resty/v2"
 	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/httpclient"
@@ -401,6 +402,64 @@ func (s *Scraper) Search(ctx context.Context, id string) (*models.ScraperResult,
 
 	return nil, models.NewScraperNotFoundError("LibreDMM", fmt.Sprintf("movie %s not found on LibreDMM", id))
 }
+
+// ResolveActressIdentity queries LibreDMM's actress index directly and returns
+// only exact actress cards. It never invokes the movie metadata endpoint.
+// LibreDMM does not expose DMM actress IDs, but its profile image can safely
+// contribute the exact Japanese name, thumbnail, and DMM romanized filename.
+func (s *Scraper) ResolveActressIdentity(ctx context.Context, query models.ActressIdentityQuery) (*models.ScraperResult, error) {
+	if !s.enabled {
+		return nil, fmt.Errorf("LibreDMM scraper is disabled")
+	}
+	seenNames := make(map[string]struct{})
+	for index, rawName := range query.Names {
+		if index >= 5 {
+			break
+		}
+		name := scraperutil.CleanActressName(rawName)
+		key := strings.ToLower(strings.Join(strings.Fields(name), " "))
+		if key == "" {
+			continue
+		}
+		if _, exists := seenNames[key]; exists {
+			continue
+		}
+		seenNames[key] = struct{}{}
+		if err := s.rateLimiter.Wait(ctx); err != nil {
+			return nil, err
+		}
+		targetURL := fmt.Sprintf("%s/actresses?order=Name&fuzzy=%s", s.baseURL, url.QueryEscape(name))
+		response, err := s.client.R().SetContext(ctx).Get(targetURL)
+		if err != nil {
+			return nil, err
+		}
+		if response.StatusCode() != http.StatusOK {
+			return nil, models.NewScraperStatusError("LibreDMM", response.StatusCode(), fmt.Sprintf("LibreDMM actress search returned status code %d", response.StatusCode()))
+		}
+		document, err := goquery.NewDocumentFromReader(strings.NewReader(response.String()))
+		if err != nil {
+			return nil, fmt.Errorf("parse LibreDMM actress search: %w", err)
+		}
+		var exact []models.ActressInfo
+		document.Find(".card.actress").Each(func(_ int, card *goquery.Selection) {
+			candidateName := scraperutil.CleanActressName(card.Find(".card-title a").First().Text())
+			candidate := strings.ToLower(strings.Join(strings.Fields(candidateName), " "))
+			if strings.EqualFold(strings.Join(strings.Fields(candidate), " "), key) {
+				thumbnail, _ := card.Find("img").First().Attr("src")
+				exact = append(exact, models.ActressInfo{
+					JapaneseName: candidateName,
+					ThumbURL:     toHTTPS(scraperutil.ResolveURL(s.baseURL, thumbnail)),
+				})
+			}
+		})
+		if len(exact) == 1 {
+			return &models.ScraperResult{Source: s.Name(), SourceURL: targetURL, Language: "ja", ID: name, Actresses: exact}, nil
+		}
+	}
+	return nil, models.NewScraperNotFoundError("LibreDMM", "no unique exact actress entry was found")
+}
+
+var _ models.ActressIdentityResolver = (*Scraper)(nil)
 
 func (s *Scraper) fetchMovieJSONCtx(ctx context.Context, targetURL string) (*moviePayload, string, int, error) {
 	if err := s.rateLimiter.Wait(ctx); err != nil {

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/javinizer/javinizer-go/internal/config"
@@ -26,17 +27,129 @@ const (
 )
 
 type Service struct {
-	cfg        config.TranslationConfig
-	httpClient *http.Client
+	cfg                 config.TranslationConfig
+	httpClient          *http.Client
+	acquireProviderCall func(context.Context) error
+	releaseProviderCall func()
+}
+
+var sharedProviderCalls struct {
+	sync.Mutex
+	active int
 }
 
 func New(cfg config.TranslationConfig) *Service {
-	return &Service{
+	service := &Service{
 		cfg: cfg,
 		httpClient: &http.Client{
 			Timeout: 0,
 		},
 	}
+	service.acquireProviderCall = func(ctx context.Context) error {
+		limit := cfg.MaxConcurrency
+		if limit <= 0 {
+			limit = 3
+		}
+		return acquireSharedProviderCall(ctx, limit)
+	}
+	service.releaseProviderCall = releaseSharedProviderCall
+	return service
+}
+
+// NewWithProviderLimiter applies a shared concurrency limit only around actual
+// translation-provider requests. Deterministic actress romanization and Hangul
+// mapping remain part of the normal worker pool.
+func NewWithProviderLimiter(cfg config.TranslationConfig, acquire func(context.Context) error, release func()) *Service {
+	service := New(cfg)
+	if acquire == nil || release == nil {
+		return service
+	}
+	sharedAcquire := service.acquireProviderCall
+	sharedRelease := service.releaseProviderCall
+	service.acquireProviderCall = func(ctx context.Context) error {
+		if err := acquire(ctx); err != nil {
+			return err
+		}
+		if err := sharedAcquire(ctx); err != nil {
+			release()
+			return err
+		}
+		return nil
+	}
+	service.releaseProviderCall = func() {
+		sharedRelease()
+		release()
+	}
+	return service
+}
+
+func acquireSharedProviderCall(ctx context.Context, limit int) error {
+	for {
+		sharedProviderCalls.Lock()
+		if sharedProviderCalls.active < limit {
+			sharedProviderCalls.active++
+			sharedProviderCalls.Unlock()
+			return nil
+		}
+		sharedProviderCalls.Unlock()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+}
+
+func releaseSharedProviderCall() {
+	sharedProviderCalls.Lock()
+	if sharedProviderCalls.active > 0 {
+		sharedProviderCalls.active--
+	}
+	sharedProviderCalls.Unlock()
+}
+
+// TranslateActresses runs the existing actress transliteration pipeline without
+// queueing any other movie metadata fields.
+func (s *Service) TranslateActresses(
+	ctx context.Context,
+	actresses []models.Actress,
+	settingsHash string,
+) ([]models.Actress, []models.MovieTranslation, string, error) {
+	cloned := make([]models.Actress, len(actresses))
+	copy(cloned, actresses)
+	movie := &models.Movie{ID: "actress-sync", Actresses: cloned}
+	records, warning, err := s.TranslateMovie(ctx, movie, settingsHash)
+	return movie.Actresses, records, warning, err
+}
+
+// ApplyDMMHepburnName fills missing primary name fields from a DMM actjpgs
+// filename. Existing names are never overwritten.
+func ApplyDMMHepburnName(actress *models.Actress) bool {
+	if actress == nil {
+		return false
+	}
+	lastName, firstName, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL)
+	if !ok {
+		return false
+	}
+	changed := false
+	if strings.TrimSpace(actress.FirstName) == "" || models.IsUnknownActressName(actress.FirstName) {
+		actress.FirstName = firstName
+		changed = firstName != ""
+	}
+	if strings.TrimSpace(actress.LastName) == "" || models.IsUnknownActressName(actress.LastName) {
+		actress.LastName = lastName
+		changed = changed || lastName != ""
+	}
+	return changed
+}
+
+// TargetLanguages returns the normalized configured output language order.
+func (s *Service) TargetLanguages() []string {
+	if s == nil {
+		return nil
+	}
+	return s.targetLanguages()
 }
 
 func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, settingsHash string) ([]models.MovieTranslation, string, error) {
@@ -1029,6 +1142,11 @@ func replaceActressName(actress *models.Actress, translated string) {
 		actress.JapaneseName = models.UnknownActressName
 		return
 	}
+	if (containsHangul(actress.FirstName) || containsHangul(actress.LastName)) && !containsHangul(translated) {
+		// Never replace an established Korean display name with a lower-priority
+		// romanized result when apply_to_primary is enabled for another language.
+		return
+	}
 	// Strip parenthetical noise the LLM may append (e.g. "Kuroki(Mai" → "Kuroki").
 	if idx := strings.IndexAny(translated, "([（"); idx >= 0 {
 		translated = strings.TrimSpace(translated[:idx])
@@ -1137,21 +1255,31 @@ func (s *Service) translateTexts(ctx context.Context, sourceLang, targetLang str
 	for attempt := 1; attempt <= maxTranslationRetries; attempt++ {
 		var result *translationResult
 		var err error
-
-		switch provider {
-		case providerOpenAI:
-			result, err = s.translateWithOpenAI(ctx, systemPrompt, userPrompt, markers)
-		case providerDeepL:
-			result, err = s.translateWithDeepL(ctx, sourceLang, targetLang, texts)
-		case providerGoogle:
-			result, err = s.translateWithGoogle(ctx, sourceLang, targetLang, texts)
-		case providerOpenAICompatible:
-			result, err = s.translateWithOpenAICompatible(ctx, systemPrompt, userPrompt, markers)
-		case providerAnthropic:
-			result, err = s.translateWithAnthropic(ctx, systemPrompt, userPrompt, markers)
-		case providerBedrock:
-			result, err = s.translateWithBedrock(ctx, systemPrompt, userPrompt, markers)
-		}
+		err = func() error {
+			if s.acquireProviderCall != nil {
+				if acquireErr := s.acquireProviderCall(ctx); acquireErr != nil {
+					return acquireErr
+				}
+			}
+			if s.releaseProviderCall != nil {
+				defer s.releaseProviderCall()
+			}
+			switch provider {
+			case providerOpenAI:
+				result, err = s.translateWithOpenAI(ctx, systemPrompt, userPrompt, markers)
+			case providerDeepL:
+				result, err = s.translateWithDeepL(ctx, sourceLang, targetLang, texts)
+			case providerGoogle:
+				result, err = s.translateWithGoogle(ctx, sourceLang, targetLang, texts)
+			case providerOpenAICompatible:
+				result, err = s.translateWithOpenAICompatible(ctx, systemPrompt, userPrompt, markers)
+			case providerAnthropic:
+				result, err = s.translateWithAnthropic(ctx, systemPrompt, userPrompt, markers)
+			case providerBedrock:
+				result, err = s.translateWithBedrock(ctx, systemPrompt, userPrompt, markers)
+			}
+			return err
+		}()
 
 		if err == nil {
 			if result == nil {

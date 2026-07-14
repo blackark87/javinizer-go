@@ -50,6 +50,16 @@ func (r *BatchFileOperationRepository) FindByBatchJobID(batchJobID string) ([]mo
 	return ops, nil
 }
 
+func (r *BatchFileOperationRepository) FindLatestAppliedByMovieID(movieID string) (*models.BatchFileOperation, error) {
+	var op models.BatchFileOperation
+	err := r.GetDB().Where("movie_id = ? AND revert_status = ? AND TRIM(COALESCE(nfo_path, '')) <> ''", movieID, models.RevertStatusApplied).
+		Order("created_at DESC, id DESC").First(&op).Error
+	if err != nil {
+		return nil, wrapDBErr("find", fmt.Sprintf("latest NFO operation for movie %s", movieID), err)
+	}
+	return &op, nil
+}
+
 func (r *BatchFileOperationRepository) FindByBatchJobIDAndRevertStatus(batchJobID string, revertStatus string) ([]models.BatchFileOperation, error) {
 	var ops []models.BatchFileOperation
 	err := r.GetDB().Where("batch_job_id = ? AND revert_status = ?", batchJobID, revertStatus).Order("id ASC").Find(&ops).Error

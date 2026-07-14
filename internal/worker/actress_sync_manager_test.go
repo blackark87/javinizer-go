@@ -216,14 +216,16 @@ func TestActressSyncManagerRepairsMissingDMMIDFromLinkedMovieCast(t *testing.T) 
 	resolver.resolveFn = func(_ context.Context, id string) (*models.ScraperResult, error) {
 		require.Equal(t, "MIUM-123", id)
 		return &models.ScraperResult{ID: id, Actresses: []models.ActressInfo{
-			{DMMID: 701, JapaneseName: "確認女優一"},
-			{DMMID: 702, JapaneseName: "確認女優二"},
+			{DMMID: 701, FirstName: "Ichika", LastName: "Matsumoto", JapaneseName: "松本いちか"},
+			{DMMID: 702, FirstName: "Yui", LastName: "Hatano", JapaneseName: "波多野結衣"},
 		}}, nil
 	}
 	registry := models.NewScraperRegistry()
 	registry.Register(resolver)
 	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, &config.Config{}, registry)
 
+	existingCanonical := &models.Actress{DMMID: 701, FirstName: "Nickname", JapaneseName: "기존 가명류 이름"}
+	require.NoError(t, actressRepo.Create(existingCanonical))
 	missingDMMID := &models.Actress{JapaneseName: "잘못 남아 있던 가명"}
 	require.NoError(t, actressRepo.Create(missingDMMID))
 	require.NoError(t, movieRepo.Create(&models.Movie{
@@ -246,6 +248,23 @@ func TestActressSyncManagerRepairsMissingDMMIDFromLinkedMovieCast(t *testing.T) 
 	require.NoError(t, err)
 	require.Len(t, updatedMovie.Actresses, 2)
 	assert.ElementsMatch(t, []int{701, 702}, []int{updatedMovie.Actresses[0].DMMID, updatedMovie.Actresses[1].DMMID})
+	byDMMID := make(map[int]models.Actress, len(updatedMovie.Actresses))
+	for _, actress := range updatedMovie.Actresses {
+		byDMMID[actress.DMMID] = actress
+	}
+	reused := byDMMID[701]
+	assert.Equal(t, existingCanonical.ID, reused.ID, "the existing DMM-ID owner must be reused")
+	assert.Equal(t, "松本いちか", reused.JapaneseName, "the verified real name must replace the nickname")
+	assert.Equal(t, "Ichika", reused.FirstName)
+	assert.Equal(t, "Matsumoto", reused.LastName)
+	assert.Contains(t, reused.Aliases, "기존 가명류 이름", "the replaced nickname should remain only as an alias")
+	created := byDMMID[702]
+	assert.Equal(t, "波多野結衣", created.JapaneseName)
+	assert.Equal(t, "Yui", created.FirstName)
+	assert.Equal(t, "Hatano", created.LastName)
+	for _, actress := range updatedMovie.Actresses {
+		assert.NotEqual(t, "잘못 남아 있던 가명", actress.JapaneseName)
+	}
 	_, err = actressRepo.FindByID(missingDMMID.ID)
 	assert.True(t, database.IsNotFound(err), "the stale missing-DMMID row must be deleted after its final movie mapping is replaced")
 	assert.Empty(t, resolver.identityQueries, "missing-DMMID actresses with linked movies must use movie cast resolution, not name identity lookup")

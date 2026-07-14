@@ -188,7 +188,7 @@ func RunBatchScrapeOnce(
 	}
 
 	if !skipCache {
-		cachedMovie, cachedResult, cacheErr := handleCacheHit(ctx, job, filePath, fileIndex, query.movieID, query.matchResultPtr, movieRepo, actressRepo, httpClient, userAgent, referer, processedMovieIDs, cfg, updateMode, scalarStrategy, arrayStrategy, startTime)
+		cachedMovie, cachedResult, cacheErr := handleCacheHit(ctx, job, filePath, fileIndex, query.movieID, query.matchResultPtr, movieRepo, actressRepo, registry, httpClient, userAgent, referer, processedMovieIDs, cfg, updateMode, scalarStrategy, arrayStrategy, startTime)
 		if cachedResult != nil {
 			return cachedMovie, cachedResult, nil
 		}
@@ -229,6 +229,17 @@ func RunBatchScrapeOnce(
 		errMsg := fmt.Sprintf("Failed to aggregate: %v", err)
 		logging.Debugf("[Batch %s] File %d: Aggregation failed: %v", job.ID, fileIndex, err)
 		return nil, newAggregationFailedResult(filePath, query.movieID, errMsg, translationWarning, startTime), errors.New(errMsg)
+	}
+	if actressOverrideSource != "" {
+		identityRepo := actressRepo
+		if identityRepo == nil {
+			identityRepo = database.NewActressRepository(movieRepo.GetDB())
+		}
+		if reconcileErr := reconcileVerifiedMovieActresses(movie, identityRepo); reconcileErr != nil {
+			errMsg := fmt.Sprintf("Failed to reconcile verified actresses: %v", reconcileErr)
+			logging.Errorf("[Batch %s] File %d: %s", job.ID, fileIndex, errMsg)
+			return nil, newAggregationFailedResult(filePath, query.movieID, errMsg, translationWarning, startTime), errors.New(errMsg)
+		}
 	}
 
 	logging.Debugf("[Batch %s] File %d: Aggregation complete - Title: %s, Maker: %s, Actresses: %d, Genres: %d",

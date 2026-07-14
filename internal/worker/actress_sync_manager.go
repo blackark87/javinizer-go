@@ -302,7 +302,7 @@ func (m *ActressSyncManager) runTask(task *models.ActressSyncTask) {
 			task.Status = models.ActressSyncTaskFailed
 			task.Outcome = "failed"
 			task.ErrorMessage = fmt.Sprintf("panic: %v", recovered)
-			task.Messages = append(task.Messages, task.ErrorMessage)
+			logging.Errorf("Actress sync task panicked (task=%s label=%q stage=%s): %s", task.ID, task.Label, task.Stage, task.ErrorMessage)
 			_ = m.repo.CompleteTask(task, task.LeaseToken)
 		}
 	}()
@@ -321,7 +321,7 @@ func (m *ActressSyncManager) runTask(task *models.ActressSyncTask) {
 		task.Status = models.ActressSyncTaskFailed
 		task.Outcome = "failed"
 		task.ErrorMessage = err.Error()
-		task.Messages = append(task.Messages, "Failed: "+err.Error())
+		logging.Errorf("Actress sync task failed (task=%s label=%q stage=%s): %v", task.ID, task.Label, task.Stage, err)
 	}
 	if completeErr := m.repo.CompleteTask(task, task.LeaseToken); completeErr != nil {
 		logging.Errorf("Actress sync: failed to complete task %s: %v", task.ID, completeErr)
@@ -347,11 +347,8 @@ func (m *ActressSyncManager) heartbeat(ctx context.Context, taskID, leaseToken s
 	}
 }
 
-func (m *ActressSyncManager) setStage(task *models.ActressSyncTask, stage, message string) {
+func (m *ActressSyncManager) setStage(task *models.ActressSyncTask, stage string) {
 	task.Stage = stage
-	if strings.TrimSpace(message) != "" {
-		task.Messages = append(task.Messages, message)
-	}
 	_ = m.repo.UpdateStage(task.ID, task.LeaseToken, stage, task.Messages)
 }
 
@@ -360,43 +357,26 @@ func (m *ActressSyncManager) processActress(ctx context.Context, task *models.Ac
 		return fmt.Errorf("actress task has no actress ID")
 	}
 	cfg := m.deps.GetConfig()
-	m.setStage(task, "resolving", "Resolving actress identity and thumbnail")
+	m.setStage(task, "resolving")
 	result, err := SyncActressMetadata(ctx, *task.ActressID, m.deps.ActressRepo, m.deps.GetRegistry(), cfg.Scrapers.Priority, m.deps.MovieRepo)
 	if err != nil {
 		return err
 	}
 	task.Messages = append(task.Messages, result.Messages...)
 	task.UpdatedFields = append(task.UpdatedFields, result.UpdatedFields...)
-	canonical := result.Actress
-	if result.ConflictActressID != nil {
-		canonicalRow, findErr := m.deps.ActressRepo.FindByID(*result.ConflictActressID)
-		if findErr != nil {
-			return findErr
-		}
-		if !nameSetsIntersect(actressNameKeys(result.Actress), actressNameKeys(*canonicalRow)) {
-			task.Status = models.ActressSyncTaskConflict
-			task.Outcome = "conflict"
-			task.Messages = append(task.Messages, fmt.Sprintf("DMM ID belongs to actress #%d with a different exact name; mappings were not changed", canonicalRow.ID))
-			return nil
-		}
-		enrichedCanonical := result.Actress
-		enrichedCanonical.ID = 0
-		if reuseErr := m.deps.ActressRepo.FindOrCreate(&enrichedCanonical); reuseErr != nil {
-			return reuseErr
-		}
-		canonicalRow = &enrichedCanonical
-		moved, moveErr := m.deps.MovieRepo.ReassignActressAssociations(result.Actress.ID, canonicalRow.ID)
-		if moveErr != nil {
-			task.Status = models.ActressSyncTaskConflict
-			task.Outcome = "conflict"
-			return nil
-		}
-		canonical = *canonicalRow
-		task.UpdatedFields = append(task.UpdatedFields, "movie_actresses")
-		task.Messages = append(task.Messages, fmt.Sprintf("Reused existing actress #%d and reassigned %d movie mapping(s)", canonical.ID, moved))
+	if result.Status == ActressSyncUpdated && len(result.Messages) > 0 {
+		metadataWarning := strings.Join(result.Messages, "; ")
+		task.Warning = appendWarning(task.Warning, metadataWarning)
+		logging.Warnf("Actress sync task warning (task=%s label=%q stage=%s): %s", task.ID, task.Label, task.Stage, metadataWarning)
 	}
+	if result.Status == ActressSyncConflict {
+		task.Status = models.ActressSyncTaskConflict
+		task.Outcome = "conflict"
+		return nil
+	}
+	canonical := result.Actress
 
-	m.setStage(task, "romanizing", "Applying DMM Hepburn name mapping")
+	m.setStage(task, "romanizing")
 	if translation.ApplyDMMHepburnName(&canonical) {
 		if err := m.deps.ActressRepo.Update(&canonical); err != nil {
 			return err
@@ -410,10 +390,10 @@ func (m *ActressSyncManager) processActress(ctx context.Context, task *models.Ac
 	}
 	if warning != "" {
 		task.Warning = appendWarning(task.Warning, warning)
-		task.Messages = append(task.Messages, "Translation warning: "+warning)
+		logging.Warnf("Actress sync task warning (task=%s label=%q stage=%s): %s", task.ID, task.Label, task.Stage, warning)
 	}
 
-	m.setStage(task, "mapping", "Refreshing affected movie actress translations")
+	m.setStage(task, "mapping")
 	movies, err := m.deps.MovieRepo.ListByActressID(canonical.ID, 0, 0)
 	if err != nil {
 		return err
@@ -462,7 +442,7 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 	if queryID == "" {
 		queryID = movie.ContentID
 	}
-	m.setStage(task, "resolving", "Resolving the complete SougouWiki cast for "+queryID)
+	m.setStage(task, "resolving")
 	resolved, err := safeResolveActresses(ctx, resolver, queryID)
 	if err != nil {
 		return err
@@ -475,48 +455,57 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 	}
 
 	thumbnailResolver := findActressThumbnailResolver(registry)
-	actresses := make([]models.Actress, 0, len(verified))
+	canonical := make([]models.Actress, 0, len(verified))
 	for _, info := range verified {
 		if info.ThumbURL == "" && thumbnailResolver != nil {
 			info.ThumbURL = safeResolveActressThumbnail(ctx, thumbnailResolver, info)
 		}
-		actress := models.Actress{DMMID: info.DMMID, FirstName: info.FirstName, LastName: info.LastName, JapaneseName: info.JapaneseName, ThumbURL: info.ThumbURL}
-		translation.ApplyDMMHepburnName(&actress)
-		actresses = append(actresses, actress)
-	}
-
-	translated, translationRecords, warning, translateErr := m.translateActresses(ctx, task, actresses)
-	if translateErr != nil {
-		warning = appendWarning(warning, translateErr.Error())
-	}
-	if len(translated) == len(actresses) {
-		actresses = translated
-	}
-
-	m.setStage(task, "mapping", fmt.Sprintf("Reusing or creating %d verified actress record(s)", len(actresses)))
-	canonical := make([]models.Actress, 0, len(actresses))
-	for i := range actresses {
-		if err := m.deps.ActressRepo.FindOrCreate(&actresses[i]); err != nil {
-			if conflict, ok := database.AsActressDMMIDConflict(err); ok {
+		resolution, resolveErr := m.deps.ActressRepo.ResolveVerifiedIdentity(0, actressModelFromInfo(info), true)
+		if resolveErr != nil {
+			if conflict, ok := database.AsActressDMMIDConflict(resolveErr); ok {
 				task.Status, task.Outcome = models.ActressSyncTaskConflict, "conflict"
 				task.Messages = append(task.Messages, conflict.Error()+"; the Unknown mapping was preserved")
 				return nil
 			}
-			return err
+			return resolveErr
 		}
-		canonical = append(canonical, actresses[i])
+		canonical = append(canonical, resolution.Actress)
+		if len(resolution.MergedFromIDs) > 0 {
+			task.UpdatedFields = appendUnique(task.UpdatedFields, "merged_actresses")
+		}
 	}
+
+	m.setStage(task, "romanizing")
+	for index := range canonical {
+		if translation.ApplyDMMHepburnName(&canonical[index]) {
+			task.UpdatedFields = appendUnique(task.UpdatedFields, "hepburn_name")
+		}
+	}
+
+	translated, translationRecords, warning, translateErr := m.translateActresses(ctx, task, canonical)
+	if translateErr != nil {
+		warning = appendWarning(warning, translateErr.Error())
+	}
+	if len(translated) == len(canonical) {
+		canonical = translated
+	}
+	for index := range canonical {
+		if updateErr := m.deps.ActressRepo.Update(&canonical[index]); updateErr != nil {
+			return updateErr
+		}
+	}
+
+	m.setStage(task, "mapping")
 	if err := m.deps.MovieRepo.ReplaceActressForMovie(movie.ContentID, *task.ActressID, canonical); err != nil {
 		return err
 	}
 	task.UpdatedFields = append(task.UpdatedFields, "movie_actresses")
-	task.Messages = append(task.Messages, fmt.Sprintf("Replaced the Unknown mapping with %d verified actress(es)", len(canonical)))
 	if err := m.storeActressTranslations(translationRecords, canonical); err != nil {
 		warning = appendWarning(warning, err.Error())
 	}
 	if warning != "" {
 		task.Warning = appendWarning(task.Warning, warning)
-		task.Messages = append(task.Messages, "Translation warning: "+warning)
+		logging.Warnf("Actress sync task warning (task=%s label=%q stage=%s): %s", task.ID, task.Label, task.Stage, warning)
 	}
 
 	updatedMovie, err := m.deps.MovieRepo.FindByContentID(movie.ContentID)
@@ -542,7 +531,7 @@ func (m *ActressSyncManager) translateActresses(ctx context.Context, task *model
 	if !cfg.Enabled || !cfg.Fields.Actresses || len(actresses) == 0 {
 		return actresses, nil, "", nil
 	}
-	m.setStage(task, "translating", "Transliterating actress names with current translation settings")
+	m.setStage(task, "translating")
 	service := translation.NewWithProviderLimiter(cfg, m.acquireLLM, m.releaseLLM)
 	translated, records, warning, err := service.TranslateActresses(ctx, actresses, cfg.SettingsHash())
 	translated, records = preserveResolvedActressTranslations(actresses, translated, records)
@@ -641,15 +630,12 @@ func (m *ActressSyncManager) refreshAffectedMovies(task *models.ActressSyncTask,
 			}
 		}
 
-		m.setStage(task, "nfo", "Updating existing NFO actress blocks for "+movie.ID)
+		m.setStage(task, "nfo")
 		path, nfoErr := syncMovieNFO(movie, cfg, m.deps.DB, m.deps.HistoryRepo, m.deps.BatchFileOpRepo)
 		if nfoErr != nil {
 			task.Warning = appendWarning(task.Warning, fmt.Sprintf("%s: %v", movie.ID, nfoErr))
 		} else if path != "" {
 			task.UpdatedFields = appendUnique(task.UpdatedFields, "nfo")
-			task.Messages = append(task.Messages, "Updated NFO actress blocks: "+path)
-		} else {
-			task.Messages = append(task.Messages, "No safe existing NFO was found for "+movie.ID)
 		}
 	}
 }

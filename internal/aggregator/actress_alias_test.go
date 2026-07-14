@@ -111,8 +111,8 @@ func TestActressAliasConversion(t *testing.T) {
 			"r18dev": {
 				Actresses: []models.ActressInfo{
 					{
-						FirstName: "Unknown",
-						LastName:  "Actress",
+						FirstName: "Jane",
+						LastName:  "Doe",
 					},
 				},
 			},
@@ -122,8 +122,8 @@ func TestActressAliasConversion(t *testing.T) {
 
 		require.Len(t, actresses, 1)
 		// Should remain unchanged
-		assert.Equal(t, "Unknown", actresses[0].FirstName)
-		assert.Equal(t, "Actress", actresses[0].LastName)
+		assert.Equal(t, "Jane", actresses[0].FirstName)
+		assert.Equal(t, "Doe", actresses[0].LastName)
 	})
 
 	t.Run("Conversion disabled", func(t *testing.T) {

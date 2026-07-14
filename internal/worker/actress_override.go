@@ -1,8 +1,10 @@
 package worker
 
 import (
+	"fmt"
 	"strings"
 
+	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
@@ -64,4 +66,29 @@ func buildMovieCandidateResults(results []*models.ScraperResult, actressSource s
 		return results
 	}
 	return candidates
+}
+
+// reconcileVerifiedMovieActresses makes the resolver-confirmed name the
+// canonical database identity before MovieRepository.Upsert sees the cast. It
+// repairs an existing nickname row that owns the DMM ID, reuses an exact
+// canonical-name row, and removes the duplicate when both rows exist.
+func reconcileVerifiedMovieActresses(movie *models.Movie, repo *database.ActressRepository) error {
+	if movie == nil || repo == nil {
+		return nil
+	}
+	canonical := make([]models.Actress, 0, len(movie.Actresses))
+	seen := make(map[uint]struct{}, len(movie.Actresses))
+	for _, actress := range movie.Actresses {
+		resolution, err := repo.ResolveVerifiedIdentity(0, actress, true)
+		if err != nil {
+			return fmt.Errorf("reconcile verified actress %q (DMM ID %d): %w", actress.JapaneseName, actress.DMMID, err)
+		}
+		if _, exists := seen[resolution.Actress.ID]; exists {
+			continue
+		}
+		seen[resolution.Actress.ID] = struct{}{}
+		canonical = append(canonical, resolution.Actress)
+	}
+	movie.Actresses = canonical
+	return nil
 }

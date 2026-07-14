@@ -115,7 +115,7 @@ func TestSyncActressAPIUpdatedSkippedAndConflict(t *testing.T) {
 	t.Run("conflict", func(t *testing.T) {
 		router, deps := newActressSyncAPITest(t)
 		target := &models.Actress{JapaneseName: "Target", ThumbURL: "target.jpg"}
-		owner := &models.Actress{DMMID: 303, JapaneseName: "Owner", ThumbURL: "owner.jpg"}
+		owner := &models.Actress{DMMID: 111, JapaneseName: "Target", ThumbURL: "owner.jpg"}
 		require.NoError(t, deps.ActressRepo.Create(target))
 		require.NoError(t, deps.ActressRepo.Create(owner))
 		deps.Registry.Register(&actressSyncAPIResolver{result: &models.ScraperResult{

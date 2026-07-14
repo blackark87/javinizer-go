@@ -22,6 +22,28 @@ describe('buildActressSyncSummary', () => {
 		expect(summary.active.map((item) => [item.id, item.stage])).toEqual([
 			['one', 'resolving'], ['two', 'translating']
 		]);
+		expect(summary.details.map((item) => item.id)).toEqual(['skipped']);
+	});
+
+	it('hides successful item logs and puts failures before other diagnostics', () => {
+		const job = {
+			id: 'job', status: 'completed', scope: 'selected', total_tasks: 4, completed: 4,
+			updated: 1, warnings: 1, skipped: 1, conflicts: 0, failed: 1, cancelled: 0,
+			cancel_requested: false, created_at: 'now'
+		} satisfies ActressSyncJob;
+		const base = {
+			job_id: 'job', kind: 'actress' as const, dedupe_key: 'task', updated_fields: [], attempts: 1, created_at: 'now'
+		};
+		const summary = buildActressSyncSummary(job, [
+			{ ...base, id: 'success', label: 'success', status: 'completed', stage: 'completed', outcome: 'updated', messages: ['Verified DMM ID 1 and canonical name from sougouwiki'] },
+			{ ...base, id: 'skipped', label: 'skipped', status: 'skipped', stage: 'completed', messages: ['No linked movies are available'] },
+			{ ...base, id: 'warning', label: 'warning', status: 'completed', stage: 'completed', outcome: 'updated_with_warning', warning: 'LLM timeout', messages: ['Updated NFO actress blocks: test.nfo'] },
+			{ ...base, id: 'failed', label: 'failed', status: 'failed', stage: 'resolving', error_message: 'resolver timeout', messages: ['Resolving actress identity and thumbnail', 'sougouwiki: identity lookup failed: timeout'] }
+		] satisfies ActressSyncTask[]);
+
+		expect(summary.details.map((item) => item.id)).toEqual(['failed', 'warning', 'skipped']);
+		expect(summary.details[0].messages).toEqual(['sougouwiki: identity lookup failed: timeout']);
+		expect(summary.details[1].messages).toEqual([]);
 	});
 
 	it('marks a cancelled durable job as stopped', () => {

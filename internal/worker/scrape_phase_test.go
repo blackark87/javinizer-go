@@ -175,7 +175,7 @@ func TestBuildScrapeCmd_ManualInputTrimmedForMovieIDAndRawInput(t *testing.T) {
 	const file = "/videos/ABC-001.mp4"
 	inputs := scrapePhaseInputs{Matcher: &stubMatcher{result: "ABC-001"}}
 
-	cmd := buildScrapeCmd(file, inputs, ScrapePhaseConfig{RawInputOverride: map[string]string{file: "  IPX-123  "}})
+	cmd, _ := buildScrapeCmd(file, inputs, ScrapePhaseConfig{RawInputOverride: map[string]string{file: "  IPX-123  "}})
 
 	assert.Equal(t, "IPX-123", cmd.MovieID, "MovieID is trimmed so failure JobEvents + row-identity identify the row, not '  IPX-123  '")
 	assert.Equal(t, "IPX-123", cmd.RawInput, "RawInput is trimmed (mirrors rescrape_phase.go:203 queryOverride = TrimSpace(ManualSearchInput))")
@@ -186,7 +186,7 @@ func TestBuildScrapeCmd_EmptyOrWhitespaceManualInputIsNoOverride(t *testing.T) {
 	inputs := scrapePhaseInputs{Matcher: &stubMatcher{result: "ABC-001"}}
 
 	for _, raw := range []string{"", "   ", "\t\n"} {
-		cmd := buildScrapeCmd(file, inputs, ScrapePhaseConfig{RawInputOverride: map[string]string{file: raw}})
+		cmd, _ := buildScrapeCmd(file, inputs, ScrapePhaseConfig{RawInputOverride: map[string]string{file: raw}})
 		assert.Equal(t, "ABC-001", cmd.MovieID, "empty/whitespace input %q should be no override (auto-ID from matcher)", raw)
 		assert.Equal(t, "", cmd.RawInput, "empty/whitespace input %q should not set RawInput", raw)
 	}
@@ -197,14 +197,14 @@ func TestBuildScrapeCmd_URLInputBypassesBatchGlobalScrapers_IDInputKeepsThem(t *
 	batchGlobal := []string{"r18dev", "dmm"}
 	inputs := scrapePhaseInputs{Matcher: &stubMatcher{result: "ABC-001"}}
 
-	urlCmd := buildScrapeCmd(file, inputs, ScrapePhaseConfig{
+	urlCmd, _ := buildScrapeCmd(file, inputs, ScrapePhaseConfig{
 		SelectedScrapers: batchGlobal,
 		RawInputOverride: map[string]string{file: "https://www.javbus.com/ABC-001"},
 	})
 	assert.Equal(t, "https://www.javbus.com/ABC-001", urlCmd.RawInput)
 	assert.Empty(t, urlCmd.SelectedScrapers, "URL rows bypass the batch-global scraper picker so resolveScrapeInput sets PriorityOverride")
 
-	idCmd := buildScrapeCmd(file, inputs, ScrapePhaseConfig{
+	idCmd, _ := buildScrapeCmd(file, inputs, ScrapePhaseConfig{
 		SelectedScrapers: batchGlobal,
 		RawInputOverride: map[string]string{file: "ABC-001"},
 	})
@@ -220,7 +220,7 @@ func TestBuildScrapeCmd_ManualURLInput_RedactsQueryFromMovieID(t *testing.T) {
 	const file = "/videos/ABC-001.mp4"
 	inputs := scrapePhaseInputs{Matcher: &stubMatcher{result: "ABC-001"}}
 
-	cmd := buildScrapeCmd(file, inputs, ScrapePhaseConfig{
+	cmd, _ := buildScrapeCmd(file, inputs, ScrapePhaseConfig{
 		RawInputOverride: map[string]string{file: "https://www.javbus.com/ABC-001?token=secret&sig=abc"},
 	})
 
@@ -235,7 +235,7 @@ func TestBuildScrapeCmd_ManualIDInput_RedactionIsNoOp(t *testing.T) {
 	const file = "/videos/ABC-001.mp4"
 	inputs := scrapePhaseInputs{Matcher: &stubMatcher{result: "ABC-001"}}
 
-	cmd := buildScrapeCmd(file, inputs, ScrapePhaseConfig{
+	cmd, _ := buildScrapeCmd(file, inputs, ScrapePhaseConfig{
 		RawInputOverride: map[string]string{file: "IPX-123"},
 	})
 	assert.Equal(t, "IPX-123", cmd.MovieID)
@@ -247,7 +247,7 @@ func TestBuildScrapeCmd_NoManualInputAutoIDsFromMatcher(t *testing.T) {
 	inputs := scrapePhaseInputs{Matcher: &stubMatcher{result: "ABC-001"}}
 	cfg := ScrapePhaseConfig{}
 
-	cmd := buildScrapeCmd(file, inputs, cfg)
+	cmd, _ := buildScrapeCmd(file, inputs, cfg)
 
 	assert.Equal(t, "ABC-001", cmd.MovieID, "no manual input: the matcher result is used as the MovieID")
 	assert.Equal(t, "", cmd.RawInput, "no manual input: RawInput stays empty so resolveScrapeInput is a no-op")
@@ -258,7 +258,7 @@ func TestBuildScrapeCmd_ManualInputUsedAsIDBypassingMatcher(t *testing.T) {
 	inputs := scrapePhaseInputs{Matcher: &stubMatcher{result: "MATCHED-001"}}
 	cfg := ScrapePhaseConfig{RawInputOverride: map[string]string{file: "MANUAL-123"}}
 
-	cmd := buildScrapeCmd(file, inputs, cfg)
+	cmd, _ := buildScrapeCmd(file, inputs, cfg)
 
 	assert.Equal(t, "MANUAL-123", cmd.MovieID, "manual input is used as the MovieID, not the matcher result")
 	assert.Equal(t, "MANUAL-123", cmd.RawInput, "RawInput carries the manual input so resolveScrapeInput parses it downstream")
@@ -360,4 +360,96 @@ func TestScrapePhase_Run_EstablishesScrapedBaseline(t *testing.T) {
 	// No PosterGen in this test, so CroppedPosterURL is empty and its baseline
 	// mirrors that (the rescrape path captures the generated crop separately).
 	assert.Equal(t, "", r.Movie.Poster.OriginalCroppedPosterURL)
+}
+
+// TestScrapePhase_Run_PreservesMatcherMovieIDWhenScrapedIDDiffers is an
+// integration test for the bug where two files with different matcher-derived
+// IDs that resolve to the same scraped content ID were incorrectly grouped as
+// multi-part siblings. The scrape phase must preserve the matcher-derived
+// MovieID as the grouping key, not overwrite it with the scraped ID.
+func TestScrapePhase_Run_PreservesMatcherMovieIDWhenScrapedIDDiffers(t *testing.T) {
+	// Scraper returns the SAME content ID for both files (simulating a
+	// scraper misresolution where two different IDs map to one content ID).
+	wf := &stubWorkflow{scrapeResult: makeScrapeResult("SAME-CONTENT-ID")}
+	inputs := makeInputs(wf)
+	// Matcher returns distinct IDs per file (simulating real matcher behavior).
+	inputs.Matcher = &stubMatcher{result: "MIDA-660"}
+	inputs.FileMatchInfo = map[string]models.FileMatchInfo{
+		"/media/MIDA-660.mp4": {
+			Path:    "/media/MIDA-660.mp4",
+			Name:    "MIDA-660.mp4",
+			MovieID: "MIDA-660",
+		},
+	}
+	updater := inputs.Updater.(*stubUpdater)
+
+	NewScrapePhase().Run(context.Background(), inputs, []string{"/media/MIDA-660.mp4"}, ScrapePhaseConfig{})
+
+	r := updater.getResult("/media/MIDA-660.mp4")
+	require.NotNil(t, r)
+	assert.Equal(t, "MIDA-660", r.FileMatchInfo.MovieID,
+		"matcher-derived MovieID should be preserved when scraped ID differs")
+}
+
+// TestScrapePhase_Run_TwoFilesDifferentMatcherIDsSameScrapedID verifies the
+// full bug scenario: two files with different matcher IDs both resolve to
+// the same scraped content ID. They must remain as separate movies with
+// their original matcher-derived MovieIDs, not be collapsed into one group.
+func TestScrapePhase_Run_TwoFilesDifferentMatcherIDsSameScrapedID(t *testing.T) {
+	wf := &stubWorkflow{scrapeResult: makeScrapeResult("SAME-CONTENT-ID")}
+	inputs := makeInputs(wf)
+	inputs.Matcher = &stubMatcher{result: "PLACEHOLDER"} // overridden per-file via FileMatchInfo
+	inputs.FileMatchInfo = map[string]models.FileMatchInfo{
+		"/media/MIDA-660.mp4": {
+			Path:    "/media/MIDA-660.mp4",
+			Name:    "MIDA-660.mp4",
+			MovieID: "MIDA-660",
+		},
+		"/media/YUJ-055.mp4": {
+			Path:    "/media/YUJ-055.mp4",
+			Name:    "YUJ-055.mp4",
+			MovieID: "YUJ-055",
+		},
+	}
+	updater := inputs.Updater.(*stubUpdater)
+
+	files := []string{"/media/MIDA-660.mp4", "/media/YUJ-055.mp4"}
+	NewScrapePhase().Run(context.Background(), inputs, files, ScrapePhaseConfig{})
+
+	r1 := updater.getResult("/media/MIDA-660.mp4")
+	r2 := updater.getResult("/media/YUJ-055.mp4")
+	require.NotNil(t, r1)
+	require.NotNil(t, r2)
+
+	assert.Equal(t, "MIDA-660", r1.FileMatchInfo.MovieID,
+		"file 1 should keep its matcher-derived MovieID")
+	assert.Equal(t, "YUJ-055", r2.FileMatchInfo.MovieID,
+		"file 2 should keep its matcher-derived MovieID")
+	assert.NotEqual(t, r1.FileMatchInfo.MovieID, r2.FileMatchInfo.MovieID,
+		"two files with different matcher IDs must not be collapsed into the same movie group")
+}
+
+// TestScrapePhase_Run_PreservesMatcherMovieIDWhenFileMatchInfoAbsent is a
+// regression for the Codex P2: when the batch caller does NOT preload
+// cfg.FileMatchInfo (TUI/standalone path), fmi.MovieID is empty in
+// scrapeFile even though cmd.MovieID came from the matcher. The matcher
+// ID must still be preserved over a differing scraped content ID.
+func TestScrapePhase_Run_PreservesMatcherMovieIDWhenFileMatchInfoAbsent(t *testing.T) {
+	// Regression for the Codex P2: when the batch caller does NOT preload
+	// cfg.FileMatchInfo (TUI/standalone path), fmi.MovieID is empty in
+	// scrapeFile even though cmd.MovieID came from the matcher. The matcher
+	// ID must still be preserved over a differing scraped content ID.
+	wf := &stubWorkflow{scrapeResult: makeScrapeResult("SAME-CONTENT-ID")}
+	inputs := makeInputs(wf)
+	inputs.Matcher = &stubMatcher{result: "MIDA-660"}
+	// Deliberately do NOT set inputs.FileMatchInfo.
+	updater := inputs.Updater.(*stubUpdater)
+
+	NewScrapePhase().Run(context.Background(), inputs, []string{"/media/MIDA-660.mp4"}, ScrapePhaseConfig{})
+
+	r := updater.getResult("/media/MIDA-660.mp4")
+	require.NotNil(t, r)
+	assert.Equal(t, "MIDA-660", r.FileMatchInfo.MovieID,
+		"matcher-derived MovieID must be preserved even when FileMatchInfo is not preloaded")
+	assert.Equal(t, "SAME-CONTENT-ID", r.Movie.ID, "sanity: Movie.ID stays the scraped ID")
 }

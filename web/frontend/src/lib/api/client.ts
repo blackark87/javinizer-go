@@ -48,7 +48,6 @@ import type {
 	ActressListResponse,
 	ActressMoviesResponse,
 	ActressSyncCandidatesResponse,
-	ActressSyncResponse,
 	ActressSyncJobResponse,
 	ActressSyncJobsResponse,
 	ActressSyncTasksResponse,
@@ -420,13 +419,6 @@ class APIClient {
 	// List actresses missing a DMM ID or profile thumbnail.
 	async listActressSyncCandidates(): Promise<ActressSyncCandidatesResponse> {
 		return this.request<ActressSyncCandidatesResponse>('/api/v1/actresses/sync-candidates');
-	}
-
-	// Safely fill missing metadata for one actress.
-	async syncActress(id: number): Promise<ActressSyncResponse> {
-		return this.request<ActressSyncResponse>(`/api/v1/actresses/${id}/sync`, {
-			method: 'POST'
-		});
 	}
 
 	async createActressSyncJob(request: ActressSyncJobCreateRequest): Promise<ActressSyncJobResponse> {

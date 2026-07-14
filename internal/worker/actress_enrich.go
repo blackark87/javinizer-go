@@ -38,9 +38,10 @@ func lookupActress(actressRepo *database.ActressRepository, actress *models.Actr
 		if !database.IsNotFound(err) {
 			logging.Debugf("Actress DB lookup by DMMID %d failed: %v", actress.DMMID, err)
 		}
+		return nil, database.ErrNotFound
 	}
 	if actress.JapaneseName != "" {
-		found, err := actressRepo.FindByJapaneseName(actress.JapaneseName)
+		found, err := actressRepo.FindUnverifiedByJapaneseName(actress.JapaneseName)
 		if err == nil {
 			return found, nil
 		}
@@ -49,7 +50,7 @@ func lookupActress(actressRepo *database.ActressRepository, actress *models.Actr
 		}
 	}
 	if actress.FirstName != "" && actress.LastName != "" {
-		found, err := actressRepo.FindByFirstNameLastName(actress.FirstName, actress.LastName)
+		found, err := actressRepo.FindUnverifiedByFirstNameLastName(actress.FirstName, actress.LastName)
 		if err == nil {
 			return found, nil
 		}

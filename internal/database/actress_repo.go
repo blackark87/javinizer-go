@@ -11,24 +11,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// ActressDMMIDConflictError is returned when an exact-name match points at a
-// different verified DMM identity. Callers must report the conflict instead of
-// merging or creating a duplicate row.
-type ActressDMMIDConflictError struct {
-	IncomingDMMID int
-	ExistingDMMID int
-	ExistingID    uint
-}
-
-func (e *ActressDMMIDConflictError) Error() string {
-	return fmt.Sprintf("DMM ID %d conflicts with actress %d (DMM ID %d)", e.IncomingDMMID, e.ExistingID, e.ExistingDMMID)
-}
-
-func AsActressDMMIDConflict(err error) (*ActressDMMIDConflictError, bool) {
-	var conflict *ActressDMMIDConflictError
-	return conflict, errors.As(err, &conflict)
-}
-
 type ActressRepository struct {
 	*BaseRepository[models.Actress, uint]
 }
@@ -171,6 +153,25 @@ func (r *ActressRepository) FindByJapaneseName(name string) (*models.Actress, er
 	return &actress, nil
 }
 
+// FindUnverifiedByJapaneseName returns only a DMM-ID-less exact-name row.
+// Unverified scrape values must never inherit a positive DMM identity by name.
+func (r *ActressRepository) FindUnverifiedByJapaneseName(name string) (*models.Actress, error) {
+	key := normalizeExactActressName(name)
+	if key == "" {
+		return nil, wrapDBErr("find", "unverified actress by japanese name", ErrInvalidLookup)
+	}
+	var actresses []models.Actress
+	if err := r.GetDB().Where("dmm_id <= 0").Order("id ASC").Find(&actresses).Error; err != nil {
+		return nil, wrapDBErr("find", fmt.Sprintf("unverified actress %s", name), err)
+	}
+	for i := range actresses {
+		if normalizeExactActressName(actresses[i].JapaneseName) == key {
+			return &actresses[i], nil
+		}
+	}
+	return nil, wrapDBErr("find", fmt.Sprintf("unverified actress %s", name), ErrNotFound)
+}
+
 func (r *ActressRepository) FindByFirstNameLastName(firstName, lastName string) (*models.Actress, error) {
 	var actress models.Actress
 	err := r.GetDB().Order("dmm_id DESC, id ASC").First(&actress, "first_name = ? AND last_name = ?", firstName, lastName).Error
@@ -178,6 +179,28 @@ func (r *ActressRepository) FindByFirstNameLastName(firstName, lastName string) 
 		return nil, wrapDBErr("find", fmt.Sprintf("actress %s %s", lastName, firstName), err)
 	}
 	return &actress, nil
+}
+
+// FindUnverifiedByFirstNameLastName returns only an exact primary-name row
+// without a verified DMM identity. Name-only scrape values must not inherit a
+// positive DMM identity.
+func (r *ActressRepository) FindUnverifiedByFirstNameLastName(firstName, lastName string) (*models.Actress, error) {
+	firstKey := normalizeExactActressName(firstName)
+	lastKey := normalizeExactActressName(lastName)
+	if firstKey == "" || lastKey == "" {
+		return nil, wrapDBErr("find", "unverified actress by primary name", ErrInvalidLookup)
+	}
+	var actresses []models.Actress
+	if err := r.GetDB().Where("dmm_id <= 0").Order("id ASC").Find(&actresses).Error; err != nil {
+		return nil, wrapDBErr("find", fmt.Sprintf("unverified actress %s %s", lastName, firstName), err)
+	}
+	for i := range actresses {
+		if normalizeExactActressName(actresses[i].FirstName) == firstKey &&
+			normalizeExactActressName(actresses[i].LastName) == lastKey {
+			return &actresses[i], nil
+		}
+	}
+	return nil, wrapDBErr("find", fmt.Sprintf("unverified actress %s %s", lastName, firstName), ErrNotFound)
 }
 
 func (r *ActressRepository) FindByJapaneseNameAndDMMID(name string, dmmID int) (*models.Actress, error) {
@@ -229,6 +252,14 @@ func (r *ActressRepository) ListMissingMetadata() ([]models.Actress, error) {
 }
 
 func (r *ActressRepository) FindOrCreate(actress *models.Actress) error {
+	if actress != nil && actress.DMMID > 0 && hasVerifiedActressName(*actress) {
+		resolution, err := r.ResolveVerifiedIdentity(0, *actress, true)
+		if err != nil {
+			return err
+		}
+		*actress = resolution.Actress
+		return nil
+	}
 	return retryOnLocked(func() error { return r.findOrCreateOnce(actress) })
 }
 
@@ -267,9 +298,6 @@ func (r *ActressRepository) findOrCreateOnce(actress *models.Actress) error {
 }
 
 func (r *ActressRepository) reuseActressWithBackfill(incoming, existing *models.Actress) error {
-	if incoming.DMMID > 0 && existing.DMMID > 0 && incoming.DMMID != existing.DMMID {
-		return &ActressDMMIDConflictError{IncomingDMMID: incoming.DMMID, ExistingDMMID: existing.DMMID, ExistingID: existing.ID}
-	}
 	changed := false
 	if incoming.DMMID > 0 && existing.DMMID <= 0 {
 		existing.DMMID = incoming.DMMID
@@ -302,52 +330,24 @@ func (r *ActressRepository) reuseActressWithBackfill(incoming, existing *models.
 	return nil
 }
 
-// findExactReusableActress applies the non-fuzzy identity order used by actress
-// sync: Japanese name/aliases first, then normalized romanized or Hangul names.
+// findExactReusableActress only reuses a DMM-ID-less row whose Japanese name is
+// an exact normalized match. A name alone can never select another positive DMM
+// identity, and aliases/translated names are not identity proof.
 func (r *ActressRepository) findExactReusableActress(incoming models.Actress) (*models.Actress, error) {
 	var actresses []models.Actress
-	if err := r.GetDB().Order("dmm_id DESC, id ASC").Find(&actresses).Error; err != nil {
+	if err := r.GetDB().Where("dmm_id <= 0").Order("id ASC").Find(&actresses).Error; err != nil {
 		return nil, wrapDBErr("find", "exact reusable actress", err)
 	}
-
-	incomingJapanese := exactActressAliasKeys(incoming.JapaneseName, incoming.Aliases)
-	if len(incomingJapanese) > 0 {
-		for i := range actresses {
-			if exactKeySetsIntersect(incomingJapanese, exactActressAliasKeys(actresses[i].JapaneseName, actresses[i].Aliases)) {
-				return &actresses[i], nil
-			}
-		}
+	key := normalizeExactActressName(incoming.JapaneseName)
+	if key == "" {
+		return nil, nil
 	}
-
-	incomingPrimary := exactActressPrimaryKeys(incoming.FirstName, incoming.LastName)
-	if len(incomingPrimary) > 0 {
-		for i := range actresses {
-			if exactKeySetsIntersect(incomingPrimary, exactActressPrimaryKeys(actresses[i].FirstName, actresses[i].LastName)) {
-				return &actresses[i], nil
-			}
+	for i := range actresses {
+		if normalizeExactActressName(actresses[i].JapaneseName) == key {
+			return &actresses[i], nil
 		}
 	}
 	return nil, nil
-}
-
-func exactActressAliasKeys(japaneseName, aliases string) map[string]struct{} {
-	keys := make(map[string]struct{})
-	for _, value := range append([]string{japaneseName}, strings.Split(aliases, "|")...) {
-		if key := normalizeExactActressName(value); key != "" {
-			keys[key] = struct{}{}
-		}
-	}
-	return keys
-}
-
-func exactActressPrimaryKeys(firstName, lastName string) map[string]struct{} {
-	keys := make(map[string]struct{})
-	for _, value := range []string{strings.TrimSpace(firstName + " " + lastName), strings.TrimSpace(lastName + " " + firstName)} {
-		if key := normalizeExactActressName(value); key != "" && !models.IsUnknownActressName(value) {
-			keys[key] = struct{}{}
-		}
-	}
-	return keys
 }
 
 func normalizeExactActressName(value string) string {
@@ -358,15 +358,6 @@ func normalizeExactActressName(value string) string {
 		}
 	}
 	return normalized.String()
-}
-
-func exactKeySetsIntersect(left, right map[string]struct{}) bool {
-	for key := range left {
-		if _, exists := right[key]; exists {
-			return true
-		}
-	}
-	return false
 }
 
 func (r *ActressRepository) List(limit, offset int) ([]models.Actress, error) {

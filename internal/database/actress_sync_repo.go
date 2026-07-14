@@ -126,6 +126,65 @@ func (r *ActressSyncRepository) RecoverExpiredLeases(now time.Time) error {
 	})
 }
 
+// NormalizeActiveMovieTasks upgrades placeholder-specific dedupe keys from
+// earlier versions to one active task per movie. The oldest active task is kept;
+// duplicates are completed as skipped before workers start claiming tasks.
+func (r *ActressSyncRepository) NormalizeActiveMovieTasks(now time.Time) error {
+	return retryOnLocked(func() error {
+		return r.db.Transaction(func(tx *gorm.DB) error {
+			var tasks []models.ActressSyncTask
+			if err := tx.Where("kind = ? AND movie_content_id <> '' AND status IN ?",
+				models.ActressSyncTaskKindUnknownMovie,
+				[]string{models.ActressSyncTaskPending, models.ActressSyncTaskRunning},
+			).Order("created_at ASC, id ASC").Find(&tasks).Error; err != nil {
+				return err
+			}
+			groups := make(map[string][]models.ActressSyncTask)
+			for _, task := range tasks {
+				groups[task.MovieContentID] = append(groups[task.MovieContentID], task)
+			}
+			jobIDs := make(map[string]struct{})
+			for movieContentID, group := range groups {
+				keeper := 0
+				canonicalKey := fmt.Sprintf("movie:%s:missing-dmm", movieContentID)
+				for index := range group {
+					if group[index].DedupeKey == canonicalKey {
+						keeper = index
+						break
+					}
+				}
+				for index := range group {
+					if index == keeper {
+						continue
+					}
+					message := "An equivalent movie actress sync item is already pending or running"
+					if err := tx.Model(&models.ActressSyncTask{}).Where("id = ?", group[index].ID).Updates(map[string]interface{}{
+						"status": models.ActressSyncTaskSkipped, "stage": "completed", "outcome": "skipped",
+						"messages": serializedStringSlice([]string{message}), "completed_at": now,
+						"lease_owner": "", "lease_token": "", "lease_expires_at": nil,
+						"dedupe_key": group[index].DedupeKey + ":duplicate:" + group[index].ID,
+					}).Error; err != nil {
+						return err
+					}
+					jobIDs[group[index].JobID] = struct{}{}
+				}
+				if group[keeper].DedupeKey != canonicalKey {
+					if err := tx.Model(&models.ActressSyncTask{}).Where("id = ?", group[keeper].ID).Update("dedupe_key", canonicalKey).Error; err != nil {
+						return err
+					}
+				}
+				jobIDs[group[keeper].JobID] = struct{}{}
+			}
+			for jobID := range jobIDs {
+				if err := r.refreshJobTx(tx, jobID, now); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	})
+}
+
 func (r *ActressSyncRepository) ReleaseOwnerLeases(owner string) error {
 	if owner == "" {
 		return nil
@@ -255,9 +314,13 @@ func (r *ActressSyncRepository) CompleteTask(task *models.ActressSyncTask, lease
 	now := time.Now().UTC()
 	return retryOnLocked(func() error {
 		return r.db.Transaction(func(tx *gorm.DB) error {
+			completionStage := "completed"
+			if task.Status == models.ActressSyncTaskFailed && task.Stage != "" {
+				completionStage = task.Stage
+			}
 			updates := map[string]interface{}{
 				"status":           task.Status,
-				"stage":            "completed",
+				"stage":            completionStage,
 				"outcome":          task.Outcome,
 				"messages":         serializedStringSlice(task.Messages),
 				"updated_fields":   serializedStringSlice(task.UpdatedFields),

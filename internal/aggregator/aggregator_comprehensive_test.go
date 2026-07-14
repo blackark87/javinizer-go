@@ -543,14 +543,16 @@ func TestGetActressesByPriority(t *testing.T) {
 	}
 
 	actresses := agg.getActressesByPriority(results, []string{"r18dev", "dmm"})
-	require.Len(t, actresses, 1)
-
-	// Should merge data from both sources
-	assert.Equal(t, "Yui", actresses[0].FirstName)
-	assert.Equal(t, "Hatano", actresses[0].LastName)
-	assert.Equal(t, "波多野結衣", actresses[0].JapaneseName)
-	assert.Equal(t, 12345, actresses[0].DMMID)
-	assert.Equal(t, "https://example.com/thumb.jpg", actresses[0].ThumbURL)
+	require.Len(t, actresses, 2, "name-only metadata must not inherit a positive DMM identity")
+	byDMMID := make(map[int]models.Actress, len(actresses))
+	for _, actress := range actresses {
+		byDMMID[actress.DMMID] = actress
+	}
+	assert.Equal(t, "Yui", byDMMID[0].FirstName)
+	assert.Equal(t, "Hatano", byDMMID[0].LastName)
+	assert.Equal(t, "波多野結衣", byDMMID[0].JapaneseName)
+	assert.Equal(t, "波多野結衣", byDMMID[12345].JapaneseName)
+	assert.Equal(t, "https://example.com/thumb.jpg", byDMMID[12345].ThumbURL)
 }
 
 // TestGetActressesByPriorityMultiple tests multiple actresses
@@ -1250,13 +1252,15 @@ func TestAggregateActressMergingByJapaneseName(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, movie)
 
-	// Should have merged into one actress
-	require.Len(t, movie.Actresses, 1)
-	assert.Equal(t, "波多野結衣", movie.Actresses[0].JapaneseName)
-	assert.Equal(t, "Yui", movie.Actresses[0].FirstName)
-	assert.Equal(t, "Hatano", movie.Actresses[0].LastName)
-	assert.Equal(t, 12345, movie.Actresses[0].DMMID)
-	assert.Equal(t, "https://example.com/thumb.jpg", movie.Actresses[0].ThumbURL)
+	require.Len(t, movie.Actresses, 2, "name-only metadata must stay separate from a positive DMM identity")
+	byDMMID := make(map[int]models.Actress, len(movie.Actresses))
+	for _, actress := range movie.Actresses {
+		byDMMID[actress.DMMID] = actress
+	}
+	assert.Equal(t, "Yui", byDMMID[0].FirstName)
+	assert.Equal(t, "Hatano", byDMMID[0].LastName)
+	assert.Equal(t, "波多野結衣", byDMMID[12345].JapaneseName)
+	assert.Equal(t, "https://example.com/thumb.jpg", byDMMID[12345].ThumbURL)
 }
 
 func TestAggregateActressMergingJapaneseNameVsFirstName(t *testing.T) {
@@ -1300,10 +1304,13 @@ func TestAggregateActressMergingJapaneseNameVsFirstName(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, movie)
 
-	require.Len(t, movie.Actresses, 1, "should merge Japanese-name-in-FirstName with JapaneseName")
-	assert.Equal(t, "河合あすな", movie.Actresses[0].JapaneseName)
-	assert.Equal(t, 1044046, movie.Actresses[0].DMMID)
-	assert.Equal(t, "https://pics.dmm.co.jp/mono/actjpgs/kawai_asuna.jpg", movie.Actresses[0].ThumbURL)
+	require.Len(t, movie.Actresses, 2, "unverified name-only cast must not merge into a verified DMM profile")
+	for _, actress := range movie.Actresses {
+		if actress.DMMID == 1044046 {
+			assert.Equal(t, "河合あすな", actress.JapaneseName)
+			assert.Equal(t, "https://pics.dmm.co.jp/mono/actjpgs/kawai_asuna.jpg", actress.ThumbURL)
+		}
+	}
 }
 
 // TestAggregateActressAliasConversion tests actress alias conversion in full aggregation
@@ -1662,11 +1669,23 @@ func TestActressDMMIDDeduplicationSameIDDifferentNames(t *testing.T) {
 	assert.Equal(t, "https://r18dev.example.com/thumb.jpg", actresses[0].ThumbURL, "Should use r18dev ThumbURL (higher priority)")
 }
 
-// TestActressDMMIDUpgradeScenario tests the DMMID upgrade scenario where:
+func TestActressSameNameDifferentPositiveDMMIDsStaySeparate(t *testing.T) {
+	agg := New(&config.Config{})
+	results := map[string]*models.ScraperResult{
+		"first": {Source: "first", Actresses: []models.ActressInfo{{DMMID: 101, JapaneseName: "同名女優"}}},
+		"second": {Source: "second", Actresses: []models.ActressInfo{{DMMID: 202, JapaneseName: "同名女優"}}},
+	}
+
+	actresses := agg.getActressesByPriority(results, []string{"first", "second"})
+	require.Len(t, actresses, 2)
+	assert.ElementsMatch(t, []int{101, 202}, []int{actresses[0].DMMID, actresses[1].DMMID})
+}
+
+// TestActressDMMIDNameOnlyDoesNotUpgrade tests the strict identity boundary where:
 // 1. First scraper provides actress without DMMID (only name)
 // 2. Second scraper provides same actress with DMMID
-// 3. The actress should be upgraded with the DMMID and merged
-func TestActressDMMIDUpgradeScenario(t *testing.T) {
+// 3. The name-only actress remains separate until a verified identity workflow reconciles it
+func TestActressDMMIDNameOnlyDoesNotUpgrade(t *testing.T) {
 	cfg := &config.Config{
 		Scrapers: config.ScrapersConfig{
 			Priority: []string{"r18dev", "dmm"},
@@ -1709,17 +1728,15 @@ func TestActressDMMIDUpgradeScenario(t *testing.T) {
 
 	actresses := agg.getActressesByPriority(results, []string{"r18dev", "dmm"})
 
-	// Should have exactly 1 actress (merged by name, then upgraded with DMMID)
-	require.Len(t, actresses, 1, "Should merge actress and upgrade with DMMID")
-
-	// Should have DMMID from dmm
-	assert.Equal(t, 12345, actresses[0].DMMID, "Should upgrade actress with DMMID from dmm")
-
-	// Should keep data from r18dev (higher priority)
-	assert.Equal(t, "Yui", actresses[0].FirstName, "Should keep r18dev FirstName")
-	assert.Equal(t, "Hatano", actresses[0].LastName, "Should keep r18dev LastName")
-	assert.Equal(t, "波多野結衣", actresses[0].JapaneseName, "Should keep JapaneseName")
-	assert.Equal(t, "https://r18dev.example.com/thumb.jpg", actresses[0].ThumbURL, "Should keep r18dev ThumbURL")
+	require.Len(t, actresses, 2, "name-only actress must not inherit a positive DMM identity")
+	byDMMID := make(map[int]models.Actress, len(actresses))
+	for _, actress := range actresses {
+		byDMMID[actress.DMMID] = actress
+	}
+	assert.Equal(t, "Yui", byDMMID[0].FirstName)
+	assert.Equal(t, "Hatano", byDMMID[0].LastName)
+	assert.Equal(t, "https://r18dev.example.com/thumb.jpg", byDMMID[0].ThumbURL)
+	assert.Equal(t, "波多野結衣", byDMMID[12345].JapaneseName)
 }
 
 // TestActressDMMIDPartialDataMerging tests that when multiple scrapers provide

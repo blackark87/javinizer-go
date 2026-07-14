@@ -258,7 +258,7 @@ func (r *MovieRepository) ensureActressesExistTx(tx *gorm.DB, actresses []models
 
 	for i := range actresses {
 		a := &actresses[i]
-		if a.DMMID != 0 {
+		if a.DMMID > 0 {
 			dmmGroup = append(dmmGroup, actressGroup{index: i, act: a})
 		} else if a.JapaneseName != "" {
 			jpGroup = append(jpGroup, actressGroup{index: i, act: a})
@@ -268,61 +268,33 @@ func (r *MovieRepository) ensureActressesExistTx(tx *gorm.DB, actresses []models
 	}
 
 	if len(dmmGroup) > 0 {
-		dmmIDs := make([]int, len(dmmGroup))
-		for i, g := range dmmGroup {
-			dmmIDs[i] = g.act.DMMID
-		}
-		var found []models.Actress
-		if err := tx.Where("dmm_id IN ?", dmmIDs).Find(&found).Error; err != nil {
-			return err
-		}
-		byDMMID := make(map[int]models.Actress, len(found))
-		for _, a := range found {
-			byDMMID[a.DMMID] = a
-		}
+		actressRepo := NewActressRepository(r.GetDB())
 		for _, g := range dmmGroup {
-			if existing, ok := byDMMID[g.act.DMMID]; ok {
-				if r.mergeActressData(&existing, *g.act) {
-					if err := tx.Save(&existing).Error; err != nil {
-						return err
-					}
-				}
-				actresses[g.index] = existing
-			} else {
-				if err := raceRetryCreate(tx, g.act, func(tx *gorm.DB) error {
-					var found models.Actress
-					if err := tx.Where("dmm_id = ?", g.act.DMMID).First(&found).Error; err != nil {
-						return err
-					}
-					if r.mergeActressData(&found, *g.act) {
-						if err := tx.Save(&found).Error; err != nil {
-							return err
-						}
-					}
-					actresses[g.index] = found
-					return nil
-				}); err != nil {
-					return err
-				}
+			resolution, err := actressRepo.resolveVerifiedIdentityTx(tx, 0, *g.act, true)
+			if err != nil {
+				return err
 			}
+			actresses[g.index] = resolution.Actress
 		}
 	}
 
 	if len(jpGroup) > 0 {
-		jpNames := make([]string, len(jpGroup))
-		for i, g := range jpGroup {
-			jpNames[i] = g.act.JapaneseName
-		}
 		var found []models.Actress
-		if err := tx.Where("japanese_name IN ?", jpNames).Find(&found).Error; err != nil {
+		if err := tx.Where("dmm_id <= 0").Order("id ASC").Find(&found).Error; err != nil {
 			return err
 		}
 		byJPName := make(map[string]models.Actress, len(found))
 		for _, a := range found {
-			byJPName[a.JapaneseName] = a
+			key := normalizeExactActressName(a.JapaneseName)
+			if key != "" {
+				if _, exists := byJPName[key]; !exists {
+					byJPName[key] = a
+				}
+			}
 		}
 		for _, g := range jpGroup {
-			if existing, ok := byJPName[g.act.JapaneseName]; ok {
+			key := normalizeExactActressName(g.act.JapaneseName)
+			if existing, ok := byJPName[key]; ok {
 				if r.mergeActressData(&existing, *g.act) {
 					if err := tx.Save(&existing).Error; err != nil {
 						return err
@@ -331,10 +303,14 @@ func (r *MovieRepository) ensureActressesExistTx(tx *gorm.DB, actresses []models
 				actresses[g.index] = existing
 			} else {
 				if err := raceRetryCreate(tx, g.act, func(tx *gorm.DB) error {
-					var found models.Actress
-					if err := tx.Where("japanese_name = ?", g.act.JapaneseName).First(&found).Error; err != nil {
+					owners, err := findUnverifiedJapaneseNameOwnersTx(tx, g.act.JapaneseName)
+					if err != nil {
 						return err
 					}
+					if len(owners) == 0 {
+						return gorm.ErrRecordNotFound
+					}
+					found := owners[0]
 					if r.mergeActressData(&found, *g.act) {
 						if err := tx.Save(&found).Error; err != nil {
 							return err
@@ -345,64 +321,69 @@ func (r *MovieRepository) ensureActressesExistTx(tx *gorm.DB, actresses []models
 				}); err != nil {
 					return err
 				}
+				byJPName[key] = *g.act
 			}
 		}
 	}
 
 	for _, g := range nameGroup {
 		a := g.act
-		var existing models.Actress
-		var err error
-
-		if a.FirstName != "" && a.LastName != "" {
-			err = tx.Where("first_name = ? AND last_name = ?", a.FirstName, a.LastName).First(&existing).Error
-		} else if a.FirstName != "" {
-			err = tx.Where("first_name = ?", a.FirstName).First(&existing).Error
-		} else {
-			err = tx.Where("last_name = ?", a.LastName).First(&existing).Error
+		existing, err := findUnverifiedPrimaryNameTx(tx, a.FirstName, a.LastName)
+		if err != nil {
+			return err
 		}
-
-		if err == nil {
-			if r.mergeActressData(&existing, *a) {
-				if err := tx.Save(&existing).Error; err != nil {
+		if existing != nil {
+			if r.mergeActressData(existing, *a) {
+				if err := tx.Save(existing).Error; err != nil {
 					return err
 				}
 			}
-			actresses[g.index] = existing
-		} else if errors.Is(err, gorm.ErrRecordNotFound) {
+			actresses[g.index] = *existing
+		} else {
 			if err := raceRetryCreate(tx, a, func(tx *gorm.DB) error {
-				var found models.Actress
-				var findErr error
-				if a.DMMID != 0 {
-					findErr = tx.Where("dmm_id = ?", a.DMMID).First(&found).Error
-				} else if a.JapaneseName != "" {
-					findErr = tx.Where("japanese_name = ?", a.JapaneseName).First(&found).Error
-				} else if a.FirstName != "" && a.LastName != "" {
-					findErr = tx.Where("first_name = ? AND last_name = ?", a.FirstName, a.LastName).First(&found).Error
-				} else if a.FirstName != "" {
-					findErr = tx.Where("first_name = ?", a.FirstName).First(&found).Error
-				} else {
-					findErr = tx.Where("last_name = ?", a.LastName).First(&found).Error
-				}
+				found, findErr := findUnverifiedPrimaryNameTx(tx, a.FirstName, a.LastName)
 				if findErr != nil {
 					return findErr
 				}
-				if r.mergeActressData(&found, *a) {
-					if saveErr := tx.Save(&found).Error; saveErr != nil {
+				if found == nil {
+					return gorm.ErrRecordNotFound
+				}
+				if r.mergeActressData(found, *a) {
+					if saveErr := tx.Save(found).Error; saveErr != nil {
 						return saveErr
 					}
 				}
-				actresses[g.index] = found
+				actresses[g.index] = *found
 				return nil
 			}); err != nil {
 				return err
 			}
-		} else {
-			return err
 		}
 	}
 
 	return nil
+}
+
+func findUnverifiedPrimaryNameTx(tx *gorm.DB, firstName, lastName string) (*models.Actress, error) {
+	firstKey := normalizeExactActressName(firstName)
+	lastKey := normalizeExactActressName(lastName)
+	if firstKey == "" && lastKey == "" {
+		return nil, nil
+	}
+	var actresses []models.Actress
+	if err := tx.Where("dmm_id <= 0").Order("id ASC").Find(&actresses).Error; err != nil {
+		return nil, err
+	}
+	for i := range actresses {
+		if firstKey != "" && normalizeExactActressName(actresses[i].FirstName) != firstKey {
+			continue
+		}
+		if lastKey != "" && normalizeExactActressName(actresses[i].LastName) != lastKey {
+			continue
+		}
+		return &actresses[i], nil
+	}
+	return nil, nil
 }
 
 func (r *MovieRepository) FindByID(id string) (*models.Movie, error) {
@@ -527,6 +508,39 @@ func (r *MovieRepository) ReplaceActressForMovie(movieContentID string, sourceAc
 			return nil
 		})
 	})
+}
+
+// ReplaceUnverifiedActressesForMovie removes every DMM-ID-less cast mapping for
+// one movie, preserves positive-DMM mappings, and adds the resolver-verified
+// cast atomically. It returns the removed actress IDs for orphan cleanup.
+func (r *MovieRepository) ReplaceUnverifiedActressesForMovie(movieContentID string, replacements []models.Actress) ([]uint, error) {
+	var removedIDs []uint
+	err := retryOnLocked(func() error {
+		return r.GetDB().Transaction(func(tx *gorm.DB) error {
+			if err := tx.Table("actresses AS actress").
+				Select("actress.id").
+				Joins("JOIN movie_actresses AS mapping ON mapping.actress_id = actress.id").
+				Where("mapping.movie_content_id = ? AND actress.dmm_id <= 0", movieContentID).
+				Order("actress.id ASC").Pluck("actress.id", &removedIDs).Error; err != nil {
+				return err
+			}
+			if err := r.ensureActressesExistTx(tx, replacements); err != nil {
+				return err
+			}
+			if len(removedIDs) > 0 {
+				if err := tx.Exec("DELETE FROM movie_actresses WHERE movie_content_id = ? AND actress_id IN ?", movieContentID, removedIDs).Error; err != nil {
+					return err
+				}
+			}
+			for _, actress := range replacements {
+				if err := tx.Exec("INSERT OR IGNORE INTO movie_actresses(movie_content_id, actress_id) VALUES (?, ?)", movieContentID, actress.ID).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	})
+	return removedIDs, err
 }
 
 // ReassignActressAssociations moves all movie links to an already-existing

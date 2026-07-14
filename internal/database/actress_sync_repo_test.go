@@ -162,3 +162,37 @@ func TestActressSyncRepositoryMakesConcurrentDuplicateACompletedSkip(t *testing.
 	assert.Equal(t, models.ActressSyncTaskSkipped, rows[0].Status)
 	assert.Contains(t, rows[0].Messages[0], "already pending or running")
 }
+
+func TestActressSyncRepositoryNormalizesLegacyMovieTasksToOneActiveItem(t *testing.T) {
+	db := newActressSyncRepositoryTestDB(t)
+	repo := NewActressSyncRepository(db)
+
+	first, firstTasks := actressSyncTestJob("legacy-first", 1)
+	firstTasks[0].Kind = models.ActressSyncTaskKindUnknownMovie
+	firstTasks[0].MovieContentID = "mium921"
+	firstTasks[0].MovieID = "300MIUM-921"
+	firstTasks[0].DedupeKey = "movie:mium921:placeholder:1"
+	require.NoError(t, repo.CreateJob(first, firstTasks))
+
+	second, secondTasks := actressSyncTestJob("legacy-second", 1)
+	secondTasks[0].Kind = models.ActressSyncTaskKindUnknownMovie
+	secondTasks[0].MovieContentID = "mium921"
+	secondTasks[0].MovieID = "300MIUM-921"
+	secondTasks[0].DedupeKey = "movie:mium921:placeholder:2"
+	require.NoError(t, repo.CreateJob(second, secondTasks))
+
+	require.NoError(t, repo.NormalizeActiveMovieTasks(time.Now().UTC()))
+	firstRows, err := repo.ListTasks(first.ID)
+	require.NoError(t, err)
+	secondRows, err := repo.ListTasks(second.ID)
+	require.NoError(t, err)
+	require.Len(t, firstRows, 1)
+	require.Len(t, secondRows, 1)
+	statuses := []string{firstRows[0].Status, secondRows[0].Status}
+	assert.ElementsMatch(t, []string{models.ActressSyncTaskPending, models.ActressSyncTaskSkipped}, statuses)
+	if firstRows[0].Status == models.ActressSyncTaskPending {
+		assert.Equal(t, "movie:mium921:missing-dmm", firstRows[0].DedupeKey)
+	} else {
+		assert.Equal(t, "movie:mium921:missing-dmm", secondRows[0].DedupeKey)
+	}
+}

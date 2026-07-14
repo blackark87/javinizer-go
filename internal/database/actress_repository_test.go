@@ -93,7 +93,6 @@ func TestActressRepository(t *testing.T) {
 
 	t.Run("FindOrCreate - finds existing", func(t *testing.T) {
 		existing := &models.Actress{
-			DMMID:        88888,
 			JapaneseName: "既存女優",
 			FirstName:    "Existing",
 			LastName:     "Actress",

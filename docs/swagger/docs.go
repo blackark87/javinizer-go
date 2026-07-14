@@ -797,59 +797,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/v1/actresses/{id}/sync": {
-            "post": {
-                "description": "Fill missing metadata and reconcile a resolver-confirmed canonical actress without leaving duplicate rows",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "actress"
-                ],
-                "summary": "Sync and verify actress metadata",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Actress ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_worker.ActressSyncResult"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
-                        }
-                    },
-                    "504": {
-                        "description": "Gateway Timeout",
-                        "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/api/v1/auth/login": {
             "post": {
                 "description": "Authenticate with username and password to create a session",
@@ -5025,53 +4972,6 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
-        },
-        "github_com_javinizer_javinizer-go_internal_worker.ActressSyncResult": {
-            "type": "object",
-            "properties": {
-                "actress": {
-                    "$ref": "#/definitions/models.Actress"
-                },
-                "conflict_actress_id": {
-                    "type": "integer"
-                },
-                "messages": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "source": {
-                    "type": "string"
-                },
-                "source_query": {
-                    "type": "string"
-                },
-                "status": {
-                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_worker.ActressSyncStatus"
-                },
-                "updated_fields": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "github_com_javinizer_javinizer-go_internal_worker.ActressSyncStatus": {
-            "type": "string",
-            "enum": [
-                "updated",
-                "skipped",
-                "conflict",
-                "failed"
-            ],
-            "x-enum-varnames": [
-                "ActressSyncUpdated",
-                "ActressSyncSkipped",
-                "ActressSyncConflict",
-                "ActressSyncFailed"
-            ]
         },
         "internal_api_actress.Actress": {
             "type": "object",

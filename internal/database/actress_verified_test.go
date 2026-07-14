@@ -24,29 +24,30 @@ func newVerifiedActressTestRepos(t *testing.T) (*DB, *ActressRepository, *MovieR
 	return db, NewActressRepository(db), NewMovieRepository(db)
 }
 
-func TestResolveVerifiedIdentityMergesNicknameIntoExistingCanonicalActress(t *testing.T) {
+func TestResolveVerifiedIdentityPromotesAndMergesExactUnverifiedJapaneseName(t *testing.T) {
 	_, actressRepo, movieRepo := newVerifiedActressTestRepos(t)
-	nickname := &models.Actress{JapaneseName: "もな", ThumbURL: "nickname.jpg"}
 	canonical := &models.Actress{JapaneseName: "弥生みづき", FirstName: "Mizuki", LastName: "Yayoi"}
-	require.NoError(t, actressRepo.Create(nickname))
+	duplicate := &models.Actress{JapaneseName: "弥生 みづき", ThumbURL: "duplicate.jpg"}
 	require.NoError(t, actressRepo.Create(canonical))
+	require.NoError(t, actressRepo.Create(duplicate))
 	require.NoError(t, movieRepo.Create(&models.Movie{
-		ContentID: "jnt051", ID: "JNT-051", Actresses: []models.Actress{*nickname},
+		ContentID: "jnt051", ID: "JNT-051", Actresses: []models.Actress{*duplicate},
 	}))
 
-	resolution, err := actressRepo.ResolveVerifiedIdentity(nickname.ID, models.Actress{
+	resolution, err := actressRepo.ResolveVerifiedIdentity(duplicate.ID, models.Actress{
 		DMMID: 777, JapaneseName: "弥生みづき", ThumbURL: "canonical.jpg",
 	}, false)
 	require.NoError(t, err)
 	assert.Equal(t, canonical.ID, resolution.Actress.ID)
 	assert.Equal(t, 777, resolution.Actress.DMMID)
 	assert.Equal(t, "弥生みづき", resolution.Actress.JapaneseName)
-	assert.Contains(t, strings.Split(resolution.Actress.Aliases, "|"), "もな")
-	assert.Equal(t, []uint{nickname.ID}, resolution.MergedFromIDs)
+	assert.Equal(t, "Mizuki", resolution.Actress.FirstName)
+	assert.Equal(t, "canonical.jpg", resolution.Actress.ThumbURL)
+	assert.Equal(t, []uint{duplicate.ID}, resolution.MergedFromIDs)
 	assert.Equal(t, 1, resolution.UpdatedMovies)
 
-	_, err = actressRepo.FindByID(nickname.ID)
-	assert.True(t, IsNotFound(err), "nickname row must be deleted after its mappings move")
+	_, err = actressRepo.FindByID(duplicate.ID)
+	assert.True(t, IsNotFound(err), "duplicate row must be deleted after its mappings move")
 	movie, err := movieRepo.FindByContentID("jnt051")
 	require.NoError(t, err)
 	require.Len(t, movie.Actresses, 1)
@@ -56,7 +57,7 @@ func TestResolveVerifiedIdentityMergesNicknameIntoExistingCanonicalActress(t *te
 	assert.EqualValues(t, 1, count)
 }
 
-func TestResolveVerifiedIdentityRepairsPollutedDMMOwnerInsteadOfCreatingAnotherRow(t *testing.T) {
+func TestResolveVerifiedIdentityKeepsDMMOwnerProfileAndAddsVerifiedActivityNameAlias(t *testing.T) {
 	_, actressRepo, movieRepo := newVerifiedActressTestRepos(t)
 	polluted := &models.Actress{DMMID: 777, JapaneseName: "もな", FirstName: "Mona", Aliases: "弥生みづき"}
 	canonical := &models.Actress{JapaneseName: "弥生みづき"}
@@ -70,58 +71,67 @@ func TestResolveVerifiedIdentityRepairsPollutedDMMOwnerInsteadOfCreatingAnotherR
 		DMMID: 777, JapaneseName: "弥生みづき", FirstName: "Mizuki", LastName: "Yayoi",
 	}, true)
 	require.NoError(t, err)
-	assert.Equal(t, canonical.ID, resolution.Actress.ID)
+	assert.Equal(t, polluted.ID, resolution.Actress.ID)
 	assert.Equal(t, 777, resolution.Actress.DMMID)
-	assert.Contains(t, strings.Split(resolution.Actress.Aliases, "|"), "もな")
-	assert.Equal(t, []uint{polluted.ID}, resolution.MergedFromIDs)
+	assert.Equal(t, "もな", resolution.Actress.JapaneseName)
+	assert.Equal(t, "Mona", resolution.Actress.FirstName)
+	assert.Contains(t, strings.Split(resolution.Actress.Aliases, "|"), "弥生みづき")
+	assert.Equal(t, []uint{canonical.ID}, resolution.MergedFromIDs)
 
-	_, err = actressRepo.FindByID(polluted.ID)
+	_, err = actressRepo.FindByID(canonical.ID)
 	assert.True(t, IsNotFound(err))
 	movie, err := movieRepo.FindByContentID("jnt051")
 	require.NoError(t, err)
 	require.Len(t, movie.Actresses, 1)
-	assert.Equal(t, canonical.ID, movie.Actresses[0].ID)
+	assert.Equal(t, polluted.ID, movie.Actresses[0].ID)
 }
 
-func TestResolveVerifiedIdentityCanonicalizesSourceInPlaceWhenNoReusableRowExists(t *testing.T) {
+func TestResolveVerifiedIdentityDeduplicatesNormalizedActivityNameAlias(t *testing.T) {
+	_, actressRepo, _ := newVerifiedActressTestRepos(t)
+	owner := &models.Actress{DMMID: 778, JapaneseName: "既存正名", Aliases: "弥生 みづき"}
+	require.NoError(t, actressRepo.Create(owner))
+
+	resolution, err := actressRepo.ResolveVerifiedIdentity(0, models.Actress{
+		DMMID: 778, JapaneseName: "弥生みづき",
+	}, true)
+	require.NoError(t, err)
+	assert.Equal(t, "弥生 みづき", resolution.Actress.Aliases)
+	assert.Empty(t, resolution.AliasesAdded)
+}
+
+func TestResolveVerifiedIdentityDoesNotPromoteUnverifiedNicknameBySourceID(t *testing.T) {
 	_, actressRepo, _ := newVerifiedActressTestRepos(t)
 	nickname := &models.Actress{JapaneseName: "新人ちゃん", FirstName: "Nickname"}
 	require.NoError(t, actressRepo.Create(nickname))
 
 	resolution, err := actressRepo.ResolveVerifiedIdentity(nickname.ID, models.Actress{
 		DMMID: 888, JapaneseName: "実名女優", FirstName: "Jitsumei", LastName: "Joyu",
-	}, false)
+	}, true)
 	require.NoError(t, err)
-	assert.Equal(t, nickname.ID, resolution.Actress.ID)
+	assert.NotEqual(t, nickname.ID, resolution.Actress.ID)
 	assert.Equal(t, "実名女優", resolution.Actress.JapaneseName)
 	assert.Equal(t, "Jitsumei", resolution.Actress.FirstName)
 	assert.Equal(t, "Joyu", resolution.Actress.LastName)
-	assert.Contains(t, strings.Split(resolution.Actress.Aliases, "|"), "新人ちゃん")
-	assert.Contains(t, strings.Split(resolution.Actress.Aliases, "|"), "Nickname")
+	assert.Empty(t, resolution.Actress.Aliases)
+	savedNickname, err := actressRepo.FindByID(nickname.ID)
+	require.NoError(t, err)
+	assert.Zero(t, savedNickname.DMMID)
 	count, err := actressRepo.Count()
 	require.NoError(t, err)
-	assert.EqualValues(t, 1, count)
+	assert.EqualValues(t, 2, count)
 }
 
-func TestResolveVerifiedIdentityRejectsCanonicalNameOwnedByDifferentDMMIdentity(t *testing.T) {
+func TestResolveVerifiedIdentityKeepsSameNameDifferentPositiveDMMIdentity(t *testing.T) {
 	_, actressRepo, _ := newVerifiedActressTestRepos(t)
-	source := &models.Actress{JapaneseName: "별명"}
 	canonical := &models.Actress{DMMID: 111, JapaneseName: "実名女優"}
-	require.NoError(t, actressRepo.Create(source))
 	require.NoError(t, actressRepo.Create(canonical))
 
-	_, err := actressRepo.ResolveVerifiedIdentity(source.ID, models.Actress{
+	resolution, err := actressRepo.ResolveVerifiedIdentity(0, models.Actress{
 		DMMID: 222, JapaneseName: "実名女優",
-	}, false)
-	conflict, ok := AsActressDMMIDConflict(err)
-	require.True(t, ok)
-	assert.Equal(t, canonical.ID, conflict.ExistingID)
-	assert.Equal(t, 111, conflict.ExistingDMMID)
-	assert.Equal(t, 222, conflict.IncomingDMMID)
-
-	savedSource, findErr := actressRepo.FindByID(source.ID)
-	require.NoError(t, findErr)
-	assert.Equal(t, 0, savedSource.DMMID)
+	}, true)
+	require.NoError(t, err)
+	assert.NotEqual(t, canonical.ID, resolution.Actress.ID)
+	assert.Equal(t, 222, resolution.Actress.DMMID)
 	count, countErr := actressRepo.Count()
 	require.NoError(t, countErr)
 	assert.EqualValues(t, 2, count)
@@ -160,4 +170,35 @@ func TestResolveVerifiedIdentityConcurrentCreateIsIdempotent(t *testing.T) {
 	count, err := actressRepo.Count()
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, count)
+}
+
+func TestResolveVerifiedIdentityConcurrentAliasesAreAccumulatedWithoutOverwrite(t *testing.T) {
+	_, actressRepo, _ := newVerifiedActressTestRepos(t)
+	owner := &models.Actress{DMMID: 7001, JapaneseName: "既存正名", FirstName: "기존", Aliases: "既存別名"}
+	require.NoError(t, actressRepo.Create(owner))
+
+	activityNames := []string{"活動名一", "活動名二", "活動名三", "活動名四", "活動名五"}
+	var wg sync.WaitGroup
+	errs := make(chan error, len(activityNames))
+	for _, activityName := range activityNames {
+		activityName := activityName
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := actressRepo.ResolveVerifiedIdentity(0, models.Actress{DMMID: 7001, JapaneseName: activityName}, true)
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	stored, err := actressRepo.FindByDMMID(7001)
+	require.NoError(t, err)
+	assert.Equal(t, "既存正名", stored.JapaneseName)
+	assert.Equal(t, "기존", stored.FirstName)
+	wantAliases := append([]string{"既存別名"}, activityNames...)
+	assert.ElementsMatch(t, wantAliases, strings.Split(stored.Aliases, "|"))
 }

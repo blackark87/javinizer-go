@@ -1261,7 +1261,7 @@ func TestAggregatePartialData(t *testing.T) {
 		assert.Equal(t, 0, movie.Actresses[0].DMMID)
 	})
 
-	t.Run("actress DMMID upgraded from non-positive placeholder", func(t *testing.T) {
+	t.Run("non-positive placeholder stays separate from verified DMM identity", func(t *testing.T) {
 		results := []*models.ScraperResult{
 			{
 				Source: "r18dev",
@@ -1290,8 +1290,9 @@ func TestAggregatePartialData(t *testing.T) {
 		movie, _, err := agg.Aggregate(results)
 		require.NoError(t, err)
 		require.NotNil(t, movie)
-		require.Len(t, movie.Actresses, 1)
-		assert.Equal(t, 12345, movie.Actresses[0].DMMID)
+		require.Len(t, movie.Actresses, 2)
+		ids := []int{movie.Actresses[0].DMMID, movie.Actresses[1].DMMID}
+		assert.ElementsMatch(t, []int{-123456, 12345}, ids)
 	})
 
 	t.Run("gap filling from lower priority scraper", func(t *testing.T) {

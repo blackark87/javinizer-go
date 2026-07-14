@@ -1072,39 +1072,6 @@ definitions:
       scope:
         type: string
     type: object
-  github_com_javinizer_javinizer-go_internal_worker.ActressSyncResult:
-    properties:
-      actress:
-        $ref: '#/definitions/models.Actress'
-      conflict_actress_id:
-        type: integer
-      messages:
-        items:
-          type: string
-        type: array
-      source:
-        type: string
-      source_query:
-        type: string
-      status:
-        $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_worker.ActressSyncStatus'
-      updated_fields:
-        items:
-          type: string
-        type: array
-    type: object
-  github_com_javinizer_javinizer-go_internal_worker.ActressSyncStatus:
-    enum:
-    - updated
-    - skipped
-    - conflict
-    - failed
-    type: string
-    x-enum-varnames:
-    - ActressSyncUpdated
-    - ActressSyncSkipped
-    - ActressSyncConflict
-    - ActressSyncFailed
   internal_api_actress.Actress:
     properties:
       aliases:
@@ -3005,42 +2972,6 @@ paths:
           schema:
             $ref: '#/definitions/internal_api_actress.ErrorResponse'
       summary: List movies for an actress
-      tags:
-      - actress
-  /api/v1/actresses/{id}/sync:
-    post:
-      description: Fill missing metadata and reconcile a resolver-confirmed canonical
-        actress without leaving duplicate rows
-      parameters:
-      - description: Actress ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_worker.ActressSyncResult'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/internal_api_actress.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/internal_api_actress.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/internal_api_actress.ErrorResponse'
-        "504":
-          description: Gateway Timeout
-          schema:
-            $ref: '#/definitions/internal_api_actress.ErrorResponse'
-      summary: Sync and verify actress metadata
       tags:
       - actress
   /api/v1/actresses/bulk-delete:

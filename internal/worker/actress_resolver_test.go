@@ -57,7 +57,7 @@ func (s *actressFlowThumbnailResolver) ResolveActressThumbnail(_ context.Context
 	return s.url
 }
 
-func TestQueryScrapersAlwaysRunsActressResolverForCanonicalCast(t *testing.T) {
+func TestQueryScrapersRunsActressResolverOnlyWhenAllDMMIDsAreMissing(t *testing.T) {
 	tests := []struct {
 		name          string
 		actresses     []models.ActressInfo
@@ -81,11 +81,11 @@ func TestQueryScrapersAlwaysRunsActressResolverForCanonicalCast(t *testing.T) {
 			wantResultLen: 2,
 		},
 		{
-			name:          "regular source positive DMM ID still requires canonical verification",
+			name:          "regular source positive DMM ID skips fallback verification",
 			actresses:     []models.ActressInfo{{JapaneseName: "정식명", DMMID: 123}},
-			wantCalls:     1,
-			wantOverride:  "sougouwiki",
-			wantResultLen: 2,
+			wantCalls:     0,
+			wantOverride:  "",
+			wantResultLen: 1,
 		},
 	}
 
@@ -317,7 +317,7 @@ func TestBuildActressOverrideResultsPreservesRawResultsAndSources(t *testing.T) 
 	}
 }
 
-func TestReconcileVerifiedMovieActressesMergesPollutedDMMOwnerIntoCanonicalRow(t *testing.T) {
+func TestReconcileVerifiedMovieActressesKeepsDMMOwnerAndAddsActivityNameAlias(t *testing.T) {
 	_, db, _, _, _ := newRunBatchTestEnv(t, "regular")
 	repo := database.NewActressRepository(db)
 	polluted := &models.Actress{DMMID: 777, JapaneseName: "もな"}
@@ -333,15 +333,22 @@ func TestReconcileVerifiedMovieActressesMergesPollutedDMMOwnerIntoCanonicalRow(t
 	if err := reconcileVerifiedMovieActresses(movie, repo); err != nil {
 		t.Fatal(err)
 	}
-	if len(movie.Actresses) != 1 || movie.Actresses[0].ID != canonical.ID {
-		t.Fatalf("canonical actresses = %+v, want existing actress #%d", movie.Actresses, canonical.ID)
+	if len(movie.Actresses) != 1 || movie.Actresses[0].ID != polluted.ID {
+		t.Fatalf("canonical actresses = %+v, want DMM owner actress #%d", movie.Actresses, polluted.ID)
 	}
-	if _, err := repo.FindByID(polluted.ID); !database.IsNotFound(err) {
-		t.Fatalf("polluted nickname row was not deleted: %v", err)
+	stored, err := repo.FindByID(polluted.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.JapaneseName != "もな" || stored.Aliases != "弥生みづき" {
+		t.Fatalf("DMM owner profile was overwritten instead of aliased: %+v", stored)
+	}
+	if _, err := repo.FindByID(canonical.ID); !database.IsNotFound(err) {
+		t.Fatalf("matching unverified activity-name row was not merged: %v", err)
 	}
 }
 
-func TestVerifyCachedActressesRunsResolverAndRepairsStoredMappings(t *testing.T) {
+func TestVerifyCachedActressesSkipsResolverWhenAnyPositiveDMMIDExists(t *testing.T) {
 	cfg, db, movieRepo, _, _ := newRunBatchTestEnv(t, "sougouwiki")
 	actressRepo := database.NewActressRepository(db)
 	canonical := &models.Actress{JapaneseName: "弥生みづき"}
@@ -355,7 +362,6 @@ func TestVerifyCachedActressesRunsResolverAndRepairsStoredMappings(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pollutedID := cached.Actresses[0].ID
 	resolver := &actressFlowResolver{
 		actressFlowScraper: &actressFlowScraper{name: "sougouwiki", enabled: true},
 		resolveResult: &models.ScraperResult{Source: "sougouwiki", Actresses: []models.ActressInfo{{
@@ -372,14 +378,77 @@ func TestVerifyCachedActressesRunsResolverAndRepairsStoredMappings(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolver.resolveCalls != 1 || resolver.resolveID != "JNT-051" {
+	if resolver.resolveCalls != 0 {
 		t.Fatalf("resolver calls=%d id=%q", resolver.resolveCalls, resolver.resolveID)
 	}
-	if verified == nil || len(verified.Actresses) != 1 || verified.Actresses[0].ID != canonical.ID {
-		t.Fatalf("verified cached movie = %+v, want canonical actress #%d", verified, canonical.ID)
+	if verified != nil {
+		t.Fatalf("cached positive-DMM cast should not be replaced: %+v", verified)
 	}
-	if _, err := actressRepo.FindByID(pollutedID); !database.IsNotFound(err) {
-		t.Fatalf("polluted cached actress row was not deleted: %v", err)
+}
+
+func TestVerifyCachedActressesRunsResolverWhenAllDMMIDsAreMissing(t *testing.T) {
+	cfg, db, movieRepo, _, _ := newRunBatchTestEnv(t, "sougouwiki")
+	actressRepo := database.NewActressRepository(db)
+	cached, err := movieRepo.Upsert(&models.Movie{
+		ContentID: "mium834", ID: "300MIUM-834", Title: "cached",
+		Actresses: []models.Actress{{JapaneseName: "新人さん"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := &actressFlowResolver{
+		actressFlowScraper: &actressFlowScraper{name: "sougouwiki", enabled: true},
+		resolveResult: &models.ScraperResult{Source: "sougouwiki", Actresses: []models.ActressInfo{{
+			DMMID: 834, JapaneseName: "実名女優",
+		}}},
+	}
+	registry := models.NewScraperRegistry()
+	registry.Register(resolver)
+
+	verified, err := verifyCachedActresses(
+		context.Background(), &BatchJob{ID: "cached-verify"}, 0, cached,
+		movieRepo, actressRepo, registry, cfg,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolver.resolveCalls != 1 || resolver.resolveID != "300MIUM-834" {
+		t.Fatalf("resolver calls=%d id=%q", resolver.resolveCalls, resolver.resolveID)
+	}
+	if verified == nil || len(verified.Actresses) != 1 || verified.Actresses[0].DMMID != 834 || verified.Actresses[0].JapaneseName != "実名女優" {
+		t.Fatalf("verified cached movie = %+v", verified)
+	}
+}
+
+func TestVerifyCachedActressesCleansFallbackAfterSuccessfulEmptyResolution(t *testing.T) {
+	cfg, db, movieRepo, _, _ := newRunBatchTestEnv(t, "sougouwiki")
+	actressRepo := database.NewActressRepository(db)
+	cached, err := movieRepo.Upsert(&models.Movie{
+		ContentID: "mium-empty", ID: "300MIUM-834", Title: "cached",
+		Actresses: []models.Actress{{JapaneseName: "あいり 21歳 大学3年生"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver := &actressFlowResolver{
+		actressFlowScraper: &actressFlowScraper{name: "sougouwiki", enabled: true},
+		resolveResult:      &models.ScraperResult{Source: "sougouwiki"},
+	}
+	registry := models.NewScraperRegistry()
+	registry.Register(resolver)
+
+	cleaned, err := verifyCachedActresses(
+		context.Background(), &BatchJob{ID: "cached-empty"}, 0, cached,
+		movieRepo, actressRepo, registry, cfg,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolver.resolveCalls != 1 || cleaned == nil || len(cleaned.Actresses) != 1 {
+		t.Fatalf("resolver calls=%d cleaned=%+v", resolver.resolveCalls, cleaned)
+	}
+	if cleaned.Actresses[0].JapaneseName != "あいり" {
+		t.Fatalf("fallback actress was not cleaned: %+v", cleaned.Actresses[0])
 	}
 }
 

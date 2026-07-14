@@ -146,10 +146,10 @@ func queryScrapers(
 		}
 	}
 
-	// A positive actress ID from a regular metadata source is not sufficient
-	// identity proof: the source can attach that ID to a nickname or descriptive
-	// cast label. Always run configured actress resolvers as the canonical cast
-	// authority, independently of regular scraper early-stop behavior.
+	if !needsActressResolution(results) {
+		return results, scraperFailures, "", nil, nil
+	}
+
 	thumbnailResolver := findActressThumbnailResolver(registry)
 	for _, scraper := range actressResolvers {
 		if err := ctx.Err(); err != nil {
@@ -194,6 +194,23 @@ func queryScrapers(
 	}
 
 	return results, scraperFailures, "", nil, nil
+}
+
+// needsActressResolution keeps SougouWiki as a fallback. Once any regular
+// metadata provider supplies a positive DMM actress ID, its cast is retained
+// and the movie is not sent to the resolver.
+func needsActressResolution(results []*models.ScraperResult) bool {
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		for _, actress := range result.Actresses {
+			if actress.DMMID > 0 {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func partitionActressResolvers(scrapers []models.Scraper) ([]models.Scraper, []models.Scraper) {

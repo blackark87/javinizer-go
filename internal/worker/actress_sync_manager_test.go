@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -66,7 +69,7 @@ func TestActressSyncManagerUsesFiveGeneralWorkers(t *testing.T) {
 	entered := make(chan struct{}, 5)
 	release := make(chan struct{})
 	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true}
-	resolver.identityFn = func(ctx context.Context, query models.ActressIdentityQuery) (*models.ScraperResult, error) {
+	resolver.resolveFn = func(ctx context.Context, movieID string) (*models.ScraperResult, error) {
 		current := active.Add(1)
 		defer active.Add(-1)
 		for {
@@ -81,19 +84,21 @@ func TestActressSyncManagerUsesFiveGeneralWorkers(t *testing.T) {
 			return nil, ctx.Err()
 		case <-release:
 		}
-		name := query.Names[0]
-		return &models.ScraperResult{ID: name, Actresses: []models.ActressInfo{{DMMID: 1000 + int(current), JapaneseName: name}}}, nil
+		return &models.ScraperResult{ID: movieID, Actresses: []models.ActressInfo{{DMMID: 1000 + int(current), JapaneseName: "実名" + movieID}}}, nil
 	}
 	registry := models.NewScraperRegistry()
 	registry.Register(resolver)
 	cfg := &config.Config{Performance: config.PerformanceConfig{MaxWorkers: 5}}
 	cfg.Scrapers.Priority = []string{"sougouwiki"}
-	manager, _, actressRepo, _ := newActressSyncManagerTest(t, cfg, registry)
+	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, cfg, registry)
 
 	ids := make([]uint, 0, 5)
 	for index := 0; index < 5; index++ {
-		actress := &models.Actress{JapaneseName: fmt.Sprintf("女優%d", index), ThumbURL: "existing.jpg"}
+		actress := &models.Actress{JapaneseName: fmt.Sprintf("仮名女優%d", index)}
 		require.NoError(t, actressRepo.Create(actress))
+		require.NoError(t, movieRepo.Create(&models.Movie{
+			ContentID: fmt.Sprintf("worker-%d", index), ID: fmt.Sprintf("WORKER-%03d", index), Actresses: []models.Actress{*actress},
+		}))
 		ids = append(ids, actress.ID)
 	}
 	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{Scope: "selected", ActressIDs: ids})
@@ -114,28 +119,33 @@ func TestActressSyncManagerUsesFiveGeneralWorkers(t *testing.T) {
 func TestActressSyncManagerCancelStopsPendingAfterRunningItems(t *testing.T) {
 	entered := make(chan struct{}, 4)
 	release := make(chan struct{})
-	var sequence atomic.Int32
 	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true}
-	resolver.identityFn = func(ctx context.Context, query models.ActressIdentityQuery) (*models.ScraperResult, error) {
+	resolver.resolveFn = func(ctx context.Context, movieID string) (*models.ScraperResult, error) {
 		entered <- struct{}{}
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-release:
 		}
-		name := query.Names[0]
-		return &models.ScraperResult{ID: name, Actresses: []models.ActressInfo{{DMMID: 2000 + int(sequence.Add(1)), JapaneseName: name}}}, nil
+		var index int
+		_, _ = fmt.Sscanf(movieID, "CANCEL-%03d", &index)
+		return &models.ScraperResult{ID: movieID, Actresses: []models.ActressInfo{{
+			DMMID: 3000 + index, JapaneseName: fmt.Sprintf("取消実名%d", index), ThumbURL: "resolved.jpg",
+		}}}, nil
 	}
 	registry := models.NewScraperRegistry()
 	registry.Register(resolver)
 	cfg := &config.Config{Performance: config.PerformanceConfig{MaxWorkers: 2}}
 	cfg.Scrapers.Priority = []string{"sougouwiki"}
-	manager, _, actressRepo, _ := newActressSyncManagerTest(t, cfg, registry)
+	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, cfg, registry)
 
 	ids := make([]uint, 0, 4)
 	for index := 0; index < 4; index++ {
-		actress := &models.Actress{JapaneseName: fmt.Sprintf("取消女優%d", index), ThumbURL: "existing.jpg"}
+		actress := &models.Actress{JapaneseName: fmt.Sprintf("取消仮名%d", index)}
 		require.NoError(t, actressRepo.Create(actress))
+		require.NoError(t, movieRepo.Create(&models.Movie{
+			ContentID: fmt.Sprintf("cancel-%d", index), ID: fmt.Sprintf("CANCEL-%03d", index), Actresses: []models.Actress{*actress},
+		}))
 		ids = append(ids, actress.ID)
 	}
 	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{Scope: "selected", ActressIDs: ids})
@@ -154,7 +164,7 @@ func TestActressSyncManagerCancelStopsPendingAfterRunningItems(t *testing.T) {
 	assert.Equal(t, 2, cancelled.Updated)
 	assert.Equal(t, 2, cancelled.Cancelled)
 	resolver.mu.Lock()
-	queryCount := len(resolver.identityQueries)
+	queryCount := len(resolver.resolveQueries)
 	resolver.mu.Unlock()
 	assert.Equal(t, 2, queryCount, "cancelled pending tasks must never be claimed")
 }
@@ -208,10 +218,266 @@ func TestActressSyncManagerUnknownMoviesAreIsolatedAndReuseExistingActress(t *te
 	assert.Contains(t, resolver.resolveQueries, "FAIL-002")
 }
 
-func TestActressSyncManagerReusesMatchingDMMOwnerAndBackfillsIt(t *testing.T) {
+func TestActressSyncManagerDeduplicatesMissingDMMTasksByMovie(t *testing.T) {
+	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true}
+	resolver.resolveFn = func(_ context.Context, id string) (*models.ScraperResult, error) {
+		return &models.ScraperResult{ID: id, Actresses: []models.ActressInfo{{DMMID: 801, JapaneseName: "確認女優"}}}, nil
+	}
+	registry := models.NewScraperRegistry()
+	registry.Register(resolver)
+	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, &config.Config{}, registry)
+
+	first := &models.Actress{JapaneseName: "仮名一"}
+	second := &models.Actress{JapaneseName: "仮名二"}
+	require.NoError(t, actressRepo.Create(first))
+	require.NoError(t, actressRepo.Create(second))
+	require.NoError(t, movieRepo.Create(&models.Movie{
+		ContentID: "dedupe001", ID: "300MIUM-921", Actresses: []models.Actress{*first, *second},
+	}))
+
+	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{
+		Scope: "selected", ActressIDs: []uint{first.ID, second.ID},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, job.TotalTasks)
+	completed := waitForActressSyncJob(t, manager, job.ID)
+	assert.Equal(t, 1, completed.Updated)
+	resolver.mu.Lock()
+	queries := append([]string(nil), resolver.resolveQueries...)
+	resolver.mu.Unlock()
+	assert.Equal(t, []string{"300MIUM-921"}, queries)
+}
+
+func TestActressSyncManagerFallbackCleansDecoratedNamesAndUnknownDescriptions(t *testing.T) {
+	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true}
+	resolver.resolveFn = func(_ context.Context, id string) (*models.ScraperResult, error) {
+		return &models.ScraperResult{ID: id}, nil
+	}
+	registry := models.NewScraperRegistry()
+	registry.Register(resolver)
+	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, &config.Config{}, registry)
+
+	decorated := &models.Actress{JapaneseName: "あいり 21歳 大学3年生", ThumbURL: "decorated.jpg"}
+	description := &models.Actress{JapaneseName: "欲求不満セレブ妻", ThumbURL: "untrusted.jpg"}
+	require.NoError(t, actressRepo.Create(decorated))
+	require.NoError(t, actressRepo.Create(description))
+	require.NoError(t, movieRepo.Create(&models.Movie{ContentID: "clean001", ID: "300MIUM-834", Actresses: []models.Actress{*decorated}}))
+	require.NoError(t, movieRepo.Create(&models.Movie{ContentID: "clean002", ID: "JNT-051", Actresses: []models.Actress{*description}}))
+
+	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{
+		Scope: "selected", ActressIDs: []uint{decorated.ID, description.ID},
+	})
+	require.NoError(t, err)
+	completed := waitForActressSyncJob(t, manager, job.ID)
+	assert.Equal(t, 2, completed.Updated)
+
+	cleaned, err := actressRepo.FindByID(decorated.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "あいり", cleaned.JapaneseName)
+	unknown, err := actressRepo.FindByID(description.ID)
+	require.NoError(t, err)
+	assert.Equal(t, models.UnknownActressName, unknown.JapaneseName)
+	assert.Equal(t, models.UnknownActressName, unknown.FirstName)
+	assert.Empty(t, unknown.ThumbURL)
+}
+
+func TestActressSyncManagerResolverFailureKeepsMappingsAndStoresContext(t *testing.T) {
+	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true}
+	resolver.resolveFn = func(_ context.Context, _ string) (*models.ScraperResult, error) {
+		return nil, errors.New("upstream timeout")
+	}
+	registry := models.NewScraperRegistry()
+	registry.Register(resolver)
+	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, &config.Config{}, registry)
+
+	placeholder := &models.Actress{JapaneseName: "仮名"}
+	require.NoError(t, actressRepo.Create(placeholder))
+	require.NoError(t, movieRepo.Create(&models.Movie{ContentID: "failure001", ID: "FAILURE-001", Actresses: []models.Actress{*placeholder}}))
+	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{Scope: "selected", ActressIDs: []uint{placeholder.ID}})
+	require.NoError(t, err)
+	completed := waitForActressSyncJob(t, manager, job.ID)
+	assert.Equal(t, 1, completed.Failed)
+
+	tasks, err := manager.ListTasks(job.ID)
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	assert.Equal(t, "resolving", tasks[0].Stage)
+	assert.Contains(t, tasks[0].ErrorMessage, "FAILURE-001")
+	assert.Contains(t, tasks[0].ErrorMessage, "sougouwiki")
+	assert.Contains(t, tasks[0].ErrorMessage, "resolving stage")
+	assert.Contains(t, tasks[0].ErrorMessage, "upstream timeout")
+	movie, err := movieRepo.FindByContentID("failure001")
+	require.NoError(t, err)
+	require.Len(t, movie.Actresses, 1)
+	assert.Equal(t, placeholder.ID, movie.Actresses[0].ID)
+}
+
+func TestActressSyncManagerReplacesOnlyUnverifiedMovieMappings(t *testing.T) {
+	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true}
+	resolver.resolveFn = func(_ context.Context, id string) (*models.ScraperResult, error) {
+		return &models.ScraperResult{ID: id, Actresses: []models.ActressInfo{{DMMID: 902, JapaneseName: "新規確認女優"}}}, nil
+	}
+	registry := models.NewScraperRegistry()
+	registry.Register(resolver)
+	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, &config.Config{}, registry)
+
+	verified := &models.Actress{DMMID: 901, JapaneseName: "既存確認女優"}
+	first := &models.Actress{JapaneseName: "仮名一"}
+	second := &models.Actress{JapaneseName: "仮名二"}
+	require.NoError(t, actressRepo.Create(verified))
+	require.NoError(t, actressRepo.Create(first))
+	require.NoError(t, actressRepo.Create(second))
+	require.NoError(t, movieRepo.Create(&models.Movie{
+		ContentID: "replace001", ID: "REPLACE-001", Actresses: []models.Actress{*verified, *first, *second},
+	}))
+
+	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{Scope: "selected", ActressIDs: []uint{first.ID}})
+	require.NoError(t, err)
+	completed := waitForActressSyncJob(t, manager, job.ID)
+	assert.Equal(t, 1, completed.Updated)
+	movie, err := movieRepo.FindByContentID("replace001")
+	require.NoError(t, err)
+	require.Len(t, movie.Actresses, 2)
+	assert.ElementsMatch(t, []int{901, 902}, []int{movie.Actresses[0].DMMID, movie.Actresses[1].DMMID})
+	_, err = actressRepo.FindByID(first.ID)
+	assert.True(t, database.IsNotFound(err))
+	_, err = actressRepo.FindByID(second.ID)
+	assert.True(t, database.IsNotFound(err))
+}
+
+func TestActressSyncManagerLLMFailureKeepsVerifiedIdentityAndMapping(t *testing.T) {
+	translationServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "translation unavailable", http.StatusInternalServerError)
+	}))
+	defer translationServer.Close()
+
+	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true}
+	resolver.resolveFn = func(_ context.Context, id string) (*models.ScraperResult, error) {
+		return &models.ScraperResult{ID: id, Actresses: []models.ActressInfo{{DMMID: 9901, JapaneseName: "響蓮"}}}, nil
+	}
+	registry := models.NewScraperRegistry()
+	registry.Register(resolver)
+	cfg := &config.Config{}
+	cfg.Metadata.Translation = config.TranslationConfig{
+		Enabled: true, Provider: "openai", SourceLanguage: "ja", TargetLanguage: "ko", ApplyToPrimary: true,
+		Fields: config.TranslationFieldsConfig{Actresses: true},
+		OpenAI: config.OpenAITranslationConfig{BaseURL: translationServer.URL, APIKey: "test"},
+	}
+	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, cfg, registry)
+
+	placeholder := &models.Actress{JapaneseName: "仮名"}
+	require.NoError(t, actressRepo.Create(placeholder))
+	require.NoError(t, movieRepo.Create(&models.Movie{ContentID: "llm-failure", ID: "LLM-FAIL-001", Actresses: []models.Actress{*placeholder}}))
+	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{Scope: "selected", ActressIDs: []uint{placeholder.ID}})
+	require.NoError(t, err)
+	completed := waitForActressSyncJob(t, manager, job.ID)
+	assert.Equal(t, 1, completed.Updated)
+	assert.Equal(t, 1, completed.Warnings)
+	assert.Zero(t, completed.Failed)
+
+	movie, err := movieRepo.FindByContentID("llm-failure")
+	require.NoError(t, err)
+	require.Len(t, movie.Actresses, 1)
+	assert.Equal(t, 9901, movie.Actresses[0].DMMID)
+	assert.Equal(t, "響蓮", movie.Actresses[0].JapaneseName)
+	tasks, err := manager.ListTasks(job.ID)
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	assert.Equal(t, "updated_with_warning", tasks[0].Outcome)
+	assert.Contains(t, tasks[0].Warning, "translation")
+}
+
+func TestActressSyncManagerRepairsMissingDMMIDAndSkipsNormalExistingProfile(t *testing.T) {
+	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true}
+	resolver.resolveFn = func(_ context.Context, id string) (*models.ScraperResult, error) {
+		require.Equal(t, "MIUM-123", id)
+		return &models.ScraperResult{ID: id, Actresses: []models.ActressInfo{
+			{DMMID: 701, FirstName: "Ichika", LastName: "Matsumoto", JapaneseName: "松本いちか", ThumbURL: "resolver-profile.jpg"},
+			{DMMID: 702, FirstName: "Yui", LastName: "Hatano", JapaneseName: "波多野結衣"},
+		}}, nil
+	}
+	registry := models.NewScraperRegistry()
+	registry.Register(resolver)
+	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, &config.Config{}, registry)
+
+	existingCanonical := &models.Actress{
+		DMMID: 701, FirstName: "이치카", LastName: "마츠모토", JapaneseName: "기존 정상 일본어명",
+		ThumbURL: "existing-profile.jpg", Aliases: "기존 별칭",
+	}
+	require.NoError(t, actressRepo.Create(existingCanonical))
+	missingDMMID := &models.Actress{JapaneseName: "잘못 남아 있던 가명"}
+	require.NoError(t, actressRepo.Create(missingDMMID))
+	require.NoError(t, movieRepo.Create(&models.Movie{
+		ContentID: "mium00123", ID: "MIUM-123", Actresses: []models.Actress{*missingDMMID},
+	}))
+
+	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{
+		Scope: "selected", ActressIDs: []uint{missingDMMID.ID},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, job.TotalTasks)
+	tasks, err := manager.ListTasks(job.ID)
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	assert.Equal(t, models.ActressSyncTaskKindUnknownMovie, tasks[0].Kind)
+
+	completed := waitForActressSyncJob(t, manager, job.ID)
+	assert.Equal(t, 1, completed.Updated)
+	updatedMovie, err := movieRepo.FindByContentID("mium00123")
+	require.NoError(t, err)
+	require.Len(t, updatedMovie.Actresses, 2)
+	assert.ElementsMatch(t, []int{701, 702}, []int{updatedMovie.Actresses[0].DMMID, updatedMovie.Actresses[1].DMMID})
+	byDMMID := make(map[int]models.Actress, len(updatedMovie.Actresses))
+	for _, actress := range updatedMovie.Actresses {
+		byDMMID[actress.DMMID] = actress
+	}
+	reused := byDMMID[701]
+	assert.Equal(t, existingCanonical.ID, reused.ID, "the existing DMM-ID owner must be reused")
+	assert.Equal(t, existingCanonical.JapaneseName, reused.JapaneseName, "a normal existing profile must not be overwritten from SougouWiki")
+	assert.Equal(t, existingCanonical.FirstName, reused.FirstName)
+	assert.Equal(t, existingCanonical.LastName, reused.LastName)
+	assert.Equal(t, existingCanonical.ThumbURL, reused.ThumbURL)
+	assert.ElementsMatch(t, []string{"기존 별칭", "松本いちか"}, strings.Split(reused.Aliases, "|"))
+	created := byDMMID[702]
+	assert.Equal(t, "波多野結衣", created.JapaneseName)
+	assert.Equal(t, "Yui", created.FirstName)
+	assert.Equal(t, "Hatano", created.LastName)
+	for _, actress := range updatedMovie.Actresses {
+		assert.NotEqual(t, "잘못 남아 있던 가명", actress.JapaneseName)
+	}
+	_, err = actressRepo.FindByID(missingDMMID.ID)
+	assert.True(t, database.IsNotFound(err), "the stale missing-DMMID row must be deleted after its final movie mapping is replaced")
+	assert.Empty(t, resolver.identityQueries, "missing-DMMID actresses with linked movies must use movie cast resolution, not name identity lookup")
+	assert.Contains(t, resolver.resolveQueries, "MIUM-123")
+}
+
+func TestActressSyncManagerDoesNotFallBackToNameResolverWithoutLinkedMovie(t *testing.T) {
 	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true, identityResult: &models.ScraperResult{
-		ID: "同一女優", Actresses: []models.ActressInfo{{DMMID: 501, JapaneseName: "同一女優", ThumbURL: "https://example.com/501.jpg"}},
+		Actresses: []models.ActressInfo{{DMMID: 999, JapaneseName: "직접 조회 결과"}},
 	}}
+	registry := models.NewScraperRegistry()
+	registry.Register(resolver)
+	manager, _, actressRepo, _ := newActressSyncManagerTest(t, &config.Config{}, registry)
+
+	missingDMMID := &models.Actress{JapaneseName: "연결 작품 없는 배우"}
+	require.NoError(t, actressRepo.Create(missingDMMID))
+	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{
+		Scope: "selected", ActressIDs: []uint{missingDMMID.ID},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, models.ActressSyncJobCompleted, job.Status)
+	assert.Equal(t, 1, job.Skipped)
+	assert.Empty(t, resolver.identityQueries, "DMM ID가 없으면 이름 resolver로 우회하면 안 된다")
+	assert.Empty(t, resolver.resolveQueries, "연결 작품 ID가 없으면 SougouWiki 작품 조회를 만들 수 없다")
+}
+
+func TestActressSyncManagerReusesMatchingDMMOwnerAndBackfillsIt(t *testing.T) {
+	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true}
+	resolver.resolveFn = func(_ context.Context, id string) (*models.ScraperResult, error) {
+		return &models.ScraperResult{
+			ID: id, Actresses: []models.ActressInfo{{DMMID: 501, JapaneseName: "同一女優", ThumbURL: "https://example.com/501.jpg"}},
+		}, nil
+	}
 	registry := models.NewScraperRegistry()
 	registry.Register(resolver)
 	cfg := &config.Config{}

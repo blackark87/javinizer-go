@@ -131,6 +131,8 @@ func TestDefaultConfigMatchesExample(t *testing.T) {
 	t.Run("TranslationConfig", func(t *testing.T) {
 		assert.Equal(t, exampleCfg.Metadata.Translation.SourceLanguage, defaultCfg.Metadata.Translation.SourceLanguage, "metadata.translation.source_language mismatch")
 		assert.Equal(t, exampleCfg.Metadata.Translation.TargetLanguage, defaultCfg.Metadata.Translation.TargetLanguage, "metadata.translation.target_language mismatch")
+		assert.Equal(t, 3, defaultCfg.Metadata.Translation.MaxConcurrency, "metadata.translation.max_concurrency default mismatch")
+		assert.Equal(t, exampleCfg.Metadata.Translation.MaxConcurrency, defaultCfg.Metadata.Translation.MaxConcurrency, "metadata.translation.max_concurrency mismatch")
 	})
 
 	t.Run("PerformanceConfig", func(t *testing.T) {

@@ -112,6 +112,16 @@ func (r *HistoryRepository) FindByMovieID(movieID string) ([]models.History, err
 	return history, nil
 }
 
+func (r *HistoryRepository) FindLatestSuccessfulOperation(movieID, operation string) (*models.History, error) {
+	var entry models.History
+	err := r.GetDB().Where("movie_id = ? AND operation = ? AND status = ?", movieID, operation, "success").
+		Order("created_at DESC, id DESC").First(&entry).Error
+	if err != nil {
+		return nil, wrapDBErr("find", fmt.Sprintf("latest %s history for movie %s", operation, movieID), err)
+	}
+	return &entry, nil
+}
+
 func (r *HistoryRepository) FindByOperation(operation string, limit int) ([]models.History, error) {
 	var history []models.History
 	query := r.GetDB().Where("operation = ?", operation).Order("created_at DESC")

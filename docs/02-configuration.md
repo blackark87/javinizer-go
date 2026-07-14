@@ -1348,6 +1348,7 @@ metadata:
     source_language: ja
     target_language: en
     timeout_seconds: 60
+    max_concurrency: 3
     apply_to_primary: true
     overwrite_existing_target: true
     fields:
@@ -1381,6 +1382,8 @@ metadata:
       api_key: ""
       model: "claude-sonnet-4-20250514"
 ```
+
+`max_concurrency` limits simultaneous translation-provider requests. Actress metadata resolution and NFO/database work continue to use `performance.max_workers`.
 
 ### Metadata Management Defaults
 

@@ -77,6 +77,7 @@ func syncActress(deps *core.ServerDependencies) gin.HandlerFunc {
 			deps.ActressRepo,
 			deps.GetRegistry(),
 			cfg.Scrapers.Priority,
+			deps.MovieRepo,
 		)
 		if err != nil {
 			switch {

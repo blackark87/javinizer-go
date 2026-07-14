@@ -108,6 +108,15 @@ func TestConfig_Validate(t *testing.T) {
 			errorContains: "max_workers must be between 1 and 100",
 		},
 		{
+			name: "translation max_concurrency too high",
+			modifyConfig: func(c *Config) {
+				c.Metadata.Translation.Enabled = true
+				c.Metadata.Translation.MaxConcurrency = 101
+			},
+			expectError:   true,
+			errorContains: "metadata.translation.max_concurrency must be between 1 and 100",
+		},
+		{
 			name: "max_workers too high",
 			modifyConfig: func(c *Config) {
 				c.Performance.MaxWorkers = 150

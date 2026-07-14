@@ -142,6 +142,7 @@ func DefaultConfig() *Config {
 				TargetLanguage:          "en",
 				TargetLanguages:         nil,
 				TimeoutSeconds:          60,
+				MaxConcurrency:          3,
 				ApplyToPrimary:          true,
 				OverwriteExistingTarget: true,
 				Fields: TranslationFieldsConfig{

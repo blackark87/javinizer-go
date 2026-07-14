@@ -339,6 +339,7 @@ metadata:
         target_language: en           # e.g., en, ja, zh
         target_languages: []           # Optional list, e.g. [ko, en]; falls back to target_language when empty
         timeout_seconds: 60
+        max_concurrency: 3             # Maximum concurrent LLM translation requests
         apply_to_primary: true        # Replace main metadata fields with translated text
         overwrite_existing_target: true
         fields:

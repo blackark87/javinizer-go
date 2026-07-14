@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { cubicOut, quintOut } from 'svelte/easing';
 	import { fade, fly, scale } from 'svelte/transition';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { Plus, RefreshCw, Download, Upload, Loader2 } from 'lucide-svelte';
 	import { apiClient } from '$lib/api/client';
-	import type { Actress, ActressUpsertRequest, ImportResponse } from '$lib/api/types';
+	import type { Actress, ActressSyncJob, ActressSyncTask, ActressUpsertRequest, ImportResponse } from '$lib/api/types';
 	import { toastStore } from '$lib/stores/toast';
 	import { confirmDialog } from '$lib/stores/dialog.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
@@ -19,19 +19,20 @@
 	import ActressMergeModal from './components/ActressMergeModal.svelte';
 	import ActressPagination from './components/ActressPagination.svelte';
 	import ActressSyncModal from './components/ActressSyncModal.svelte';
-	import { runActressSyncQueue, type ActressSyncSummary } from './sync-runner';
+	import { buildActressSyncSummary } from './sync-runner';
 
 	const store = createActressStore();
 	const queryClient = useQueryClient();
 	let importFile = $state<HTMLInputElement | null>(null);
 	let syncModalOpen = $state(false);
-	let syncRunning = $state(false);
 	let syncPreparing = $state(false);
-	let syncStopRequested = $state(false);
-	let syncCurrentID = $state<number | null>(null);
-	let syncSummary = $state<ActressSyncSummary | null>(null);
-	let syncLabels = $state<Map<number, string>>(new Map());
-	let syncCurrentLabel = $derived(syncCurrentID ? (syncLabels.get(syncCurrentID) || store.getActressLabelByID(syncCurrentID)) : 'Preparing next actress…');
+	let syncJob = $state<ActressSyncJob | null>(null);
+	let syncTasks = $state<ActressSyncTask[]>([]);
+	let syncPollTimer: ReturnType<typeof setInterval> | null = null;
+	let notifiedJobID: string | null = null;
+	let syncRunning = $derived(syncJob?.status === 'pending' || syncJob?.status === 'running');
+	let syncStopRequested = $derived(syncJob?.cancel_requested ?? false);
+	let syncSummary = $derived(syncJob ? buildActressSyncSummary(syncJob, syncTasks) : null);
 	let isSyncing = $derived(syncRunning || syncPreparing);
 
 	const exportMutation = createMutation(() => ({
@@ -100,57 +101,49 @@
 		target.value = '';
 	}
 
-	function emptySyncSummary(total: number): ActressSyncSummary {
-		return {
-			total,
-			processed: 0,
-			updated: 0,
-			skipped: 0,
-			conflicts: 0,
-			failed: 0,
-			stopped: false,
-			details: []
-		};
+	function stopPolling() {
+		if (syncPollTimer) clearInterval(syncPollTimer);
+		syncPollTimer = null;
 	}
 
-	function actressSyncLabel(actress: Actress): string {
-		const englishName = [actress.first_name, actress.last_name].filter(Boolean).join(' ').trim();
-		const names = [actress.japanese_name?.trim(), englishName].filter(Boolean);
-		return names.length > 0 ? names.join(' / ') : `Actress #${actress.id}`;
-	}
-
-	async function runSync(ids: number[], labels: Map<number, string> = new Map()) {
-		syncStopRequested = false;
-		syncCurrentID = null;
-		syncLabels = labels;
-		syncSummary = emptySyncSummary(ids.length);
-		syncModalOpen = true;
-		syncRunning = true;
-
-		try {
-			const finalSummary = await runActressSyncQueue(ids, (id) => apiClient.syncActress(id), {
-				shouldStop: () => syncStopRequested,
-				getLabel: (id) => labels.get(id) || store.getActressLabelByID(id),
-				onItemStart: (id) => {
-					syncCurrentID = id;
-				},
-				onProgress: (progress) => {
-					syncSummary = progress;
-				},
-				onFinished: async () => {
-					await queryClient.invalidateQueries({ queryKey: ['actresses'] });
-				}
-			});
-			syncSummary = finalSummary;
-			syncCurrentID = null;
-			const outcome = finalSummary.stopped ? 'stopped' : 'complete';
-			toastStore.success(
-				`Sync ${outcome} — Updated: ${finalSummary.updated}, Skipped: ${finalSummary.skipped}, Conflicts: ${finalSummary.conflicts}, Failed: ${finalSummary.failed}`,
-				5000
-			);
-		} finally {
-			syncRunning = false;
+	async function refreshSyncJob(jobID: string) {
+		const [jobResponse, tasksResponse] = await Promise.all([
+			apiClient.getActressSyncJob(jobID),
+			apiClient.listActressSyncJobTasks(jobID)
+		]);
+		if (syncJob?.id && syncJob.id !== jobID) return;
+		syncJob = jobResponse.job;
+		syncTasks = tasksResponse.tasks;
+		if (jobResponse.job.status === 'completed' || jobResponse.job.status === 'cancelled') {
+			stopPolling();
+			await queryClient.invalidateQueries({ queryKey: ['actresses'] });
+			if (notifiedJobID !== jobID) {
+				notifiedJobID = jobID;
+				const job = jobResponse.job;
+				toastStore.success(`Sync ${job.status} — Updated: ${job.updated}, Warnings: ${job.warnings}, Skipped: ${job.skipped}, Conflicts: ${job.conflicts}, Failed: ${job.failed}`, 6000);
+			}
 		}
+	}
+
+	function startPolling(jobID: string) {
+		stopPolling();
+		syncPollTimer = setInterval(() => {
+			void refreshSyncJob(jobID).catch((error) => toastStore.error(error instanceof Error ? error.message : 'Failed to refresh actress sync job', 4000));
+		}, 1000);
+	}
+
+	async function attachSyncJob(job: ActressSyncJob) {
+		syncJob = job;
+		syncTasks = [];
+		syncModalOpen = true;
+		await refreshSyncJob(job.id);
+		if (job.status === 'pending' || job.status === 'running') startPolling(job.id);
+	}
+
+	async function startSyncJob(request: { scope: 'missing' | 'selected'; missing?: boolean; actress_ids?: number[] }) {
+		const response = await apiClient.createActressSyncJob(request);
+		notifiedJobID = null;
+		await attachSyncJob(response.job);
 	}
 
 	async function handleSyncMissing() {
@@ -164,16 +157,10 @@
 			}
 			const confirmed = await confirmDialog(
 				'Sync Missing Actress Metadata',
-				`Sync missing metadata for ${candidates.total} actress(es), one at a time?`,
+				`Queue ${candidates.total} actress(es) for background sync? Unknown actresses expand into one task per linked movie.`,
 				{ confirmLabel: 'Start Sync' }
 			);
-			if (confirmed) {
-				const labels = new Map<number, string>();
-				for (const actress of candidates.actresses) {
-					if (actress.id !== undefined) labels.set(actress.id, actressSyncLabel(actress));
-				}
-				await runSync(candidates.ids, labels);
-			}
+			if (confirmed) await startSyncJob({ scope: 'missing', missing: true });
 		} catch (error) {
 			toastStore.error(error instanceof Error ? error.message : 'Failed to load sync candidates', 4000);
 		} finally {
@@ -188,10 +175,10 @@
 			const ids = [...store.selectedIds];
 			const confirmed = await confirmDialog(
 				'Sync Selected Actress Metadata',
-				`Sync missing metadata for ${ids.length} selected actress(es), one at a time?`,
+				`Queue ${ids.length} selected actress(es) for background sync?`,
 				{ confirmLabel: 'Start Sync' }
 			);
-			if (confirmed) await runSync(ids);
+			if (confirmed) await startSyncJob({ scope: 'selected', actress_ids: ids });
 		} catch (error) {
 			toastStore.error(error instanceof Error ? error.message : 'Failed to sync selected actresses', 4000);
 		} finally {
@@ -199,18 +186,28 @@
 		}
 	}
 
-	function requestSyncStop() {
-		syncStopRequested = true;
+	async function requestSyncStop() {
+		if (!syncJob) return;
+		try {
+			syncJob = (await apiClient.cancelActressSyncJob(syncJob.id)).job;
+		} catch (error) {
+			toastStore.error(error instanceof Error ? error.message : 'Failed to stop actress sync', 4000);
+		}
 	}
 
 	function closeSyncModal() {
-		if (syncRunning) return;
 		syncModalOpen = false;
 	}
 
+	onMount(() => {
+		void apiClient.listActiveActressSyncJobs()
+			.then((response) => response.jobs.length > 0 ? attachSyncJob(response.jobs[0]) : undefined)
+			.catch(() => undefined);
+	});
+
 	onDestroy(() => {
-		// Let the in-flight request finish, but never start another item after navigation.
-		syncStopRequested = true;
+		// Only browser polling stops; the durable server job continues.
+		stopPolling();
 	});
 </script>
 
@@ -415,7 +412,6 @@
 		summary={syncSummary}
 		isRunning={syncRunning}
 		stopRequested={syncStopRequested}
-		currentLabel={syncCurrentLabel}
 		onStop={requestSyncStop}
 		onClose={closeSyncModal}
 	/>

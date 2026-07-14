@@ -507,3 +507,51 @@ func (r *MovieRepository) CountByActressID(actressID uint) (int64, error) {
 	}
 	return count, nil
 }
+
+// ReplaceActressForMovie atomically removes one association and adds verified
+// replacements while preserving every other actress already linked to the movie.
+func (r *MovieRepository) ReplaceActressForMovie(movieContentID string, sourceActressID uint, replacements []models.Actress) error {
+	return retryOnLocked(func() error {
+		return r.GetDB().Transaction(func(tx *gorm.DB) error {
+			if err := r.ensureActressesExistTx(tx, replacements); err != nil {
+				return err
+			}
+			if err := tx.Exec("DELETE FROM movie_actresses WHERE movie_content_id = ? AND actress_id = ?", movieContentID, sourceActressID).Error; err != nil {
+				return err
+			}
+			for _, actress := range replacements {
+				if err := tx.Exec("INSERT OR IGNORE INTO movie_actresses(movie_content_id, actress_id) VALUES (?, ?)", movieContentID, actress.ID).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	})
+}
+
+// ReassignActressAssociations moves all movie links to an already-existing
+// canonical actress without deleting either actress row.
+func (r *MovieRepository) ReassignActressAssociations(sourceActressID, targetActressID uint) (int64, error) {
+	if sourceActressID == 0 || targetActressID == 0 || sourceActressID == targetActressID {
+		return 0, ErrInvalidLookup
+	}
+	var moved int64
+	err := retryOnLocked(func() error {
+		return r.GetDB().Transaction(func(tx *gorm.DB) error {
+			var count int64
+			if err := tx.Table("movie_actresses").Where("actress_id = ?", sourceActressID).Count(&count).Error; err != nil {
+				return err
+			}
+			if err := tx.Exec(`INSERT OR IGNORE INTO movie_actresses(movie_content_id, actress_id)
+				SELECT movie_content_id, ? FROM movie_actresses WHERE actress_id = ?`, targetActressID, sourceActressID).Error; err != nil {
+				return err
+			}
+			if err := tx.Exec("DELETE FROM movie_actresses WHERE actress_id = ?", sourceActressID).Error; err != nil {
+				return err
+			}
+			moved = count
+			return nil
+		})
+	})
+	return moved, err
+}

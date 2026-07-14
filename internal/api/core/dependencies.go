@@ -46,6 +46,7 @@ type ServerDependencies struct {
 	Reverter             *history.Reverter
 	Matcher              *matcher.Matcher
 	JobQueue             *worker.JobQueue
+	ActressSyncManager   *worker.ActressSyncManager
 	Auth                 AuthProvider
 	Runtime              *RuntimeState
 	TokenStore           *TokenStore
@@ -83,9 +84,32 @@ func (d *ServerDependencies) SetConfig(cfg *config.Config) {
 
 // Shutdown gracefully shuts down runtime resources.
 func (d *ServerDependencies) Shutdown() {
+	if d.ActressSyncManager != nil {
+		d.ActressSyncManager.Stop()
+	}
 	if d.Runtime != nil {
 		d.Runtime.Shutdown()
 	}
+}
+
+// EnsureActressSyncManager lazily creates and starts the durable actress sync
+// dispatcher. Lazy creation keeps small API tests and alternate entrypoints compatible.
+func (d *ServerDependencies) EnsureActressSyncManager() *worker.ActressSyncManager {
+	d.mu.Lock()
+	manager := d.ActressSyncManager
+	if manager == nil && d.DB != nil && d.ActressRepo != nil && d.MovieRepo != nil {
+		manager = worker.NewActressSyncManager(worker.ActressSyncManagerDeps{
+			DB: d.DB, ActressRepo: d.ActressRepo, MovieRepo: d.MovieRepo,
+			HistoryRepo: d.HistoryRepo, BatchFileOpRepo: d.BatchFileOpRepo,
+			GetConfig: d.GetConfig, GetRegistry: d.GetRegistry,
+		})
+		d.ActressSyncManager = manager
+	}
+	d.mu.Unlock()
+	if manager != nil {
+		manager.Start()
+	}
+	return manager
 }
 
 // GetRegistry returns the current scraper registry (thread-safe).

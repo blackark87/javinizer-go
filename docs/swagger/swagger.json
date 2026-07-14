@@ -391,6 +391,197 @@
                 }
             }
         },
+        "/api/v1/actresses/sync-jobs": {
+            "post": {
+                "description": "Queue selected actresses or all actresses with missing metadata for background processing",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actress"
+                ],
+                "summary": "Start a durable actress metadata sync job",
+                "parameters": [
+                    {
+                        "description": "Sync scope",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_worker.ActressSyncCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.actressSyncJobResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/actresses/sync-jobs/active": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actress"
+                ],
+                "summary": "List active actress sync jobs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.actressSyncJobsResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/actresses/sync-jobs/{jobID}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actress"
+                ],
+                "summary": "Get actress sync job progress",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Actress sync job ID",
+                        "name": "jobID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.actressSyncJobResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/actresses/sync-jobs/{jobID}/cancel": {
+            "post": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actress"
+                ],
+                "summary": "Stop an actress sync job after currently running items",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Actress sync job ID",
+                        "name": "jobID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.actressSyncJobResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/actresses/sync-jobs/{jobID}/tasks": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actress"
+                ],
+                "summary": "List detailed actress sync job tasks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Actress sync job ID",
+                        "name": "jobID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.actressSyncTasksResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/actresses/{id}": {
             "get": {
                 "description": "Retrieve a single actress by their database ID",
@@ -4198,6 +4389,10 @@
                         }
                     ]
                 },
+                "max_concurrency": {
+                    "description": "Maximum concurrent translation requests",
+                    "type": "integer"
+                },
                 "openai": {
                     "description": "OpenAI/OpenAI-compatible provider settings",
                     "allOf": [
@@ -4812,6 +5007,23 @@
                 }
             }
         },
+        "github_com_javinizer_javinizer-go_internal_worker.ActressSyncCreateRequest": {
+            "type": "object",
+            "properties": {
+                "actress_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "missing": {
+                    "type": "boolean"
+                },
+                "scope": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_javinizer_javinizer-go_internal_worker.ActressSyncResult": {
             "type": "object",
             "properties": {
@@ -5061,6 +5273,39 @@
                     "type": "array",
                     "items": {
                         "type": "integer"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api_actress.actressSyncJobResponse": {
+            "type": "object",
+            "properties": {
+                "job": {
+                    "$ref": "#/definitions/models.ActressSyncJob"
+                }
+            }
+        },
+        "internal_api_actress.actressSyncJobsResponse": {
+            "type": "object",
+            "properties": {
+                "jobs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ActressSyncJob"
+                    }
+                }
+            }
+        },
+        "internal_api_actress.actressSyncTasksResponse": {
+            "type": "object",
+            "properties": {
+                "tasks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ActressSyncTask"
                     }
                 },
                 "total": {
@@ -6856,6 +7101,130 @@
                     "type": "string"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ActressSyncJob": {
+            "type": "object",
+            "properties": {
+                "cancel_requested": {
+                    "type": "boolean"
+                },
+                "cancelled": {
+                    "type": "integer"
+                },
+                "completed": {
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "conflicts": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "skipped": {
+                    "type": "integer"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "total_tasks": {
+                    "type": "integer"
+                },
+                "updated": {
+                    "type": "integer"
+                },
+                "warnings": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.ActressSyncTask": {
+            "type": "object",
+            "properties": {
+                "actress_id": {
+                    "type": "integer"
+                },
+                "attempts": {
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "dedupe_key": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "heartbeat_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "job_id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "lease_expires_at": {
+                    "type": "string"
+                },
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "movie_content_id": {
+                    "type": "string"
+                },
+                "movie_id": {
+                    "type": "string"
+                },
+                "outcome": {
+                    "type": "string"
+                },
+                "stage": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_fields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "warning": {
                     "type": "string"
                 }
             }

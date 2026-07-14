@@ -211,12 +211,12 @@ func TestActressSyncManagerUnknownMoviesAreIsolatedAndReuseExistingActress(t *te
 	assert.Contains(t, resolver.resolveQueries, "FAIL-002")
 }
 
-func TestActressSyncManagerRepairsMissingDMMIDFromLinkedMovieCast(t *testing.T) {
+func TestActressSyncManagerRepairsMissingDMMIDAndSkipsNormalExistingProfile(t *testing.T) {
 	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true}
 	resolver.resolveFn = func(_ context.Context, id string) (*models.ScraperResult, error) {
 		require.Equal(t, "MIUM-123", id)
 		return &models.ScraperResult{ID: id, Actresses: []models.ActressInfo{
-			{DMMID: 701, FirstName: "Ichika", LastName: "Matsumoto", JapaneseName: "松本いちか"},
+			{DMMID: 701, FirstName: "Ichika", LastName: "Matsumoto", JapaneseName: "松本いちか", ThumbURL: "resolver-profile.jpg"},
 			{DMMID: 702, FirstName: "Yui", LastName: "Hatano", JapaneseName: "波多野結衣"},
 		}}, nil
 	}
@@ -224,7 +224,10 @@ func TestActressSyncManagerRepairsMissingDMMIDFromLinkedMovieCast(t *testing.T) 
 	registry.Register(resolver)
 	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, &config.Config{}, registry)
 
-	existingCanonical := &models.Actress{DMMID: 701, FirstName: "Nickname", JapaneseName: "기존 가명류 이름"}
+	existingCanonical := &models.Actress{
+		DMMID: 701, FirstName: "이치카", LastName: "마츠모토", JapaneseName: "기존 정상 일본어명",
+		ThumbURL: "existing-profile.jpg", Aliases: "기존 별칭",
+	}
 	require.NoError(t, actressRepo.Create(existingCanonical))
 	missingDMMID := &models.Actress{JapaneseName: "잘못 남아 있던 가명"}
 	require.NoError(t, actressRepo.Create(missingDMMID))
@@ -254,10 +257,11 @@ func TestActressSyncManagerRepairsMissingDMMIDFromLinkedMovieCast(t *testing.T) 
 	}
 	reused := byDMMID[701]
 	assert.Equal(t, existingCanonical.ID, reused.ID, "the existing DMM-ID owner must be reused")
-	assert.Equal(t, "松本いちか", reused.JapaneseName, "the verified real name must replace the nickname")
-	assert.Equal(t, "Ichika", reused.FirstName)
-	assert.Equal(t, "Matsumoto", reused.LastName)
-	assert.Contains(t, reused.Aliases, "기존 가명류 이름", "the replaced nickname should remain only as an alias")
+	assert.Equal(t, existingCanonical.JapaneseName, reused.JapaneseName, "a normal existing profile must not be overwritten from SougouWiki")
+	assert.Equal(t, existingCanonical.FirstName, reused.FirstName)
+	assert.Equal(t, existingCanonical.LastName, reused.LastName)
+	assert.Equal(t, existingCanonical.ThumbURL, reused.ThumbURL)
+	assert.Equal(t, existingCanonical.Aliases, reused.Aliases)
 	created := byDMMID[702]
 	assert.Equal(t, "波多野結衣", created.JapaneseName)
 	assert.Equal(t, "Yui", created.FirstName)

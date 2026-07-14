@@ -356,6 +356,11 @@ func (m *ActressSyncManager) processActress(ctx context.Context, task *models.Ac
 	if task.ActressID == nil {
 		return fmt.Errorf("actress task has no actress ID")
 	}
+	existing, err := m.deps.ActressRepo.FindByID(*task.ActressID)
+	if err != nil {
+		return err
+	}
+	preserveExistingProfile := existing.DMMID > 0 && hasUsableActressIdentityProfile(*existing)
 	cfg := m.deps.GetConfig()
 	m.setStage(task, "resolving")
 	result, err := SyncActressMetadata(ctx, *task.ActressID, m.deps.ActressRepo, m.deps.GetRegistry(), cfg.Scrapers.Priority, m.deps.MovieRepo)
@@ -376,21 +381,23 @@ func (m *ActressSyncManager) processActress(ctx context.Context, task *models.Ac
 	}
 	canonical := result.Actress
 
-	m.setStage(task, "romanizing")
-	if translation.ApplyDMMHepburnName(&canonical) {
-		if err := m.deps.ActressRepo.Update(&canonical); err != nil {
-			return err
+	if !preserveExistingProfile {
+		m.setStage(task, "romanizing")
+		if translation.ApplyDMMHepburnName(&canonical) {
+			if err := m.deps.ActressRepo.Update(&canonical); err != nil {
+				return err
+			}
+			task.UpdatedFields = append(task.UpdatedFields, "hepburn_name")
 		}
-		task.UpdatedFields = append(task.UpdatedFields, "hepburn_name")
-	}
 
-	warning, err := m.translateAndStore(ctx, task, []models.Actress{canonical})
-	if err != nil {
-		warning = err.Error()
-	}
-	if warning != "" {
-		task.Warning = appendWarning(task.Warning, warning)
-		logging.Warnf("Actress sync task warning (task=%s label=%q stage=%s): %s", task.ID, task.Label, task.Stage, warning)
+		warning, translateErr := m.translateAndStore(ctx, task, []models.Actress{canonical})
+		if translateErr != nil {
+			warning = translateErr.Error()
+		}
+		if warning != "" {
+			task.Warning = appendWarning(task.Warning, warning)
+			logging.Warnf("Actress sync task warning (task=%s label=%q stage=%s): %s", task.ID, task.Label, task.Stage, warning)
+		}
 	}
 
 	m.setStage(task, "mapping")
@@ -456,10 +463,38 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 
 	thumbnailResolver := findActressThumbnailResolver(registry)
 	canonical := make([]models.Actress, 0, len(verified))
+	enrichmentIndexes := make([]int, 0, len(verified))
 	for _, info := range verified {
-		if info.ThumbURL == "" && thumbnailResolver != nil {
+		existing, findErr := m.deps.ActressRepo.FindByDMMID(info.DMMID)
+		if findErr != nil && !database.IsNotFound(findErr) {
+			return findErr
+		}
+		if existing != nil && isNormalExistingActressProfile(*existing) {
+			canonical = append(canonical, *existing)
+			continue
+		}
+
+		if info.ThumbURL == "" && thumbnailResolver != nil && (existing == nil || strings.TrimSpace(existing.ThumbURL) == "") {
 			info.ThumbURL = safeResolveActressThumbnail(ctx, thumbnailResolver, info)
 		}
+		if existing != nil {
+			needsNameEnrichment := !hasUsableActressPrimaryProfile(*existing)
+			updatedFields := fillIncompleteExistingActressProfile(existing, info)
+			if len(updatedFields) > 0 {
+				if updateErr := m.deps.ActressRepo.Update(existing); updateErr != nil {
+					return updateErr
+				}
+				for _, field := range updatedFields {
+					task.UpdatedFields = appendUnique(task.UpdatedFields, field)
+				}
+			}
+			canonical = append(canonical, *existing)
+			if needsNameEnrichment {
+				enrichmentIndexes = append(enrichmentIndexes, len(canonical)-1)
+			}
+			continue
+		}
+
 		resolution, resolveErr := m.deps.ActressRepo.ResolveVerifiedIdentity(0, actressModelFromInfo(info), true)
 		if resolveErr != nil {
 			if conflict, ok := database.AsActressDMMIDConflict(resolveErr); ok {
@@ -470,28 +505,38 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 			return resolveErr
 		}
 		canonical = append(canonical, resolution.Actress)
+		enrichmentIndexes = append(enrichmentIndexes, len(canonical)-1)
 		if len(resolution.MergedFromIDs) > 0 {
 			task.UpdatedFields = appendUnique(task.UpdatedFields, "merged_actresses")
 		}
 	}
 
-	m.setStage(task, "romanizing")
-	for index := range canonical {
-		if translation.ApplyDMMHepburnName(&canonical[index]) {
-			task.UpdatedFields = appendUnique(task.UpdatedFields, "hepburn_name")
+	var translationRecords []models.MovieTranslation
+	warning := ""
+	if len(enrichmentIndexes) > 0 {
+		m.setStage(task, "romanizing")
+		toEnrich := make([]models.Actress, len(enrichmentIndexes))
+		for index, canonicalIndex := range enrichmentIndexes {
+			toEnrich[index] = canonical[canonicalIndex]
+			if translation.ApplyDMMHepburnName(&toEnrich[index]) {
+				task.UpdatedFields = appendUnique(task.UpdatedFields, "hepburn_name")
+			}
 		}
-	}
 
-	translated, translationRecords, warning, translateErr := m.translateActresses(ctx, task, canonical)
-	if translateErr != nil {
-		warning = appendWarning(warning, translateErr.Error())
-	}
-	if len(translated) == len(canonical) {
-		canonical = translated
-	}
-	for index := range canonical {
-		if updateErr := m.deps.ActressRepo.Update(&canonical[index]); updateErr != nil {
-			return updateErr
+		translated, records, translateWarning, translateErr := m.translateActresses(ctx, task, toEnrich)
+		translationRecords = records
+		warning = translateWarning
+		if translateErr != nil {
+			warning = appendWarning(warning, translateErr.Error())
+		}
+		if len(translated) == len(toEnrich) {
+			toEnrich = translated
+		}
+		for index, canonicalIndex := range enrichmentIndexes {
+			canonical[canonicalIndex] = toEnrich[index]
+			if updateErr := m.deps.ActressRepo.Update(&canonical[canonicalIndex]); updateErr != nil {
+				return updateErr
+			}
 		}
 	}
 
@@ -500,8 +545,14 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 		return err
 	}
 	task.UpdatedFields = append(task.UpdatedFields, "movie_actresses")
-	if err := m.storeActressTranslations(translationRecords, canonical); err != nil {
-		warning = appendWarning(warning, err.Error())
+	if len(enrichmentIndexes) > 0 {
+		translatedActresses := make([]models.Actress, len(enrichmentIndexes))
+		for index, canonicalIndex := range enrichmentIndexes {
+			translatedActresses[index] = canonical[canonicalIndex]
+		}
+		if err := m.storeActressTranslations(translationRecords, translatedActresses); err != nil {
+			warning = appendWarning(warning, err.Error())
+		}
 	}
 	if warning != "" {
 		task.Warning = appendWarning(task.Warning, warning)
@@ -685,6 +736,70 @@ func verifiedActresses(result *models.ScraperResult) []models.ActressInfo {
 		verified = append(verified, actress)
 	}
 	return verified
+}
+
+func isNormalExistingActressProfile(actress models.Actress) bool {
+	return actress.DMMID > 0 &&
+		hasUsableActressIdentityProfile(actress) &&
+		strings.TrimSpace(actress.ThumbURL) != ""
+}
+
+func hasUsableActressIdentityProfile(actress models.Actress) bool {
+	return hasUsableActressJapaneseName(actress.JapaneseName) && hasUsableActressPrimaryProfile(actress)
+}
+
+func hasUsableActressJapaneseName(name string) bool {
+	name = strings.TrimSpace(name)
+	return name != "" && !models.IsUnknownActressName(name) && !models.IsDescriptiveNonName("", "", name)
+}
+
+func hasUsableActressPrimaryProfile(actress models.Actress) bool {
+	return hasUsableActressPrimaryFields(actress.LastName, actress.FirstName)
+}
+
+func hasUsableActressPrimaryFields(lastName, firstName string) bool {
+	lastName = strings.TrimSpace(lastName)
+	firstName = strings.TrimSpace(firstName)
+	if lastName == "" && firstName == "" {
+		return false
+	}
+	for _, value := range []string{lastName, firstName, strings.TrimSpace(lastName + " " + firstName), strings.TrimSpace(firstName + " " + lastName)} {
+		if value != "" && models.IsUnknownActressName(value) {
+			return false
+		}
+	}
+	return !models.IsDescriptiveNonName(lastName, firstName, "")
+}
+
+func fillIncompleteExistingActressProfile(actress *models.Actress, info models.ActressInfo) []string {
+	if actress == nil {
+		return nil
+	}
+	var updated []string
+	if !hasUsableActressJapaneseName(actress.JapaneseName) && hasUsableActressJapaneseName(info.JapaneseName) {
+		actress.JapaneseName = strings.TrimSpace(info.JapaneseName)
+		updated = append(updated, "japanese_name")
+	}
+	if !hasUsableActressPrimaryProfile(*actress) {
+		firstName := strings.TrimSpace(info.FirstName)
+		lastName := strings.TrimSpace(info.LastName)
+		if !hasUsableActressPrimaryFields(lastName, firstName) {
+			firstName, lastName = "", ""
+		}
+		if actress.FirstName != firstName {
+			actress.FirstName = firstName
+			updated = append(updated, "first_name")
+		}
+		if actress.LastName != lastName {
+			actress.LastName = lastName
+			updated = append(updated, "last_name")
+		}
+	}
+	if strings.TrimSpace(actress.ThumbURL) == "" && strings.TrimSpace(info.ThumbURL) != "" {
+		actress.ThumbURL = strings.TrimSpace(info.ThumbURL)
+		updated = append(updated, "thumb_url")
+	}
+	return updated
 }
 
 func uniqueActressIDs(ids []uint) []uint {

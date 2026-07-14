@@ -67,14 +67,14 @@ func SyncActressMetadata(
 	}
 	missingDMMID := actress.DMMID <= 0
 	missingThumbnail := strings.TrimSpace(actress.ThumbURL) == ""
+	preserveExistingProfile := actress.DMMID > 0 && hasUsableActressIdentityProfile(*actress)
 
 	var candidate *resolvedActressCandidate
 	var profileCandidate *resolvedActressCandidate
-	// Rows that already own a DMM ID still need canonical-name verification:
-	// older batch scrapes could attach a real ID to a nickname. Prefer the
-	// linked-movie cast in that case because it can match by the existing ID
-	// even when the current name is wrong.
-	if !missingDMMID && len(movieRepos) > 0 && movieRepos[0] != nil {
+	// A complete existing profile is authoritative. Its Japanese and display
+	// names are never re-verified or translated during metadata sync; only a
+	// missing thumbnail may be filled below.
+	if !preserveExistingProfile && !missingDMMID && len(movieRepos) > 0 && movieRepos[0] != nil {
 		candidate, result.Messages, err = resolveActressFromRecentMovies(
 			ctx, *actress, movieRepos[0], registry, result.Messages,
 		)
@@ -82,7 +82,7 @@ func SyncActressMetadata(
 			return nil, err
 		}
 	}
-	if candidate == nil {
+	if !preserveExistingProfile && candidate == nil {
 		var identityFailed bool
 		candidate, result.Messages, identityFailed, err = resolveMissingActressDMMID(
 			ctx, actress, registry, scraperPriority, result.Messages,
@@ -102,7 +102,7 @@ func SyncActressMetadata(
 			}
 		}
 	}
-	if missingThumbnail && candidate == nil {
+	if !preserveExistingProfile && missingThumbnail && candidate == nil {
 		profileCandidate, result.Messages = resolveMissingActressProfile(ctx, *actress, registry, scraperPriority, result.Messages)
 		if profileCandidate != nil {
 			if result.Source == "" {

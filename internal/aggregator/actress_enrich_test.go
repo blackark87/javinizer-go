@@ -23,9 +23,9 @@ func (f *fakeActressLookup) FindByDMMID(dmmID int) (*models.Actress, error) {
 	return nil, database.ErrNotFound
 }
 
-func (f *fakeActressLookup) FindByJapaneseName(name string) (*models.Actress, error) {
+func (f *fakeActressLookup) FindUnverifiedByJapaneseName(name string) (*models.Actress, error) {
 	f.calls++
-	if a, ok := f.byJa[name]; ok {
+	if a, ok := f.byJa[name]; ok && a.DMMID <= 0 {
 		return &a, nil
 	}
 	return nil, database.ErrNotFound
@@ -65,6 +65,20 @@ func TestEnrichActressReadings(t *testing.T) {
 
 		assert.Equal(t, "Mayuki", actresses[0].FirstName)
 		assert.Equal(t, "Ito", actresses[0].LastName)
+	})
+
+	t.Run("name-only lookup does not reuse a positive DMM profile", func(t *testing.T) {
+		lookup := &fakeActressLookup{
+			byJa: map[string]models.Actress{
+				"同名女優": {DMMID: 99, JapaneseName: "同名女優", FirstName: "Verified"},
+			},
+		}
+		agg := newAgg(lookup)
+		actresses := []models.Actress{{JapaneseName: "同名女優"}}
+
+		agg.enrichActressReadings(actresses)
+
+		assert.Empty(t, actresses[0].FirstName)
 	})
 
 	t.Run("actress with romaji is not looked up", func(t *testing.T) {

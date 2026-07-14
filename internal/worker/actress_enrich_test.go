@@ -46,8 +46,15 @@ func TestEnrichActressesFromDB(t *testing.T) {
 		JapaneseName: "上原亜衣",
 		ThumbURL:     "http://example.com/ai.jpg",
 	}
+	dbActress3 := &models.Actress{
+		FirstName:    "Name",
+		LastName:     "Only",
+		JapaneseName: "名前検索",
+		ThumbURL:     "http://example.com/name-only.jpg",
+	}
 	require.NoError(t, actressRepo.Create(dbActress1))
 	require.NoError(t, actressRepo.Create(dbActress2))
+	require.NoError(t, actressRepo.Create(dbActress3))
 
 	enabledCfg := &config.Config{
 		Metadata: config.MetadataConfig{
@@ -82,26 +89,26 @@ func TestEnrichActressesFromDB(t *testing.T) {
 		movie := &models.Movie{
 			ID: "TEST-002",
 			Actresses: []models.Actress{
-				{JapaneseName: "上原亜衣"},
+				{JapaneseName: "名前検索"},
 			},
 		}
 		enriched := EnrichActressesFromDB(movie, actressRepo, enabledCfg)
 		assert.Equal(t, 1, enriched)
-		assert.Equal(t, "http://example.com/ai.jpg", movie.Actresses[0].ThumbURL)
-		assert.Equal(t, "Ai", movie.Actresses[0].FirstName)
+		assert.Equal(t, "http://example.com/name-only.jpg", movie.Actresses[0].ThumbURL)
+		assert.Equal(t, "Name", movie.Actresses[0].FirstName)
 	})
 
 	t.Run("enriches by FirstName+LastName", func(t *testing.T) {
 		movie := &models.Movie{
 			ID: "TEST-003",
 			Actresses: []models.Actress{
-				{FirstName: "Yui", LastName: "Hatano"},
+				{FirstName: "Name", LastName: "Only"},
 			},
 		}
 		enriched := EnrichActressesFromDB(movie, actressRepo, enabledCfg)
 		assert.Equal(t, 1, enriched)
-		assert.Equal(t, "http://example.com/yui.jpg", movie.Actresses[0].ThumbURL)
-		assert.Equal(t, "波多野結衣", movie.Actresses[0].JapaneseName)
+		assert.Equal(t, "http://example.com/name-only.jpg", movie.Actresses[0].ThumbURL)
+		assert.Equal(t, "名前検索", movie.Actresses[0].JapaneseName)
 	})
 
 	t.Run("does not overwrite existing fields", func(t *testing.T) {
@@ -193,7 +200,7 @@ func TestEnrichActressesFromDB(t *testing.T) {
 		assert.Equal(t, "http://example.com/ai.jpg", movie.Actresses[1].ThumbURL)
 	})
 
-	t.Run("falls through to JapaneseName when DMMID lookup fails", func(t *testing.T) {
+	t.Run("does not fall through to name when positive DMMID lookup fails", func(t *testing.T) {
 		movie := &models.Movie{
 			ID: "TEST-011",
 			Actresses: []models.Actress{
@@ -201,8 +208,8 @@ func TestEnrichActressesFromDB(t *testing.T) {
 			},
 		}
 		enriched := EnrichActressesFromDB(movie, actressRepo, enabledCfg)
-		assert.Equal(t, 1, enriched)
-		assert.Equal(t, "http://example.com/yui.jpg", movie.Actresses[0].ThumbURL)
+		assert.Equal(t, 0, enriched)
+		assert.Empty(t, movie.Actresses[0].ThumbURL)
 	})
 
 	t.Run("second enrichment does not overwrite NFO-merged fields", func(t *testing.T) {

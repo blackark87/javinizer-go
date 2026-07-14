@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestActressFindOrCreateReusesAliasesAndNormalizedPrimaryNames(t *testing.T) {
+func TestActressFindOrCreateDoesNotReuseVerifiedProfilesByNameOnly(t *testing.T) {
 	db, err := New(&config.Config{Database: config.DatabaseConfig{Type: "sqlite", DSN: ":memory:"}})
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
@@ -22,17 +22,19 @@ func TestActressFindOrCreateReusesAliasesAndNormalizedPrimaryNames(t *testing.T)
 	require.NoError(t, repo.Create(aliasMatch))
 	incomingAlias := &models.Actress{JapaneseName: "はたのゆい", ThumbURL: "alias.jpg"}
 	require.NoError(t, repo.FindOrCreate(incomingAlias))
-	assert.Equal(t, aliasMatch.ID, incomingAlias.ID)
+	assert.NotEqual(t, aliasMatch.ID, incomingAlias.ID)
+	assert.Zero(t, incomingAlias.DMMID)
 	assert.Equal(t, "alias.jpg", incomingAlias.ThumbURL)
 
 	primaryMatch := &models.Actress{DMMID: 200, FirstName: "마유키", LastName: "이토"}
 	require.NoError(t, repo.Create(primaryMatch))
 	incomingPrimary := &models.Actress{FirstName: "마유키", LastName: "이 토"}
 	require.NoError(t, repo.FindOrCreate(incomingPrimary))
-	assert.Equal(t, primaryMatch.ID, incomingPrimary.ID)
+	assert.NotEqual(t, primaryMatch.ID, incomingPrimary.ID)
+	assert.Zero(t, incomingPrimary.DMMID)
 }
 
-func TestActressFindOrCreateReportsContradictoryDMMIdentity(t *testing.T) {
+func TestActressFindOrCreateKeepsDifferentPositiveDMMIdentities(t *testing.T) {
 	db, err := New(&config.Config{Database: config.DatabaseConfig{Type: "sqlite", DSN: ":memory:"}})
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
@@ -42,16 +44,13 @@ func TestActressFindOrCreateReportsContradictoryDMMIdentity(t *testing.T) {
 	existing := &models.Actress{DMMID: 100, JapaneseName: "波多野結衣"}
 	require.NoError(t, repo.Create(existing))
 	incoming := &models.Actress{DMMID: 200, JapaneseName: "波多野 結衣"}
-	err = repo.FindOrCreate(incoming)
-	conflict, ok := AsActressDMMIDConflict(err)
-	require.True(t, ok)
-	assert.Equal(t, existing.ID, conflict.ExistingID)
-	assert.Equal(t, 100, conflict.ExistingDMMID)
-	assert.Equal(t, 200, conflict.IncomingDMMID)
+	require.NoError(t, repo.FindOrCreate(incoming))
+	assert.NotEqual(t, existing.ID, incoming.ID)
+	assert.Equal(t, 200, incoming.DMMID)
 
 	count, countErr := repo.Count()
 	require.NoError(t, countErr)
-	assert.EqualValues(t, 1, count)
+	assert.EqualValues(t, 2, count)
 }
 
 func TestActressFindOrCreateConcurrentVerifiedIdentityIsIdempotent(t *testing.T) {

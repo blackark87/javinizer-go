@@ -82,7 +82,7 @@ type ActressAliasRepositoryInterface interface {
 // *ActressRepository satisfies it.
 type ActressLookupRepositoryInterface interface {
 	FindByDMMID(dmmID int) (*models.Actress, error)
-	FindByJapaneseName(name string) (*models.Actress, error)
+	FindUnverifiedByJapaneseName(name string) (*models.Actress, error)
 }
 
 // WordReplacementRepositoryInterface defines the contract for word replacement operations

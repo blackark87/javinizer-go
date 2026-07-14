@@ -11,25 +11,21 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// VerifiedActressResolution describes how a resolver-confirmed identity was
-// reconciled with the existing actress table. A non-zero source ID is always
-// reused or merged; it is never left behind as a duplicate row.
+// VerifiedActressResolution describes the atomic reconciliation of a positive
+// DMM identity. DMM ID always wins over name; an exact Japanese-name match may
+// only promote or merge rows that still have no positive DMM ID.
 type VerifiedActressResolution struct {
-	Actress       models.Actress
-	MergedFromIDs []uint
-	UpdatedMovies int
-	Created       bool
-	Canonicalized bool
+	Actress        models.Actress
+	MergedFromIDs  []uint
+	UpdatedMovies  int
+	Created        bool
+	Promoted       bool
+	Canonicalized  bool
+	ProfileChanged bool
+	NameChanged    bool
+	AliasesAdded   []string
 }
 
-// ResolveVerifiedIdentity reconciles a resolver-confirmed DMM identity with the
-// existing actress table. The verified Japanese name is authoritative. Existing
-// nickname/decorated rows become aliases and all of their movie associations are
-// moved to the canonical row before the duplicate rows are deleted.
-//
-// When allowCreate is false, sourceID must identify an existing row and that row
-// is canonicalized in place if no reusable row exists. When allowCreate is true,
-// a new row is created only after both DMM-ID and exact-name lookups miss.
 func (r *ActressRepository) ResolveVerifiedIdentity(sourceID uint, verified models.Actress, allowCreate bool) (*VerifiedActressResolution, error) {
 	if verified.DMMID <= 0 {
 		return nil, fmt.Errorf("verified actress requires a positive DMM ID")
@@ -56,56 +52,49 @@ func (r *ActressRepository) ResolveVerifiedIdentity(sourceID uint, verified mode
 }
 
 func (r *ActressRepository) resolveVerifiedIdentityTx(tx *gorm.DB, sourceID uint, verified models.Actress, allowCreate bool) (*VerifiedActressResolution, error) {
-	var source *models.Actress
-	sourceMissing := false
 	if sourceID > 0 {
-		var row models.Actress
-		if err := tx.First(&row, sourceID).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				sourceMissing = true
-			} else {
-				return nil, wrapDBErr("find", fmt.Sprintf("verified source actress %d", sourceID), err)
-			}
-		} else {
-			source = &row
+		var count int64
+		if err := tx.Model(&models.Actress{}).Where("id = ?", sourceID).Count(&count).Error; err != nil {
+			return nil, wrapDBErr("find", fmt.Sprintf("verified source actress %d", sourceID), err)
+		}
+		if count == 0 {
+			return nil, ErrNotFound
 		}
 	}
 
+	verified = sanitizedVerifiedActress(verified)
 	idOwner, err := findActressByDMMIDTx(tx, verified.DMMID)
 	if err != nil {
 		return nil, err
 	}
-	nameOwner, err := findVerifiedNameOwnerTx(tx, verified)
+	nameOwners, err := findUnverifiedJapaneseNameOwnersTx(tx, verified.JapaneseName)
 	if err != nil {
 		return nil, err
 	}
-	if nameOwner != nil && nameOwner.DMMID > 0 && nameOwner.DMMID != verified.DMMID {
-		return nil, &ActressDMMIDConflictError{
-			IncomingDMMID: verified.DMMID,
-			ExistingDMMID: nameOwner.DMMID,
-			ExistingID:    nameOwner.ID,
-		}
-	}
 
-	canonical := nameOwner
-	if canonical == nil {
-		canonical = idOwner
-	}
-	if canonical == nil {
-		canonical = source
+	canonical := idOwner
+	if canonical == nil && len(nameOwners) > 0 {
+		copyRow := nameOwners[0]
+		canonical = &copyRow
 	}
 
 	created := false
 	if canonical == nil {
-		if sourceMissing {
-			return nil, ErrNotFound
-		}
 		if !allowCreate {
 			return nil, ErrNotFound
 		}
-		createdRow := sanitizedVerifiedActress(verified)
+		createdRow := verified
 		createResult := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&createdRow)
 		if createResult.Error != nil {
+			if errors.Is(createResult.Error, gorm.ErrDuplicatedKey) {
+				canonical, err = findActressByDMMIDTx(tx, verified.DMMID)
+				if err != nil {
+					return nil, err
+				}
+				if canonical != nil {
+					goto resolvedCanonical
+				}
+			}
 			return nil, wrapDBErr("create", fmt.Sprintf("verified actress %d", verified.DMMID), createResult.Error)
 		}
 		if createResult.RowsAffected == 0 {
@@ -121,29 +110,21 @@ func (r *ActressRepository) resolveVerifiedIdentityTx(tx *gorm.DB, sourceID uint
 			created = true
 		}
 	}
-	if canonical.DMMID > 0 && canonical.DMMID != verified.DMMID {
-		return nil, &ActressDMMIDConflictError{
-			IncomingDMMID: verified.DMMID,
-			ExistingDMMID: canonical.DMMID,
-			ExistingID:    canonical.ID,
+
+resolvedCanonical:
+	before := *canonical
+	promoted := !created && canonical.DMMID <= 0
+	profileChanged, aliasesAdded := applyVerifiedActress(&verified, canonical)
+
+	mergeRows := make([]models.Actress, 0, len(nameOwners))
+	for _, row := range nameOwners {
+		if row.ID != canonical.ID {
+			mergeRows = append(mergeRows, row)
 		}
 	}
-
-	mergeRows := uniqueActressRows(canonical.ID, idOwner, source)
-	aliasCandidates := collectActressAliasCandidates(canonical)
 	updatedMovies := 0
 	mergedIDs := make([]uint, 0, len(mergeRows))
 	for _, mergeRow := range mergeRows {
-		aliasCandidates = append(aliasCandidates, collectActressAliasCandidates(mergeRow)...)
-		if mergeRow.DMMID == verified.DMMID {
-			temporaryID := -int(mergeRow.ID)
-			if temporaryID == 0 {
-				temporaryID = -1
-			}
-			if err := tx.Model(&models.Actress{}).Where("id = ?", mergeRow.ID).Update("dmm_id", temporaryID).Error; err != nil {
-				return nil, wrapDBErr("update", fmt.Sprintf("temporary DMM ID for actress %d", mergeRow.ID), err)
-			}
-		}
 		moved, moveErr := moveMovieAssociations(tx, mergeRow.ID, canonical.ID)
 		if moveErr != nil {
 			return nil, wrapDBErr("merge", fmt.Sprintf("verified actress associations %d to %d", mergeRow.ID, canonical.ID), moveErr)
@@ -152,32 +133,36 @@ func (r *ActressRepository) resolveVerifiedIdentityTx(tx *gorm.DB, sourceID uint
 		if err := moveActressTaskReferences(tx, mergeRow.ID, canonical.ID); err != nil {
 			return nil, err
 		}
+		sameJapanese := normalizeExactActressName(mergeRow.JapaneseName) == normalizeExactActressName(canonical.JapaneseName)
+		if err := mergeActressTranslationsTx(tx, mergeRow.ID, canonical.ID, sameJapanese); err != nil {
+			return nil, err
+		}
 		if err := tx.Delete(&models.Actress{}, mergeRow.ID).Error; err != nil {
 			return nil, wrapDBErr("delete", fmt.Sprintf("verified duplicate actress %d", mergeRow.ID), err)
 		}
 		mergedIDs = append(mergedIDs, mergeRow.ID)
 	}
 
-	canonicalized := applyVerifiedActress(&verified, canonical, aliasCandidates)
-	if err := tx.Model(&models.Actress{}).Where("id = ?", canonical.ID).Updates(map[string]interface{}{
-		"dmm_id":        canonical.DMMID,
-		"first_name":    canonical.FirstName,
-		"last_name":     canonical.LastName,
-		"japanese_name": canonical.JapaneseName,
-		"thumb_url":     canonical.ThumbURL,
-		"aliases":       canonical.Aliases,
-		"updated_at":    time.Now().UTC(),
-	}).Error; err != nil {
-		return nil, wrapDBErr("update", fmt.Sprintf("verified canonical actress %d", canonical.ID), err)
+	aliasesChanged := before.Aliases != canonical.Aliases
+	if profileChanged || aliasesChanged {
+		if err := tx.Model(&models.Actress{}).Where("id = ?", canonical.ID).Updates(map[string]interface{}{
+			"dmm_id":        canonical.DMMID,
+			"first_name":    canonical.FirstName,
+			"last_name":     canonical.LastName,
+			"japanese_name": canonical.JapaneseName,
+			"thumb_url":     canonical.ThumbURL,
+			"aliases":       canonical.Aliases,
+			"updated_at":    time.Now().UTC(),
+		}).Error; err != nil {
+			return nil, wrapDBErr("update", fmt.Sprintf("verified canonical actress %d", canonical.ID), err)
+		}
 	}
 
-	if canonicalized && tx.Migrator().HasTable(&models.ActressTranslation{}) {
+	nameChanged := before.JapaneseName != canonical.JapaneseName || before.FirstName != canonical.FirstName || before.LastName != canonical.LastName
+	if !created && nameChanged && tx.Migrator().HasTable(&models.ActressTranslation{}) {
 		if err := tx.Where("actress_id = ?", canonical.ID).Delete(&models.ActressTranslation{}).Error; err != nil {
 			return nil, wrapDBErr("delete", fmt.Sprintf("stale actress translations %d", canonical.ID), err)
 		}
-	}
-	if err := upsertActressAliases(tx, filterVerifiedAliases(aliasCandidates), canonicalActressName(canonical)); err != nil {
-		return nil, wrapDBErr("merge", fmt.Sprintf("verified aliases for actress %d", canonical.ID), err)
 	}
 
 	var loaded models.Actress
@@ -185,11 +170,9 @@ func (r *ActressRepository) resolveVerifiedIdentityTx(tx *gorm.DB, sourceID uint
 		return nil, wrapDBErr("find", fmt.Sprintf("verified canonical actress %d", canonical.ID), err)
 	}
 	return &VerifiedActressResolution{
-		Actress:       loaded,
-		MergedFromIDs: mergedIDs,
-		UpdatedMovies: updatedMovies,
-		Created:       created,
-		Canonicalized: canonicalized,
+		Actress: loaded, MergedFromIDs: mergedIDs, UpdatedMovies: updatedMovies,
+		Created: created, Promoted: promoted, Canonicalized: created || promoted || len(mergedIDs) > 0,
+		ProfileChanged: profileChanged, NameChanged: nameChanged, AliasesAdded: aliasesAdded,
 	}, nil
 }
 
@@ -205,55 +188,22 @@ func findActressByDMMIDTx(tx *gorm.DB, dmmID int) (*models.Actress, error) {
 	return &actress, nil
 }
 
-func findVerifiedNameOwnerTx(tx *gorm.DB, verified models.Actress) (*models.Actress, error) {
+func findUnverifiedJapaneseNameOwnersTx(tx *gorm.DB, name string) ([]models.Actress, error) {
+	key := normalizeExactActressName(name)
+	if key == "" {
+		return nil, nil
+	}
 	var actresses []models.Actress
-	if err := tx.Order("dmm_id DESC, id ASC").Find(&actresses).Error; err != nil {
-		return nil, wrapDBErr("find", "verified actress name owner", err)
+	if err := tx.Where("dmm_id <= 0").Order("id ASC").Find(&actresses).Error; err != nil {
+		return nil, wrapDBErr("find", "unverified actress name owners", err)
 	}
-	// Prefer the row whose canonical field itself matches the verified identity.
-	// A polluted nickname row may already have the real name in its aliases and
-	// own the DMM ID; selecting it first would leave the actual canonical row as
-	// a duplicate.
-	verifiedJapaneseName := normalizeExactActressName(verified.JapaneseName)
-	if verifiedJapaneseName != "" {
-		for i := range actresses {
-			if normalizeExactActressName(actresses[i].JapaneseName) == verifiedJapaneseName {
-				return &actresses[i], nil
-			}
+	owners := make([]models.Actress, 0)
+	for _, actress := range actresses {
+		if normalizeExactActressName(actress.JapaneseName) == key {
+			owners = append(owners, actress)
 		}
 	}
-	verifiedPrimary := exactActressPrimaryKeys(verified.FirstName, verified.LastName)
-	if len(verifiedPrimary) > 0 {
-		for i := range actresses {
-			if exactKeySetsIntersect(verifiedPrimary, exactActressPrimaryKeys(actresses[i].FirstName, actresses[i].LastName)) {
-				return &actresses[i], nil
-			}
-		}
-	}
-	verifiedJapanese := exactActressAliasKeys(verified.JapaneseName, verified.Aliases)
-	for i := range actresses {
-		if exactKeySetsIntersect(verifiedJapanese, exactActressAliasKeys(actresses[i].JapaneseName, actresses[i].Aliases)) {
-			return &actresses[i], nil
-		}
-	}
-	return nil, nil
-}
-
-func uniqueActressRows(canonicalID uint, rows ...*models.Actress) []*models.Actress {
-	seen := map[uint]struct{}{canonicalID: {}}
-	result := make([]*models.Actress, 0, len(rows))
-	for _, row := range rows {
-		if row == nil || row.ID == 0 {
-			continue
-		}
-		if _, exists := seen[row.ID]; exists {
-			continue
-		}
-		seen[row.ID] = struct{}{}
-		copyRow := *row
-		result = append(result, &copyRow)
-	}
-	return result
+	return owners, nil
 }
 
 func hasVerifiedActressName(actress models.Actress) bool {
@@ -272,42 +222,113 @@ func sanitizedVerifiedActress(verified models.Actress) models.Actress {
 	verified.FirstName = strings.TrimSpace(verified.FirstName)
 	verified.LastName = strings.TrimSpace(verified.LastName)
 	verified.ThumbURL = strings.TrimSpace(verified.ThumbURL)
+	verified.Aliases = ""
 	return verified
 }
 
-func applyVerifiedActress(verified, canonical *models.Actress, aliasCandidates []string) bool {
+func applyVerifiedActress(verified, canonical *models.Actress) (bool, []string) {
+	before := *canonical
+	canonical.DMMID = verified.DMMID
+
 	oldJapanese := strings.TrimSpace(canonical.JapaneseName)
 	newJapanese := strings.TrimSpace(verified.JapaneseName)
-	identityChanged := newJapanese != "" && normalizeExactActressName(oldJapanese) != normalizeExactActressName(newJapanese)
-	if oldJapanese != "" && identityChanged {
-		aliasCandidates = append(aliasCandidates, oldJapanese)
-	}
-	if identityChanged {
-		if fullName := strings.TrimSpace(canonical.FullName()); fullName != "" && !models.IsUnknownActressName(fullName) {
-			aliasCandidates = append(aliasCandidates, fullName)
-		}
+	aliasesAdded := []string(nil)
+	switch {
+	case !isUsableVerifiedJapaneseName(oldJapanese) && isUsableVerifiedJapaneseName(newJapanese):
+		canonical.JapaneseName = newJapanese
+	case isUsableVerifiedJapaneseName(oldJapanese) && isUsableVerifiedJapaneseName(newJapanese) &&
+		normalizeExactActressName(oldJapanese) != normalizeExactActressName(newJapanese):
+		canonical.Aliases, aliasesAdded = mergeVerifiedAliasValues(canonical.Aliases, []string{newJapanese}, oldJapanese)
 	}
 
-	canonical.DMMID = verified.DMMID
-	if newJapanese != "" {
-		canonical.JapaneseName = newJapanese
-	}
-	if identityChanged {
-		canonical.FirstName = strings.TrimSpace(verified.FirstName)
-		canonical.LastName = strings.TrimSpace(verified.LastName)
-	} else {
-		if strings.TrimSpace(verified.FirstName) != "" && (canonical.FirstName == "" || (containsHangul(verified.FirstName) && !containsHangul(canonical.FirstName))) {
-			canonical.FirstName = strings.TrimSpace(verified.FirstName)
+	if !hasUsablePrimaryActressName(*canonical) {
+		if value := strings.TrimSpace(verified.FirstName); value != "" && !models.IsUnknownActressName(value) {
+			canonical.FirstName = value
 		}
-		if strings.TrimSpace(verified.LastName) != "" && (canonical.LastName == "" || (containsHangul(verified.LastName) && !containsHangul(canonical.LastName))) {
-			canonical.LastName = strings.TrimSpace(verified.LastName)
+		if value := strings.TrimSpace(verified.LastName); value != "" && !models.IsUnknownActressName(value) {
+			canonical.LastName = value
 		}
 	}
-	if strings.TrimSpace(verified.ThumbURL) != "" && (canonical.ThumbURL == "" || identityChanged) {
+	if strings.TrimSpace(canonical.ThumbURL) == "" && strings.TrimSpace(verified.ThumbURL) != "" {
 		canonical.ThumbURL = strings.TrimSpace(verified.ThumbURL)
 	}
-	canonical.Aliases, _, _ = mergeAliasValues(canonical.Aliases, filterVerifiedAliases(aliasCandidates), canonicalActressName(canonical))
-	return identityChanged
+
+	profileChanged := before.DMMID != canonical.DMMID || before.JapaneseName != canonical.JapaneseName ||
+		before.FirstName != canonical.FirstName || before.LastName != canonical.LastName || before.ThumbURL != canonical.ThumbURL
+	return profileChanged, aliasesAdded
+}
+
+func mergeVerifiedAliasValues(existing string, candidates []string, canonicalName string) (string, []string) {
+	seen := make(map[string]struct{})
+	merged := make([]string, 0)
+	for _, value := range strings.Split(existing, "|") {
+		value = strings.TrimSpace(value)
+		key := normalizeExactActressName(value)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		merged = append(merged, value)
+	}
+	canonicalKey := normalizeExactActressName(canonicalName)
+	added := make([]string, 0)
+	for _, value := range filterVerifiedAliases(candidates) {
+		key := normalizeExactActressName(value)
+		if key == canonicalKey {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		merged = append(merged, value)
+		added = append(added, value)
+	}
+	return strings.Join(merged, "|"), added
+}
+
+func isUsableVerifiedJapaneseName(name string) bool {
+	name = strings.TrimSpace(name)
+	return name != "" && !models.IsUnknownActressName(name) && !models.IsDescriptiveNonName("", "", name)
+}
+
+func hasUsablePrimaryActressName(actress models.Actress) bool {
+	first := strings.TrimSpace(actress.FirstName)
+	last := strings.TrimSpace(actress.LastName)
+	if first == "" && last == "" {
+		return false
+	}
+	return !models.IsUnknownActressName(first) && !models.IsUnknownActressName(last) &&
+		!models.IsUnknownActressName(strings.TrimSpace(last+" "+first)) &&
+		!models.IsDescriptiveNonName(last, first, "")
+}
+
+func mergeActressTranslationsTx(tx *gorm.DB, sourceID, targetID uint, preserve bool) error {
+	if !tx.Migrator().HasTable(&models.ActressTranslation{}) {
+		return nil
+	}
+	if preserve {
+		var translations []models.ActressTranslation
+		if err := tx.Where("actress_id = ?", sourceID).Find(&translations).Error; err != nil {
+			return wrapDBErr("find", fmt.Sprintf("actress translations %d", sourceID), err)
+		}
+		for _, record := range translations {
+			record.ID = 0
+			record.ActressID = targetID
+			if err := tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "actress_id"}, {Name: "language"}}, DoNothing: true,
+			}).Create(&record).Error; err != nil {
+				return wrapDBErr("merge", fmt.Sprintf("actress translations %d to %d", sourceID, targetID), err)
+			}
+		}
+	}
+	if err := tx.Where("actress_id = ?", sourceID).Delete(&models.ActressTranslation{}).Error; err != nil {
+		return wrapDBErr("delete", fmt.Sprintf("actress translations %d", sourceID), err)
+	}
+	return nil
 }
 
 func filterVerifiedAliases(values []string) []string {
@@ -316,7 +337,7 @@ func filterVerifiedAliases(values []string) []string {
 	for _, value := range values {
 		value = strings.TrimSpace(value)
 		key := normalizeExactActressName(value)
-		if key == "" || models.IsUnknownActressName(value) {
+		if key == "" || models.IsUnknownActressName(value) || models.IsDescriptiveNonName("", "", value) {
 			continue
 		}
 		if _, exists := seen[key]; exists {

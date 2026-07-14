@@ -353,41 +353,14 @@ func (a *Aggregator) getActressesByPriority(
 			}
 
 			var existing *models.Actress
-			var foundInDMMIDMap bool
-
-			if info.DMMID != 0 {
-				existing, foundInDMMIDMap = actressByDMMID[info.DMMID]
-			}
-
-			if existing == nil && nameKey != "" {
-				for _, actress := range actressByDMMID {
-					actressNameKey := resolveNameKey(actress.JapaneseName, actress.FirstName, actress.LastName)
-					if actressNameKey == nameKey {
-						existing = actress
-						foundInDMMIDMap = true
-						break
-					}
-				}
-
-				if existing == nil {
-					existing = actressByName[nameKey]
-				}
+			if info.DMMID > 0 {
+				existing = actressByDMMID[info.DMMID]
+			} else if nameKey != "" {
+				existing = actressByName[nameKey]
 			}
 
 			// If actress exists, merge fields
 			if existing != nil {
-				if existing.DMMID <= 0 && info.DMMID != 0 {
-					oldDMMID := existing.DMMID
-					existing.DMMID = info.DMMID
-					// Move from placeholder/non-DMMID entries to real DMMID key.
-					if foundInDMMIDMap && oldDMMID != info.DMMID {
-						delete(actressByDMMID, oldDMMID)
-					}
-					if !foundInDMMIDMap && nameKey != "" {
-						delete(actressByName, nameKey)
-					}
-					actressByDMMID[info.DMMID] = existing
-				}
 				if existing.FirstName == "" && info.FirstName != "" {
 					existing.FirstName = info.FirstName
 				}
@@ -410,7 +383,7 @@ func (a *Aggregator) getActressesByPriority(
 					ThumbURL:     info.ThumbURL,
 				}
 
-				if info.DMMID != 0 {
+				if info.DMMID > 0 {
 					actressByDMMID[info.DMMID] = actress
 				} else if nameKey != "" {
 					actressByName[nameKey] = actress
@@ -506,22 +479,10 @@ func nameContainsHangul(s string) bool {
 // the Unknown placeholder so it is neither transliterated verbatim nor persisted.
 // Runs before name-key dedup so decorated and plain forms of one name collapse.
 func cleanActressInfoName(info *models.ActressInfo) {
-	if info.JapaneseName != "" {
-		info.JapaneseName = translation.CleanActressName(info.JapaneseName)
-	}
-	if info.FirstName != "" {
-		info.FirstName = translation.CleanActressName(info.FirstName)
-	}
-	if info.LastName != "" {
-		info.LastName = translation.CleanActressName(info.LastName)
-	}
-	if models.IsDescriptiveNonName(info.LastName, info.FirstName, info.JapaneseName) {
+	translation.CleanActressInfo(info)
+	if models.IsUnknownActressFields(info.LastName, info.FirstName, info.JapaneseName) {
 		logging.Debugf("Aggregation: actress value %q/%q/%q has no usable name after cleaning — treating as Unknown",
 			info.LastName, info.FirstName, info.JapaneseName)
-		info.FirstName = models.UnknownActressName
-		info.LastName = ""
-		info.JapaneseName = models.UnknownActressName
-		info.ThumbURL = ""
 	}
 }
 
@@ -567,9 +528,8 @@ func (a *Aggregator) enrichActressReadings(actresses []models.Actress) {
 		var err error
 		if act.DMMID > 0 {
 			stored, err = a.actressLookupRepo.FindByDMMID(act.DMMID)
-		}
-		if (stored == nil || err != nil) && strings.TrimSpace(act.JapaneseName) != "" {
-			stored, err = a.actressLookupRepo.FindByJapaneseName(strings.TrimSpace(act.JapaneseName))
+		} else if strings.TrimSpace(act.JapaneseName) != "" {
+			stored, err = a.actressLookupRepo.FindUnverifiedByJapaneseName(strings.TrimSpace(act.JapaneseName))
 		}
 		if err != nil || stored == nil {
 			continue

@@ -245,8 +245,8 @@ func TestMovieRepositoryEnsureActressesExistTx(t *testing.T) {
 
 	actresses := []models.Actress{
 		{DMMID: 101, ThumbURL: "https://example.com/a.jpg"},
-		{JapaneseName: "JP-ONLY", ThumbURL: "https://example.com/jp.jpg"},
-		{FirstName: "First", LastName: "Last", ThumbURL: "https://example.com/both.jpg"},
+		{JapaneseName: "J P-ONLY", ThumbURL: "https://example.com/jp.jpg"},
+		{FirstName: "F i r s t", LastName: "Last", ThumbURL: "https://example.com/both.jpg"},
 		{FirstName: "FirstOnly", ThumbURL: "https://example.com/first.jpg"},
 		{LastName: "LastOnly", ThumbURL: "https://example.com/last.jpg"},
 		{DMMID: 202, JapaneseName: "Created"},

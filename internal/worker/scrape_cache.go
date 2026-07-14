@@ -15,6 +15,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/logging"
 	"github.com/javinizer/javinizer-go/internal/matcher"
 	"github.com/javinizer/javinizer-go/internal/models"
+	"github.com/javinizer/javinizer-go/internal/translation"
 )
 
 func handleCacheHit(
@@ -116,6 +117,11 @@ func verifyCachedActresses(
 	if cached == nil || registry == nil {
 		return nil, nil
 	}
+	for _, actress := range cached.Actresses {
+		if actress.DMMID > 0 {
+			return nil, nil
+		}
+	}
 	priority := []string(nil)
 	if cfg != nil {
 		priority = cfg.Scrapers.Priority
@@ -128,6 +134,7 @@ func verifyCachedActresses(
 	if queryID == "" {
 		queryID = cached.ContentID
 	}
+	hadSuccessfulLookup := false
 	for _, scraper := range resolvers {
 		resolver := scraper.(models.ActressResolver)
 		resolved, err := safeResolveActresses(ctx, resolver, queryID)
@@ -141,6 +148,7 @@ func verifyCachedActresses(
 			)
 			continue
 		}
+		hadSuccessfulLookup = true
 		if !hasVerifiedActresses(resolved) {
 			logging.Warnf(
 				"[Batch %s] File %d: Cached actress verification returned no canonical cast (movie=%s resolver=%s existing_cast=%s); cached mappings were preserved",
@@ -171,7 +179,47 @@ func verifyCachedActresses(
 		}
 		return saved, nil
 	}
+	if hadSuccessfulLookup {
+		return cleanCachedFallbackActresses(cached, movieRepo, actressRepo)
+	}
 	return nil, nil
+}
+
+func cleanCachedFallbackActresses(
+	cached *models.Movie,
+	movieRepo *database.MovieRepository,
+	actressRepo *database.ActressRepository,
+) (*models.Movie, error) {
+	if cached == nil || movieRepo == nil {
+		return nil, nil
+	}
+	if actressRepo == nil {
+		actressRepo = database.NewActressRepository(movieRepo.GetDB())
+	}
+	changed := false
+	for _, mapped := range cached.Actresses {
+		if mapped.ID == 0 || mapped.DMMID > 0 {
+			continue
+		}
+		actress, err := actressRepo.FindByID(mapped.ID)
+		if err != nil {
+			if database.IsNotFound(err) {
+				continue
+			}
+			return nil, err
+		}
+		if !translation.CleanStoredActress(actress) {
+			continue
+		}
+		if err := actressRepo.Update(actress); err != nil {
+			return nil, err
+		}
+		changed = true
+	}
+	if !changed {
+		return nil, nil
+	}
+	return movieRepo.FindByContentID(cached.ContentID)
 }
 
 func cachedActressSummary(actresses []models.Actress) string {

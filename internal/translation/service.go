@@ -702,6 +702,53 @@ func CleanActressName(name string) string {
 	return cleanActressNameForTranslation(name)
 }
 
+// CleanActressInfo applies the shared actress fallback cleanup used by
+// aggregation and explicit actress sync. It returns true when any field changed.
+func CleanActressInfo(info *models.ActressInfo) bool {
+	if info == nil {
+		return false
+	}
+	before := *info
+	info.JapaneseName = cleanActressNameForTranslation(info.JapaneseName)
+	info.FirstName = cleanActressNameForTranslation(info.FirstName)
+	info.LastName = cleanActressNameForTranslation(info.LastName)
+	if models.IsDescriptiveNonName(info.LastName, info.FirstName, info.JapaneseName) {
+		info.FirstName = models.UnknownActressName
+		info.LastName = ""
+		info.JapaneseName = models.UnknownActressName
+		info.ThumbURL = ""
+	} else {
+		models.CanonicalizeUnknownActressInfo(info)
+	}
+	return before.FirstName != info.FirstName || before.LastName != info.LastName ||
+		before.JapaneseName != info.JapaneseName || before.ThumbURL != info.ThumbURL
+}
+
+// CleanStoredActress applies the same fallback cleanup to an existing DB row.
+func CleanStoredActress(actress *models.Actress) bool {
+	if actress == nil {
+		return false
+	}
+	before := *actress
+	actress.JapaneseName = cleanActressNameForTranslation(actress.JapaneseName)
+	if before.JapaneseName != actress.JapaneseName {
+		actress.FirstName = ""
+		actress.LastName = ""
+	}
+	actress.FirstName = cleanActressNameForTranslation(actress.FirstName)
+	actress.LastName = cleanActressNameForTranslation(actress.LastName)
+	if models.IsDescriptiveNonName(actress.LastName, actress.FirstName, actress.JapaneseName) {
+		actress.FirstName = models.UnknownActressName
+		actress.LastName = ""
+		actress.JapaneseName = models.UnknownActressName
+		actress.ThumbURL = ""
+	} else {
+		models.CanonicalizeUnknownActress(actress)
+	}
+	return before.FirstName != actress.FirstName || before.LastName != actress.LastName ||
+		before.JapaneseName != actress.JapaneseName || before.ThumbURL != actress.ThumbURL
+}
+
 // cleanActressNameForTranslation strips descriptive extras from actress name strings
 // before sending to the LLM. Handles multiple patterns scrapers append to names.
 func cleanActressNameForTranslation(name string) string {

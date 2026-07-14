@@ -394,18 +394,6 @@ export interface ActressSyncCandidatesResponse {
 	total: number;
 }
 
-export type ActressSyncStatus = 'updated' | 'skipped' | 'conflict' | 'failed';
-
-export interface ActressSyncResponse {
-	actress: Actress;
-	status: ActressSyncStatus;
-	updated_fields: Array<'dmm_id' | 'thumb_url' | string>;
-	messages: string[];
-	source?: string;
-	source_query?: string;
-	conflict_actress_id?: number;
-}
-
 export type ActressSyncJobStatus = 'pending' | 'running' | 'completed' | 'cancelled';
 export type ActressSyncTaskStatus = 'pending' | 'running' | 'completed' | 'skipped' | 'conflict' | 'failed' | 'cancelled';
 

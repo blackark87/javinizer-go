@@ -15,7 +15,6 @@ func RegisterRoutes(protected *gin.RouterGroup, deps *core.ServerDependencies) {
 	protected.POST("/actresses/sync-jobs/:jobID/cancel", cancelActressSyncJob(deps))
 	protected.GET("/actresses/:id", getActress(deps.ActressRepo))
 	protected.GET("/actresses/:id/movies", listActressMovies(deps.ActressRepo, deps.MovieRepo))
-	protected.POST("/actresses/:id/sync", syncActress(deps))
 	protected.POST("/actresses", createActress(deps.ActressRepo))
 	protected.PUT("/actresses/:id", updateActress(deps.ActressRepo))
 	protected.DELETE("/actresses/:id", deleteActress(deps.ActressRepo))

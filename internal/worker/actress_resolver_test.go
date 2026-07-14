@@ -8,6 +8,7 @@ import (
 
 	"github.com/javinizer/javinizer-go/internal/aggregator"
 	"github.com/javinizer/javinizer-go/internal/config"
+	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
@@ -56,7 +57,7 @@ func (s *actressFlowThumbnailResolver) ResolveActressThumbnail(_ context.Context
 	return s.url
 }
 
-func TestQueryScrapersRunsActressResolverOnlyWhenNeeded(t *testing.T) {
+func TestQueryScrapersAlwaysRunsActressResolverForCanonicalCast(t *testing.T) {
 	tests := []struct {
 		name          string
 		actresses     []models.ActressInfo
@@ -80,11 +81,11 @@ func TestQueryScrapersRunsActressResolverOnlyWhenNeeded(t *testing.T) {
 			wantResultLen: 2,
 		},
 		{
-			name:          "one valid DMM ID",
+			name:          "regular source positive DMM ID still requires canonical verification",
 			actresses:     []models.ActressInfo{{JapaneseName: "정식명", DMMID: 123}},
-			wantCalls:     0,
-			wantOverride:  "",
-			wantResultLen: 1,
+			wantCalls:     1,
+			wantOverride:  "sougouwiki",
+			wantResultLen: 2,
 		},
 	}
 
@@ -313,6 +314,72 @@ func TestBuildActressOverrideResultsPreservesRawResultsAndSources(t *testing.T) 
 	resolverOnlyCandidates := buildMovieCandidateResults(raw[1:], "sougouwiki")
 	if len(resolverOnlyCandidates) != 1 || resolverOnlyCandidates[0] != raw[1] {
 		t.Errorf("resolver-only candidate was lost: %+v", resolverOnlyCandidates)
+	}
+}
+
+func TestReconcileVerifiedMovieActressesMergesPollutedDMMOwnerIntoCanonicalRow(t *testing.T) {
+	_, db, _, _, _ := newRunBatchTestEnv(t, "regular")
+	repo := database.NewActressRepository(db)
+	polluted := &models.Actress{DMMID: 777, JapaneseName: "もな"}
+	canonical := &models.Actress{JapaneseName: "弥生みづき"}
+	if err := repo.Create(polluted); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Create(canonical); err != nil {
+		t.Fatal(err)
+	}
+	movie := &models.Movie{Actresses: []models.Actress{{DMMID: 777, JapaneseName: "弥生みづき"}}}
+
+	if err := reconcileVerifiedMovieActresses(movie, repo); err != nil {
+		t.Fatal(err)
+	}
+	if len(movie.Actresses) != 1 || movie.Actresses[0].ID != canonical.ID {
+		t.Fatalf("canonical actresses = %+v, want existing actress #%d", movie.Actresses, canonical.ID)
+	}
+	if _, err := repo.FindByID(polluted.ID); !database.IsNotFound(err) {
+		t.Fatalf("polluted nickname row was not deleted: %v", err)
+	}
+}
+
+func TestVerifyCachedActressesRunsResolverAndRepairsStoredMappings(t *testing.T) {
+	cfg, db, movieRepo, _, _ := newRunBatchTestEnv(t, "sougouwiki")
+	actressRepo := database.NewActressRepository(db)
+	canonical := &models.Actress{JapaneseName: "弥生みづき"}
+	if err := actressRepo.Create(canonical); err != nil {
+		t.Fatal(err)
+	}
+	cached, err := movieRepo.Upsert(&models.Movie{
+		ContentID: "jnt051", ID: "JNT-051", Title: "cached",
+		Actresses: []models.Actress{{DMMID: 777, JapaneseName: "もな"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pollutedID := cached.Actresses[0].ID
+	resolver := &actressFlowResolver{
+		actressFlowScraper: &actressFlowScraper{name: "sougouwiki", enabled: true},
+		resolveResult: &models.ScraperResult{Source: "sougouwiki", Actresses: []models.ActressInfo{{
+			DMMID: 777, JapaneseName: "弥生みづき",
+		}}},
+	}
+	registry := models.NewScraperRegistry()
+	registry.Register(resolver)
+
+	verified, err := verifyCachedActresses(
+		context.Background(), &BatchJob{ID: "cached-verify"}, 0, cached,
+		movieRepo, actressRepo, registry, cfg,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolver.resolveCalls != 1 || resolver.resolveID != "JNT-051" {
+		t.Fatalf("resolver calls=%d id=%q", resolver.resolveCalls, resolver.resolveID)
+	}
+	if verified == nil || len(verified.Actresses) != 1 || verified.Actresses[0].ID != canonical.ID {
+		t.Fatalf("verified cached movie = %+v, want canonical actress #%d", verified, canonical.ID)
+	}
+	if _, err := actressRepo.FindByID(pollutedID); !database.IsNotFound(err) {
+		t.Fatalf("polluted cached actress row was not deleted: %v", err)
 	}
 }
 

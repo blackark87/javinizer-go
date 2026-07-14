@@ -146,10 +146,10 @@ func queryScrapers(
 		}
 	}
 
-	if !needsActressResolution(results) {
-		return results, scraperFailures, "", nil, nil
-	}
-
+	// A positive actress ID from a regular metadata source is not sufficient
+	// identity proof: the source can attach that ID to a nickname or descriptive
+	// cast label. Always run configured actress resolvers as the canonical cast
+	// authority, independently of regular scraper early-stop behavior.
 	thumbnailResolver := findActressThumbnailResolver(registry)
 	for _, scraper := range actressResolvers {
 		if err := ctx.Err(); err != nil {
@@ -157,20 +157,20 @@ func queryScrapers(
 		}
 
 		resolver := scraper.(models.ActressResolver)
-		logging.Debugf("[Batch %s] File %d: Querying actress resolver %s for %s",
-			job.ID, fileIndex, scraper.Name(), query.movieID)
 		resolverResult, err := safeResolveActresses(ctx, resolver, query.movieID)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, nil, "", newCancelledFileResult(filePath, query.movieID, startTime), ctx.Err()
 			}
-			logging.Debugf("[Batch %s] File %d: Optional actress resolver %s failed: %v",
-				job.ID, fileIndex, scraper.Name(), err)
+			logging.Warnf("[Batch %s] File %d: Actress verification failed (movie=%s resolver=%s): %v; regular scraper cast was preserved",
+				job.ID, fileIndex, query.movieID, scraper.Name(), err)
 			scraperFailures = append(scraperFailures, scraperFailure{Scraper: scraper.Name(), Err: err})
 			continue
 		}
 		if !hasVerifiedActresses(resolverResult) {
 			err := fmt.Errorf("actress resolver returned no verified DMM actresses")
+			logging.Warnf("[Batch %s] File %d: Actress verification rejected (movie=%s resolver=%s): %v; regular scraper cast was preserved",
+				job.ID, fileIndex, query.movieID, scraper.Name(), err)
 			scraperFailures = append(scraperFailures, scraperFailure{Scraper: scraper.Name(), Err: err})
 			continue
 		}
@@ -190,8 +190,6 @@ func queryScrapers(
 		}
 
 		results = append(results, resolverResult)
-		logging.Debugf("[Batch %s] File %d: Actress resolver %s verified %d actresses",
-			job.ID, fileIndex, scraper.Name(), len(resolverResult.Actresses))
 		return results, scraperFailures, scraper.Name(), nil, nil
 	}
 
@@ -211,20 +209,6 @@ func partitionActressResolvers(scrapers []models.Scraper) ([]models.Scraper, []m
 	return regular, resolvers
 }
 
-func needsActressResolution(results []*models.ScraperResult) bool {
-	for _, result := range results {
-		if result == nil {
-			continue
-		}
-		for _, actress := range result.Actresses {
-			if actress.DMMID > 0 {
-				return false
-			}
-		}
-	}
-	return true
-}
-
 func hasVerifiedActresses(result *models.ScraperResult) bool {
 	if result == nil || len(result.Actresses) == 0 {
 		return false
@@ -233,7 +217,9 @@ func hasVerifiedActresses(result *models.ScraperResult) bool {
 		hasName := strings.TrimSpace(actress.JapaneseName) != "" ||
 			strings.TrimSpace(actress.FirstName) != "" ||
 			strings.TrimSpace(actress.LastName) != ""
-		if actress.DMMID <= 0 || !hasName {
+		if actress.DMMID <= 0 || !hasName ||
+			models.IsUnknownActressFields(actress.LastName, actress.FirstName, actress.JapaneseName) ||
+			models.IsDescriptiveNonName(actress.LastName, actress.FirstName, actress.JapaneseName) {
 			return false
 		}
 	}

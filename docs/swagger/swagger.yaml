@@ -3009,8 +3009,8 @@ paths:
       - actress
   /api/v1/actresses/{id}/sync:
     post:
-      description: Safely fill only a missing DMM ID and/or profile thumbnail for
-        one actress
+      description: Fill missing metadata and reconcile a resolver-confirmed canonical
+        actress without leaving duplicate rows
       parameters:
       - description: Actress ID
         in: path
@@ -3040,7 +3040,7 @@ paths:
           description: Gateway Timeout
           schema:
             $ref: '#/definitions/internal_api_actress.ErrorResponse'
-      summary: Sync missing actress metadata
+      summary: Sync and verify actress metadata
       tags:
       - actress
   /api/v1/actresses/bulk-delete:

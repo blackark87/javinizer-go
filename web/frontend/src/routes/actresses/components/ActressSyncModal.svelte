@@ -110,16 +110,16 @@
 
 				{#if summary.details.length > 0}
 					<div class="space-y-2">
-						<h3 class="text-sm font-medium">Item details</h3>
+						<h3 class="text-sm font-medium">Warnings, failures, and skipped items</h3>
 						<div class="max-h-96 space-y-2 overflow-y-auto rounded-lg border p-2">
 							{#each summary.details as detail (detail.id)}
 								<div class="flex items-start gap-2 rounded-md border bg-background px-3 py-2.5 text-sm">
-									{#if detail.status === 'completed'}
-										<CircleCheck class="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-									{:else if detail.status === 'conflict'}
-										<CircleAlert class="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-									{:else if detail.status === 'failed'}
+									{#if detail.status === 'failed'}
 										<OctagonX class="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+									{:else if detail.status === 'conflict' || detail.warning}
+										<CircleAlert class="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+									{:else if detail.status === 'completed'}
+										<CircleCheck class="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
 									{:else if detail.status === 'running'}
 										<Loader2 class="mt-0.5 h-4 w-4 shrink-0 animate-spin text-primary" />
 									{:else if detail.status === 'pending'}

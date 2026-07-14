@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/javinizer/javinizer-go/internal/config"
@@ -25,6 +26,7 @@ func handleCacheHit(
 	matchResultPtr *matcher.MatchResult,
 	movieRepo *database.MovieRepository,
 	actressRepo *database.ActressRepository,
+	registry *models.ScraperRegistry,
 	httpClient httpclientiface.HTTPClient,
 	userAgent string,
 	referer string,
@@ -46,6 +48,11 @@ func handleCacheHit(
 
 	logging.Debugf("[Batch %s] File %d: Found %s in cache (Title=%s, Maker=%s)",
 		job.ID, fileIndex, movieID, cached.Title, cached.Maker)
+	if verified, verifyErr := verifyCachedActresses(ctx, job, fileIndex, cached, movieRepo, actressRepo, registry, cfg); verifyErr != nil {
+		return nil, nil, verifyErr
+	} else if verified != nil {
+		cached = verified
+	}
 
 	var posterErr *string
 	if httpClient != nil {
@@ -94,6 +101,88 @@ func handleCacheHit(
 	}
 
 	return movieToReturn, fileResult, nil
+}
+
+func verifyCachedActresses(
+	ctx context.Context,
+	job *BatchJob,
+	fileIndex int,
+	cached *models.Movie,
+	movieRepo *database.MovieRepository,
+	actressRepo *database.ActressRepository,
+	registry *models.ScraperRegistry,
+	cfg *config.Config,
+) (*models.Movie, error) {
+	if cached == nil || registry == nil {
+		return nil, nil
+	}
+	priority := []string(nil)
+	if cfg != nil {
+		priority = cfg.Scrapers.Priority
+	}
+	_, resolvers := partitionActressResolvers(registry.GetByPriority(priority))
+	if len(resolvers) == 0 {
+		return nil, nil
+	}
+	queryID := cached.ID
+	if queryID == "" {
+		queryID = cached.ContentID
+	}
+	for _, scraper := range resolvers {
+		resolver := scraper.(models.ActressResolver)
+		resolved, err := safeResolveActresses(ctx, resolver, queryID)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			logging.Warnf(
+				"[Batch %s] File %d: Cached actress verification failed (movie=%s resolver=%s existing_cast=%s): %v; cached mappings were preserved",
+				job.ID, fileIndex, queryID, scraper.Name(), cachedActressSummary(cached.Actresses), err,
+			)
+			continue
+		}
+		if !hasVerifiedActresses(resolved) {
+			logging.Warnf(
+				"[Batch %s] File %d: Cached actress verification returned no canonical cast (movie=%s resolver=%s existing_cast=%s); cached mappings were preserved",
+				job.ID, fileIndex, queryID, scraper.Name(), cachedActressSummary(cached.Actresses),
+			)
+			continue
+		}
+
+		thumbnailResolver := findActressThumbnailResolver(registry)
+		verifiedMovie := *cached
+		verifiedMovie.Actresses = make([]models.Actress, 0, len(resolved.Actresses))
+		for _, info := range resolved.Actresses {
+			if info.ThumbURL == "" && thumbnailResolver != nil {
+				info.ThumbURL = safeResolveActressThumbnail(ctx, thumbnailResolver, info)
+			}
+			verifiedMovie.Actresses = append(verifiedMovie.Actresses, actressModelFromInfo(info))
+		}
+		identityRepo := actressRepo
+		if identityRepo == nil {
+			identityRepo = database.NewActressRepository(movieRepo.GetDB())
+		}
+		if err := reconcileVerifiedMovieActresses(&verifiedMovie, identityRepo); err != nil {
+			return nil, fmt.Errorf("cached actress verification failed for %s via %s: %w", queryID, scraper.Name(), err)
+		}
+		saved, err := movieRepo.Upsert(&verifiedMovie)
+		if err != nil {
+			return nil, fmt.Errorf("save verified cached actresses for %s: %w", queryID, err)
+		}
+		return saved, nil
+	}
+	return nil, nil
+}
+
+func cachedActressSummary(actresses []models.Actress) string {
+	if len(actresses) == 0 {
+		return "[]"
+	}
+	values := make([]string, 0, len(actresses))
+	for _, actress := range actresses {
+		values = append(values, fmt.Sprintf("#%d:%s(dmm=%d)", actress.ID, actress.FullName(), actress.DMMID))
+	}
+	return "[" + strings.Join(values, ", ") + "]"
 }
 
 func generateCachedPoster(

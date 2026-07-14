@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -145,11 +146,12 @@ func TestSyncActressMetadataUsesDirectIdentityLookupAndUpdatesMissingFields(t *t
 	result, err := SyncActressMetadata(context.Background(), actress.ID, actressRepo, registry, []string{"sougouwiki"})
 	require.NoError(t, err)
 	assert.Equal(t, ActressSyncUpdated, result.Status)
-	assert.ElementsMatch(t, []string{"dmm_id", "thumb_url"}, result.UpdatedFields)
+	assert.ElementsMatch(t, []string{"dmm_id", "aliases", "thumb_url"}, result.UpdatedFields)
 	assert.Equal(t, "sougouwiki", result.Source)
 	assert.Equal(t, "波多野結衣", result.SourceQuery)
 	assert.Equal(t, 123, result.Actress.DMMID)
 	assert.Equal(t, "https://example.com/123.jpg", result.Actress.ThumbURL)
+	assert.Empty(t, result.Messages, "successful sync should not emit verbose detail messages")
 	require.Len(t, resolver.identityQueries, 1)
 	assert.Equal(t, []string{"波多野結衣", "別名", "Yui Hatano", "Hatano Yui"}, resolver.identityQueries[0].Names)
 	require.Len(t, thumbnail.thumbnailInfos, 1)
@@ -193,13 +195,13 @@ func TestSyncActressMetadataRejectsAmbiguousExactIdentityMatches(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, ActressSyncSkipped, result.Status)
 	assert.Equal(t, 0, result.Actress.DMMID)
-	assert.Contains(t, result.Messages[1], "rejected 2 result")
+	assert.Contains(t, strings.Join(result.Messages, "\n"), "rejected 2 result")
 }
 
 func TestSyncActressMetadataReportsDMMIDConflictAndCanStillUpdateThumbnail(t *testing.T) {
 	actressRepo := newActressSyncTestRepo(t)
 	target := &models.Actress{JapaneseName: "Target"}
-	owner := &models.Actress{DMMID: 777, JapaneseName: "Owner", ThumbURL: "owner.jpg"}
+	owner := &models.Actress{DMMID: 111, JapaneseName: "Target", ThumbURL: "owner.jpg"}
 	require.NoError(t, actressRepo.Create(target))
 	require.NoError(t, actressRepo.Create(owner))
 
@@ -219,6 +221,85 @@ func TestSyncActressMetadataReportsDMMIDConflictAndCanStillUpdateThumbnail(t *te
 	assert.Equal(t, 0, result.Actress.DMMID)
 	assert.Equal(t, "target.jpg", result.Actress.ThumbURL)
 	assert.Equal(t, []string{"thumb_url"}, result.UpdatedFields)
+}
+
+func TestSyncActressMetadataFallbackMergesNicknameIntoExistingCanonicalActress(t *testing.T) {
+	actressRepo := newActressSyncTestRepo(t)
+	movieRepo := database.NewMovieRepository(actressRepo.GetDB())
+	nickname := &models.Actress{JapaneseName: "もな", ThumbURL: "nickname.jpg"}
+	canonical := &models.Actress{JapaneseName: "弥生みづき"}
+	require.NoError(t, actressRepo.Create(nickname))
+	require.NoError(t, actressRepo.Create(canonical))
+	require.NoError(t, movieRepo.Create(&models.Movie{
+		ContentID: "jnt051", ID: "JNT-051", Actresses: []models.Actress{*nickname},
+	}))
+
+	resolver := &actressSyncTestScraper{
+		name: "sougouwiki", enabled: true,
+		identityErr: models.NewScraperNotFoundError("sougouwiki", "no direct nickname match"),
+		resolveFn: func(_ context.Context, id string) (*models.ScraperResult, error) {
+			require.Equal(t, "JNT-051", id)
+			return &models.ScraperResult{ID: id, Actresses: []models.ActressInfo{{
+				DMMID: 777, JapaneseName: "弥生みづき", ThumbURL: "canonical.jpg",
+			}}}, nil
+		},
+	}
+	registry := models.NewScraperRegistry()
+	registry.Register(resolver)
+
+	result, err := SyncActressMetadata(
+		context.Background(), nickname.ID, actressRepo, registry, []string{"sougouwiki"}, movieRepo,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, ActressSyncUpdated, result.Status)
+	assert.Equal(t, canonical.ID, result.Actress.ID)
+	assert.Equal(t, 777, result.Actress.DMMID)
+	assert.Equal(t, "弥生みづき", result.Actress.JapaneseName)
+	assert.Contains(t, strings.Split(result.Actress.Aliases, "|"), "もな")
+	assert.Contains(t, result.UpdatedFields, "movie_actresses")
+	assert.Empty(t, result.Messages, "successful fallback resolution should not retain lookup progress")
+
+	_, err = actressRepo.FindByID(nickname.ID)
+	assert.True(t, database.IsNotFound(err))
+	movie, err := movieRepo.FindByContentID("jnt051")
+	require.NoError(t, err)
+	require.Len(t, movie.Actresses, 1)
+	assert.Equal(t, canonical.ID, movie.Actresses[0].ID)
+}
+
+func TestSyncSelectedRepairsCompletePollutedActressByExistingDMMID(t *testing.T) {
+	actressRepo := newActressSyncTestRepo(t)
+	movieRepo := database.NewMovieRepository(actressRepo.GetDB())
+	polluted := &models.Actress{DMMID: 777, JapaneseName: "もな", ThumbURL: "nickname.jpg"}
+	canonical := &models.Actress{JapaneseName: "弥生みづき"}
+	require.NoError(t, actressRepo.Create(polluted))
+	require.NoError(t, actressRepo.Create(canonical))
+	require.NoError(t, movieRepo.Create(&models.Movie{
+		ContentID: "jnt051", ID: "JNT-051", Actresses: []models.Actress{*polluted},
+	}))
+	resolver := &actressSyncTestScraper{
+		name: "sougouwiki", enabled: true,
+		resolveFn: func(_ context.Context, id string) (*models.ScraperResult, error) {
+			return &models.ScraperResult{ID: id, Actresses: []models.ActressInfo{{
+				DMMID: 777, JapaneseName: "弥生みづき", ThumbURL: "canonical.jpg",
+			}}}, nil
+		},
+	}
+	registry := models.NewScraperRegistry()
+	registry.Register(resolver)
+
+	result, err := SyncActressMetadata(
+		context.Background(), polluted.ID, actressRepo, registry, []string{"sougouwiki"}, movieRepo,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, ActressSyncUpdated, result.Status)
+	assert.Equal(t, canonical.ID, result.Actress.ID)
+	assert.Equal(t, "弥生みづき", result.Actress.JapaneseName)
+	assert.Contains(t, strings.Split(result.Actress.Aliases, "|"), "もな")
+	assert.Contains(t, result.UpdatedFields, "movie_actresses")
+	assert.Empty(t, result.Messages, "successful selected sync should not emit detail logs")
+	_, err = actressRepo.FindByID(polluted.ID)
+	assert.True(t, database.IsNotFound(err))
 }
 
 func TestSyncActressMetadataThumbnailOnlyDoesNotLookupIdentityOrOverwriteNames(t *testing.T) {
@@ -254,7 +335,7 @@ func TestSyncActressMetadataReportsUnavailableAndFailedIdentityResolvers(t *test
 	result, err = SyncActressMetadata(context.Background(), actress.ID, actressRepo, registry, []string{"sougouwiki"})
 	require.NoError(t, err)
 	assert.Equal(t, ActressSyncFailed, result.Status)
-	assert.Contains(t, result.Messages[1], "resolver failed")
+	assert.Contains(t, strings.Join(result.Messages, "\n"), "resolver failed")
 }
 
 func TestSyncActressMetadataPropagatesTimeoutAndPersistsPartialUpdate(t *testing.T) {

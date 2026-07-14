@@ -45,8 +45,8 @@ func listActressSyncCandidates(actressRepo *database.ActressRepository) gin.Hand
 }
 
 // syncActress godoc
-// @Summary Sync missing actress metadata
-// @Description Safely fill only a missing DMM ID and/or profile thumbnail for one actress
+// @Summary Sync and verify actress metadata
+// @Description Fill missing metadata and reconcile a resolver-confirmed canonical actress without leaving duplicate rows
 // @Tags actress
 // @Produce json
 // @Param id path uint true "Actress ID"

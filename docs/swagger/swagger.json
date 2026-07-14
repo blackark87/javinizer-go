@@ -797,14 +797,14 @@
         },
         "/api/v1/actresses/{id}/sync": {
             "post": {
-                "description": "Safely fill only a missing DMM ID and/or profile thumbnail for one actress",
+                "description": "Fill missing metadata and reconcile a resolver-confirmed canonical actress without leaving duplicate rows",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "actress"
                 ],
-                "summary": "Sync missing actress metadata",
+                "summary": "Sync and verify actress metadata",
                 "parameters": [
                     {
                         "type": "integer",

@@ -191,7 +191,7 @@ func TestStartServer_ListenFails(t *testing.T) {
 		return &config.Config{}, nil
 	}
 
-	_, err := StartServer(context.Background(), "unused.yaml")
+	_, err := StartServer(context.Background(), filepath.Join(t.TempDir(), "unused.yaml"))
 	if err == nil {
 		t.Fatal("StartServer() with failing listener should error, got nil")
 	}
@@ -217,7 +217,7 @@ func TestStartServer_PrepareFails(t *testing.T) {
 		return &config.Config{ConfigVersion: config.CurrentConfigVersion + 1}, nil
 	}
 
-	_, err = StartServer(context.Background(), "unused.yaml")
+	_, err = StartServer(context.Background(), filepath.Join(t.TempDir(), "unused.yaml"))
 	if err == nil {
 		t.Fatal("StartServer() with invalid config should error, got nil")
 	}

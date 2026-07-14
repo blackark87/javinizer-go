@@ -186,20 +186,13 @@ func (m *ActressSyncManager) CreateJob(ctx context.Context, req ActressSyncCreat
 		if err != nil {
 			return nil, err
 		}
-		isUnknown := models.IsUnknownActressFields(actress.LastName, actress.FirstName, actress.JapaneseName)
-		var movies []models.Movie
-		if isUnknown || actress.DMMID <= 0 {
-			movies, err = m.deps.MovieRepo.ListByActressID(id, 0, 0)
+		if actress.DMMID <= 0 {
+			movies, err := m.deps.MovieRepo.ListByActressID(id, 0, 0)
 			if err != nil {
 				return nil, err
 			}
-		}
-		// A name on a row without a verified DMM ID is not sufficient to identify
-		// one performer. Repair every linked movie from its verified SougouWiki
-		// cast instead of retaining a nickname or rejecting a multi-actress cast.
-		if isUnknown || (actress.DMMID <= 0 && len(movies) > 0) {
 			if len(movies) == 0 {
-				tasks = append(tasks, m.skippedTask(job.ID, fmt.Sprintf("actress:%d:no-movies", id), id, "", "", "Placeholder actress has no linked movies"))
+				tasks = append(tasks, m.skippedTask(job.ID, fmt.Sprintf("actress:%d:no-movies", id), id, "", "", "Actress has no DMM ID and no linked movies for SougouWiki lookup"))
 				continue
 			}
 			for _, movie := range movies {

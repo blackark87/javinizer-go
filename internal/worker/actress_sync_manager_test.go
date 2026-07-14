@@ -92,7 +92,7 @@ func TestActressSyncManagerUsesFiveGeneralWorkers(t *testing.T) {
 
 	ids := make([]uint, 0, 5)
 	for index := 0; index < 5; index++ {
-		actress := &models.Actress{JapaneseName: fmt.Sprintf("女優%d", index), ThumbURL: "existing.jpg"}
+		actress := &models.Actress{DMMID: 2000 + index, JapaneseName: fmt.Sprintf("女優%d", index)}
 		require.NoError(t, actressRepo.Create(actress))
 		ids = append(ids, actress.ID)
 	}
@@ -114,7 +114,6 @@ func TestActressSyncManagerUsesFiveGeneralWorkers(t *testing.T) {
 func TestActressSyncManagerCancelStopsPendingAfterRunningItems(t *testing.T) {
 	entered := make(chan struct{}, 4)
 	release := make(chan struct{})
-	var sequence atomic.Int32
 	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true}
 	resolver.identityFn = func(ctx context.Context, query models.ActressIdentityQuery) (*models.ScraperResult, error) {
 		entered <- struct{}{}
@@ -124,7 +123,11 @@ func TestActressSyncManagerCancelStopsPendingAfterRunningItems(t *testing.T) {
 		case <-release:
 		}
 		name := query.Names[0]
-		return &models.ScraperResult{ID: name, Actresses: []models.ActressInfo{{DMMID: 2000 + int(sequence.Add(1)), JapaneseName: name}}}, nil
+		var index int
+		_, _ = fmt.Sscanf(name, "取消女優%d", &index)
+		return &models.ScraperResult{ID: name, Actresses: []models.ActressInfo{{
+			DMMID: 3000 + index, JapaneseName: name, ThumbURL: "resolved.jpg",
+		}}}, nil
 	}
 	registry := models.NewScraperRegistry()
 	registry.Register(resolver)
@@ -134,7 +137,7 @@ func TestActressSyncManagerCancelStopsPendingAfterRunningItems(t *testing.T) {
 
 	ids := make([]uint, 0, 4)
 	for index := 0; index < 4; index++ {
-		actress := &models.Actress{JapaneseName: fmt.Sprintf("取消女優%d", index), ThumbURL: "existing.jpg"}
+		actress := &models.Actress{DMMID: 3000 + index, JapaneseName: fmt.Sprintf("取消女優%d", index)}
 		require.NoError(t, actressRepo.Create(actress))
 		ids = append(ids, actress.ID)
 	}
@@ -247,6 +250,26 @@ func TestActressSyncManagerRepairsMissingDMMIDFromLinkedMovieCast(t *testing.T) 
 	assert.True(t, database.IsNotFound(err), "the stale missing-DMMID row must be deleted after its final movie mapping is replaced")
 	assert.Empty(t, resolver.identityQueries, "missing-DMMID actresses with linked movies must use movie cast resolution, not name identity lookup")
 	assert.Contains(t, resolver.resolveQueries, "MIUM-123")
+}
+
+func TestActressSyncManagerDoesNotFallBackToNameResolverWithoutLinkedMovie(t *testing.T) {
+	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true, identityResult: &models.ScraperResult{
+		Actresses: []models.ActressInfo{{DMMID: 999, JapaneseName: "직접 조회 결과"}},
+	}}
+	registry := models.NewScraperRegistry()
+	registry.Register(resolver)
+	manager, _, actressRepo, _ := newActressSyncManagerTest(t, &config.Config{}, registry)
+
+	missingDMMID := &models.Actress{JapaneseName: "연결 작품 없는 배우"}
+	require.NoError(t, actressRepo.Create(missingDMMID))
+	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{
+		Scope: "selected", ActressIDs: []uint{missingDMMID.ID},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, models.ActressSyncJobCompleted, job.Status)
+	assert.Equal(t, 1, job.Skipped)
+	assert.Empty(t, resolver.identityQueries, "DMM ID가 없으면 이름 resolver로 우회하면 안 된다")
+	assert.Empty(t, resolver.resolveQueries, "연결 작품 ID가 없으면 SougouWiki 작품 조회를 만들 수 없다")
 }
 
 func TestActressSyncManagerReusesMatchingDMMOwnerAndBackfillsIt(t *testing.T) {

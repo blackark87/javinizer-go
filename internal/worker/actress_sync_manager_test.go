@@ -208,10 +208,54 @@ func TestActressSyncManagerUnknownMoviesAreIsolatedAndReuseExistingActress(t *te
 	assert.Contains(t, resolver.resolveQueries, "FAIL-002")
 }
 
+func TestActressSyncManagerRepairsMissingDMMIDFromLinkedMovieCast(t *testing.T) {
+	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true}
+	resolver.resolveFn = func(_ context.Context, id string) (*models.ScraperResult, error) {
+		require.Equal(t, "MIUM-123", id)
+		return &models.ScraperResult{ID: id, Actresses: []models.ActressInfo{
+			{DMMID: 701, JapaneseName: "確認女優一"},
+			{DMMID: 702, JapaneseName: "確認女優二"},
+		}}, nil
+	}
+	registry := models.NewScraperRegistry()
+	registry.Register(resolver)
+	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, &config.Config{}, registry)
+
+	missingDMMID := &models.Actress{JapaneseName: "잘못 남아 있던 가명"}
+	require.NoError(t, actressRepo.Create(missingDMMID))
+	require.NoError(t, movieRepo.Create(&models.Movie{
+		ContentID: "mium00123", ID: "MIUM-123", Actresses: []models.Actress{*missingDMMID},
+	}))
+
+	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{
+		Scope: "selected", ActressIDs: []uint{missingDMMID.ID},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, job.TotalTasks)
+	tasks, err := manager.ListTasks(job.ID)
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	assert.Equal(t, models.ActressSyncTaskKindUnknownMovie, tasks[0].Kind)
+
+	completed := waitForActressSyncJob(t, manager, job.ID)
+	assert.Equal(t, 1, completed.Updated)
+	updatedMovie, err := movieRepo.FindByContentID("mium00123")
+	require.NoError(t, err)
+	require.Len(t, updatedMovie.Actresses, 2)
+	assert.ElementsMatch(t, []int{701, 702}, []int{updatedMovie.Actresses[0].DMMID, updatedMovie.Actresses[1].DMMID})
+	_, err = actressRepo.FindByID(missingDMMID.ID)
+	assert.True(t, database.IsNotFound(err), "the stale missing-DMMID row must be deleted after its final movie mapping is replaced")
+	assert.Empty(t, resolver.identityQueries, "missing-DMMID actresses with linked movies must use movie cast resolution, not name identity lookup")
+	assert.Contains(t, resolver.resolveQueries, "MIUM-123")
+}
+
 func TestActressSyncManagerReusesMatchingDMMOwnerAndBackfillsIt(t *testing.T) {
-	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true, identityResult: &models.ScraperResult{
-		ID: "同一女優", Actresses: []models.ActressInfo{{DMMID: 501, JapaneseName: "同一女優", ThumbURL: "https://example.com/501.jpg"}},
-	}}
+	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true}
+	resolver.resolveFn = func(_ context.Context, id string) (*models.ScraperResult, error) {
+		return &models.ScraperResult{
+			ID: id, Actresses: []models.ActressInfo{{DMMID: 501, JapaneseName: "同一女優", ThumbURL: "https://example.com/501.jpg"}},
+		}, nil
+	}
 	registry := models.NewScraperRegistry()
 	registry.Register(resolver)
 	cfg := &config.Config{}

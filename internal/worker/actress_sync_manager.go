@@ -186,13 +186,20 @@ func (m *ActressSyncManager) CreateJob(ctx context.Context, req ActressSyncCreat
 		if err != nil {
 			return nil, err
 		}
-		if models.IsUnknownActressFields(actress.LastName, actress.FirstName, actress.JapaneseName) {
-			movies, err := m.deps.MovieRepo.ListByActressID(id, 0, 0)
+		isUnknown := models.IsUnknownActressFields(actress.LastName, actress.FirstName, actress.JapaneseName)
+		var movies []models.Movie
+		if isUnknown || actress.DMMID <= 0 {
+			movies, err = m.deps.MovieRepo.ListByActressID(id, 0, 0)
 			if err != nil {
 				return nil, err
 			}
+		}
+		// A name on a row without a verified DMM ID is not sufficient to identify
+		// one performer. Repair every linked movie from its verified SougouWiki
+		// cast instead of retaining a nickname or rejecting a multi-actress cast.
+		if isUnknown || (actress.DMMID <= 0 && len(movies) > 0) {
 			if len(movies) == 0 {
-				tasks = append(tasks, m.skippedTask(job.ID, fmt.Sprintf("actress:%d:no-movies", id), id, "", "", "Unknown actress has no linked movies"))
+				tasks = append(tasks, m.skippedTask(job.ID, fmt.Sprintf("actress:%d:no-movies", id), id, "", "", "Placeholder actress has no linked movies"))
 				continue
 			}
 			for _, movie := range movies {
@@ -201,7 +208,7 @@ func (m *ActressSyncManager) CreateJob(ctx context.Context, req ActressSyncCreat
 					ID: uuid.NewString(), JobID: job.ID, Kind: models.ActressSyncTaskKindUnknownMovie,
 					ActressID: &actressID, MovieContentID: movie.ContentID, MovieID: movie.ID,
 					Label:     fmt.Sprintf("%s / %s", actressSyncActressLabel(*actress), movie.ID),
-					DedupeKey: "movie:" + movie.ContentID, Status: models.ActressSyncTaskPending,
+					DedupeKey: fmt.Sprintf("movie:%s:placeholder:%d", movie.ContentID, id), Status: models.ActressSyncTaskPending,
 					Stage: "queued", Messages: []string{}, UpdatedFields: []string{}, CreatedAt: now,
 				}
 				tasks = append(tasks, m.deduplicateTask(task))
@@ -417,7 +424,7 @@ func (m *ActressSyncManager) processActress(ctx context.Context, task *models.Ac
 
 func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *models.ActressSyncTask) error {
 	if task.ActressID == nil || task.MovieContentID == "" {
-		return fmt.Errorf("Unknown movie task is incomplete")
+		return fmt.Errorf("placeholder movie task is incomplete")
 	}
 	movie, err := m.deps.MovieRepo.FindByContentID(task.MovieContentID)
 	if err != nil {
@@ -450,7 +457,7 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 	verified := verifiedActresses(resolved)
 	if len(verified) == 0 {
 		task.Status, task.Outcome = models.ActressSyncTaskSkipped, "skipped"
-		task.Messages = append(task.Messages, "SougouWiki returned no verified actresses; the Unknown mapping was preserved")
+		task.Messages = append(task.Messages, "SougouWiki returned no verified actresses; the placeholder mapping was preserved")
 		return nil
 	}
 
@@ -464,7 +471,7 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 		if resolveErr != nil {
 			if conflict, ok := database.AsActressDMMIDConflict(resolveErr); ok {
 				task.Status, task.Outcome = models.ActressSyncTaskConflict, "conflict"
-				task.Messages = append(task.Messages, conflict.Error()+"; the Unknown mapping was preserved")
+				task.Messages = append(task.Messages, conflict.Error()+"; the placeholder mapping was preserved")
 				return nil
 			}
 			return resolveErr
@@ -514,9 +521,7 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 	}
 	m.refreshAffectedMovies(task, []models.Movie{*updatedMovie})
 	if count, countErr := m.deps.MovieRepo.CountByActressID(*task.ActressID); countErr == nil && count == 0 {
-		if unknown, findErr := m.deps.ActressRepo.FindByID(*task.ActressID); findErr == nil && models.IsUnknownActressFields(unknown.LastName, unknown.FirstName, unknown.JapaneseName) {
-			_ = m.deps.ActressRepo.Delete(unknown.ID)
-		}
+		_ = m.deps.ActressRepo.Delete(*task.ActressID)
 	}
 	if task.Warning != "" {
 		task.Status, task.Outcome = models.ActressSyncTaskCompleted, "updated_with_warning"

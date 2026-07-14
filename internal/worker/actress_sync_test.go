@@ -16,41 +16,18 @@ import (
 )
 
 type actressSyncTestScraper struct {
-	name          string
-	enabled       bool
-	resolveResult *models.ScraperResult
-	resolveErr    error
-	resolveFn     func(context.Context, string) (*models.ScraperResult, error)
-	thumbnailURL  string
-	thumbnailFn   func(context.Context, models.ActressInfo) string
+	name           string
+	enabled        bool
+	identityResult *models.ScraperResult
+	identityErr    error
+	identityFn     func(context.Context, models.ActressIdentityQuery) (*models.ScraperResult, error)
+	thumbnailURL   string
+	thumbnailFn    func(context.Context, models.ActressInfo) string
 
-	mu               sync.Mutex
-	resolvedMovieIDs []string
-	thumbnailInfos   []models.ActressInfo
+	mu              sync.Mutex
+	identityQueries []models.ActressIdentityQuery
+	thumbnailInfos  []models.ActressInfo
 }
-
-type actressSyncRegularScraper struct {
-	name     string
-	enabled  bool
-	result   *models.ScraperResult
-	err      error
-	searched []string
-	searchMu sync.Mutex
-}
-
-func (s *actressSyncRegularScraper) Name() string { return s.name }
-func (s *actressSyncRegularScraper) Search(_ context.Context, id string) (*models.ScraperResult, error) {
-	s.searchMu.Lock()
-	s.searched = append(s.searched, id)
-	s.searchMu.Unlock()
-	return s.result, s.err
-}
-func (s *actressSyncRegularScraper) GetURL(string) (string, error) { return "", nil }
-func (s *actressSyncRegularScraper) IsEnabled() bool               { return s.enabled }
-func (s *actressSyncRegularScraper) Config() *config.ScraperSettings {
-	return &config.ScraperSettings{Enabled: s.enabled}
-}
-func (s *actressSyncRegularScraper) Close() error { return nil }
 
 func (s *actressSyncTestScraper) Name() string { return s.name }
 func (s *actressSyncTestScraper) Search(context.Context, string) (*models.ScraperResult, error) {
@@ -62,14 +39,14 @@ func (s *actressSyncTestScraper) Config() *config.ScraperSettings {
 	return &config.ScraperSettings{Enabled: s.enabled}
 }
 func (s *actressSyncTestScraper) Close() error { return nil }
-func (s *actressSyncTestScraper) ResolveActresses(ctx context.Context, id string) (*models.ScraperResult, error) {
+func (s *actressSyncTestScraper) ResolveActressIdentity(ctx context.Context, query models.ActressIdentityQuery) (*models.ScraperResult, error) {
 	s.mu.Lock()
-	s.resolvedMovieIDs = append(s.resolvedMovieIDs, id)
+	s.identityQueries = append(s.identityQueries, query)
 	s.mu.Unlock()
-	if s.resolveFn != nil {
-		return s.resolveFn(ctx, id)
+	if s.identityFn != nil {
+		return s.identityFn(ctx, query)
 	}
-	return s.resolveResult, s.resolveErr
+	return s.identityResult, s.identityErr
 }
 func (s *actressSyncTestScraper) ResolveActressThumbnail(ctx context.Context, actress models.ActressInfo) string {
 	s.mu.Lock()
@@ -81,7 +58,7 @@ func (s *actressSyncTestScraper) ResolveActressThumbnail(ctx context.Context, ac
 	return s.thumbnailURL
 }
 
-func newActressSyncTestRepos(t *testing.T) (*database.ActressRepository, *database.MovieRepository) {
+func newActressSyncTestRepo(t *testing.T) *database.ActressRepository {
 	t.Helper()
 	cfg := &config.Config{
 		Database: config.DatabaseConfig{Type: "sqlite", DSN: filepath.Join(t.TempDir(), "actress-sync.db")},
@@ -91,18 +68,7 @@ func newActressSyncTestRepos(t *testing.T) (*database.ActressRepository, *databa
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	require.NoError(t, db.AutoMigrate())
-	return database.NewActressRepository(db), database.NewMovieRepository(db)
-}
-
-func createActressSyncMovie(t *testing.T, repo *database.MovieRepository, actress models.Actress, id string, release time.Time, others ...models.Actress) {
-	t.Helper()
-	actresses := append([]models.Actress{actress}, others...)
-	require.NoError(t, repo.Create(&models.Movie{
-		ContentID:   id,
-		ID:          id,
-		ReleaseDate: &release,
-		Actresses:   actresses,
-	}))
+	return database.NewActressRepository(db)
 }
 
 func TestExactActressMatchUsesJapaneseAliasesAndBothEnglishOrders(t *testing.T) {
@@ -127,93 +93,101 @@ func TestExactActressMatchUsesJapaneseAliasesAndBothEnglishOrders(t *testing.T) 
 	assert.False(t, ok, "multiple exact candidates must be rejected")
 }
 
-func TestSafeSingleActressMatchRejectsAmbiguity(t *testing.T) {
-	target := models.Actress{ID: 1, JapaneseName: "Unknown"}
-	known := models.Actress{ID: 2, DMMID: 20}
-
-	match, ok := safeSingleActressMatch(target, []models.Actress{target, known}, []models.ActressInfo{
-		{DMMID: 20, JapaneseName: "Known"},
-		{DMMID: 30, JapaneseName: "Resolved"},
-	})
-	require.True(t, ok)
-	assert.Equal(t, 30, match.DMMID)
-
-	_, ok = safeSingleActressMatch(target, []models.Actress{target, known}, []models.ActressInfo{
-		{DMMID: 30}, {DMMID: 40},
-	})
-	assert.False(t, ok)
-
-	otherUnknown := models.Actress{ID: 3}
-	_, ok = safeSingleActressMatch(target, []models.Actress{target, otherUnknown}, []models.ActressInfo{{DMMID: 30}})
-	assert.False(t, ok)
+func TestActressIdentityNamesIncludesNamesAliasesAndEnglishOrders(t *testing.T) {
+	assert.Equal(t, []string{"波多野結衣", "別名", "Yui Hatano", "Hatano Yui"}, actressIdentityNames(models.Actress{
+		JapaneseName: "波多野結衣",
+		Aliases:      "別名|波多野結衣",
+		FirstName:    "Yui",
+		LastName:     "Hatano",
+	}))
+	assert.Equal(t, []string{"hatano yui", "yui hatano"}, actressIdentityNames(models.Actress{
+		ThumbURL: "https://pics.dmm.co.jp/mono/actjpgs/hatano_yui.jpg",
+	}))
 }
 
-func TestSyncActressMetadataUpdatesOnlyMissingFields(t *testing.T) {
-	actressRepo, movieRepo := newActressSyncTestRepos(t)
+func TestSyncActressMetadataUsesDirectIdentityLookupAndUpdatesMissingFields(t *testing.T) {
+	actressRepo := newActressSyncTestRepo(t)
 	actress := &models.Actress{FirstName: "Yui", LastName: "Hatano", JapaneseName: "波多野結衣", Aliases: "別名"}
 	require.NoError(t, actressRepo.Create(actress))
-	createActressSyncMovie(t, movieRepo, *actress, "TEST-001", time.Now())
 
-	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true, resolveResult: &models.ScraperResult{
-		Actresses: []models.ActressInfo{{DMMID: 123, JapaneseName: "波多野結衣"}},
+	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true, identityResult: &models.ScraperResult{
+		ID: "波多野結衣", Actresses: []models.ActressInfo{{DMMID: 123, JapaneseName: "波多野結衣"}},
 	}}
 	thumbnail := &actressSyncTestScraper{name: "dmm", enabled: false, thumbnailURL: "https://example.com/123.jpg"}
 	registry := models.NewScraperRegistry()
 	registry.Register(resolver)
 	registry.Register(thumbnail)
 
-	result, err := SyncActressMetadata(context.Background(), actress.ID, actressRepo, movieRepo, registry, []string{"sougouwiki"})
+	result, err := SyncActressMetadata(context.Background(), actress.ID, actressRepo, registry, []string{"sougouwiki"})
 	require.NoError(t, err)
 	assert.Equal(t, ActressSyncUpdated, result.Status)
 	assert.ElementsMatch(t, []string{"dmm_id", "thumb_url"}, result.UpdatedFields)
-	assert.Equal(t, "TEST-001", result.SourceMovieID)
+	assert.Equal(t, "sougouwiki", result.Source)
+	assert.Equal(t, "波多野結衣", result.SourceQuery)
 	assert.Equal(t, 123, result.Actress.DMMID)
 	assert.Equal(t, "https://example.com/123.jpg", result.Actress.ThumbURL)
-	assert.Equal(t, "Yui", result.Actress.FirstName)
-	assert.Equal(t, "Hatano", result.Actress.LastName)
-	assert.Equal(t, "波多野結衣", result.Actress.JapaneseName)
-	assert.Equal(t, "別名", result.Actress.Aliases)
+	require.Len(t, resolver.identityQueries, 1)
+	assert.Equal(t, []string{"波多野結衣", "別名", "Yui Hatano", "Hatano Yui"}, resolver.identityQueries[0].Names)
 	require.Len(t, thumbnail.thumbnailInfos, 1)
 	assert.Equal(t, 123, thumbnail.thumbnailInfos[0].DMMID)
 }
 
-func TestSyncActressMetadataUsesRegularScraperResultsForMissingDMMID(t *testing.T) {
-	actressRepo, movieRepo := newActressSyncTestRepos(t)
-	actress := &models.Actress{JapaneseName: "波多野結衣", ThumbURL: "existing.jpg"}
+func TestSyncActressMetadataPreservesExistingThumbnailWhileResolvingDMMID(t *testing.T) {
+	actressRepo := newActressSyncTestRepo(t)
+	actress := &models.Actress{JapaneseName: "波多野結衣", ThumbURL: "https://pics.dmm.co.jp/mono/actjpgs/hatano_yui.jpg"}
 	require.NoError(t, actressRepo.Create(actress))
-	createActressSyncMovie(t, movieRepo, *actress, "TEST-REGULAR-001", time.Now())
 
-	dmm := &actressSyncRegularScraper{name: "dmm", enabled: true, result: &models.ScraperResult{
-		Actresses: []models.ActressInfo{{DMMID: 123, JapaneseName: "波多野結衣"}},
+	resolver := &actressSyncTestScraper{name: "dmm", enabled: true, identityResult: &models.ScraperResult{
+		ID: "波多野結衣", Actresses: []models.ActressInfo{{DMMID: 123, JapaneseName: "波多野結衣"}},
 	}}
 	registry := models.NewScraperRegistry()
-	registry.Register(dmm)
+	registry.Register(resolver)
 
-	result, err := SyncActressMetadata(context.Background(), actress.ID, actressRepo, movieRepo, registry, []string{"dmm"})
+	result, err := SyncActressMetadata(context.Background(), actress.ID, actressRepo, registry, []string{"dmm"})
 	require.NoError(t, err)
 	assert.Equal(t, ActressSyncUpdated, result.Status)
 	assert.Equal(t, []string{"dmm_id"}, result.UpdatedFields)
 	assert.Equal(t, 123, result.Actress.DMMID)
-	assert.Equal(t, []string{"TEST-REGULAR-001"}, dmm.searched)
+	assert.Equal(t, actress.ThumbURL, result.Actress.ThumbURL)
+	require.Len(t, resolver.identityQueries, 1)
+	assert.Equal(t, actress.ThumbURL, resolver.identityQueries[0].ThumbURL)
+	assert.Empty(t, resolver.thumbnailInfos)
+}
+
+func TestSyncActressMetadataRejectsAmbiguousExactIdentityMatches(t *testing.T) {
+	actressRepo := newActressSyncTestRepo(t)
+	actress := &models.Actress{JapaneseName: "同名", ThumbURL: "existing.jpg"}
+	require.NoError(t, actressRepo.Create(actress))
+
+	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true, identityResult: &models.ScraperResult{
+		Actresses: []models.ActressInfo{{DMMID: 10, JapaneseName: "同名"}, {DMMID: 20, JapaneseName: "同名"}},
+	}}
+	registry := models.NewScraperRegistry()
+	registry.Register(resolver)
+
+	result, err := SyncActressMetadata(context.Background(), actress.ID, actressRepo, registry, []string{"sougouwiki"})
+	require.NoError(t, err)
+	assert.Equal(t, ActressSyncSkipped, result.Status)
+	assert.Equal(t, 0, result.Actress.DMMID)
+	assert.Contains(t, result.Messages[1], "rejected 2 result")
 }
 
 func TestSyncActressMetadataReportsDMMIDConflictAndCanStillUpdateThumbnail(t *testing.T) {
-	actressRepo, movieRepo := newActressSyncTestRepos(t)
+	actressRepo := newActressSyncTestRepo(t)
 	target := &models.Actress{JapaneseName: "Target"}
 	owner := &models.Actress{DMMID: 777, JapaneseName: "Owner", ThumbURL: "owner.jpg"}
 	require.NoError(t, actressRepo.Create(target))
 	require.NoError(t, actressRepo.Create(owner))
-	createActressSyncMovie(t, movieRepo, *target, "TEST-002", time.Now())
 
-	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true, resolveResult: &models.ScraperResult{
-		Actresses: []models.ActressInfo{{DMMID: 777, JapaneseName: "Target"}},
+	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true, identityResult: &models.ScraperResult{
+		ID: "Target", Actresses: []models.ActressInfo{{DMMID: 777, JapaneseName: "Target"}},
 	}}
 	thumbnail := &actressSyncTestScraper{name: "dmm", enabled: false, thumbnailURL: "target.jpg"}
 	registry := models.NewScraperRegistry()
 	registry.Register(resolver)
 	registry.Register(thumbnail)
 
-	result, err := SyncActressMetadata(context.Background(), target.ID, actressRepo, movieRepo, registry, []string{"sougouwiki"})
+	result, err := SyncActressMetadata(context.Background(), target.ID, actressRepo, registry, []string{"sougouwiki"})
 	require.NoError(t, err)
 	assert.Equal(t, ActressSyncConflict, result.Status)
 	require.NotNil(t, result.ConflictActressID)
@@ -223,75 +197,48 @@ func TestSyncActressMetadataReportsDMMIDConflictAndCanStillUpdateThumbnail(t *te
 	assert.Equal(t, []string{"thumb_url"}, result.UpdatedFields)
 }
 
-func TestSyncActressMetadataThumbnailOnlyDoesNotOverwriteDMMIDOrNames(t *testing.T) {
-	actressRepo, movieRepo := newActressSyncTestRepos(t)
+func TestSyncActressMetadataThumbnailOnlyDoesNotLookupIdentityOrOverwriteNames(t *testing.T) {
+	actressRepo := newActressSyncTestRepo(t)
 	actress := &models.Actress{DMMID: 321, FirstName: "Existing", LastName: "Name", JapaneseName: "既存"}
 	require.NoError(t, actressRepo.Create(actress))
 	thumbnail := &actressSyncTestScraper{name: "dmm", enabled: false, thumbnailURL: "thumb.jpg"}
 	registry := models.NewScraperRegistry()
 	registry.Register(thumbnail)
 
-	result, err := SyncActressMetadata(context.Background(), actress.ID, actressRepo, movieRepo, registry, nil)
+	result, err := SyncActressMetadata(context.Background(), actress.ID, actressRepo, registry, nil)
 	require.NoError(t, err)
 	assert.Equal(t, ActressSyncUpdated, result.Status)
 	assert.Equal(t, []string{"thumb_url"}, result.UpdatedFields)
 	assert.Equal(t, 321, result.Actress.DMMID)
 	assert.Equal(t, "Existing", result.Actress.FirstName)
-	assert.Equal(t, "Name", result.Actress.LastName)
+	assert.Empty(t, thumbnail.identityQueries)
 }
 
-func TestSyncActressMetadataSkipsWithoutMoviesOrEnabledSource(t *testing.T) {
-	actressRepo, movieRepo := newActressSyncTestRepos(t)
-	actress := &models.Actress{JapaneseName: "No Movies", ThumbURL: "existing.jpg"}
+func TestSyncActressMetadataReportsUnavailableAndFailedIdentityResolvers(t *testing.T) {
+	actressRepo := newActressSyncTestRepo(t)
+	actress := &models.Actress{JapaneseName: "Target", ThumbURL: "existing.jpg"}
 	require.NoError(t, actressRepo.Create(actress))
 
-	result, err := SyncActressMetadata(context.Background(), actress.ID, actressRepo, movieRepo, models.NewScraperRegistry(), nil)
+	result, err := SyncActressMetadata(context.Background(), actress.ID, actressRepo, models.NewScraperRegistry(), nil)
 	require.NoError(t, err)
-	assert.Equal(t, ActressSyncSkipped, result.Status)
-	assert.Contains(t, result.Messages[0], "No linked movies")
+	assert.Equal(t, ActressSyncFailed, result.Status)
+	assert.Contains(t, result.Messages[0], "No enabled actress identity resolver")
 
-	createActressSyncMovie(t, movieRepo, *actress, "TEST-003", time.Now())
-	disabled := &actressSyncTestScraper{name: "sougouwiki", enabled: false}
+	failed := &actressSyncTestScraper{name: "sougouwiki", enabled: true, identityErr: errors.New("resolver failed")}
 	registry := models.NewScraperRegistry()
-	registry.Register(disabled)
-	result, err = SyncActressMetadata(context.Background(), actress.ID, actressRepo, movieRepo, registry, []string{"sougouwiki"})
-	require.NoError(t, err)
-	assert.Equal(t, ActressSyncSkipped, result.Status)
-	assert.Contains(t, result.Messages[0], "No enabled scraper")
-
-	failed := &actressSyncTestScraper{name: "sougouwiki", enabled: true, resolveErr: errors.New("resolver failed")}
-	registry = models.NewScraperRegistry()
 	registry.Register(failed)
-	result, err = SyncActressMetadata(context.Background(), actress.ID, actressRepo, movieRepo, registry, []string{"sougouwiki"})
+	result, err = SyncActressMetadata(context.Background(), actress.ID, actressRepo, registry, []string{"sougouwiki"})
 	require.NoError(t, err)
-	assert.Equal(t, ActressSyncSkipped, result.Status)
-	assert.Contains(t, result.Messages[0], "resolver failed")
+	assert.Equal(t, ActressSyncFailed, result.Status)
+	assert.Contains(t, result.Messages[1], "resolver failed")
 }
 
-func TestSyncActressMetadataLimitsMoviesAndPropagatesTimeout(t *testing.T) {
-	t.Run("uses at most five recent movies", func(t *testing.T) {
-		actressRepo, movieRepo := newActressSyncTestRepos(t)
-		actress := &models.Actress{JapaneseName: "Unmatched", ThumbURL: "existing.jpg"}
-		require.NoError(t, actressRepo.Create(actress))
-		for i := 0; i < 6; i++ {
-			createActressSyncMovie(t, movieRepo, *actress, "TEST-00"+string(rune('1'+i)), time.Now().Add(time.Duration(i)*time.Hour))
-		}
-		resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true, resolveResult: &models.ScraperResult{}}
-		registry := models.NewScraperRegistry()
-		registry.Register(resolver)
-
-		_, err := SyncActressMetadata(context.Background(), actress.ID, actressRepo, movieRepo, registry, []string{"sougouwiki"})
-		require.NoError(t, err)
-		assert.Len(t, resolver.resolvedMovieIDs, 5)
-		assert.NotContains(t, resolver.resolvedMovieIDs, "TEST-001")
-	})
-
-	t.Run("propagates deadline exceeded", func(t *testing.T) {
-		actressRepo, movieRepo := newActressSyncTestRepos(t)
+func TestSyncActressMetadataPropagatesTimeoutAndPersistsPartialUpdate(t *testing.T) {
+	t.Run("identity timeout", func(t *testing.T) {
+		actressRepo := newActressSyncTestRepo(t)
 		actress := &models.Actress{JapaneseName: "Timeout", ThumbURL: "existing.jpg"}
 		require.NoError(t, actressRepo.Create(actress))
-		createActressSyncMovie(t, movieRepo, *actress, "TIMEOUT-001", time.Now())
-		resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true, resolveFn: func(ctx context.Context, _ string) (*models.ScraperResult, error) {
+		resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true, identityFn: func(ctx context.Context, _ models.ActressIdentityQuery) (*models.ScraperResult, error) {
 			<-ctx.Done()
 			return nil, ctx.Err()
 		}}
@@ -300,17 +247,16 @@ func TestSyncActressMetadataLimitsMoviesAndPropagatesTimeout(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 		defer cancel()
 
-		_, err := SyncActressMetadata(ctx, actress.ID, actressRepo, movieRepo, registry, []string{"sougouwiki"})
+		_, err := SyncActressMetadata(ctx, actress.ID, actressRepo, registry, []string{"sougouwiki"})
 		assert.True(t, errors.Is(err, context.DeadlineExceeded))
 	})
 
-	t.Run("persists DMM ID before a thumbnail timeout", func(t *testing.T) {
-		actressRepo, movieRepo := newActressSyncTestRepos(t)
+	t.Run("thumbnail timeout after saved DMM ID", func(t *testing.T) {
+		actressRepo := newActressSyncTestRepo(t)
 		actress := &models.Actress{JapaneseName: "Partial"}
 		require.NoError(t, actressRepo.Create(actress))
-		createActressSyncMovie(t, movieRepo, *actress, "PARTIAL-001", time.Now())
-		resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true, resolveResult: &models.ScraperResult{
-			Actresses: []models.ActressInfo{{DMMID: 808, JapaneseName: "Partial"}},
+		resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true, identityResult: &models.ScraperResult{
+			ID: "Partial", Actresses: []models.ActressInfo{{DMMID: 808, JapaneseName: "Partial"}},
 		}}
 		thumbnail := &actressSyncTestScraper{name: "dmm", enabled: false, thumbnailFn: func(ctx context.Context, _ models.ActressInfo) string {
 			<-ctx.Done()
@@ -322,7 +268,7 @@ func TestSyncActressMetadataLimitsMoviesAndPropagatesTimeout(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 		defer cancel()
 
-		_, err := SyncActressMetadata(ctx, actress.ID, actressRepo, movieRepo, registry, []string{"sougouwiki"})
+		_, err := SyncActressMetadata(ctx, actress.ID, actressRepo, registry, []string{"sougouwiki"})
 		assert.True(t, errors.Is(err, context.DeadlineExceeded))
 		saved, findErr := actressRepo.FindByID(actress.ID)
 		require.NoError(t, findErr)

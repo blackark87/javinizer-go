@@ -30,7 +30,8 @@
 	let syncStopRequested = $state(false);
 	let syncCurrentID = $state<number | null>(null);
 	let syncSummary = $state<ActressSyncSummary | null>(null);
-	let syncCurrentLabel = $derived(syncCurrentID ? store.getActressLabelByID(syncCurrentID) : 'Preparing next actress…');
+	let syncLabels = $state<Map<number, string>>(new Map());
+	let syncCurrentLabel = $derived(syncCurrentID ? (syncLabels.get(syncCurrentID) || store.getActressLabelByID(syncCurrentID)) : 'Preparing next actress…');
 	let isSyncing = $derived(syncRunning || syncPreparing);
 
 	const exportMutation = createMutation(() => ({
@@ -112,9 +113,16 @@
 		};
 	}
 
-	async function runSync(ids: number[]) {
+	function actressSyncLabel(actress: Actress): string {
+		const englishName = [actress.first_name, actress.last_name].filter(Boolean).join(' ').trim();
+		const names = [actress.japanese_name?.trim(), englishName].filter(Boolean);
+		return names.length > 0 ? names.join(' / ') : `Actress #${actress.id}`;
+	}
+
+	async function runSync(ids: number[], labels: Map<number, string> = new Map()) {
 		syncStopRequested = false;
 		syncCurrentID = null;
+		syncLabels = labels;
 		syncSummary = emptySyncSummary(ids.length);
 		syncModalOpen = true;
 		syncRunning = true;
@@ -122,6 +130,7 @@
 		try {
 			const finalSummary = await runActressSyncQueue(ids, (id) => apiClient.syncActress(id), {
 				shouldStop: () => syncStopRequested,
+				getLabel: (id) => labels.get(id) || store.getActressLabelByID(id),
 				onItemStart: (id) => {
 					syncCurrentID = id;
 				},
@@ -158,7 +167,13 @@
 				`Sync missing metadata for ${candidates.total} actress(es), one at a time?`,
 				{ confirmLabel: 'Start Sync' }
 			);
-			if (confirmed) await runSync(candidates.ids);
+			if (confirmed) {
+				const labels = new Map<number, string>();
+				for (const actress of candidates.actresses) {
+					if (actress.id !== undefined) labels.set(actress.id, actressSyncLabel(actress));
+				}
+				await runSync(candidates.ids, labels);
+			}
 		} catch (error) {
 			toastStore.error(error instanceof Error ? error.message : 'Failed to load sync candidates', 4000);
 		} finally {

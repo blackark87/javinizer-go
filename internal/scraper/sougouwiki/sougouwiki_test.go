@@ -12,6 +12,8 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/models"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/transform"
 )
@@ -138,6 +140,43 @@ func TestResolveActressesNoVerifiedPage(t *testing.T) {
 	}
 }
 
+func TestResolveActressIdentityUsesExactEUCJPPageNameSearch(t *testing.T) {
+	server := newFixtureServer(t, func(_ string, request *http.Request) (string, int) {
+		switch request.URL.Path {
+		case "/search":
+			rawKeyword := request.URL.Query().Get("keywords")
+			keyword, _, err := transform.String(japanese.EUCJP.NewDecoder(), rawKeyword)
+			if err != nil {
+				t.Fatalf("decode search keyword: %v", err)
+			}
+			if request.URL.Query().Get("search_target") != "page_name" {
+				t.Errorf("search_target = %q, want page_name", request.URL.Query().Get("search_target"))
+			}
+			if keyword == "波多野結衣" {
+				return identitySearchFixture("/d/target", "波多野結衣", "/d/unrelated", "別の女優"), http.StatusOK
+			}
+			return identitySearchFixture(), http.StatusOK
+		case "/d/target":
+			return actressFixture("", "波多野結衣（はたのゆい）", 26225), http.StatusOK
+		case "/d/unrelated":
+			return actressFixture("", "別の女優", 99999), http.StatusOK
+		default:
+			return "not found", http.StatusNotFound
+		}
+	})
+	defer server.Close()
+
+	scraper := New(config.ScraperSettings{Enabled: true, BaseURL: server.URL + "/"}, nil, config.FlareSolverrConfig{})
+	result, err := scraper.ResolveActressIdentity(context.Background(), models.ActressIdentityQuery{
+		Names: []string{"波多野結衣", "Alias"},
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Actresses, 1)
+	assert.Equal(t, 26225, result.Actresses[0].DMMID)
+	assert.Equal(t, "波多野結衣", result.Actresses[0].JapaneseName)
+	assert.Equal(t, "波多野結衣", result.ID)
+}
+
 func TestMovieIDEquivalence(t *testing.T) {
 	for _, test := range []struct {
 		pageID string
@@ -190,6 +229,14 @@ func searchFixture(paths ...string) string {
 		body += fmt.Sprintf(`<div class="result-box"><div class="body"><h3 class="keyword"><a href="%s">result</a></h3></div></div>`, path)
 	}
 	return body + "</body></html>"
+}
+
+func identitySearchFixture(values ...string) string {
+	body := "<html><body><div class=\"result-box\">"
+	for i := 0; i+1 < len(values); i += 2 {
+		body += fmt.Sprintf(`<div class="body"><h3 class="keyword"><a href="%s">%s</a></h3></div>`, values[i], values[i+1])
+	}
+	return body + "</div></body></html>"
 }
 
 func actressFixture(movieID, name string, dmmID int) string {

@@ -2130,6 +2130,22 @@ func TestExtractActressID(t *testing.T) {
 	})
 }
 
+func TestExtractExactDMMActressIdentities(t *testing.T) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(`
+		<html><body>
+			<a href="/mono/dvd/-/list/=/article=actress/id=26225/">波多野結衣</a>
+			<a href="?actress=99999">別の女優</a>
+			<a href="?actress=26225">波多野結衣</a>
+		</body></html>`))
+	require.NoError(t, err)
+
+	identities := extractExactDMMActressIdentities(doc, " 波多野結衣 ")
+	require.Len(t, identities, 1)
+	assert.Equal(t, 26225, identities[0].DMMID)
+	assert.Equal(t, "波多野結衣", identities[0].JapaneseName)
+	assert.Empty(t, extractExactDMMActressIdentities(doc, "없는 배우"))
+}
+
 func TestCleanActressName(t *testing.T) {
 	t.Run("trims whitespace", func(t *testing.T) {
 		assert.Equal(t, "Test Actress", cleanActressName("  Test Actress  "))

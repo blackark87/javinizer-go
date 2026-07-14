@@ -72,6 +72,26 @@ func safeResolveActresses(ctx context.Context, resolver models.ActressResolver, 
 	return result, err
 }
 
+func safeResolveActressIdentity(ctx context.Context, scraper models.Scraper, query models.ActressIdentityQuery) (result *models.ScraperResult, err error) {
+	resolver, ok := scraper.(models.ActressIdentityResolver)
+	if !ok {
+		return nil, fmt.Errorf("scraper %s does not support actress identity lookup", scraper.Name())
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("actress identity resolver panic: %v", r)
+		}
+	}()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	result, err = resolver.ResolveActressIdentity(ctx, query)
+	if result != nil {
+		result.NormalizeMediaURLs()
+	}
+	return result, err
+}
+
 func safeResolveActressThumbnail(ctx context.Context, resolver models.ActressThumbnailResolver, actress models.ActressInfo) (thumbnail string) {
 	defer func() {
 		if r := recover(); r != nil {

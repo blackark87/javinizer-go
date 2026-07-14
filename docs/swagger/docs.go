@@ -4829,7 +4829,10 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
-                "source_movie_id": {
+                "source": {
+                    "type": "string"
+                },
+                "source_query": {
                     "type": "string"
                 },
                 "status": {
@@ -4848,12 +4851,14 @@ const docTemplate = `{
             "enum": [
                 "updated",
                 "skipped",
-                "conflict"
+                "conflict",
+                "failed"
             ],
             "x-enum-varnames": [
                 "ActressSyncUpdated",
                 "ActressSyncSkipped",
-                "ActressSyncConflict"
+                "ActressSyncConflict",
+                "ActressSyncFailed"
             ]
         },
         "internal_api_actress.Actress": {
@@ -5048,6 +5053,12 @@ const docTemplate = `{
         "internal_api_actress.actressSyncCandidatesResponse": {
             "type": "object",
             "properties": {
+                "actresses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.Actress"
+                    }
+                },
                 "ids": {
                     "type": "array",
                     "items": {

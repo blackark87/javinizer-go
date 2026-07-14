@@ -20,6 +20,8 @@ import (
 	"github.com/javinizer/javinizer-go/internal/ratelimit"
 	"github.com/javinizer/javinizer-go/internal/scraperutil"
 	"golang.org/x/net/html/charset"
+	"golang.org/x/text/encoding/japanese"
+	"golang.org/x/text/transform"
 )
 
 const (
@@ -79,18 +81,23 @@ func (s *Scraper) Config() *config.ScraperSettings { return s.settings.DeepCopy(
 func (s *Scraper) Close() error { return nil }
 
 func (s *Scraper) GetURL(id string) (string, error) {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return "", fmt.Errorf("%s: movie ID cannot be empty", scraperName)
+	return s.getSearchURL(id, "all")
+}
+
+func (s *Scraper) getSearchURL(keyword, target string) (string, error) {
+	keyword = strings.TrimSpace(keyword)
+	if keyword == "" {
+		return "", fmt.Errorf("%s: search keyword cannot be empty", scraperName)
 	}
 	searchURL, err := url.Parse(s.baseURL + "search")
 	if err != nil {
 		return "", fmt.Errorf("%s: invalid base URL: %w", scraperName, err)
 	}
-	query := searchURL.Query()
-	query.Set("keywords", id)
-	query.Set("search_target", "all")
-	searchURL.RawQuery = query.Encode()
+	encodedKeyword, _, err := transform.String(japanese.EUCJP.NewEncoder(), keyword)
+	if err != nil {
+		return "", fmt.Errorf("%s: encode search keyword: %w", scraperName, err)
+	}
+	searchURL.RawQuery = "keywords=" + url.QueryEscape(encodedKeyword) + "&search_target=" + url.QueryEscape(target)
 	return searchURL.String(), nil
 }
 
@@ -156,6 +163,74 @@ func (s *Scraper) ResolveActresses(ctx context.Context, id string) (*models.Scra
 	}, nil
 }
 
+// ResolveActressIdentity searches actress page names directly. It never
+// fetches or re-scrapes linked movie metadata.
+func (s *Scraper) ResolveActressIdentity(ctx context.Context, query models.ActressIdentityQuery) (*models.ScraperResult, error) {
+	if !s.enabled {
+		return nil, fmt.Errorf("%s scraper is disabled", displayName)
+	}
+
+	names := uniqueIdentityNames(query.Names)
+	if len(names) == 0 {
+		return nil, models.NewScraperNotFoundError(displayName, "no actress name is available")
+	}
+
+	var lastErr error
+
+	for _, name := range names {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		searchURL, err := s.getSearchURL(name, "page_name")
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		searchDoc, err := s.fetchDocument(ctx, searchURL)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		actresses := make([]models.ActressInfo, 0)
+		seenDMMIDs := make(map[int]struct{})
+		var sourceURL string
+		for _, candidateURL := range s.extractExactCandidateURLs(searchDoc, name) {
+			candidateDoc, fetchErr := s.fetchDocument(ctx, candidateURL)
+			if fetchErr != nil {
+				lastErr = fetchErr
+				continue
+			}
+			actress, ok := parseActressIdentityPage(candidateDoc, name)
+			if !ok {
+				continue
+			}
+			if _, exists := seenDMMIDs[actress.DMMID]; exists {
+				continue
+			}
+			seenDMMIDs[actress.DMMID] = struct{}{}
+			actresses = append(actresses, actress)
+			if sourceURL == "" {
+				sourceURL = candidateURL
+			}
+		}
+		if len(actresses) > 0 {
+			return &models.ScraperResult{
+				Source:    scraperName,
+				SourceURL: sourceURL,
+				Language:  "ja",
+				ID:        name,
+				Actresses: actresses,
+			}, nil
+		}
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, models.NewScraperNotFoundError(displayName, "no exact actress page match was found")
+}
+
 func (s *Scraper) fetchDocument(ctx context.Context, targetURL string) (*goquery.Document, error) {
 	if err := s.rateLimiter.Wait(ctx); err != nil {
 		return nil, err
@@ -213,6 +288,95 @@ func (s *Scraper) extractCandidateURLs(doc *goquery.Document) []string {
 	return candidates
 }
 
+func (s *Scraper) extractExactCandidateURLs(doc *goquery.Document, name string) []string {
+	if doc == nil {
+		return nil
+	}
+	wanted := normalizeIdentityName(name)
+	if wanted == "" {
+		return nil
+	}
+	base, err := url.Parse(s.baseURL)
+	if err != nil {
+		return nil
+	}
+	allowedPrefix := strings.TrimRight(base.Path, "/") + "/d/"
+	seen := make(map[string]struct{})
+	var candidates []string
+	doc.Find("div.result-box div.body h3.keyword a").Each(func(_ int, link *goquery.Selection) {
+		if normalizeIdentityName(link.Text()) != wanted {
+			return
+		}
+		href, ok := link.Attr("href")
+		if !ok {
+			return
+		}
+		candidate, parseErr := base.Parse(strings.TrimSpace(href))
+		if parseErr != nil || !strings.EqualFold(candidate.Hostname(), base.Hostname()) || !strings.HasPrefix(candidate.Path, allowedPrefix) {
+			return
+		}
+		candidate.Fragment = ""
+		candidate.RawQuery = ""
+		normalized := candidate.String()
+		if _, exists := seen[normalized]; exists {
+			return
+		}
+		seen[normalized] = struct{}{}
+		candidates = append(candidates, normalized)
+	})
+	return candidates
+}
+
+func parseActressIdentityPage(doc *goquery.Document, matchedName string) (models.ActressInfo, bool) {
+	if doc == nil || normalizeIdentityName(matchedName) == "" {
+		return models.ActressInfo{}, false
+	}
+	heading := doc.Find("#content_block_1 h3#content_1").First()
+	if heading.Length() == 0 {
+		return models.ActressInfo{}, false
+	}
+	var result models.ActressInfo
+	heading.Find("a").EachWithBreak(func(_ int, link *goquery.Selection) bool {
+		href, ok := link.Attr("href")
+		if !ok || !isDMMActressURL(href) {
+			return true
+		}
+		match := dmmActressIDPattern.FindStringSubmatch(href)
+		if len(match) < 2 {
+			return true
+		}
+		dmmID, err := strconv.Atoi(match[1])
+		if err != nil || dmmID <= 0 {
+			return true
+		}
+		result = models.ActressInfo{DMMID: dmmID, JapaneseName: strings.TrimSpace(matchedName)}
+		return false
+	})
+	return result, result.DMMID > 0
+}
+
+func uniqueIdentityNames(names []string) []string {
+	seen := make(map[string]struct{})
+	result := make([]string, 0, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		key := normalizeIdentityName(name)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, name)
+	}
+	return result
+}
+
+func normalizeIdentityName(name string) string {
+	return strings.ToLower(scraperutil.CleanActressName(cleanCanonicalActressName(name)))
+}
+
 func parseVerifiedActressPage(doc *goquery.Document, movieID string) (models.ActressInfo, bool) {
 	if doc == nil || !pageContainsMovieID(doc.Text(), movieID) {
 		return models.ActressInfo{}, false
@@ -265,6 +429,8 @@ func cleanCanonicalActressName(name string) string {
 	name = readingSuffixPattern.ReplaceAllString(name, "")
 	return strings.TrimSpace(name)
 }
+
+var _ models.ActressIdentityResolver = (*Scraper)(nil)
 
 func pageContainsMovieID(text, movieID string) bool {
 	want := normalizeMovieID(movieID)

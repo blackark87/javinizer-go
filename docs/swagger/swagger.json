@@ -4827,7 +4827,10 @@
                         "type": "string"
                     }
                 },
-                "source_movie_id": {
+                "source": {
+                    "type": "string"
+                },
+                "source_query": {
                     "type": "string"
                 },
                 "status": {
@@ -4846,12 +4849,14 @@
             "enum": [
                 "updated",
                 "skipped",
-                "conflict"
+                "conflict",
+                "failed"
             ],
             "x-enum-varnames": [
                 "ActressSyncUpdated",
                 "ActressSyncSkipped",
-                "ActressSyncConflict"
+                "ActressSyncConflict",
+                "ActressSyncFailed"
             ]
         },
         "internal_api_actress.Actress": {
@@ -5046,6 +5051,12 @@
         "internal_api_actress.actressSyncCandidatesResponse": {
             "type": "object",
             "properties": {
+                "actresses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.Actress"
+                    }
+                },
                 "ids": {
                     "type": "array",
                     "items": {

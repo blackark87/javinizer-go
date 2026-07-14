@@ -4,10 +4,12 @@ import { runActressSyncQueue } from './sync-runner';
 
 function response(id: number, status: ActressSyncResponse['status'] = 'updated'): ActressSyncResponse {
 	return {
-		actress: { id },
+		actress: { id, japanese_name: `Actress ${id}`, dmm_id: status === 'updated' ? 1000 + id : 0 },
 		status,
 		updated_fields: status === 'updated' ? ['dmm_id'] : [],
-		messages: [`${status} ${id}`]
+		messages: [`${status} ${id}`, `detail ${id}`],
+		source: status === 'updated' ? 'sougouwiki' : undefined,
+		source_query: status === 'updated' ? `Actress ${id}` : undefined
 	};
 }
 
@@ -34,17 +36,26 @@ describe('runActressSyncQueue', () => {
 
 	it('continues after an item error and counts every outcome', async () => {
 		const calls: number[] = [];
-		const summary = await runActressSyncQueue([1, 2, 3, 4], async (id) => {
+		const summary = await runActressSyncQueue([1, 2, 3, 4, 5], async (id) => {
 			calls.push(id);
 			if (id === 2) throw new Error('resolver unavailable');
 			if (id === 3) return response(id, 'skipped');
 			if (id === 4) return response(id, 'conflict');
+			if (id === 5) return response(id, 'failed');
 			return response(id);
 		});
 
-		expect(calls).toEqual([1, 2, 3, 4]);
-		expect(summary).toMatchObject({ processed: 4, updated: 1, skipped: 1, conflicts: 1, failed: 1 });
-		expect(summary.details[1]).toMatchObject({ id: 2, status: 'failed', message: 'resolver unavailable' });
+		expect(calls).toEqual([1, 2, 3, 4, 5]);
+		expect(summary).toMatchObject({ processed: 5, updated: 1, skipped: 1, conflicts: 1, failed: 2 });
+		expect(summary.details[0]).toMatchObject({
+			id: 1,
+			label: 'Actress 1',
+			status: 'updated',
+			messages: ['updated 1', 'detail 1'],
+			source: 'sougouwiki',
+			sourceQuery: 'Actress 1'
+		});
+		expect(summary.details[1]).toMatchObject({ id: 2, label: 'Actress #2', status: 'failed', messages: ['resolver unavailable'] });
 	});
 
 	it('stops before the next item and always runs final refresh callback', async () => {

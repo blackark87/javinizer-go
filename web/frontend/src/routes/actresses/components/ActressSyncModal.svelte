@@ -24,6 +24,12 @@
 	} = $props();
 
 	let progress = $derived(summary.total > 0 ? Math.round((summary.processed / summary.total) * 100) : 100);
+
+	function fieldLabel(field: string): string {
+		if (field === 'dmm_id') return 'DMM ID';
+		if (field === 'thumb_url') return 'Profile thumbnail';
+		return field;
+	}
 </script>
 
 <div
@@ -95,10 +101,10 @@
 
 				{#if summary.details.length > 0}
 					<div class="space-y-2">
-						<h3 class="text-sm font-medium">Details</h3>
-						<div class="max-h-64 space-y-2 overflow-y-auto rounded-lg border p-2">
+						<h3 class="text-sm font-medium">Per-actress results</h3>
+						<div class="max-h-80 space-y-2 overflow-y-auto rounded-lg border p-2">
 							{#each summary.details as detail (detail.id)}
-								<div class="flex items-start gap-2 rounded-md px-2 py-1.5 text-sm">
+								<div class="flex items-start gap-2 rounded-md border bg-background px-3 py-2.5 text-sm">
 									{#if detail.status === 'updated'}
 										<CircleCheck class="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
 									{:else if detail.status === 'conflict'}
@@ -108,9 +114,40 @@
 									{:else}
 										<PauseCircle class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
 									{/if}
-									<div class="min-w-0">
-										<div class="font-medium">Actress #{detail.id} · {detail.status}</div>
-										<div class="mt-0.5 break-words text-xs text-muted-foreground">{detail.message}</div>
+									<div class="min-w-0 flex-1 space-y-1.5">
+										<div class="flex flex-wrap items-center gap-2">
+											<span class="font-medium">{detail.label}</span>
+											<span class="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">ID {detail.id}</span>
+											<span
+												class:text-emerald-600={detail.status === 'updated'}
+												class:text-amber-600={detail.status === 'conflict'}
+												class:text-destructive={detail.status === 'failed'}
+												class="ml-auto text-xs font-semibold uppercase"
+											>{detail.status}</span>
+										</div>
+
+										{#if detail.updatedFields.length > 0}
+											<div class="text-xs text-emerald-700">
+												Updated: {detail.updatedFields.map(fieldLabel).join(', ')}
+											</div>
+										{/if}
+										{#if detail.source}
+											<div class="text-xs text-muted-foreground">
+												Source: {detail.source}{detail.sourceQuery ? ` · Query: ${detail.sourceQuery}` : ''}
+											</div>
+										{/if}
+										{#if detail.conflictActressId}
+											<div class="text-xs text-amber-700">Conflicts with actress ID {detail.conflictActressId}</div>
+										{/if}
+
+										<ul class="space-y-1 text-xs text-muted-foreground">
+											{#each detail.messages as message, index (`${detail.id}-${index}`)}
+												<li class="flex gap-1.5 break-words">
+													<span aria-hidden="true">•</span>
+													<span>{message}</span>
+												</li>
+											{/each}
+										</ul>
 									</div>
 								</div>
 							{/each}

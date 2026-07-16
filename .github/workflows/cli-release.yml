@@ -66,7 +66,7 @@ jobs:
       nightly_should_run: ${{ steps.meta.outputs.nightly_should_run }}
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@v7.0.0
         with:
           fetch-depth: 0
 
@@ -222,10 +222,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@v7.0.0
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@v7.0.0
         with:
           node-version: '22'
 
@@ -240,7 +240,7 @@ jobs:
           cp -R web/frontend/build/. web/dist/
 
       - name: Upload web assets
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: web-dist
           path: web/dist
@@ -271,16 +271,16 @@ jobs:
             cc: aarch64-linux-gnu-gcc
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@v7.0.0
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@v7.0.0
         with:
           go-version-file: ${{ env.GO_VERSION_FILE }}
           cache: false
 
       - name: Download web assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@v8.0.1
         with:
           name: web-dist
           path: .artifacts/web-dist
@@ -332,7 +332,7 @@ jobs:
             -o "dist/${output}" ./cmd/javinizer
 
       - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ matrix.id }}
           path: dist/*
@@ -344,16 +344,16 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@v7.0.0
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@v7.0.0
         with:
           go-version-file: ${{ env.GO_VERSION_FILE }}
           cache: false
 
       - name: Download web assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@v8.0.1
         with:
           name: web-dist
           path: .artifacts/web-dist
@@ -410,7 +410,7 @@ jobs:
             -output "dist/${{ env.BINARY_NAME }}-darwin-universal"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: darwin
           path: dist/*
@@ -422,16 +422,16 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@v7.0.0
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@v7.0.0
         with:
           go-version-file: ${{ env.GO_VERSION_FILE }}
           cache: false
 
       - name: Download web assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@v8.0.1
         with:
           name: web-dist
           path: .artifacts/web-dist
@@ -473,7 +473,7 @@ jobs:
           go build -trimpath -ldflags "-w -s -X github.com/javinizer/javinizer-go/internal/version.Version=$env:VERSION -X github.com/javinizer/javinizer-go/internal/version.Commit=$env:COMMIT -X github.com/javinizer/javinizer-go/internal/version.BuildDate=$env:BUILD_DATE" -o "dist/$output" ./cmd/javinizer
 
       - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: windows-amd64
           path: dist/*
@@ -485,18 +485,18 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@v7.0.0
         with:
           persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@v7.0.0
         with:
           go-version-file: ${{ env.GO_VERSION_FILE }}
           cache: false
 
       - name: Download web assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@v8.0.1
         with:
           name: web-dist
           path: .artifacts/web-dist
@@ -572,7 +572,7 @@ jobs:
           rm -rf Javinizer.app javinizer-app-darwin-universal
 
       - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: desktop-darwin
           path: dist/*
@@ -584,18 +584,18 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@v7.0.0
         with:
           persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@v7.0.0
         with:
           go-version-file: ${{ env.GO_VERSION_FILE }}
           cache: false
 
       - name: Download web assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@v8.0.1
         with:
           name: web-dist
           path: .artifacts/web-dist
@@ -651,7 +651,7 @@ jobs:
           go build -trimpath -tags 'desktop,production' -ldflags "-w -s -H windowsgui -X github.com/javinizer/javinizer-go/internal/version.Version=$env:VERSION -X github.com/javinizer/javinizer-go/internal/version.Commit=$env:COMMIT -X github.com/javinizer/javinizer-go/internal/version.BuildDate=$env:BUILD_DATE -X github.com/javinizer/javinizer-go/internal/desktop.BuildDesktop=1" -o "dist/javinizer-desktop-windows-amd64.exe" ./cmd/javinizer
 
       - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: desktop-windows
           path: dist/*
@@ -678,12 +678,12 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@v7.0.0
         with:
           persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@v7.0.0
         with:
           go-version-file: ${{ env.GO_VERSION_FILE }}
           cache: false
@@ -694,7 +694,7 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev
 
       - name: Download web assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@v8.0.1
         with:
           name: web-dist
           path: .artifacts/web-dist
@@ -750,7 +750,7 @@ jobs:
           rm -f "dist/javinizer-app-linux-${{ matrix.arch }}"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: desktop-linux-${{ matrix.arch }}
           path: dist/*
@@ -772,10 +772,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@v7.0.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        uses: docker/setup-buildx-action@v4.2.0
 
       - name: Normalize image name
         id: image
@@ -785,7 +785,7 @@ jobs:
 
       - name: Login to GHCR
         if: needs.prepare-release.outputs.create_release == 'true' || needs.prepare-release.outputs.is_nightly == 'true'
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        uses: docker/login-action@v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -793,7 +793,7 @@ jobs:
 
       - name: Build and (optionally) push single-arch image
         id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@v7.3.0
         with:
           context: .
           file: ./Dockerfile
@@ -839,14 +839,14 @@ jobs:
           echo "minor=${minor}" >> "$GITHUB_OUTPUT"
 
       - name: Login to GHCR
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        uses: docker/login-action@v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        uses: docker/setup-buildx-action@v4.2.0
 
       - name: Assemble multi-arch manifest tags
         id: tags
@@ -902,7 +902,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@v7.0.0
         with:
           persist-credentials: false
 
@@ -988,49 +988,49 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Download linux-amd64 artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@v8.0.1
         with:
           name: linux-amd64
           path: ./artifacts/linux-amd64
 
       - name: Download linux-arm64 artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@v8.0.1
         with:
           name: linux-arm64
           path: ./artifacts/linux-arm64
 
       - name: Download darwin artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@v8.0.1
         with:
           name: darwin
           path: ./artifacts/darwin
 
       - name: Download windows-amd64 artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@v8.0.1
         with:
           name: windows-amd64
           path: ./artifacts/windows-amd64
 
       - name: Download desktop-darwin artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@v8.0.1
         with:
           name: desktop-darwin
           path: ./artifacts/desktop-darwin
 
       - name: Download desktop-windows artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@v8.0.1
         with:
           name: desktop-windows
           path: ./artifacts/desktop-windows
 
       - name: Download desktop-linux-amd64 artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@v8.0.1
         with:
           name: desktop-linux-amd64
           path: ./artifacts/desktop-linux-amd64
 
       - name: Download desktop-linux-arm64 artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@v8.0.1
         with:
           name: desktop-linux-arm64
           path: ./artifacts/desktop-linux-arm64
@@ -1052,14 +1052,14 @@ jobs:
           cat checksums.txt
 
       - name: Upload release bundle artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: release-bundle-${{ needs.prepare-release.outputs.version }}
           path: ./release/*
 
       - name: Publish GitHub release
         if: needs.prepare-release.outputs.create_release == 'true'
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@v3.0.2
         with:
           tag_name: ${{ needs.prepare-release.outputs.tag_name }}
           target_commitish: ${{ github.sha }}
@@ -1084,12 +1084,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout javinizer-go (formula template + render script)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@v7.0.0
         with:
           persist-credentials: false
 
       - name: Download release bundle (checksums.txt)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@v8.0.1
         with:
           name: release-bundle-${{ needs.prepare-release.outputs.version }}
           path: ./release
@@ -1108,7 +1108,7 @@ jobs:
           cat out/javinizer-app.rb
 
       - name: Checkout tap repo
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@v7.0.0
         with:
           repository: javinizer/homebrew-tap
           path: tap
@@ -1143,12 +1143,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout javinizer-go (manifest template + render script)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@v7.0.0
         with:
           persist-credentials: false
 
       - name: Download release bundle (checksums.txt)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@v8.0.1
         with:
           name: release-bundle-${{ needs.prepare-release.outputs.version }}
           path: ./release
@@ -1167,7 +1167,7 @@ jobs:
           cat out/javinizer-app.json
 
       - name: Checkout bucket repo
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@v7.0.0
         with:
           repository: javinizer/scoop-javinizer
           path: bucket-repo

@@ -1,8 +1,19 @@
 -- +goose Up
 -- +goose StatementBegin
--- actress_translations is created by migration 000009.  The sync workflow
--- adds only the settings fingerprint used to invalidate stale translations.
-ALTER TABLE actress_translations ADD COLUMN settings_hash VARCHAR(16);
+CREATE TABLE IF NOT EXISTS actress_translations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    actress_id INTEGER NOT NULL,
+    language TEXT NOT NULL,
+    name TEXT NOT NULL,
+    source_name TEXT,
+    settings_hash VARCHAR(16),
+    created_at DATETIME,
+    updated_at DATETIME,
+    CONSTRAINT fk_actress_translations_actress FOREIGN KEY (actress_id) REFERENCES actresses(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_actress_translation_language
+    ON actress_translations(actress_id, language);
 
 CREATE TABLE IF NOT EXISTS actress_sync_jobs (
     id TEXT PRIMARY KEY,
@@ -66,5 +77,5 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_actress_sync_tasks_active_key
 DROP INDEX IF EXISTS idx_actress_sync_tasks_active_key;
 DROP TABLE IF EXISTS actress_sync_tasks;
 DROP TABLE IF EXISTS actress_sync_jobs;
-ALTER TABLE actress_translations DROP COLUMN settings_hash;
+DROP TABLE IF EXISTS actress_translations;
 -- +goose StatementEnd

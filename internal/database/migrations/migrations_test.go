@@ -13,5 +13,8 @@ func TestFilesystem(t *testing.T) {
 
 func TestGoMigrations(t *testing.T) {
 	migrations := GoMigrations()
-	assert.Empty(t, migrations)
+	if assert.Len(t, migrations, 2) {
+		assert.Equal(t, int64(13), migrations[0].Version)
+		assert.Equal(t, int64(14), migrations[1].Version)
+	}
 }

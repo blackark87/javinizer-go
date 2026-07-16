@@ -16,6 +16,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/api/auth"
 	"github.com/javinizer/javinizer-go/internal/api/batch"
 	"github.com/javinizer/javinizer-go/internal/api/core"
+	"github.com/javinizer/javinizer-go/internal/api/desktop"
 	"github.com/javinizer/javinizer-go/internal/api/events"
 	"github.com/javinizer/javinizer-go/internal/api/file"
 	"github.com/javinizer/javinizer-go/internal/api/genre"
@@ -23,12 +24,15 @@ import (
 	"github.com/javinizer/javinizer-go/internal/api/jobs"
 	"github.com/javinizer/javinizer-go/internal/api/middleware"
 	"github.com/javinizer/javinizer-go/internal/api/movie"
+	"github.com/javinizer/javinizer-go/internal/api/r18devdump"
 	"github.com/javinizer/javinizer-go/internal/api/realtime"
 	"github.com/javinizer/javinizer-go/internal/api/system"
 	"github.com/javinizer/javinizer-go/internal/api/temp"
 	"github.com/javinizer/javinizer-go/internal/api/token"
 	apiversion "github.com/javinizer/javinizer-go/internal/api/version"
+	historypkg "github.com/javinizer/javinizer-go/internal/history"
 	"github.com/javinizer/javinizer-go/internal/logging"
+
 	webui "github.com/javinizer/javinizer-go/web"
 )
 
@@ -67,12 +71,13 @@ func loadWebUIAssets() webUIAssets {
 	return assets
 }
 
-func registerCORSMiddleware(router *gin.Engine, deps *core.ServerDependencies) {
+func registerCORSMiddleware(router *gin.Engine, rt *core.APIRuntime) {
 	router.Use(func(c *gin.Context) {
 		origin := c.Request.Header.Get("Origin")
-		allowedOrigins := deps.GetConfig().API.Security.AllowedOrigins
+		snap := rt.Snapshot()
+		allowedOrigins := snap.APIConfig().AllowedOrigins
 
-		if origin != "" && isSameOriginWithConfig(origin, c.Request, &deps.GetConfig().API.Security) {
+		if origin != "" && isSameOriginWithConfig(origin, c.Request, &snap.Config().API.Security) {
 			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 			c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 			c.Writer.Header().Add("Vary", "Origin")
@@ -83,11 +88,11 @@ func registerCORSMiddleware(router *gin.Engine, deps *core.ServerDependencies) {
 		}
 
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		allowedHeaders := []string{"Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"}
+		allowedHeaders := []string{"Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With", "X-Session-ID"}
 		c.Writer.Header().Set("Access-Control-Allow-Headers", strings.Join(allowedHeaders, ", "))
 
 		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
+			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}
 		c.Next()
@@ -105,38 +110,67 @@ func registerDocumentationRoutes(router *gin.Engine) {
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 }
 
-func registerCoreRoutes(router *gin.Engine, deps *core.ServerDependencies) {
-	system.RegisterCoreRoutes(router, deps)
-	realtime.RegisterRoutes(router, deps, auth.RequireTokenOrSession(deps))
+func registerCoreRoutes(router *gin.Engine, rt *core.APIRuntime) {
+	system.RegisterCoreRoutes(router, rt)
+	rt.EnsureRuntime()
+	realtime.RegisterRoutes(router, rt, auth.RequireTokenOrSession(rt.Deps()))
 }
 
-func registerAPIV1Routes(router *gin.Engine, deps *core.ServerDependencies) {
+func registerAPIV1Routes(router *gin.Engine, rt *core.APIRuntime) {
+	deps := rt.Deps()
+
 	v1 := router.Group("/api/v1")
-	auth.RegisterPublicRoutes(v1, deps)
+	auth.RegisterPublicRoutes(v1, rt)
 
 	protected := v1.Group("")
 	protected.Use(auth.RequireTokenOrSession(deps))
+	protected.Use(middleware.InstallEnvironmentInjector(deps.CoreDeps))
 
 	var rateLimiter *middleware.IPRateLimiter
-	if rpm := deps.GetConfig().API.Security.RateLimit.RequestsPerMinute; rpm > 0 {
+	apiCfg := rt.GetAPIConfig()
+	secCfg := apiCfg.SecurityConfig()
+	if rpm := apiCfg.RateLimitRPM; rpm > 0 {
 		rateLimiter = middleware.NewIPRateLimiter(rate.Every(time.Minute/time.Duration(rpm)), rpm)
 	}
 
 	writeProtected := protected.Group("")
 	writeProtected.Use(middleware.RateLimitMiddleware(rateLimiter))
 
-	movie.RegisterRoutes(writeProtected, deps)
-	actress.RegisterRoutes(protected, deps)
-	genre.RegisterRoutes(writeProtected, deps)
-	system.RegisterRoutes(protected, deps)
+	actressDeps := actress.NewActressDeps(deps.Repos.ContentRepos, deps.Repos.TranslationRepos)
+	genreDeps := genre.NewGenreDeps(deps.Repos.ReplacementRepos, deps.Repos.TranslationRepos)
+	genreDeps.ConfigStore = genre.NewRuntimeGenreConfigStore(rt, deps.ConfigFile)
+	genreInvalidateCaches := core.InvalidateWorkflowCachesOnRuntime(rt)
+	// History handlers call the repository directly — no intermediate service needed.
+	jobsDeps := jobs.NewJobDeps(deps.Repos.JobRepo, deps.Repos.BatchFileOpRepo, deps.JobStore, deps.Reverter, deps.EventEmitter, apiCfg.AllowRevert)
+	// Per W-3: the factory must always be available when the API layer runs
+	// (API server starts after bootstrapping). If PosterGen is nil, pass nil
+	// rather than constructing a new one outside the factory.
+	posterGenForMovie := rt.GetPosterGen()
+	if posterGenForMovie == nil {
+		logging.Error("registerAPIV1Routes: workflow factory PosterGen is nil — poster generation will be unavailable")
+	}
+	movieDeps := movie.NewMovieDeps(deps.Repos.MovieRepo,
+		movie.WithWorkflow(rt.GetWorkflow),
+		movie.WithAllowedDirs(secCfg.AllowedDirectories),
+		movie.WithPosterGen(posterGenForMovie),
+	)
+	tokenSvc := token.NewTokenService(deps.Repos.ApiTokenRepo)
+
+	movie.RegisterRoutes(writeProtected, movieDeps)
+	actress.RegisterRoutes(protected, actressDeps, rt)
+	genre.RegisterRoutes(writeProtected, genreDeps, genreInvalidateCaches)
+	system.RegisterRoutes(protected, rt)
 	apiversion.RegisterRoutes(protected, deps)
-	file.RegisterRoutes(writeProtected, deps)
-	batch.RegisterRoutes(writeProtected, deps)
-	history.RegisterRoutes(protected, deps)
-	jobs.RegisterRoutes(protected, deps)
-	events.RegisterRoutes(protected, deps)
-	temp.RegisterRoutes(protected, deps)
-	token.RegisterRoutes(protected, writeProtected, deps)
+	desktop.RegisterRoutes(protected, deps)
+	file.RegisterRoutes(writeProtected, rt)
+	batch.RegisterRoutes(writeProtected, rt)
+	historyLogger := historypkg.NewLogger(deps.Repos.HistoryRepo)
+	history.RegisterRoutes(protected, deps.Repos.HistoryRepo, historyLogger)
+	jobs.RegisterRoutes(protected, jobsDeps)
+	events.RegisterRoutes(protected, deps.Repos.EventRepo)
+	temp.RegisterRoutes(protected, rt)
+	token.RegisterRoutes(protected, writeProtected, tokenSvc)
+	r18devdump.RegisterRoutes(protected, writeProtected, rt)
 }
 
 func registerStaticWebRoutes(router *gin.Engine, assets webUIAssets) {
@@ -152,6 +186,10 @@ func registerStaticWebRoutes(router *gin.Engine, assets webUIAssets) {
 
 	if _, err := fs.Stat(assets.distFS, "favicon.ico"); err == nil {
 		router.GET("/favicon.ico", func(c *gin.Context) { c.FileFromFS("favicon.ico", assets.staticFS) })
+	}
+
+	if _, err := fs.Stat(assets.distFS, "javinizer.png"); err == nil {
+		router.GET("/javinizer.png", func(c *gin.Context) { c.FileFromFS("javinizer.png", assets.staticFS) })
 	}
 
 	if _, err := fs.Stat(assets.distFS, "robots.txt"); err == nil {

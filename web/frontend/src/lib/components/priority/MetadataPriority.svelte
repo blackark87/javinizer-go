@@ -9,6 +9,16 @@
 	import DraggableList from './DraggableList.svelte';
 	import FieldRow from './FieldRow.svelte';
 	import type { SettingsConfig, ScraperSettings } from '$lib/api/types';
+	import {
+		getGlobalPriority,
+		getFieldPriority,
+		isFieldOverridden,
+		getFieldStatus,
+		applyEnabledReorderToFull,
+		buildFieldPriorityOverride,
+		SKIP_SENTINEL
+	} from './priority';
+	import { formatScraperName } from './scraperNames';
 
 	interface Props {
 		config: SettingsConfig;
@@ -26,6 +36,86 @@
 
 	// Track which fields have been explicitly modified by the user
 	let touchedFields = $state<Set<string>>(new Set());
+
+	// --- Priority mode help popover (the "(i)" icon in the header) ---
+	// Follows the CompletenessBreakdownTooltip pattern (ReviewGridCard): hover
+	// shows after a short delay, click toggles, Escape + click-outside close.
+	// The popover stays in the DOM so `aria-describedby` always resolves, but
+	// is invisible + pointer-events-none while hidden.
+	const priorityModeHelpTooltipId = 'priority-mode-help-tooltip';
+	let showInfo = $state(false);
+	// Whether the popover is pinned open by a click. A pinned popover stays open
+	// when the pointer leaves the trigger (so the user can move into it to read
+	// the help text) — only Esc or click-outside closes it. Without this, the
+	// `mt-2` gap between icon and popover means leaving the icon fires mouseleave
+	// and snaps a click-opened popover shut, defeating click-to-pin.
+	let pinned = $state(false);
+	let hoverTimeout: ReturnType<typeof setTimeout> | null = null;
+	let infoButtonEl: HTMLButtonElement | null = $state(null);
+	let infoPopoverEl: HTMLDivElement | null = $state(null);
+
+	function onInfoEnter() {
+		// Don't re-trigger hover-show once the user has pinned it open.
+		if (pinned) return;
+		hoverTimeout = setTimeout(() => {
+			showInfo = true;
+		}, 175);
+	}
+
+	function onInfoLeave() {
+		if (hoverTimeout) {
+			clearTimeout(hoverTimeout);
+			hoverTimeout = null;
+		}
+		// A pinned popover survives the pointer leaving the trigger.
+		if (!pinned) showInfo = false;
+	}
+
+	function toggleInfo() {
+		// Cancel any pending hover-show so a delayed timeout can't reopen the
+		// popover right after the user clicked it closed.
+		if (hoverTimeout) {
+			clearTimeout(hoverTimeout);
+			hoverTimeout = null;
+		}
+		pinned = !pinned;
+		showInfo = pinned;
+	}
+
+	// Close on Escape (returning focus to the trigger) and on click-outside.
+	// Attached only while open.
+	$effect(() => {
+		if (!showInfo) return;
+		function onDocClick(event: MouseEvent) {
+			const target = event.target as Node | null;
+			if (target && (infoButtonEl?.contains(target) || infoPopoverEl?.contains(target))) {
+				return;
+			}
+			pinned = false;
+			showInfo = false;
+		}
+		function onDocKey(event: KeyboardEvent) {
+			if (event.key === 'Escape') {
+				event.stopPropagation();
+				pinned = false;
+				showInfo = false;
+				infoButtonEl?.focus();
+			}
+		}
+		document.addEventListener('click', onDocClick, true);
+		document.addEventListener('keydown', onDocKey);
+		return () => {
+			document.removeEventListener('click', onDocClick, true);
+			document.removeEventListener('keydown', onDocKey);
+		};
+	});
+
+	// Clear any pending hover timer on teardown.
+	$effect(() => {
+		return () => {
+			if (hoverTimeout) clearTimeout(hoverTimeout);
+		};
+	});
 
 	// Metadata field definitions with descriptions (using snake_case keys to match API)
 	const metadataFields = [
@@ -49,89 +139,12 @@
 		{ key: 'trailer_url', label: 'Trailer', category: 'Media', description: 'Preview video URL' }
 	];
 
-	// Helper to get global priority from config
-	function getGlobalPriority(): string[] {
-		return config?.scrapers?.priority || [];
-	}
-
-	function formatScraperName(name: string): string {
-		if (name === 'dmm') return 'DMM/Fanza';
-		if (name === 'libredmm') return 'LibreDMM (Fanza, MGStage, SOD, FC2)';
-		if (name === 'r18dev') return 'R18.dev';
-		if (name === 'javlibrary') return 'JavLibrary';
-		if (name === 'javdb') return 'JavDB';
-		if (name === 'javbus') return 'JavBus';
-		if (name === 'jav321') return 'Jav321';
-		if (name === 'tokyohot') return 'Tokyo-Hot';
-		if (name === 'aventertainment') return 'AV Entertainment';
-		if (name === 'dlgetchu') return 'DLGetchu';
-		if (name === 'caribbeancom') return 'Caribbeancom';
-		return name;
-	}
-
-	// Helper to get field priority (either custom or global)
-	// Empty arrays mean "use global", same as undefined
-	function getFieldPriority(fieldKey: string): string[] {
-		const fieldConfig = config?.metadata?.priority?.[fieldKey];
-		// If field config is undefined, null, or empty array, use global priority
-		if (!fieldConfig || fieldConfig.length === 0) {
-			return getGlobalPriority();
-		}
-		return fieldConfig;
-	}
-
-	// Check if field has custom override (either touched by user or already in config)
-	// Empty arrays are treated the same as undefined (not overridden)
-	function isFieldOverridden(fieldKey: string): boolean {
-		const fieldConfig = config?.metadata?.priority?.[fieldKey];
-		const globalPriority = getGlobalPriority();
-
-		// Empty or undefined means "use global" (not overridden)
-		if (!fieldConfig || fieldConfig.length === 0) {
-			return false;
-		}
-
-		// Only consider it overridden if it's different from global
-		return JSON.stringify(fieldConfig) !== JSON.stringify(globalPriority);
-	}
-
-	// Count override count
-	function getOverrideCount(): number {
-		if (!config?.metadata?.priority) return 0;
-		return metadataFields.filter((field) => isFieldOverridden(field.key)).length;
-	}
-
-	// Get scraper usage count (how many fields use this scraper in their priority)
-	function getScraperUsageCount(scraperName: string): number {
-		let count = 0;
-
-		// Count fields using this scraper (either in global or field-specific priority)
-		metadataFields.forEach((field) => {
-			const fieldPriority = getFieldPriority(field.key);
-			if (fieldPriority.includes(scraperName)) {
-				count++;
-			}
-		});
-
-		return count;
-	}
-
-	// Get list of fields using a specific scraper
-	function getFieldsUsingScaper(scraperName: string): string[] {
-		return metadataFields
-			.filter((field) => getFieldPriority(field.key).includes(scraperName))
-			.map((field) => field.label);
-	}
+	// Field priority / override helpers live in ./priority.ts (pure, unit-tested).
+	// They take `config` as their first argument and encode the two field
+	// states: "inherited" (green) and "custom" (orange).
+	// formatScraperName lives in ./scraperNames.ts (shared with FieldRow).
 
 	// Get list of enabled scrapers
-	function getEnabledScrapers(): string[] {
-		const allScrapers = getGlobalPriority();
-		return allScrapers.filter((scraperName) => {
-			const scraperCfg = config?.scrapers?.[scraperName];
-			return (scraperCfg as ScraperSettings)?.enabled !== false;
-		});
-	}
-
 	// Filter priority list to only include enabled scrapers
 	function filterEnabledScrapers(priority: string[]): string[] {
 		return priority.filter((scraperName) => {
@@ -151,7 +164,15 @@
 	// Open field editor
 	function openFieldEditor(fieldKey: string) {
 		editingField = fieldKey;
-		editingPriority = [...getFieldPriority(fieldKey)];
+		// When opening a 'skipped' field (stored ["__skip__"]), start with an
+		// empty list so the user sees an empty editor and can add scrapers back.
+		// Saving an empty list re-emits ["__skip__"] via buildFieldPriorityOverride.
+		const stored = config?.metadata?.priority?.[fieldKey];
+		if (stored && stored.length === 1 && stored[0] === SKIP_SENTINEL) {
+			editingPriority = [];
+		} else {
+			editingPriority = [...getFieldPriority(config, fieldKey)];
+		}
 	}
 
 	// Save field priority
@@ -159,39 +180,111 @@
 		if (!editingField) return;
 
 		if (!config.metadata) config.metadata = {};
-		if (!config.metadata.priority) config.metadata.priority = {};
 
 		// Mark this field as touched
 		touchedFields.add(editingField);
 
-		const global = getGlobalPriority();
-		const isSameAsGlobal = JSON.stringify(editingPriority) === JSON.stringify(global);
-
-		if (isSameAsGlobal) {
-			// If it matches global, set to empty array (signals "use global")
-			config.metadata.priority[editingField] = [];
-		} else {
-			// Otherwise save the custom priority
-			config.metadata.priority[editingField] = editingPriority;
-		}
+		// Delegate to the canonical, unit-tested helper: when the resolved
+		// priority equals the global list it DELETES the key (restoring
+		// "inherited" = key absent); when the priority is EMPTY (Remove all + Save)
+		// it stores ["__skip__"] (the skip sentinel — deliberate suppression,
+		// since [] now means inherit under World A); otherwise it stores the full
+		// list verbatim (including disabled scrapers preserved through onReorder).
+		config.metadata.priority = buildFieldPriorityOverride(
+			config,
+			editingField,
+			editingPriority
+		);
 
 		// Create a deep clone to trigger reactivity
 		onUpdate(JSON.parse(JSON.stringify(config)));
 		editingField = null;
 	}
 
-	// Reset field to global
+	// Reset field to global (clears any override). Inherit = key ABSENT, so we
+	// DELETE the key rather than storing []. A present [] is LEGACY and folds to
+	// inherit on read under World A; a stored ["__skip__"] means suppression —
+	// distinct from inherit — so either way we delete the key to restore
+	// inheritance.
 	function resetFieldToGlobal(fieldKey: string) {
 		if (!config.metadata?.priority) return;
 
 		// Mark as touched (user explicitly reset it)
 		touchedFields.add(fieldKey);
 
-		// Set to empty array (signals "use global")
-		config.metadata.priority[fieldKey] = [];
+		if (fieldKey in config.metadata.priority) {
+			delete config.metadata.priority[fieldKey];
 
-		// Create a deep clone to trigger reactivity
-		onUpdate(JSON.parse(JSON.stringify(config)));
+			// Create a deep clone to trigger reactivity
+			onUpdate(JSON.parse(JSON.stringify(config)));
+		}
+	}
+
+	// Remove a scraper from the field being edited (the per-item X button).
+	// The list stays in order; the removed scraper can be added back from the
+	// "available scrapers" chip row below the list.
+	function removeScraperFromField(name: string) {
+		editingPriority = editingPriority.filter((s) => s !== name);
+	}
+
+	// Add a single scraper back into the field being edited (appended at the
+	// end — the user can reorder afterward).
+	function addScraperToField(name: string) {
+		if (!editingPriority.includes(name)) {
+			editingPriority = [...editingPriority, name];
+		}
+	}
+
+	// Shortcut: add every global scraper not already in the field's list.
+	function addAllScrapers() {
+		const global = getGlobalPriority(config);
+		const present = new Set(editingPriority);
+		editingPriority = [...editingPriority, ...global.filter((s) => !present.has(s))];
+	}
+
+	// Shortcut: remove every scraper from the field's list. Saving the emptied
+	// list stores ["__skip__"] (the skip sentinel) via buildFieldPriorityOverride —
+	// under World A [] means inherit, so the skip sentinel is the only encoding
+	// for deliberate suppression. To inherit the global list instead, use Reset to
+	// global (which deletes the key).
+	function removeAllScrapers() {
+		editingPriority = [];
+	}
+
+	// Scrapers available to add back: global scrapers not currently in the
+	// editing list, filtered to only enabled scrapers.
+	const availableScrapersToAdd = $derived(
+		editingField
+			? filterEnabledScrapers(getGlobalPriority(config)).filter((s) => !editingPriority.includes(s))
+			: []
+	);
+
+	// Count override count
+	function getOverrideCount(): number {
+		if (!config?.metadata?.priority) return 0;
+		return metadataFields.filter((field) => isFieldOverridden(config, field.key)).length;
+	}
+
+	// Get scraper usage count (how many fields use this scraper in their priority)
+	function getScraperUsageCount(scraperName: string): number {
+		let count = 0;
+
+		// Count fields using this scraper (either in global or field-specific priority)
+		metadataFields.forEach((field) => {
+			const fieldPriority = getFieldPriority(config, field.key);
+			if (fieldPriority.includes(scraperName)) {
+				count++;
+			}
+		});
+
+		return count;
+	}
+
+	// Get list of fields using a specific scraper
+	function getFieldsUsingScaper(scraperName: string): string[] {
+		return metadataFields
+			.filter((field) => getFieldPriority(config, field.key).includes(scraperName))
+			.map((field) => field.label);
 	}
 
 	// Switch to Advanced mode warning
@@ -214,7 +307,7 @@
 	// Filtered fields based on showOnlyOverrides
 	const filteredFields = $derived.by(() => {
 		if (!showOnlyOverrides) return metadataFields;
-		return metadataFields.filter((field) => isFieldOverridden(field.key));
+		return metadataFields.filter((field) => isFieldOverridden(config, field.key));
 	});
 
 	// Group fields by category
@@ -268,7 +361,50 @@
 					{/if}
 				</p>
 			</div>
-			<Info class="h-5 w-5 text-muted-foreground shrink-0 mt-1" />
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="relative shrink-0 mt-1"
+			onmouseenter={onInfoEnter}
+			onmouseleave={onInfoLeave}
+		>
+			<button
+				type="button"
+				bind:this={infoButtonEl}
+				aria-label="Priority mode help"
+				aria-describedby={priorityModeHelpTooltipId}
+				aria-expanded={showInfo}
+				onclick={toggleInfo}
+				class="inline-flex items-center justify-center rounded-md p-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background transition-colors"
+			>
+				<Info class="h-5 w-5" />
+			</button>
+			<div
+				role="tooltip"
+				id={priorityModeHelpTooltipId}
+				bind:this={infoPopoverEl}
+				class="absolute top-full right-0 mt-2 w-72 bg-background text-foreground border rounded-lg px-3 py-2 shadow-lg z-20"
+				class:pointer-events-none={!showInfo}
+				class:invisible={!showInfo}
+			>
+				{#if showInfo}
+					<div transition:fade={{ duration: 150 }} class="space-y-1.5 text-xs">
+						<p class="font-semibold">Metadata priority modes</p>
+						<p>
+							<span class="font-medium">Simple</span> — one priority list applies to every
+							metadata field.
+						</p>
+						<p>
+							<span class="font-medium">Advanced</span> — set a custom scraper order for
+							individual fields.
+						</p>
+						<p class="text-muted-foreground">
+							Per-field lists are exclusive: only the listed scrapers are consulted
+							— there is no fallback to the global list.
+						</p>
+					</div>
+				{/if}
+			</div>
+		</div>
 		</div>
 
 		<!-- Global Priority -->
@@ -282,7 +418,7 @@
 				{/if}
 			</span>
 			<DraggableList
-				items={filterEnabledScrapers(getGlobalPriority())}
+				items={filterEnabledScrapers(getGlobalPriority(config))}
 				onReorder={updateGlobalPriority}
 			>
 				{#snippet children({ item })}
@@ -315,9 +451,9 @@
 									<FieldRow
 										fieldName={field.key}
 										fieldLabel={field.label}
-										priority={getFieldPriority(field.key)}
-										globalPriority={getGlobalPriority()}
-										isOverridden={isFieldOverridden(field.key)}
+										priority={filterEnabledScrapers(getFieldPriority(config, field.key))}
+										globalPriority={filterEnabledScrapers(getGlobalPriority(config))}
+										status={getFieldStatus(config, field.key)}
 										onEdit={() => openFieldEditor(field.key)}
 										onReset={() => resetFieldToGlobal(field.key)}
 									/>
@@ -352,32 +488,95 @@
 							{metadataFields.find((f) => f.key === editingField)?.description}
 						</p>
 					</div>
-					<Button variant="ghost" size="icon" onclick={() => (editingField = null)}>
+					<Button variant="ghost" size="icon" onclick={() => (editingField = null)} aria-label="Close editor">
 						{#snippet children()}
 							<X class="h-4 w-4" />
 						{/snippet}
 					</Button>
 				</div>
 
-				<!-- Draggable List -->
-				<div class="max-h-[50vh] overflow-y-scroll pr-1">
-					<DraggableList
-						items={filterEnabledScrapers(editingPriority)}
-						onReorder={(newPriority) => { editingPriority = newPriority; }}
-					>
-						{#snippet children({ item })}
-							<span class="font-medium">
-								{formatScraperName(item)}
-							</span>
-						{/snippet}
-					</DraggableList>
+				<!-- Draggable list: each scraper has an X to remove it from this field -->
+				<div class="max-h-[40vh] overflow-y-scroll pr-1">
+					{#if filterEnabledScrapers(editingPriority).length > 0}
+						<DraggableList
+							items={filterEnabledScrapers(editingPriority)}
+							onReorder={(newEnabledOrder) => {
+								// Reorder within the FULL list: re-apply the enabled-only
+								// reordering back onto editingPriority, preserving any
+								// disabled scrapers the DraggableList hid from display
+								// (appended after the enabled ones, in their original
+								// relative order). Writing newEnabledOrder straight back
+								// would silently drop disabled scrapers on the first drag.
+								editingPriority = applyEnabledReorderToFull(editingPriority, newEnabledOrder);
+							}}
+							onRemove={(name) => removeScraperFromField(name)}
+						>
+							{#snippet children({ item })}
+								<span class="font-medium">
+									{formatScraperName(item)}
+								</span>
+							{/snippet}
+						</DraggableList>
+					{:else}
+						<p class="text-sm text-muted-foreground italic py-4 text-center">
+							No scrapers in this field's list. Save with an empty list to suppress this
+							field (stores the <code class="bg-muted px-1 rounded">"__skip__"</code>
+							sentinel — no scraper is consulted), or add some below.
+						</p>
+					{/if}
 				</div>
 
+				<!-- Shortcuts: add all / remove all -->
+				<div class="flex items-center gap-2 flex-wrap">
+					<Button variant="outline" size="sm" onclick={addAllScrapers} aria-label="Add all scrapers to this field">
+						{#snippet children()}
+							Add all
+						{/snippet}
+					</Button>
+					<Button variant="outline" size="sm" onclick={removeAllScrapers} aria-label="Remove all scrapers from this field">
+						{#snippet children()}
+							Remove all
+						{/snippet}
+					</Button>
+				</div>
+
+				<!-- Available scrapers to add back (those not currently in the list) -->
+				{#if availableScrapersToAdd.length > 0}
+					<div class="space-y-1.5">
+						<p class="text-xs font-medium text-muted-foreground">Available scrapers</p>
+						<div class="flex flex-wrap gap-1.5">
+							{#each availableScrapersToAdd as name}
+								<button
+									type="button"
+									onclick={() => addScraperToField(name)}
+									class="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-full border border-dashed border-border hover:border-primary hover:bg-primary/5 transition-colors"
+									aria-label="Add {formatScraperName(name)} to this field"
+								>
+									<span class="text-lg leading-none">+</span>
+									{formatScraperName(name)}
+								</button>
+							{/each}
+						</div>
+					</div>
+				{/if}
+
 				<!-- Info -->
-				<div class="bg-accent/50 rounded-lg p-3 text-xs text-muted-foreground">
+				<div class="bg-accent/50 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
 					<p>
-						Scrapers are tried in order from top to bottom. The first scraper that returns data
-						for this field will be used.
+						Scrapers are tried top-to-bottom; the first one that returns data for this field is
+						used. Only the scrapers listed here are consulted — there is no fallback to the
+						global list. Remove a scraper with its <span class="font-medium">✕</span> button; add
+						one back from the chips above.
+					</p>
+					<p>
+						To leave a field empty, remove all scrapers and Save (stores
+						<code class="bg-muted px-1 rounded">series: ["__skip__"]</code> — the
+						skip sentinel, no scraper is consulted), or point it at a scraper that
+						doesn't provide it (e.g.
+						<code class="bg-muted px-1 rounded">series: [tokyohot]</code>). A legacy
+						<code class="bg-muted px-1 rounded">series: []</code> is treated as
+						inherit-global, not suppression — so "Remove all + Save" stores the
+						<code class="bg-muted px-1 rounded">__skip__</code> sentinel instead.
 					</p>
 				</div>
 

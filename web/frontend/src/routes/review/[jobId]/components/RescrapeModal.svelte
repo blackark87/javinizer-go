@@ -8,7 +8,7 @@
 	import Card from '$lib/components/ui/Card.svelte';
 	import ScraperSelector from '$lib/components/ScraperSelector.svelte';
 
-	type ScalarStrategy = '' | 'prefer-nfo' | 'prefer-scraper' | 'preserve-existing' | 'fill-missing-only';
+	type ScalarStrategy = '' | 'prefer-nfo' | 'prefer-scraper' | 'preserve-existing' | 'fill-missing-only' | 'merge-arrays';
 
 	interface Props {
 		show: boolean;
@@ -89,7 +89,7 @@
 					{#if bulkMovieCount}
 						Rescrape {bulkMovieCount} movie{bulkMovieCount !== 1 ? 's' : ''}
 					{:else}
-						{manualSearchMode ? 'Manual Search' : `Rescrape ${rescrapeMovieName || rescrapeMovieId}`}}
+						{manualSearchMode ? 'Manual Search' : `Rescrape ${rescrapeMovieName || rescrapeMovieId}`}
 					{/if}
 				</h2>
 					<Button variant="ghost" size="icon" onclick={close} disabled={rescraping}>

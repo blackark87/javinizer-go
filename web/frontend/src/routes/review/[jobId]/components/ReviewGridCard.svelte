@@ -17,6 +17,7 @@
 		isEdited: boolean;
 		isBulkSelected: boolean;
 		selectionMode: boolean;
+		effectiveMovie?: Movie;
 		displayPosterUrl?: string;
 		displayCoverUrl?: string;
 		displayImageType?: 'poster' | 'cover';
@@ -31,6 +32,7 @@
 		isEdited,
 		isBulkSelected,
 		selectionMode,
+		effectiveMovie,
 		displayPosterUrl,
 		displayCoverUrl,
 		displayImageType = 'poster',
@@ -39,7 +41,7 @@
 		completenessConfig
 	}: Props = $props();
 
-	const movie = $derived(movieGroup.primaryResult.data as Movie | undefined);
+	const movie = $derived(effectiveMovie ?? movieGroup.primaryResult.movie as Movie | undefined);
 	const imageSrc = $derived(
 		displayImageType === 'cover'
 			? (displayCoverUrl ? previewImageURL(displayCoverUrl) : undefined)
@@ -93,19 +95,6 @@
 	}}
 >
 	<div class="relative w-full {displayImageType === 'cover' ? 'aspect-video' : 'aspect-2/3'} bg-muted">
-		{#if selectionMode}
-			<!-- svelte-ignore a11y_click_events_have_key_events -->
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class="absolute top-2 left-2 z-20" onclick={(e) => e.stopPropagation()}>
-				<input
-					type="checkbox"
-					checked={isBulkSelected}
-					class="h-5 w-5 cursor-pointer accent-blue-500 rounded shadow"
-					onclick={(e) => e.stopPropagation()}
-					onchange={(e) => { e.stopPropagation(); onclick(new MouseEvent('click')); }}
-				/>
-			</div>
-		{/if}
 		{#if imageSrc}
 			<img
 				src={imageSrc}
@@ -126,7 +115,7 @@
 		</span>
 
 		{#if isEdited}
-			<span class="absolute top-9 left-2 text-orange-600 dark:text-orange-400 bg-orange-100 dark:bg-orange-900/40 text-xs font-medium px-1.5 py-0.5 rounded-full flex items-center gap-1">
+			<span class="absolute top-2 left-2 text-orange-600 dark:text-orange-400 bg-orange-100 dark:bg-orange-900/40 text-xs font-medium px-1.5 py-0.5 rounded-full flex items-center gap-1">
 				<CircleAlert class="h-3 w-3" />
 				Modified
 			</span>

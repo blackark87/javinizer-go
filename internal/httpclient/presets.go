@@ -1,12 +1,10 @@
 package httpclient
 
 import (
-	"fmt"
-	"strings"
-
 	"github.com/javinizer/javinizer-go/internal/config"
 )
 
+// StandardHTMLHeaders returns the default HTTP headers for browser-like HTML requests.
 func StandardHTMLHeaders() map[string]string {
 	return map[string]string{
 		"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -17,6 +15,7 @@ func StandardHTMLHeaders() map[string]string {
 	}
 }
 
+// JSONAPIHeaders returns HTTP headers for JSON API requests.
 func JSONAPIHeaders() map[string]string {
 	return map[string]string{
 		"Accept":          "application/json, text/plain, */*",
@@ -26,22 +25,26 @@ func JSONAPIHeaders() map[string]string {
 	}
 }
 
-func RefererHeader(url string) map[string]string {
-	return map[string]string{
-		"Referer": url,
-	}
-}
-
+// JapaneseLanguageHeaders returns browser-like HTML headers that prefer
+// Japanese content while retaining an English fallback.
 func JapaneseLanguageHeaders() map[string]string {
 	return map[string]string{
 		"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-		"Accept-Language":           "en-US,en;q=0.9,ja;q=0.8",
+		"Accept-Language":           "ja,en-US;q=0.8,en;q=0.6",
 		"Accept-Encoding":           "gzip, deflate",
 		"Connection":                "keep-alive",
 		"Upgrade-Insecure-Requests": "1",
 	}
 }
 
+// RefererHeader returns a header map that sets the Referer to the given URL.
+func RefererHeader(url string) map[string]string {
+	return map[string]string{
+		"Referer": url,
+	}
+}
+
+// DMMHeaders returns HTTP headers for DMM requests, including age-check and locale cookies.
 func DMMHeaders() map[string]string {
 	return map[string]string{
 		"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -53,6 +56,7 @@ func DMMHeaders() map[string]string {
 	}
 }
 
+// R18DevHeaders returns HTTP headers for requests to the R18 dev API.
 func R18DevHeaders() map[string]string {
 	return map[string]string{
 		"Accept":          "application/json, text/plain, */*",
@@ -62,6 +66,7 @@ func R18DevHeaders() map[string]string {
 	}
 }
 
+// UserAgentHeader returns a header map with the User-Agent resolved from the given value.
 func UserAgentHeader(ua string) map[string]string {
 	resolved := config.ResolveScraperUserAgent(ua)
 	return map[string]string{
@@ -69,6 +74,7 @@ func UserAgentHeader(ua string) map[string]string {
 	}
 }
 
+// CombineHeaders merges the given header presets into a single header map.
 func CombineHeaders(presets ...map[string]string) map[string]string {
 	result := make(map[string]string)
 	for _, preset := range presets {
@@ -77,25 +83,4 @@ func CombineHeaders(presets ...map[string]string) map[string]string {
 		}
 	}
 	return result
-}
-
-func MergeCookieHeader(existing, new map[string]string) string {
-	cookies := make(map[string]string)
-
-	for k, v := range existing {
-		cookies[k] = v
-	}
-	for k, v := range new {
-		cookies[k] = v
-	}
-
-	parts := make([]string, 0, len(cookies))
-	for name, value := range cookies {
-		parts = append(parts, fmt.Sprintf("%s=%s", name, value))
-	}
-
-	if len(parts) == 0 {
-		return ""
-	}
-	return strings.Join(parts, "; ")
 }

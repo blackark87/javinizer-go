@@ -2,6 +2,7 @@ package worker
 
 import (
 	"bytes"
+	"context"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -24,18 +25,18 @@ var (
 )
 
 func syncMovieNFO(
+	ctx context.Context,
 	movie *models.Movie,
 	cfg *config.Config,
-	db *database.DB,
 	historyRepo *database.HistoryRepository,
 	batchRepo *database.BatchFileOperationRepository,
 ) (string, error) {
 	if movie == nil || cfg == nil {
 		return "", nil
 	}
-	path, err := discoverSafeNFOPath(movie, cfg.API.Security.AllowedDirectories, historyRepo, batchRepo)
-	if err != nil || path == "" {
-		return "", err
+	path := discoverSafeNFOPath(ctx, movie, cfg.API.Security.AllowedDirectories, historyRepo, batchRepo)
+	if path == "" {
+		return "", nil
 	}
 	original, err := os.ReadFile(path)
 	if err != nil {
@@ -48,7 +49,7 @@ func syncMovieNFO(
 		return "", fmt.Errorf("parse NFO: %w", err)
 	}
 
-	generator := nfo.NewGenerator(afero.NewOsFs(), nfo.ConfigFromAppConfig(&cfg.Metadata.NFO, &cfg.Output, &cfg.Metadata, db))
+	generator := nfo.NewGenerator(afero.NewOsFs(), nfo.ConfigFromAppConfig(cfg, nfo.NFONameConfigFromAppConfig(cfg)))
 	generated := generator.MovieToNFO(movie, "")
 	actorXML, err := marshalActorBlocks(generated.Actors)
 	if err != nil {
@@ -88,9 +89,9 @@ func syncMovieNFO(
 		return "", fmt.Errorf("replace NFO: %w", err)
 	}
 	if historyRepo != nil {
-		_ = historyRepo.Create(&models.History{
+		_ = historyRepo.Create(ctx, &models.History{
 			MovieID: movie.ContentID, Operation: "nfo", OriginalPath: path, NewPath: path,
-			Status: "success", Metadata: `{"source":"actress_sync","actor_blocks_only":true}`,
+			Status: models.HistoryStatusSuccess, Metadata: `{"source":"actress_sync","actor_blocks_only":true}`,
 		})
 	}
 	return path, nil
@@ -175,11 +176,12 @@ func replaceNFOActorBlocks(original, actors []byte) []byte {
 }
 
 func discoverSafeNFOPath(
+	ctx context.Context,
 	movie *models.Movie,
 	allowedDirs []string,
 	historyRepo *database.HistoryRepository,
 	batchRepo *database.BatchFileOperationRepository,
-) (string, error) {
+) string {
 	keys := []string{movie.ContentID}
 	if strings.TrimSpace(movie.ID) != "" && movie.ID != movie.ContentID {
 		keys = append(keys, movie.ID)
@@ -187,22 +189,22 @@ func discoverSafeNFOPath(
 	var candidates []string
 	for _, key := range keys {
 		if batchRepo != nil {
-			if op, err := batchRepo.FindLatestAppliedByMovieID(key); err == nil {
+			if op, err := batchRepo.FindLatestAppliedByMovieID(ctx, key); err == nil {
 				candidates = append(candidates, op.NFOPath)
 			}
 		}
 		if historyRepo != nil {
-			if entry, err := historyRepo.FindLatestSuccessfulOperation(key, "nfo"); err == nil {
+			if entry, err := historyRepo.FindLatestSuccessfulOperation(ctx, key, models.HistoryOperation("nfo")); err == nil {
 				candidates = append(candidates, entry.NewPath)
 			}
 		}
 	}
 	for _, candidate := range candidates {
 		if validated, ok := validateExistingNFOPath(candidate, allowedDirs); ok {
-			return validated, nil
+			return validated
 		}
 	}
-	return "", nil
+	return ""
 }
 
 func validateExistingNFOPath(path string, allowedDirs []string) (string, bool) {

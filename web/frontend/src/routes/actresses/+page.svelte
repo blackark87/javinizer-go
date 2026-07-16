@@ -5,7 +5,13 @@
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { Plus, RefreshCw, Download, Upload, Loader2 } from 'lucide-svelte';
 	import { apiClient } from '$lib/api/client';
-	import type { Actress, ActressSyncJob, ActressSyncTask, ActressUpsertRequest, ImportResponse } from '$lib/api/types';
+	import type {
+		Actress,
+		ActressSyncJob,
+		ActressSyncTask,
+		ActressUpsertRequest,
+		ImportResponse,
+	} from '$lib/api/types';
 	import { toastStore } from '$lib/stores/toast';
 	import { confirmDialog } from '$lib/stores/dialog.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
@@ -20,9 +26,16 @@
 	import ActressPagination from './components/ActressPagination.svelte';
 	import ActressSyncModal from './components/ActressSyncModal.svelte';
 	import { buildActressSyncSummary } from './sync-runner';
+	import { createConfigQuery } from '$lib/query/queries';
 
 	const store = createActressStore();
 	const queryClient = useQueryClient();
+	const configQuery = createConfigQuery();
+	let firstNameOrder = $derived(configQuery.data?.output?.first_name_order ?? false);
+	let japaneseNames = $derived(
+		(configQuery.data?.output?.actress_language_ja ?? false) ||
+		(configQuery.data?.metadata?.nfo?.actress_language_ja ?? false)
+	);
 	let importFile = $state<HTMLInputElement | null>(null);
 	let syncModalOpen = $state(false);
 	let syncPreparing = $state(false);
@@ -109,7 +122,7 @@
 	async function refreshSyncJob(jobID: string) {
 		const [jobResponse, tasksResponse] = await Promise.all([
 			apiClient.getActressSyncJob(jobID),
-			apiClient.listActressSyncJobTasks(jobID)
+			apiClient.listActressSyncJobTasks(jobID),
 		]);
 		if (syncJob?.id && syncJob.id !== jobID) return;
 		syncJob = jobResponse.job;
@@ -120,7 +133,10 @@
 			if (notifiedJobID !== jobID) {
 				notifiedJobID = jobID;
 				const job = jobResponse.job;
-				toastStore.success(`Sync ${job.status} — Updated: ${job.updated}, Warnings: ${job.warnings}, Skipped: ${job.skipped}, Conflicts: ${job.conflicts}, Failed: ${job.failed}`, 6000);
+				toastStore.success(
+					`Sync ${job.status} — Updated: ${job.updated}, Warnings: ${job.warnings}, Skipped: ${job.skipped}, Conflicts: ${job.conflicts}, Failed: ${job.failed}`,
+					6000,
+				);
 			}
 		}
 	}
@@ -128,7 +144,12 @@
 	function startPolling(jobID: string) {
 		stopPolling();
 		syncPollTimer = setInterval(() => {
-			void refreshSyncJob(jobID).catch((error) => toastStore.error(error instanceof Error ? error.message : 'Failed to refresh actress sync job', 4000));
+			void refreshSyncJob(jobID).catch((error) =>
+				toastStore.error(
+					error instanceof Error ? error.message : 'Failed to refresh actress sync job',
+					4000,
+				),
+			);
 		}, 1000);
 	}
 
@@ -140,7 +161,11 @@
 		if (job.status === 'pending' || job.status === 'running') startPolling(job.id);
 	}
 
-	async function startSyncJob(request: { scope: 'missing' | 'selected'; missing?: boolean; actress_ids?: number[] }) {
+	async function startSyncJob(request: {
+		scope: 'missing' | 'selected';
+		missing?: boolean;
+		actress_ids?: number[];
+	}) {
 		const response = await apiClient.createActressSyncJob(request);
 		notifiedJobID = null;
 		await attachSyncJob(response.job);
@@ -158,11 +183,14 @@
 			const confirmed = await confirmDialog(
 				'Sync Missing Actress Metadata',
 				`Queue ${candidates.total} actress(es) for background sync? Unknown actresses expand into one task per linked movie.`,
-				{ confirmLabel: 'Start Sync' }
+				{ confirmLabel: 'Start Sync' },
 			);
 			if (confirmed) await startSyncJob({ scope: 'missing', missing: true });
 		} catch (error) {
-			toastStore.error(error instanceof Error ? error.message : 'Failed to load sync candidates', 4000);
+			toastStore.error(
+				error instanceof Error ? error.message : 'Failed to load sync candidates',
+				4000,
+			);
 		} finally {
 			syncPreparing = false;
 		}
@@ -176,11 +204,14 @@
 			const confirmed = await confirmDialog(
 				'Sync Selected Actress Metadata',
 				`Queue ${ids.length} selected actress(es) for background sync?`,
-				{ confirmLabel: 'Start Sync' }
+				{ confirmLabel: 'Start Sync' },
 			);
 			if (confirmed) await startSyncJob({ scope: 'selected', actress_ids: ids });
 		} catch (error) {
-			toastStore.error(error instanceof Error ? error.message : 'Failed to sync selected actresses', 4000);
+			toastStore.error(
+				error instanceof Error ? error.message : 'Failed to sync selected actresses',
+				4000,
+			);
 		} finally {
 			syncPreparing = false;
 		}
@@ -191,7 +222,10 @@
 		try {
 			syncJob = (await apiClient.cancelActressSyncJob(syncJob.id)).job;
 		} catch (error) {
-			toastStore.error(error instanceof Error ? error.message : 'Failed to stop actress sync', 4000);
+			toastStore.error(
+				error instanceof Error ? error.message : 'Failed to stop actress sync',
+				4000,
+			);
 		}
 	}
 
@@ -200,13 +234,15 @@
 	}
 
 	onMount(() => {
-		void apiClient.listActiveActressSyncJobs()
-			.then((response) => response.jobs.length > 0 ? attachSyncJob(response.jobs[0]) : undefined)
+		void apiClient
+			.listActiveActressSyncJobs()
+			.then((response) =>
+				response.jobs.length > 0 ? attachSyncJob(response.jobs[0]) : undefined,
+			)
 			.catch(() => undefined);
 	});
 
 	onDestroy(() => {
-		// Only browser polling stops; the durable server job continues.
 		stopPolling();
 	});
 </script>
@@ -229,12 +265,7 @@
 					onchange={handleImportChange}
 					class="hidden"
 				/>
-				<Button
-					variant="outline"
-					size="sm"
-					onclick={handleSyncMissing}
-					disabled={isSyncing}
-				>
+				<Button variant="outline" size="sm" onclick={handleSyncMissing} disabled={isSyncing}>
 					{#if syncPreparing}
 						<Loader2 class="h-4 w-4 animate-spin" />
 					{:else}
@@ -340,33 +371,33 @@
 									actresses={store.actresses}
 									selectedIds={store.selectedIds}
 									itemDelay={store.itemDelay}
-									getDisplayName={store.getDisplayName}
+									getDisplayName={(actress) => store.getDisplayName(actress, firstNameOrder, japaneseNames)}
 									isSelected={store.isSelected}
 									onToggleSelection={store.toggleSelection}
 									onStartEdit={store.startEdit}
-									onRemoveActress={store.removeActress}
+									onRemoveActress={(actress) => store.removeActress(actress, firstNameOrder, japaneseNames)}
 									deletePending={store.deleteActressMutation.isPending}
 								/>
 							{:else if store.viewMode === 'compact'}
 								<ActressCompactView
 									actresses={store.actresses}
 									itemDelay={store.itemDelay}
-									getDisplayName={store.getDisplayName}
+									getDisplayName={(actress) => store.getDisplayName(actress, firstNameOrder, japaneseNames)}
 									isSelected={store.isSelected}
 									onToggleSelection={store.toggleSelection}
 									onStartEdit={store.startEdit}
-									onRemoveActress={store.removeActress}
+									onRemoveActress={(actress) => store.removeActress(actress, firstNameOrder, japaneseNames)}
 									deletePending={store.deleteActressMutation.isPending}
 								/>
 							{:else}
 								<ActressTableView
 									actresses={store.actresses}
 									itemDelay={store.itemDelay}
-									getDisplayName={store.getDisplayName}
+									getDisplayName={(actress) => store.getDisplayName(actress, firstNameOrder, japaneseNames)}
 									isSelected={store.isSelected}
 									onToggleSelection={store.toggleSelection}
 									onStartEdit={store.startEdit}
-									onRemoveActress={store.removeActress}
+									onRemoveActress={(actress) => store.removeActress(actress, firstNameOrder, japaneseNames)}
 									deletePending={store.deleteActressMutation.isPending}
 								/>
 							{/if}
@@ -398,7 +429,7 @@
 	mergePreviewFetching={store.mergePreviewQuery.isFetching}
 	mergeSummary={store.mergeSummary}
 	mergePending={store.mergeActressMutation.isPending}
-	getActressLabelByID={store.getActressLabelByID}
+	getActressLabelByID={(id) => store.getActressLabelByID(id, firstNameOrder, japaneseNames)}
 	onCloseMergeModal={store.closeMergeModal}
 	onResetMergeQueueAndPreview={store.resetMergeQueueAndPreview}
 	onApplyCurrentMerge={store.applyCurrentMerge}

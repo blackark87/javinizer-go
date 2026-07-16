@@ -10,8 +10,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	_ "github.com/javinizer/javinizer-go/internal/api/contracts"
+	"github.com/javinizer/javinizer-go/internal/api/core"
 	"github.com/javinizer/javinizer-go/internal/config"
-	"github.com/javinizer/javinizer-go/internal/downloader"
 	"github.com/javinizer/javinizer-go/internal/httpclient"
 	"github.com/javinizer/javinizer-go/internal/ssrf"
 )
@@ -25,21 +26,21 @@ import (
 // @Param jobId path string true "Job ID"
 // @Param filename path string true "Filename"
 // @Success 200 {file} binary
-// @Failure 404 {object} ErrorResponse
-func serveTempPoster(deps *ServerDependencies) gin.HandlerFunc {
+// @Failure 404 {object} contracts.ErrorResponse
+func serveTempPoster(rt *core.APIRuntime) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		cfg := deps.GetConfig()
-		if cfg == nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "server configuration unavailable"})
-			return
-		}
+		apiCfg := rt.GetAPIConfig()
+		tempCfg := apiCfg.TempConfig()
+		deps := rt.Deps()
 
 		jobID := c.Param("jobId")
 		filename := c.Param("filename")
 
-		// Validate both jobID and filename to prevent path traversal attacks
-		// Only allow values without path separators
-		if jobID != filepath.Base(jobID) || filename != filepath.Base(filename) {
+		// Validate both jobID and filename to prevent path traversal attacks.
+		// Reject "."/".." and any path separators — filepath.Base("..") == "..",
+		// so the prior base-name check alone let jobID=".." resolve posters/..
+		// to the temp root and serve sibling files.
+		if !isSafePathSegment(jobID) || !isSafePathSegment(filename) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Not Found"})
 			return
 		}
@@ -54,9 +55,9 @@ func serveTempPoster(deps *ServerDependencies) gin.HandlerFunc {
 		// This ensures temp posters remain accessible even if system.temp_dir is changed
 		// If job is not in memory (evicted after 24h cleanup), falls back to config TempDir
 		// This is acceptable for ephemeral temp posters since they're cleaned up on organization
-		tempDir := cfg.System.TempDir
-		if deps.JobQueue != nil {
-			if job, ok := deps.JobQueue.GetJob(jobID); ok && job.TempDir != "" {
+		tempDir := tempCfg.TempDir
+		if deps.JobStore != nil {
+			if job, ok := deps.JobStore.GetJob(jobID); ok && job.TempDir != "" {
 				tempDir = job.TempDir
 			}
 		}
@@ -92,14 +93,14 @@ func serveTempPoster(deps *ServerDependencies) gin.HandlerFunc {
 // @Tags temp
 // @Param filename path string true "Filename"
 // @Success 200 {file} binary
-// @Failure 404 {object} ErrorResponse
+// @Failure 404 {object} contracts.ErrorResponse
 func serveCroppedPoster() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		filename := c.Param("filename")
 
-		// Validate filename to prevent path traversal attacks
-		// Only allow filenames without path separators and with .jpg extension
-		if filename != filepath.Base(filename) || !strings.HasSuffix(strings.ToLower(filename), ".jpg") {
+		// Validate filename to prevent path traversal attacks.
+		// Reject "."/".." and path separators in addition to requiring .jpg.
+		if !isSafePathSegment(filename) || !strings.HasSuffix(strings.ToLower(filename), ".jpg") {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Not Found"})
 			return
 		}
@@ -136,15 +137,12 @@ func serveCroppedPoster() gin.HandlerFunc {
 // @Tags temp
 // @Param url query string true "Image URL"
 // @Success 200 {file} binary
-// @Failure 400 {object} ErrorResponse
-// @Failure 502 {object} ErrorResponse
-func serveTempImage(deps *ServerDependencies) gin.HandlerFunc {
+// @Failure 400 {object} contracts.ErrorResponse
+// @Failure 502 {object} contracts.ErrorResponse
+func serveTempImage(rt *core.APIRuntime) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		cfg := deps.GetConfig()
-		if cfg == nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "server configuration unavailable"})
-			return
-		}
+		apiCfg := rt.GetAPIConfig()
+		tempCfg := apiCfg.TempConfig()
 
 		rawURL := strings.TrimSpace(c.Query("url"))
 		if rawURL == "" {
@@ -171,13 +169,13 @@ func serveTempImage(deps *ServerDependencies) gin.HandlerFunc {
 			return
 		}
 
-		userAgent := cfg.Scrapers.UserAgent
+		userAgent := tempCfg.ScraperUserAgent
 		if userAgent == "" {
 			userAgent = config.DefaultUserAgent
 		}
 		req.Header.Set("User-Agent", userAgent)
 		req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
-		if referer := resolveTempImageReferer(parsedURL.String(), cfg.Scrapers.Referer); referer != "" {
+		if referer := resolveTempImageReferer(parsedURL.String(), tempCfg.ScraperReferer); referer != "" {
 			req.Header.Set("Referer", referer)
 		}
 
@@ -213,5 +211,19 @@ func serveTempImage(deps *ServerDependencies) gin.HandlerFunc {
 
 // resolveTempImageReferer selects a compatible Referer for preview image proxy requests.
 func resolveTempImageReferer(downloadURL, configuredReferer string) string {
-	return downloader.ResolveMediaReferer(downloadURL, configuredReferer)
+	return httpclient.ResolveMediaReferer(downloadURL, configuredReferer)
+}
+
+// isSafePathSegment reports whether s is a single safe path segment: non-empty,
+// not "." or "..", and containing no path separators (os.PathSeparator or '/').
+// filepath.Base alone is insufficient because filepath.Base("..") == "..",
+// which would let a jobID/filename of ".." escape its intended directory.
+func isSafePathSegment(s string) bool {
+	if s == "" || s == "." || s == ".." {
+		return false
+	}
+	if strings.ContainsAny(s, "/"+string(os.PathSeparator)+"\\") {
+		return false
+	}
+	return s == filepath.Base(s)
 }

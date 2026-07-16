@@ -1,6 +1,7 @@
 package template
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -50,16 +51,16 @@ type Context struct {
 	// Categories
 	Genres []string
 
-	// Media/source file info
+	// Media info
 	OriginalFilename string
 	VideoFilePath    string // Path to video file for mediainfo extraction
-	SourcePath       string // Full source video path
-	SourceDir        string // Directory containing the source video
-	SourceFolder     string // Base folder name containing the source video
-	SourceParent     string // Parent folder name of SourceFolder
-	SourceFile       string // Source filename with extension
+	SourcePath       string // Full path to the source video file
+	SourceDir        string // Directory containing the source video file
+	SourceFolder     string // Base name of SourceDir
+	SourceParent     string // Base name of SourceDir's parent
+	SourceFile       string // Source filename including extension
 	SourceFilename   string // Source filename without extension
-	SourceExtension  string // Source file extension including dot
+	SourceExtension  string // Source filename extension including the leading dot
 
 	// Indexing (for screenshots, multi-part, etc.)
 	Index int
@@ -90,13 +91,37 @@ type Context struct {
 	DefaultLanguage string
 
 	// Output configuration
-	GroupActress     bool   // Replace multiple actresses with group name
-	GroupActressName string // Folder name when GroupActress is enabled and multiple actresses (default: "@Group")
-	FirstNameOrder   bool   // true = FirstName LastName, false = LastName FirstName (default: false for backward compat)
+	GroupActress            bool   // Replace multiple actresses with group name
+	GroupActressName        string // Folder name when GroupActress is enabled and multiple actresses (default: "@Group")
+	GroupUnknownActressName string // Replacement when GroupActress is enabled and the actress list is empty or unknown (default: "@Unknown")
+
+	// Name formatting
+	FirstNameOrder    bool   // true = FirstName LastName, false = LastName FirstName (default: false for backward compat)
+	ActressLanguageJa bool   // true = prefer JapaneseName over First/Last when available (mirrors nfo.actress_language_ja)
+	ActressDelimiter  string // Delimiter between actress names when <ACTORS> has no DELIM= modifier (default: ", ")
 }
 
-// NewContextFromMovie creates a template context from a Movie model
+// ContextOptions holds optional configuration for building a template Context.
+// Zero-value options produce the same result as NewContextFromMovie (LastName-first names).
+type ContextOptions struct {
+	// FirstNameOrder controls actress name order in the Actresses list.
+	// When true, names use FirstName LastName order (e.g., "Yui Hatano").
+	// When false (default), names use LastName FirstName order (e.g., "Hatano Yui").
+	FirstNameOrder bool
+}
+
+// NewContextFromMovie creates a template context from a Movie model.
+// Actress names use LastName-first format. Use NewContextFromMovieWithOptions
+// for config-aware name formatting.
 func NewContextFromMovie(movie *models.Movie) *Context {
+	return NewContextFromMovieWithOptions(movie, ContextOptions{})
+}
+
+// NewContextFromMovieWithOptions creates a template context from a Movie model
+// with the given options. When opts.FirstNameOrder is true, actress names in
+// the Actresses list use FirstName LastName order, matching the NFO generator's
+// config-aware formatting.
+func NewContextFromMovieWithOptions(movie *models.Movie, opts ContextOptions) *Context {
 	ctx := &Context{
 		ID:               movie.ID,
 		ContentID:        movie.ContentID,
@@ -111,9 +136,10 @@ func NewContextFromMovie(movie *models.Movie) *Context {
 		Series:           movie.Series,
 		OriginalFilename: movie.OriginalFileName,
 		Description:      movie.Description,
-		CoverURL:         movie.CoverURL,
+		CoverURL:         movie.Poster.CoverURL,
 		TrailerURL:       movie.TrailerURL,
 		Translations:     buildTranslationMap(movie.Translations),
+		FirstNameOrder:   opts.FirstNameOrder,
 	}
 
 	// Extract rating
@@ -121,12 +147,14 @@ func NewContextFromMovie(movie *models.Movie) *Context {
 		ctx.Rating = movie.RatingScore
 	}
 
-	// Build actress list
+	// Build actress list using config-aware name formatting
 	if len(movie.Actresses) > 0 {
 		ctx.Actresses = make([]string, 0, len(movie.Actresses))
 		ctx.ActressDetails = make([]ActressDetail, 0, len(movie.Actresses))
 		for _, actress := range movie.Actresses {
-			ctx.Actresses = append(ctx.Actresses, actress.FullName())
+			ctx.Actresses = append(ctx.Actresses, models.FormatActressName(actress, models.FormatActressNameOptions{
+				FirstNameOrder: opts.FirstNameOrder,
+			}))
 			ctx.ActressDetails = append(ctx.ActressDetails, ActressDetail{
 				FirstName:    actress.FirstName,
 				LastName:     actress.LastName,
@@ -135,10 +163,8 @@ func NewContextFromMovie(movie *models.Movie) *Context {
 		}
 
 		// Set first/last name from first actress for single-actress templates
-		if len(movie.Actresses) > 0 {
-			ctx.FirstName = movie.Actresses[0].FirstName
-			ctx.LastName = movie.Actresses[0].LastName
-		}
+		ctx.FirstName = movie.Actresses[0].FirstName
+		ctx.LastName = movie.Actresses[0].LastName
 	}
 
 	// Build genre list
@@ -152,62 +178,9 @@ func NewContextFromMovie(movie *models.Movie) *Context {
 	return ctx
 }
 
-// NewContextFromScraperResult creates a template context from a ScraperResult
-func NewContextFromScraperResult(result *models.ScraperResult) *Context {
-	ctx := &Context{
-		ID:            result.ID,
-		ContentID:     result.ContentID,
-		Title:         result.Title,
-		OriginalTitle: result.OriginalTitle,
-		ReleaseDate:   result.ReleaseDate,
-		Runtime:       result.Runtime,
-		Director:      result.Director,
-		Maker:         result.Maker,
-		Label:         result.Label,
-		Series:        result.Series,
-		Description:   result.Description,
-		CoverURL:      result.CoverURL,
-		TrailerURL:    result.TrailerURL,
-		Translations:  buildTranslationMap(result.Translations),
-	}
-
-	if result.ReleaseDate != nil {
-		ctx.ReleaseYear = result.ReleaseDate.Year()
-	}
-
-	// Extract rating
-	if result.Rating != nil {
-		ctx.Rating = result.Rating.Score
-	}
-
-	// Build actress list
-	if len(result.Actresses) > 0 {
-		ctx.Actresses = make([]string, 0, len(result.Actresses))
-		ctx.ActressDetails = make([]ActressDetail, 0, len(result.Actresses))
-		for _, actress := range result.Actresses {
-			ctx.Actresses = append(ctx.Actresses, actress.FullName())
-			ctx.ActressDetails = append(ctx.ActressDetails, ActressDetail{
-				FirstName:    actress.FirstName,
-				LastName:     actress.LastName,
-				JapaneseName: actress.JapaneseName,
-			})
-		}
-
-		// Set first/last name from first actress
-		if len(result.Actresses) > 0 {
-			ctx.FirstName = result.Actresses[0].FirstName
-			ctx.LastName = result.Actresses[0].LastName
-		}
-	}
-
-	// Build genre list
-	ctx.Genres = result.Genres
-
-	return ctx
-}
-
-// SetSourceFile attaches the currently processed source video path to the template context.
-// This enables source-path tags and allows <RESOLUTION> to analyze the actual media file.
+// SetSourceFile attaches the currently processed source video to the context.
+// Besides enabling source-path tags, this gives media tags the real file to
+// inspect instead of relying on scraped metadata.
 func (c *Context) SetSourceFile(path, name, extension string) {
 	path = strings.TrimSpace(path)
 	name = strings.TrimSpace(name)
@@ -249,43 +222,46 @@ func (c *Context) SetSourceFile(path, name, extension string) {
 // Preserves cached mediainfo to avoid duplicate expensive analysis.
 func (c *Context) Clone() *Context {
 	clone := Context{
-		ID:               c.ID,
-		ContentID:        c.ContentID,
-		Title:            c.Title,
-		OriginalTitle:    c.OriginalTitle,
-		ReleaseDate:      c.ReleaseDate,
-		ReleaseYear:      c.ReleaseYear,
-		Runtime:          c.Runtime,
-		Director:         c.Director,
-		ActressName:      c.ActressName,
-		FirstName:        c.FirstName,
-		LastName:         c.LastName,
-		Maker:            c.Maker,
-		Label:            c.Label,
-		Series:           c.Series,
-		OriginalFilename: c.OriginalFilename,
-		VideoFilePath:    c.VideoFilePath,
-		SourcePath:       c.SourcePath,
-		SourceDir:        c.SourceDir,
-		SourceFolder:     c.SourceFolder,
-		SourceParent:     c.SourceParent,
-		SourceFile:       c.SourceFile,
-		SourceFilename:   c.SourceFilename,
-		SourceExtension:  c.SourceExtension,
-		Index:            c.Index,
-		PartNumber:       c.PartNumber,
-		PartSuffix:       c.PartSuffix,
-		IsMultiPart:      c.IsMultiPart,
-		Rating:           c.Rating,
-		Description:      c.Description,
-		CoverURL:         c.CoverURL,
-		TrailerURL:       c.TrailerURL,
-		DefaultLanguage:  c.DefaultLanguage,
-		GroupActress:     c.GroupActress,
-		GroupActressName: c.GroupActressName,
-		FirstNameOrder:   c.FirstNameOrder,
-		cachedMediaInfo:  c.cachedMediaInfo,
-		mediaInfoError:   c.mediaInfoError,
+		ID:                      c.ID,
+		ContentID:               c.ContentID,
+		Title:                   c.Title,
+		OriginalTitle:           c.OriginalTitle,
+		ReleaseDate:             c.ReleaseDate,
+		ReleaseYear:             c.ReleaseYear,
+		Runtime:                 c.Runtime,
+		Director:                c.Director,
+		ActressName:             c.ActressName,
+		FirstName:               c.FirstName,
+		LastName:                c.LastName,
+		Maker:                   c.Maker,
+		Label:                   c.Label,
+		Series:                  c.Series,
+		OriginalFilename:        c.OriginalFilename,
+		VideoFilePath:           c.VideoFilePath,
+		SourcePath:              c.SourcePath,
+		SourceDir:               c.SourceDir,
+		SourceFolder:            c.SourceFolder,
+		SourceParent:            c.SourceParent,
+		SourceFile:              c.SourceFile,
+		SourceFilename:          c.SourceFilename,
+		SourceExtension:         c.SourceExtension,
+		Index:                   c.Index,
+		PartNumber:              c.PartNumber,
+		PartSuffix:              c.PartSuffix,
+		IsMultiPart:             c.IsMultiPart,
+		Rating:                  c.Rating,
+		Description:             c.Description,
+		CoverURL:                c.CoverURL,
+		TrailerURL:              c.TrailerURL,
+		DefaultLanguage:         c.DefaultLanguage,
+		GroupActress:            c.GroupActress,
+		GroupActressName:        c.GroupActressName,
+		GroupUnknownActressName: c.GroupUnknownActressName,
+		FirstNameOrder:          c.FirstNameOrder,
+		ActressLanguageJa:       c.ActressLanguageJa,
+		ActressDelimiter:        c.ActressDelimiter,
+		cachedMediaInfo:         c.cachedMediaInfo,
+		mediaInfoError:          c.mediaInfoError,
 	}
 
 	if c.Actresses != nil {
@@ -316,24 +292,6 @@ func (c *Context) Clone() *Context {
 	return &clone
 }
 
-// IsVR reports whether the source video file is VR-framed (180 SBS,
-// top-bottom, or 360 mono-equirectangular), based on its own dimensions
-// rather than scraped metadata - a file may not match its release's genre tags.
-func (c *Context) IsVR() bool {
-	info := c.GetMediaInfo()
-	if info == nil {
-		return false
-	}
-	return info.IsVR()
-}
-
-// SetMediaInfo preloads media metadata for tags such as <RESOLUTION> and <VR>.
-// This is useful when a caller has already analyzed the source file.
-func (c *Context) SetMediaInfo(info *mediainfo.VideoInfo) {
-	c.cachedMediaInfo = info
-	c.mediaInfoError = nil
-}
-
 // GetMediaInfo lazy-loads and caches video metadata.
 // Thread-safe: uses sync.Once to ensure single initialization even under concurrent access.
 // Preserves pre-existing cached values from Clone() to avoid duplicate expensive analysis.
@@ -346,9 +304,22 @@ func (c *Context) GetMediaInfo() *mediainfo.VideoInfo {
 			c.mediaInfoError = fmt.Errorf("no video file path")
 			return
 		}
-		c.cachedMediaInfo, c.mediaInfoError = mediainfo.Analyze(c.VideoFilePath)
+		c.cachedMediaInfo, c.mediaInfoError = mediainfo.Analyze(context.Background(), c.VideoFilePath)
 	})
 	return c.cachedMediaInfo
+}
+
+// SetMediaInfo preloads media metadata for tags such as <RESOLUTION> and <VR>.
+// Callers use this when the source file has already been analyzed.
+func (c *Context) SetMediaInfo(info *mediainfo.VideoInfo) {
+	c.cachedMediaInfo = info
+	c.mediaInfoError = nil
+}
+
+// IsVR reports whether the source video's own dimensions indicate a VR layout.
+func (c *Context) IsVR() bool {
+	info := c.GetMediaInfo()
+	return info != nil && info.IsVR()
 }
 
 // buildTranslationMap creates a language-keyed map from translation records.
@@ -369,23 +340,11 @@ func buildTranslationMap(translations []models.MovieTranslation) map[string]mode
 		// Keep first non-empty translation for a language
 		// Deterministic because input is ordered
 		if _, exists := m[lang]; !exists {
-			translation.Actresses = normalizeTranslatedActresses(translation.Actresses)
 			m[lang] = translation
 		}
 	}
 
 	return m
-}
-
-func normalizeTranslatedActresses(actresses []string) []string {
-	if len(actresses) == 0 {
-		return nil
-	}
-	normalized := make([]string, len(actresses))
-	for i, actress := range actresses {
-		normalized[i] = strings.TrimSpace(actress)
-	}
-	return normalized
 }
 
 // normalizeLanguageCode normalizes language codes to base language only.
@@ -411,9 +370,21 @@ func normalizeLanguageCode(lang string) string {
 	return lang
 }
 
-func (c *Context) formatActressName(detail ActressDetail) string {
+// formatActressNameLang formats a single actress name, allowing callers to
+// override the context-wide ActressLanguageJa and FirstNameOrder preferences.
+// The overrides are used by the <ACTORS:JA> / <ACTRESS:FIRST> /
+// <ACTORNAME:JA,LAST> tag modifiers. A nil firstNameOrderHint falls back to
+// c.FirstNameOrder (the config default).
+func (c *Context) formatActressNameLang(detail ActressDetail, preferJa bool, firstNameOrderHint *bool) string {
+	if preferJa && detail.JapaneseName != "" {
+		return detail.JapaneseName
+	}
 	if detail.FirstName != "" && detail.LastName != "" {
-		if c.FirstNameOrder {
+		firstNameOrder := c.FirstNameOrder
+		if firstNameOrderHint != nil {
+			firstNameOrder = *firstNameOrderHint
+		}
+		if firstNameOrder {
 			return detail.FirstName + " " + detail.LastName
 		}
 		return detail.LastName + " " + detail.FirstName
@@ -427,24 +398,28 @@ func (c *Context) formatActressName(detail ActressDetail) string {
 	return detail.JapaneseName
 }
 
-func (c *Context) formatActressNameForLanguage(detail ActressDetail, lang string) string {
-	if lang == "ja" && detail.JapaneseName != "" {
-		return detail.JapaneseName
-	}
-	formatted := c.formatActressName(detail)
-	if lang == "en" && formatted != "" && cjkRegex.MatchString(formatted) {
-		return ""
-	}
-	return formatted
-}
-
-func (c *Context) formatActressNames() []string {
+// formatActressNamesLang formats all actress names with explicit overrides
+// of the Japanese-preference flag and first-name-order preference. See
+// formatActressNameLang.
+func (c *Context) formatActressNamesLang(preferJa bool, firstNameOrderHint *bool) []string {
 	if len(c.ActressDetails) == 0 {
 		return c.Actresses
 	}
 	names := make([]string, len(c.ActressDetails))
 	for i, detail := range c.ActressDetails {
-		names[i] = c.formatActressName(detail)
+		names[i] = c.formatActressNameLang(detail, preferJa, firstNameOrderHint)
 	}
 	return names
+}
+
+// formatActressName formats a single ActressDetail into a display name,
+// respecting the Context's ActressLanguageJa and FirstNameOrder settings.
+func (c *Context) formatActressName(detail ActressDetail) string {
+	return c.formatActressNameLang(detail, c.ActressLanguageJa, nil)
+}
+
+// formatActressNames returns a slice of formatted actress names using ActressDetails.
+// Falls back to the pre-formatted Actresses slice if ActressDetails is empty.
+func (c *Context) formatActressNames() []string {
+	return c.formatActressNamesLang(c.ActressLanguageJa, nil)
 }

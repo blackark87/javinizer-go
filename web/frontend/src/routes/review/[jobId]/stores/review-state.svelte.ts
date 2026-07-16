@@ -5,24 +5,45 @@ import { goto } from '$app/navigation';
 import type { Page } from '@sveltejs/kit';
 import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 import { apiClient } from '$lib/api/client';
+import { BaseClient } from '$lib/api/clients/common';
 import { createConfigQuery } from '$lib/query/queries';
-import type { BatchJobResponse, FileResult, Movie, Scraper, UpdateRequest, CompletenessConfig } from '$lib/api/types';
+import type {
+	BatchJobResponse,
+	FileResult,
+	Movie,
+	Scraper,
+	UpdateRequest,
+	CompletenessConfig,
+} from '$lib/api/types';
 import { toastStore } from '$lib/stores/toast';
 import { confirmDialog } from '$lib/stores/dialog.svelte';
 import { websocketStore } from '$lib/stores/websocket';
-import { createOrganizeController, type FileStatus, type OrganizeOperation } from '../logic/organize-controller';
-import { createRescrapeController, type ArrayStrategy, type ScalarStrategy } from '../logic/rescrape-controller';
-import { createPosterCropController, type PosterCropDragState } from '../logic/poster-crop-controller';
+import {
+	createOrganizeController,
+	type FileStatus,
+	type OrganizeOperation,
+} from '../logic/organize-controller';
+import {
+	createRescrapeController,
+	type ArrayStrategy,
+	type ScalarStrategy,
+} from '../logic/rescrape-controller';
+import {
+	createPosterCropController,
+	type PosterCropDragState,
+} from '../logic/poster-crop-controller';
 import { createReviewPageController } from '../logic/review-page-controller';
 import {
 	normalizeCropBox,
+	resolvePosterUrl as resolvePosterUrlPure,
 	type PosterCropBox,
 	type PosterCropMetrics,
 	type PosterCropState,
-	type PosterPreviewOverride
+	type PosterPreviewOverride,
 } from '../review-utils';
 import equal from 'fast-deep-equal';
 import { calculateCompleteness, type CompletenessTier } from '$lib/utils/completeness';
+import { nextOrganizeProgress } from '$lib/utils/job-progress';
 import { createReviewMutations } from './review-mutations.svelte';
 
 interface MovieGroup {
@@ -38,7 +59,7 @@ export function createReviewState(pageStore: Page) {
 
 	const jobQuery = createQuery(() => ({
 		queryKey: ['batch-job', jobId],
-		queryFn: () => apiClient.getBatchJob(jobId),
+		queryFn: () => apiClient.getBatchJob(jobId, true),
 		placeholderData: (prev) => prev,
 	}));
 
@@ -55,14 +76,7 @@ export function createReviewState(pageStore: Page) {
 				return;
 			}
 			if (data) {
-				const previousResults = job?.results ?? {};
-				for (const [filePath, result] of Object.entries(data.results) as [string, FileResult][]) {
-					const previous = previousResults[filePath];
-					if (previous?.data && loadedFullResultIds.has(previous.result_id)) {
-						result.data = previous.data;
-					}
-				}
-				job = data;
+				job = JSON.parse(JSON.stringify(data));
 			} else if (isPending && !isPlaceholder) {
 				job = null;
 			}
@@ -76,9 +90,7 @@ export function createReviewState(pageStore: Page) {
 	let config = $derived(configQuery.data ?? null);
 
 	let completenessConfig = $derived<CompletenessConfig | undefined>(
-		config?.metadata?.completeness?.enabled
-			? config.metadata.completeness
-			: undefined
+		config?.metadata?.completeness?.enabled ? config.metadata.completeness : undefined,
 	);
 
 	let currentMovieIndex = $state(0);
@@ -87,7 +99,6 @@ export function createReviewState(pageStore: Page) {
 	let lastSelectedMovieId = $state<string | null>(null);
 	let completenessFilter = new SvelteSet<CompletenessTier>(['incomplete', 'partial', 'complete']);
 	let selectionMode = $state(false);
-	let originalPosterState = new SvelteMap<string, { poster_url: string; cropped_poster_url: string; should_crop_poster: boolean }>();
 	let organizing = $state(false);
 	let destinationPath = $state('');
 	let organizeOperation = $state<OrganizeOperation>('move');
@@ -102,12 +113,15 @@ export function createReviewState(pageStore: Page) {
 	let viewMode = $state<'detail' | 'grid-poster' | 'grid-cover'>('detail');
 	let viewModeInitialized = $state(false);
 	let posterCropStatesStorageKey = $derived(`javinizer.review.posterCropStates.${jobId}`);
+	let editedMoviesStorageKey = $derived(`javinizer.review.editedMovies.${jobId}`);
+	let posterPreviewOverridesStorageKey = $derived(
+		`javinizer.review.posterPreviewOverrides.${jobId}`,
+	);
 
 	let organizeProgress = $state(0);
 	let organizeStatus = $state<'idle' | 'organizing' | 'completed' | 'failed'>('idle');
 	let fileStatuses = new SvelteMap<string, FileStatus>();
 	let expectedOrganizeFilePaths = $state<string[]>([]);
-	const organizeStorageKey = $derived(`javinizer.organize.state.${jobId}`);
 
 	const showCoverPanel = $derived(config?.output?.download_cover ?? true);
 	const showPosterPanel = $derived(config?.output?.download_poster ?? true);
@@ -131,66 +145,17 @@ export function createReviewState(pageStore: Page) {
 	let showAllPreviewScreenshots = $state(false);
 
 	let showPosterCropModal = $state(false);
+	let showSourceViewerModal = $state(false);
 	let posterCropLoadError = $state<string | null>(null);
 	let cropSourceURL = $state('');
 	let cropImageElement = $state<HTMLImageElement | null>(null);
 	let cropMetrics = $state<PosterCropMetrics | null>(null);
 	let cropBox = $state<PosterCropBox | null>(null);
+	let maxPosterHeight = $state<number | null>(null);
 	let cropDragState = $state<PosterCropDragState | null>(null);
+	let cropApplying = $state(false);
 	let posterPreviewOverrides = new SvelteMap<string, PosterPreviewOverride>();
 	let posterCropStates = new SvelteMap<string, PosterCropState>();
-	const DETAIL_CACHE_LIMIT = 5;
-	let resultDetailLRU: string[] = [];
-	let loadingResultId = $state<string | null>(null);
-	let loadedFullResultIds = new SvelteSet<string>();
-
-	function rememberResultDetail(filePath: string) {
-		resultDetailLRU = [...resultDetailLRU.filter((path) => path !== filePath), filePath];
-	}
-
-	function evictResultDetailCache(keepFilePath?: string) {
-		const protectedPaths = new Set<string>([keepFilePath, ...Array.from(editedMovies.keys())].filter(Boolean) as string[]);
-		while (resultDetailLRU.length > DETAIL_CACHE_LIMIT) {
-			const evictPath = resultDetailLRU.find((path) => !protectedPaths.has(path));
-			if (!evictPath) break;
-			resultDetailLRU = resultDetailLRU.filter((path) => path !== evictPath);
-			editedMovies.delete(evictPath);
-			originalPosterState.delete(evictPath);
-			posterPreviewOverrides.delete(evictPath);
-			posterCropStates.delete(evictPath);
-			const cached = job?.results?.[evictPath];
-			if (cached?.data) {
-				delete cached.data;
-				loadedFullResultIds.delete(cached.result_id);
-			}
-		}
-	}
-
-	async function loadResultDetail(result: FileResult | undefined) {
-		if (!result || loadedFullResultIds.has(result.result_id) || loadingResultId === result.result_id) return;
-		loadingResultId = result.result_id;
-		try {
-			const fullResult = await apiClient.getBatchJobResult(jobId, result.result_id);
-			const target = job?.results?.[fullResult.file_path];
-			if (target) {
-				Object.assign(target, fullResult);
-			}
-			if (fullResult.data) {
-				originalPosterState.set(fullResult.file_path, {
-					poster_url: fullResult.data.original_poster_url || fullResult.data.poster_url || '',
-					cropped_poster_url: fullResult.data.original_cropped_poster_url || fullResult.data.cropped_poster_url || '',
-					should_crop_poster: (fullResult.data.original_should_crop_poster ?? fullResult.data.should_crop_poster) ?? false
-				});
-			}
-			loadedFullResultIds.add(fullResult.result_id);
-			rememberResultDetail(fullResult.file_path);
-			evictResultDetailCache(fullResult.file_path);
-		} catch (error) {
-			toastStore.error(`Failed to load result details: ${error instanceof Error ? error.message : String(error)}`);
-		} finally {
-			if (loadingResultId === result.result_id) loadingResultId = null;
-		}
-	}
 
 	$effect(() => {
 		const jobData = jobQuery.data;
@@ -199,17 +164,6 @@ export function createReviewState(pageStore: Page) {
 				if (jobData.destination && !destinationPath) {
 					destinationPath = jobData.destination;
 				}
-				if (originalPosterState.size === 0) {
-					for (const result of Object.values(jobData.results) as FileResult[]) {
-						if (loadedFullResultIds.has(result.result_id) && result.data) {
-							originalPosterState.set(result.file_path, {
-								poster_url: result.data.original_poster_url || result.data.poster_url || '',
-								cropped_poster_url: result.data.original_cropped_poster_url || result.data.cropped_poster_url || '',
-								should_crop_poster: (result.data.original_should_crop_poster ?? result.data.should_crop_poster) ?? false
-							});
-						}
-					}
-				}
 			});
 		}
 	});
@@ -217,6 +171,7 @@ export function createReviewState(pageStore: Page) {
 	let availableScrapers: Scraper[] = $state([]);
 	let showRescrapeModal = $state(false);
 	let rescrapeMovieId = $state('');
+	let rescrapeResultId = $state('');
 	let rescrapeSelectedScrapers: string[] = $state([]);
 	let rescrapingStates = new SvelteMap<string, boolean>();
 	let manualSearchMode = $state(false);
@@ -233,48 +188,51 @@ export function createReviewState(pageStore: Page) {
 	let bulkRescrapeMovieIds: string[] = $state([]);
 
 	const movieGroups = $derived<MovieGroup[]>(
-		job ? (() => {
-			const excluded = (job as BatchJobResponse).excluded || {};
-			const allResults = (Object.values((job as BatchJobResponse).results) as FileResult[])
-				.filter((r) => {
-					if (r.status !== 'completed' || !r.data) {
-						return false;
-					}
-					if (excluded[r.file_path]) {
-						return false;
-					}
-					return true;
-				});
+		job
+			? (() => {
+					const excluded = (job as BatchJobResponse).excluded || {};
+					const allResults = (
+						Object.values((job as BatchJobResponse).results) as FileResult[]
+					).filter((r) => {
+						if (r.status !== 'completed' || !r.movie) {
+							return false;
+						}
+						if (excluded[r.file_path]) {
+							return false;
+						}
+						return true;
+					});
 
-			const grouped = new Map<string, FileResult[]>();
-			for (const result of allResults) {
-				const movieId = result.movie_id;
-				if (!grouped.has(movieId)) {
-					grouped.set(movieId, []);
-				}
-				grouped.get(movieId)!.push(result);
-			}
+					const grouped = new Map<string, FileResult[]>();
+					for (const result of allResults) {
+						const movieId = result.movie_id;
+						if (!grouped.has(movieId)) {
+							grouped.set(movieId, []);
+						}
+						grouped.get(movieId)!.push(result);
+					}
 
-			return Array.from(grouped.entries()).map(([movieId, results]) => ({
-				movieId,
-				results,
-				primaryResult: results[0]
-			}));
-		})() : []
+					return Array.from(grouped.entries()).map(([movieId, results]) => ({
+						movieId,
+						results,
+						primaryResult: results[0],
+					}));
+				})()
+			: [],
 	);
 
 	const failedResults = $derived<FileResult[]>(
 		job
 			? (Object.values((job as BatchJobResponse).results) as FileResult[]).filter(
-					(r) => r.status === 'failed' && !(((job as BatchJobResponse).excluded ?? {})[r.file_path])
+					(r) => r.status === 'failed' && !((job as BatchJobResponse).excluded ?? {})[r.file_path],
 				)
-			: []
+			: [],
 	);
 
 	const tierCounts = $derived.by<Record<CompletenessTier, number>>(() => {
 		const counts: Record<CompletenessTier, number> = { incomplete: 0, partial: 0, complete: 0 };
 		for (const group of movieGroups) {
-			const movie = group.primaryResult.data;
+			const movie = getEffectiveMovie(group.primaryResult.file_path, group.primaryResult.movie);
 			if (movie) {
 				const { tier } = calculateCompleteness(movie, completenessConfig);
 				counts[tier]++;
@@ -286,39 +244,40 @@ export function createReviewState(pageStore: Page) {
 	const filteredMovieGroups = $derived<MovieGroup[]>(
 		completenessFilter.size === 3
 			? movieGroups
-			: movieGroups.filter(group => {
-				const movie = group.primaryResult.data;
-				if (!movie) return false;
-				const { tier } = calculateCompleteness(movie, completenessConfig);
-				return completenessFilter.has(tier);
-			})
+			: movieGroups.filter((group) => {
+					const movie = getEffectiveMovie(group.primaryResult.file_path, group.primaryResult.movie);
+					if (!movie) return false;
+					const { tier } = calculateCompleteness(movie, completenessConfig);
+					return completenessFilter.has(tier);
+				}),
 	);
 
-	const movieResults = $derived<FileResult[]>(movieGroups.map(g => g.primaryResult));
+	const movieResults = $derived<FileResult[]>(movieGroups.map((g) => g.primaryResult));
 
 	const currentMovieGroup = $derived<MovieGroup | undefined>(movieGroups[currentMovieIndex]);
 	const currentResult = $derived<FileResult | undefined>(currentMovieGroup?.primaryResult);
 	const currentMovie = $derived<Movie | null>(
-		currentResult && currentResult.data
-			? editedMovies.get(currentResult.file_path) || currentResult.data
-			: null
+		currentResult && currentResult.movie
+			? editedMovies.get(currentResult.file_path) || currentResult.movie
+			: null,
 	);
 
+	function getEffectiveMovie(filePath: string, original: Movie | null | undefined): Movie | null {
+		if (!original) return null;
+		return editedMovies.get(filePath) || original;
+	}
+
 	function resolvePosterUrl(movie: Movie, filePath: string): string | undefined {
-		const override = posterPreviewOverrides.get(filePath);
-		const baseURL = override?.url || movie.cropped_poster_url || movie.poster_url;
-		if (!baseURL) return undefined;
-		if (!override) return baseURL;
-		if (baseURL.includes('v=')) return baseURL;
-		const separator = baseURL.includes('?') ? '&' : '?';
-		return `${baseURL}${separator}v=${override.version}`;
+		return resolvePosterUrlPure(movie, filePath, posterPreviewOverrides, () =>
+			BaseClient.getSessionID(),
+		);
 	}
 
 	const displayPosterUrl = $derived<string | undefined>(
 		(() => {
 			if (!currentMovie || !currentResult) return undefined;
 			return resolvePosterUrl(currentMovie, currentResult.file_path);
-		})()
+		})(),
 	);
 
 	let editedMovieKey = $derived.by(() => {
@@ -331,11 +290,16 @@ export function createReviewState(pageStore: Page) {
 		const configured = job?.operation_mode_override || config?.output?.operation_mode || 'organize';
 		if (configured === 'organize') {
 			const srcDir = currentResult?.file_path
-				? currentResult.file_path.substring(0, currentResult.file_path.replace(/\\/g, '/').lastIndexOf('/'))
+				? currentResult.file_path.substring(
+						0,
+						currentResult.file_path.replace(/\\/g, '/').lastIndexOf('/'),
+					)
 				: '';
-			const destMatchesSrc = destinationPath.trim() !== '' && destinationPath.trim() === srcDir.trim();
+			const destMatchesSrc =
+				destinationPath.trim() !== '' && destinationPath.trim() === srcDir.trim();
 			const noFolderFormat = !config?.output?.folder_format;
-			const noSubfolderFormat = !config?.output?.subfolder_format || config.output.subfolder_format.length === 0;
+			const noSubfolderFormat =
+				!config?.output?.subfolder_format || config.output.subfolder_format.length === 0;
 			if (destMatchesSrc && noFolderFormat && noSubfolderFormat) {
 				return 'in-place-norenamefolder';
 			}
@@ -347,7 +311,12 @@ export function createReviewState(pageStore: Page) {
 		if (isUpdateMode) return false;
 		if (!config) return false;
 		const mode = getEffectiveOperationMode();
-		return mode === 'organize' || mode === 'in-place' || mode === 'in-place-norenamefolder' || mode === 'metadata-artwork';
+		return (
+			mode === 'organize' ||
+			mode === 'in-place' ||
+			mode === 'in-place-norenamefolder' ||
+			mode === 'metadata-artwork'
+		);
 	}
 
 	const canOrganize = $derived(getCanOrganize());
@@ -360,52 +329,81 @@ export function createReviewState(pageStore: Page) {
 		return needsDestination ? destinationPath.trim() !== '' : true;
 	});
 
-	const previewQuery = createQuery(() => ({
-		queryKey: ['organize-preview', jobId, currentResult?.result_id, currentMovie?.id, destinationPath, organizeOperation, skipNfo, skipDownload, editedMovieKey],
-		queryFn: () => {
-			const operationMode = getEffectiveOperationMode();
-			const copyOnly = organizeOperation !== 'move';
-			const linkMode = organizeOperation === 'hardlink'
-				? 'hard'
-				: organizeOperation === 'softlink'
-					? 'soft'
-					: undefined;
+	const previewQuery = createQuery(() => {
+		// Resolve the effective operation mode ONCE in this reactive callback so it
+		// participates in the queryKey. getEffectiveOperationMode reads reactive
+		// state not otherwise covered by the key (job.operation_mode_override,
+		// config.output.operation_mode, folder/subfolder format); without it here a
+		// config/override mode change with the other key parts unchanged would
+		// reuse a stale preview. queryFn captures the same value as the key.
+		const operationMode = getEffectiveOperationMode();
+		return {
+			queryKey: [
+				'organize-preview',
+				jobId,
+				currentResult?.result_id,
+				currentMovie?.id,
+				operationMode,
+				destinationPath,
+				organizeOperation,
+				skipNfo,
+				skipDownload,
+				editedMovieKey,
+			],
+			queryFn: () => {
+				const copyOnly = organizeOperation !== 'move';
+				const linkMode =
+					organizeOperation === 'hardlink'
+						? 'hard'
+						: organizeOperation === 'softlink'
+							? 'soft'
+							: undefined;
 
-			const fp = currentResult?.file_path ?? '';
-			const isEdited = editedMovies.has(fp);
-			let movieOverride: Movie | undefined;
-			if (isEdited) {
-				const edited = editedMovies.get(fp);
-				movieOverride = edited ? { ...edited } : undefined;
-				if (movieOverride && movieOverride.display_title) {
-					movieOverride.title = movieOverride.display_title;
+				const fp = currentResult?.file_path ?? '';
+				const isEdited = editedMovies.has(fp);
+				let movieOverride: Movie | undefined;
+				if (isEdited) {
+					const edited = editedMovies.get(fp);
+					movieOverride = edited ? { ...edited } : undefined;
+					if (movieOverride && movieOverride.display_title) {
+						movieOverride.title = movieOverride.display_title;
+					}
 				}
-			}
 
-			return apiClient.previewOrganize(jobId, currentResult!.result_id, {
-				destination: destinationPath,
-				copy_only: copyOnly,
-				link_mode: linkMode,
-				operation_mode: operationMode as 'organize' | 'in-place' | 'in-place-norenamefolder' | 'metadata-artwork' | 'preview',
-				skip_nfo: skipNfo,
-				skip_download: skipDownload,
-				movie: movieOverride,
-			});
-		},
-		enabled: previewEnabled,
-		staleTime: 300,
-	}));
+				return apiClient.previewOrganize(jobId, currentResult!.result_id, {
+					destination: destinationPath,
+					copy_only: copyOnly,
+					link_mode: linkMode,
+					operation_mode: operationMode as
+						| 'organize'
+						| 'in-place'
+						| 'in-place-norenamefolder'
+						| 'metadata-artwork'
+						| 'preview',
+					skip_nfo: skipNfo,
+					skip_download: skipDownload,
+					movie: movieOverride,
+				});
+			},
+			enabled: previewEnabled,
+			staleTime: 300,
+		};
+	});
 
 	let preview = $derived(previewQuery.data ?? null);
 	let previewNeedsDestination = $derived(
-		!!currentMovie && getEffectiveOperationMode() === 'organize' && !destinationPath.trim()
+		!!currentMovie && getEffectiveOperationMode() === 'organize' && !destinationPath.trim(),
 	);
 
 	const mutations = createReviewMutations({
 		getJobId: () => jobId,
 		getJob: () => job,
-		setJob: (nextJob) => { job = nextJob; },
-		skipJobSync: () => { skipJobSync = true; },
+		setJob: (nextJob) => {
+			job = nextJob;
+		},
+		skipJobSync: () => {
+			skipJobSync = true;
+		},
 		getEditedMovies: () => editedMovies,
 		getCurrentResult: () => currentResult,
 		getPosterPreviewOverrides: () => posterPreviewOverrides,
@@ -414,45 +412,84 @@ export function createReviewState(pageStore: Page) {
 		getCropBox: () => cropBox,
 		getQueryClient: () => queryClient,
 		getCurrentMovieIndex: () => currentMovieIndex,
-		setCurrentMovieIndex: (index) => { currentMovieIndex = index; },
+		setCurrentMovieIndex: (index) => {
+			currentMovieIndex = index;
+		},
 		getMovieResultsLength: () => movieResults.length,
-		gotoJobs: () => { void goto('/jobs'); },
-		setShowPosterCropModal: (show) => { showPosterCropModal = show; },
-		updateBatchMoviePosterFromURL: (mutationJobId, resultId, body) => apiClient.updateBatchMoviePosterFromURL(mutationJobId, resultId, body),
-		excludeBatchMovie: (mutationJobId, resultId) => apiClient.excludeBatchMovie(mutationJobId, resultId),
-		updateBatchMovie: (mutationJobId, resultId, movie) => apiClient.updateBatchMovie(mutationJobId, resultId, movie),
-		updateBatchMoviePosterCrop: (mutationJobId, resultId, crop) => apiClient.updateBatchMoviePosterCrop(mutationJobId, resultId, crop),
-		batchExcludeMovies: (mutationJobId, request) => apiClient.batchExcludeMovies(mutationJobId, request),
-		bulkRescrapeMovies: (mutationJobId, request) => apiClient.bulkRescrapeMovies(mutationJobId, request),
+		gotoJobs: () => {
+			void goto('/jobs');
+		},
+		setShowPosterCropModal: (show) => {
+			showPosterCropModal = show;
+		},
+		updateBatchMoviePosterFromURL: (mutationJobId, resultId, body) =>
+			apiClient.updateBatchMoviePosterFromURL(mutationJobId, resultId, body),
+		getBatchMovieSources: (mutationJobId, resultId) =>
+			apiClient.getBatchMovieSources(mutationJobId, resultId),
+		overrideBatchMovieField: (mutationJobId, resultId, body) =>
+			apiClient.overrideBatchMovieField(mutationJobId, resultId, body),
+		excludeBatchMovie: (mutationJobId, resultId) =>
+			apiClient.excludeBatchMovie(mutationJobId, resultId),
+		updateBatchMovie: (mutationJobId, resultId, movie) =>
+			apiClient.updateBatchMovie(mutationJobId, resultId, movie),
+		updateBatchMoviePosterCrop: (mutationJobId, resultId, crop, maxPosterHeight) =>
+			apiClient.updateBatchMoviePosterCrop(mutationJobId, resultId, {
+				...crop,
+				// Omit max_poster_height when null OR undefined so a nullable crop
+				// height is never serialized as `max_poster_height: null`.
+				...(maxPosterHeight != null ? { max_poster_height: maxPosterHeight } : {}),
+			}),
+		batchExcludeMovies: (mutationJobId, request) =>
+			apiClient.batchExcludeMovies(mutationJobId, request),
+		bulkRescrapeMovies: (mutationJobId, request) =>
+			apiClient.bulkRescrapeMovies(mutationJobId, request),
 		getSelectedMovieIds: () => selectedMovieIds,
-		clearSelectedMovieIds: () => { selectedMovieIds.clear(); lastSelectedMovieId = null; },
-		deleteSelectedMovieId: (movieId: string) => { selectedMovieIds.delete(movieId); if (lastSelectedMovieId === movieId) { lastSelectedMovieId = null; } },
+		clearSelectedMovieIds: () => {
+			selectedMovieIds.clear();
+			lastSelectedMovieId = null;
+		},
+		deleteSelectedMovieId: (movieId: string) => {
+			selectedMovieIds.delete(movieId);
+			if (lastSelectedMovieId === movieId) {
+				lastSelectedMovieId = null;
+			}
+		},
 		toastSuccess: (message, duration) => toastStore.success(message, duration),
 		toastError: (message, duration) => toastStore.error(message, duration),
+		clearEditStorage,
+		clearEditedMovies,
+		clearPosterPreviewOverrides,
 	});
 
 	function updateCurrentMovie(movie: Movie) {
-		if (!currentResult?.data) return;
+		if (!currentResult?.movie) return;
 
-		const isActuallyModified = !equal(movie, currentResult.data);
+		const isActuallyModified = !equal(movie, currentResult.movie);
 
 		if (isActuallyModified) {
 			editedMovies.set(currentResult.file_path, movie);
+
+			if (
+				movie.poster_url !== currentResult.movie?.poster_url ||
+				movie.cropped_poster_url !== currentResult.movie?.cropped_poster_url
+			) {
+				posterPreviewOverrides.delete(currentResult.file_path);
+			}
 		} else {
 			editedMovies.delete(currentResult.file_path);
 		}
 	}
 
 	function resetCurrentMovie() {
-		if (!currentResult?.data) return;
+		if (!currentResult?.movie) return;
 		editedMovies.delete(currentResult.file_path);
 	}
 
 	function toggleMovieSelection(movieId: string, shiftKey: boolean) {
 		if (!selectionMode) return;
 		if (shiftKey && lastSelectedMovieId !== null) {
-			const fromIndex = filteredMovieGroups.findIndex(g => g.movieId === lastSelectedMovieId);
-			const toIndex = filteredMovieGroups.findIndex(g => g.movieId === movieId);
+			const fromIndex = filteredMovieGroups.findIndex((g) => g.movieId === lastSelectedMovieId);
+			const toIndex = filteredMovieGroups.findIndex((g) => g.movieId === movieId);
 			if (fromIndex !== -1 && toIndex !== -1) {
 				selectMovieRange(fromIndex, toIndex);
 			}
@@ -506,7 +543,8 @@ export function createReviewState(pageStore: Page) {
 
 	const selectedCount = $derived(selectedMovieIds.size);
 	const allSelected = $derived(
-		filteredMovieGroups.length > 0 && filteredMovieGroups.every(g => selectedMovieIds.has(g.movieId))
+		filteredMovieGroups.length > 0 &&
+			filteredMovieGroups.every((g) => selectedMovieIds.has(g.movieId)),
 	);
 
 	async function bulkExcludeMovies() {
@@ -515,10 +553,14 @@ export function createReviewState(pageStore: Page) {
 		const confirmed = await confirmDialog(
 			'Exclude Movies',
 			`Exclude ${count} movie${count !== 1 ? 's' : ''} from this job?`,
-			{ confirmLabel: 'Exclude', variant: 'danger' }
+			{ confirmLabel: 'Exclude', variant: 'danger' },
 		);
 		if (!confirmed) return;
-		mutations.bulkExcludeMutation.mutate({ resultIds: filteredMovieGroups.filter(g => selectedMovieIds.has(g.movieId)).map(g => g.primaryResult.result_id) });
+		mutations.bulkExcludeMutation.mutate({
+			resultIds: filteredMovieGroups
+				.filter((g) => selectedMovieIds.has(g.movieId))
+				.flatMap((g) => g.results.map((r) => r.result_id)),
+		});
 	}
 
 	async function openBulkRescrapeModal() {
@@ -533,7 +575,7 @@ export function createReviewState(pageStore: Page) {
 		}
 		rescrapeMovieId = '';
 		bulkRescrapeMovieIds = Array.from(selectedMovieIds);
-		rescrapeSelectedScrapers = availableScrapers.filter(s => s.enabled).map(s => s.name);
+		rescrapeSelectedScrapers = availableScrapers.filter((s) => s.enabled).map((s) => s.name);
 		manualSearchMode = false;
 		manualSearchInput = '';
 		rescrapePreset = undefined;
@@ -551,13 +593,12 @@ export function createReviewState(pageStore: Page) {
 			return;
 		}
 
-		websocketStore.clearMessages();
-		bulkRescrapeProgress = bulkRescrapeMovieIds.map(id => ({ movie_id: id, status: 'pending' }));
-		showRescrapeModal = false;
 		bulkRescraping = true;
+		bulkRescrapeProgress = bulkRescrapeMovieIds.map((id) => ({ movie_id: id, status: 'pending' }));
+		showRescrapeModal = false;
 
 		try {
-			await mutations.bulkRescrapeMutation.mutateAsync({
+			const result = await mutations.bulkRescrapeMutation.mutateAsync({
 				movieIds: bulkRescrapeMovieIds,
 				selectedScrapers,
 				preset: rescrapePreset,
@@ -565,10 +606,23 @@ export function createReviewState(pageStore: Page) {
 				arrayStrategy: rescrapeArrayStrategy || undefined,
 				sections: rescrapeSelectedSections.length > 0 ? rescrapeSelectedSections : undefined,
 			});
-			// Progress and completion handled via WebSocket messages
+
+			bulkRescrapeProgress = result.results.map((r) => ({
+				movie_id: r.movie_id,
+				status: r.status,
+				error: r.error,
+			}));
+
+			if (result.job) {
+				skipJobSync = true;
+				job = JSON.parse(JSON.stringify(result.job));
+			}
+
+			void queryClient.invalidateQueries({ queryKey: ['batch-job', jobId] });
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : String(error);
 			toastStore.error(`Bulk rescrape failed: ${errorMessage}`);
+		} finally {
 			bulkRescraping = false;
 		}
 	}
@@ -578,15 +632,67 @@ export function createReviewState(pageStore: Page) {
 		posterPreviewOverrides.delete(currentResult.file_path);
 	}
 
+	// The scraped-image revert baseline. The backend populates the
+	// poster-original group (OriginalPosterURL/OriginalCroppedPosterURL/
+	// OriginalShouldCropPoster/OriginalCoverURL) at scrape + rescrape time, so
+	// the authoritative baseline lives on the movie itself — reading it from
+	// the movie (not a one-shot snapshot map) means it stays correct across an
+	// in-review rescrape, where the snapshot maps would go stale and Reset
+	// would restore the *prior* content's image. The `|| current` fallback
+	// covers older movies persisted before the baseline was eagerly set.
+	//
+	// The fallback reads from the unedited loaded movie (`currentResult.movie`)
+	// — NOT `currentMovie`, which may already be an `editedMovies` override.
+	// Anchoring the fallback to the edited movie would make the baseline drift
+	// with the edit, so Reset (which compares the edited `currentMovie` against
+	// this baseline) would no-op incorrectly for legacy rows.
+	const posterBaseline = $derived.by(() => {
+		if (!currentResult || !currentResult.movie) return undefined;
+		const loaded = currentResult.movie;
+		return {
+			poster_url: loaded.original_poster_url || loaded.poster_url || '',
+			cropped_poster_url: loaded.original_cropped_poster_url || loaded.cropped_poster_url || '',
+			should_crop_poster: loaded.original_should_crop_poster ?? loaded.should_crop_poster ?? false,
+		};
+	});
+
+	const coverBaseline = $derived.by(() => {
+		if (!currentResult || !currentResult.movie) return undefined;
+		const loaded = currentResult.movie;
+		return loaded.original_cover_url || loaded.cover_url || '';
+	});
+
+	// Whether the current movie has drifted from its scraped baseline — mirrors
+	// resetPoster/resetCover's no-op guards so the Reset button is disabled
+	// exactly when Reset would do nothing (UX: no "reset" when already at baseline).
+	const canResetPoster = $derived.by(() => {
+		if (!currentResult || !currentMovie) return false;
+		const original = posterBaseline;
+		if (!original || !original.poster_url) return false;
+		return (
+			currentMovie.poster_url !== original.poster_url ||
+			currentMovie.cropped_poster_url !== original.cropped_poster_url ||
+			currentMovie.should_crop_poster !== original.should_crop_poster
+		);
+	});
+
+	const canResetCover = $derived.by(() => {
+		if (!currentResult || !currentMovie) return false;
+		const original = coverBaseline;
+		if (original === undefined || original === '') return false;
+		return currentMovie.cover_url !== original;
+	});
+
 	function resetPoster() {
 		if (!currentResult || !currentMovie) return;
 
-		const original = originalPosterState.get(currentResult.file_path);
+		const original = posterBaseline;
 		if (!original || !original.poster_url) return;
 
-		const posterChanged = currentMovie.poster_url !== original.poster_url
-			|| currentMovie.cropped_poster_url !== original.cropped_poster_url
-			|| currentMovie.should_crop_poster !== original.should_crop_poster;
+		const posterChanged =
+			currentMovie.poster_url !== original.poster_url ||
+			currentMovie.cropped_poster_url !== original.cropped_poster_url ||
+			currentMovie.should_crop_poster !== original.should_crop_poster;
 		if (!posterChanged) return;
 
 		if (original.poster_url !== currentMovie.poster_url) {
@@ -595,16 +701,30 @@ export function createReviewState(pageStore: Page) {
 			updateCurrentMovie({
 				...currentMovie,
 				cropped_poster_url: original.cropped_poster_url,
-				should_crop_poster: original.should_crop_poster
+				should_crop_poster: original.should_crop_poster,
 			});
 			clearPosterPreviewOverride();
 		}
 	}
 
+	function resetCover() {
+		if (!currentResult || !currentMovie) return;
+
+		const original = coverBaseline;
+		if (original === undefined || original === '') return;
+
+		if (currentMovie.cover_url === original) return;
+
+		updateCurrentMovie({ ...currentMovie, cover_url: original });
+	}
+
 	async function useScreenshotAsPoster(url: string) {
 		if (!currentMovie || !currentResult) return;
 
-		const confirmed = await confirmDialog('Set as Poster', 'Use this screenshot as the poster? This will replace the current poster image.');
+		const confirmed = await confirmDialog(
+			'Set as Poster',
+			'Use this screenshot as the poster? This will replace the current poster image.',
+		);
 
 		if (!confirmed) return;
 
@@ -612,72 +732,142 @@ export function createReviewState(pageStore: Page) {
 		mutations.applyPosterFromUrl(currentResult!.result_id, url);
 	}
 
+	async function useScreenshotAsCover(url: string) {
+		if (!currentMovie || !currentResult) return;
+
+		const confirmed = await confirmDialog(
+			'Set as Cover/Fanart',
+			'Use this screenshot as the cover/fanart? This will replace the current cover image.',
+		);
+
+		if (!confirmed) return;
+
+		updateCurrentMovie({ ...currentMovie, cover_url: url });
+	}
+
+	function clearEditStorage() {
+		if (!browser) return;
+		sessionStorage.removeItem(editedMoviesStorageKey);
+		sessionStorage.removeItem(posterPreviewOverridesStorageKey);
+	}
+
+	function clearEditedMovies() {
+		editedMovies.clear();
+	}
+
+	function clearPosterPreviewOverrides() {
+		posterPreviewOverrides.clear();
+	}
+
 	async function saveAllEdits() {
-		return mutations.saveEditsMutation.mutateAsync();
+		await mutations.saveEditsMutation.mutateAsync();
 	}
 
 	const organizeController = createOrganizeController({
 		getJobId: () => jobId,
 		getIsUpdateMode: () => isUpdateMode,
 		getJob: () => job,
-		setJob: (nextJob) => { job = nextJob; },
+		setJob: (nextJob) => {
+			job = nextJob;
+		},
 		getDestinationPath: () => destinationPath,
 		getOrganizeOperation: () => organizeOperation,
 		getOperationMode: () => getEffectiveOperationMode(),
 		getEditedMovies: () => editedMovies,
 		saveAllEdits,
 		getOrganizeStatus: () => organizeStatus,
-		setOrganizeStatus: (nextStatus) => { organizeStatus = nextStatus; },
-		setOrganizing: (nextOrganizing) => { organizing = nextOrganizing; },
-		setOrganizeProgress: (nextProgress) => { organizeProgress = nextProgress; },
+		setOrganizeStatus: (nextStatus) => {
+			organizeStatus = nextStatus;
+		},
+		setOrganizing: (nextOrganizing) => {
+			organizing = nextOrganizing;
+		},
+		setOrganizeProgress: (nextProgress) => {
+			// Monotonic high-water guard: the organize bar must never move backward
+			// during a run. Aggregate progress-stream messages are already monotonic
+			// (backend high-water mutex); this guards against any per-file message
+			// that slips through the controller's bar-drive filter and out-of-order
+			// delivery. An explicit 0 resets the bar for a fresh run
+			// (prepareOrganizeRun -> setOrganizeProgress(0)); allow it through.
+			const next = nextOrganizeProgress(organizeProgress, nextProgress);
+			if (next !== null) {
+				organizeProgress = next;
+			}
+		},
 		getFileStatuses: () => fileStatuses,
 		getExpectedOrganizeFilePaths: () => expectedOrganizeFilePaths,
-		setExpectedOrganizeFilePaths: (nextPaths) => { expectedOrganizeFilePaths = nextPaths; },
+		setExpectedOrganizeFilePaths: (nextPaths) => {
+			expectedOrganizeFilePaths = nextPaths;
+		},
 		clearWebSocketMessages: websocketStore.clearMessages,
 		toastSuccess: (message, duration) => toastStore.success(message, duration),
 		toastError: (message, duration) => toastStore.error(message, duration),
 		toastInfo: (message, duration) => toastStore.info(message, duration),
-		navigateBrowse: () => { void goto('/browse'); },
+		navigateBrowse: () => {
+			void goto('/browse');
+		},
 		api: {
 			getBatchJob: (nextJobId) => apiClient.getBatchJob(nextJobId, true),
 			organizeBatchJob: (nextJobId, request) => apiClient.organizeBatchJob(nextJobId, request),
-			updateBatchJob: (nextJobId, request) => apiClient.updateBatchJob(nextJobId, request)
-		}
+			updateBatchJob: (nextJobId, request) => apiClient.updateBatchJob(nextJobId, request),
+		},
 	});
 
 	const rescrapeController = createRescrapeController({
 		getJobId: () => jobId,
 		getCurrentResult: () => rescrapeTargetResult ?? currentResult,
 		getJob: () => job,
-		setJob: (nextJob) => { job = nextJob; },
+		setJob: (nextJob) => {
+			job = nextJob;
+		},
 		getEditedMovies: () => editedMovies,
 		getAvailableScrapers: () => availableScrapers,
-		setAvailableScrapers: (scrapers) => { availableScrapers = scrapers; },
-		getRescrapeMovieId: () => rescrapeMovieId,
-		setRescrapeMovieId: (movieId) => { rescrapeMovieId = movieId; },
+		setAvailableScrapers: (scrapers) => {
+			availableScrapers = scrapers;
+		},
+		getRescrapeResultId: () => rescrapeResultId,
+		setRescrapeResultId: (resultId) => {
+			rescrapeResultId = resultId;
+		},
 		getSelectedScrapers: () => rescrapeSelectedScrapers,
-		setSelectedScrapers: (scrapers) => { rescrapeSelectedScrapers = scrapers; },
+		setSelectedScrapers: (scrapers) => {
+			rescrapeSelectedScrapers = scrapers;
+		},
 		getManualSearchMode: () => manualSearchMode,
-		setManualSearchMode: (manual) => { manualSearchMode = manual; },
+		setManualSearchMode: (manual) => {
+			manualSearchMode = manual;
+		},
 		getManualSearchInput: () => manualSearchInput,
-		setManualSearchInput: (input) => { manualSearchInput = input; },
-		setShowRescrapeModal: (show) => { showRescrapeModal = show; },
+		setManualSearchInput: (input) => {
+			manualSearchInput = input;
+		},
+		setShowRescrapeModal: (show) => {
+			showRescrapeModal = show;
+		},
 		getRescrapePreset: () => rescrapePreset,
-		setRescrapePreset: (preset) => { rescrapePreset = preset; },
+		setRescrapePreset: (preset) => {
+			rescrapePreset = preset;
+		},
 		getRescrapeScalarStrategy: () => rescrapeScalarStrategy,
-		setRescrapeScalarStrategy: (strategy) => { rescrapeScalarStrategy = strategy; },
+		setRescrapeScalarStrategy: (strategy) => {
+			rescrapeScalarStrategy = strategy;
+		},
 		getRescrapeArrayStrategy: () => rescrapeArrayStrategy,
-		setRescrapeArrayStrategy: (strategy) => { rescrapeArrayStrategy = strategy; },
+		setRescrapeArrayStrategy: (strategy) => {
+			rescrapeArrayStrategy = strategy;
+		},
 		getRescrapeSelectedSections: () => rescrapeSelectedSections,
-		setRescrapeSelectedSections: (sections) => { rescrapeSelectedSections = sections; },
+		setRescrapeSelectedSections: (sections) => {
+			rescrapeSelectedSections = sections;
+		},
 		getRescrapingStates: () => rescrapingStates,
 		toastSuccess: (message, duration) => toastStore.success(message, duration),
 		toastError: (message, duration) => toastStore.error(message, duration),
 		api: {
 			getScrapers: () => apiClient.getScrapers(),
-			rescrapeBatchMovie: (nextJobId, movieId, req) =>
-				apiClient.rescrapeBatchMovie(nextJobId, movieId, req)
-		}
+			rescrapeBatchMovie: (nextJobId, resultId, req) =>
+				apiClient.rescrapeBatchMovie(nextJobId, resultId, req),
+		},
 	});
 
 	const posterCropController = createPosterCropController({
@@ -686,22 +876,44 @@ export function createReviewState(pageStore: Page) {
 		getCurrentMovie: () => currentMovie,
 		getCurrentResult: () => currentResult,
 		getShowPosterCropModal: () => showPosterCropModal,
-		setShowPosterCropModal: (show) => { showPosterCropModal = show; },
-		setPosterCropLoadError: (errorMessage) => { posterCropLoadError = errorMessage; },
+		setShowPosterCropModal: (show) => {
+			showPosterCropModal = show;
+		},
+		setPosterCropLoadError: (errorMessage) => {
+			posterCropLoadError = errorMessage;
+		},
 		getCropSourceURL: () => cropSourceURL,
-		setCropSourceURL: (url) => { cropSourceURL = url; },
+		setCropSourceURL: (url) => {
+			cropSourceURL = url;
+		},
 		getCropImageElement: () => cropImageElement,
-		setCropImageElement: (imageElement) => { cropImageElement = imageElement; },
+		setCropImageElement: (imageElement) => {
+			cropImageElement = imageElement;
+		},
 		getCropMetrics: () => cropMetrics,
-		setCropMetrics: (metrics) => { cropMetrics = metrics; },
+		setCropMetrics: (metrics) => {
+			cropMetrics = metrics;
+		},
 		getCropBox: () => cropBox,
-		setCropBox: (nextBox) => { cropBox = nextBox; },
+		setCropBox: (nextBox) => {
+			cropBox = nextBox;
+		},
+		getMaxPosterHeight: () => maxPosterHeight,
+		setMaxPosterHeight: (h) => {
+			maxPosterHeight = h;
+		},
 		getCropDragState: () => cropDragState,
-		setCropDragState: (state) => { cropDragState = state; },
+		setCropDragState: (state) => {
+			cropDragState = state;
+		},
 		getPosterCropStates: () => posterCropStates,
-		mutatePosterCrop: (mutationJobId, resultId, crop) => {
-			mutations.posterCropMutation.mutate({ jobId: mutationJobId, resultId, crop });
-		}
+		applyPosterFromUrlAsync: (resultId, url) => mutations.applyPosterFromUrlAsync(resultId, url),
+		mutatePosterCropAsync: (mutationJobId, resultId, crop, maxPosterHeightArg) => {
+			return mutations.applyPosterCropAsync(mutationJobId, resultId, crop, maxPosterHeightArg);
+		},
+		setCropApplying: (applying) => {
+			cropApplying = applying;
+		},
 	});
 
 	const reviewPageController = createReviewPageController({
@@ -710,27 +922,63 @@ export function createReviewState(pageStore: Page) {
 		getCurrentResult: () => currentResult,
 		getEditedMovies: () => editedMovies,
 		getDestinationPath: () => destinationPath,
-		setDestinationPath: (path) => { destinationPath = path; },
+		setDestinationPath: (path) => {
+			destinationPath = path;
+		},
 		getTempDestinationPath: () => tempDestinationPath,
-		setTempDestinationPath: (path) => { tempDestinationPath = path; },
-		setShowDestinationBrowser: (show) => { showDestinationBrowser = show; },
-		setShowImageViewer: (show) => { showImageViewer = show; },
-		setImageViewerImages: (images) => { imageViewerImages = images; },
-		setImageViewerIndex: (index) => { imageViewerIndex = index; },
-		setImageViewerTitle: (title) => { imageViewerTitle = title; },
+		setTempDestinationPath: (path) => {
+			tempDestinationPath = path;
+		},
+		setShowDestinationBrowser: (show) => {
+			showDestinationBrowser = show;
+		},
+		setShowImageViewer: (show) => {
+			showImageViewer = show;
+		},
+		setImageViewerImages: (images) => {
+			imageViewerImages = images;
+		},
+		setImageViewerIndex: (index) => {
+			imageViewerIndex = index;
+		},
+		setImageViewerTitle: (title) => {
+			imageViewerTitle = title;
+		},
 		excludeMovie: (mutationJobId, resultId) => {
 			mutations.excludeMovieMutation.mutate({ jobId: mutationJobId, resultId });
-		}
+		},
+		api: {
+			getPreviewImageURL: (url) => apiClient.getPreviewImageURL(url),
+		},
 	});
 
 	function applyRescrapePreset(preset: 'conservative' | 'gap-fill' | 'aggressive') {
 		rescrapeController.applyRescrapePreset(preset);
 	}
 
+	function openSourceViewerModal() {
+		if (!currentResult) return;
+		showSourceViewerModal = true;
+	}
+
+	function loadSources(resultId: string) {
+		return apiClient.getBatchMovieSources(jobId, resultId);
+	}
+
+	function applyFieldOverride(field: string, source: string) {
+		if (!currentResult) return;
+		return mutations.applyFieldOverrideAsync(currentResult.result_id, field, source);
+	}
+
 	async function openRescrapeModal(movieId: string) {
 		bulkRescrapeMovieIds = [];
 		rescrapeTargetResult = null;
-		await rescrapeController.openRescrapeModal(movieId);
+		const group = movieGroups.find((g) => g.movieId === movieId);
+		if (!group) {
+			toastStore.error('Unable to open rescrape: movie not found');
+			return;
+		}
+		await rescrapeController.openRescrapeModal(group.primaryResult.result_id);
 	}
 
 	async function openRescrapeModalForFailed(result: FileResult) {
@@ -744,13 +992,15 @@ export function createReviewState(pageStore: Page) {
 			}
 		}
 		rescrapeTargetResult = result;
-		rescrapeMovieId = result.result_id;
+		rescrapeMovieId = result.movie_id;
+		rescrapeResultId = result.result_id;
 		rescrapeSelectedScrapers = availableScrapers.filter((s) => s.enabled).map((s) => s.name);
 		manualSearchMode = true;
 		manualSearchInput = '';
 		rescrapePreset = undefined;
 		rescrapeScalarStrategy = 'prefer-nfo';
 		rescrapeArrayStrategy = 'merge';
+		rescrapeSelectedSections = [];
 		showRescrapeModal = true;
 	}
 
@@ -792,33 +1042,13 @@ export function createReviewState(pageStore: Page) {
 	$effect(() => {
 		currentMovieIndex;
 		showFullSourcePath = false;
-		void loadResultDetail(currentResult);
 	});
-
-	async function navigateToMovieIndex(index: number) {
-		const boundedIndex = Math.min(movieResults.length - 1, Math.max(0, index));
-		if (boundedIndex === currentMovieIndex) return;
-		if (currentResult && editedMovies.has(currentResult.file_path)) {
-			const save = await confirmDialog(
-				'Unsaved Changes',
-				'Save changes before leaving this result? Cancel will discard changes.',
-				{ confirmLabel: 'Save', cancelLabel: 'Discard' }
-			);
-			if (save) {
-				await saveAllEdits();
-			} else {
-				editedMovies.delete(currentResult.file_path);
-			}
-		}
-		currentMovieIndex = boundedIndex;
-		evictResultDetailCache(currentResult?.file_path);
-	}
 
 	$effect(() => {
 		if (!browser) return;
 		localStorage.setItem(
 			SHOW_FIELD_SCRAPER_SOURCES_KEY,
-			showFieldScraperSources ? 'true' : 'false'
+			showFieldScraperSources ? 'true' : 'false',
 		);
 	});
 
@@ -838,14 +1068,87 @@ export function createReviewState(pageStore: Page) {
 		localStorage.setItem(posterCropStatesStorageKey, JSON.stringify(entries));
 	});
 
+	/**
+	 * Restore editedMovies + posterPreviewOverrides from sessionStorage.
+	 *
+	 * MUST be declared BEFORE the persistence $effects (below) so it runs
+	 * first on mount — otherwise the persistence effect's removeItem-
+	 * when-empty branch (which fires its initial-mount run before this
+	 * restore completes) destroys the sessionStorage entry before this
+	 * restore reads it (the original 683b4a1e bug: every reload wiped
+	 * in-progress edits because persistence's initial-mount run raced
+	 * ahead of restore). $effect effects run in declaration order on
+	 * the initial flush, so declaring this first guarantees the restore
+	 * populates editedMovies before persistence's removeItem branch
+	 * observes (the now-stale) size===0.
+	 */
 	$effect(() => {
-		if (!browser || organizeStatus === 'idle') return;
-		const key = organizeStorageKey;
-		localStorage.setItem(key, JSON.stringify({
-			status: organizeStatus,
-			progress: organizeProgress,
-			fileStatuses: [...fileStatuses.entries()],
-		}));
+		if (!browser) return;
+		// Clear job-scoped state before restoring so edits/overrides from a
+		// PREVIOUS jobId cannot leak into the new job. This effect's only reactive
+		// dependencies are the jobId-derived storage keys, so it re-runs exactly
+		// on mount (maps already empty — clear is a no-op) and on jobId change
+		// (clears the prior job's in-memory entries before merging the new job's
+		// saved ones). Untracked so the clear does not trip the persistence
+		// effects' removeItem-when-empty branch mid-restore. Prior-job edits are
+		// already safe in sessionStorage under the prior job's key (the
+		// persistence effects wrote them on every edit).
+		untrack(() => {
+			editedMovies.clear();
+			posterPreviewOverrides.clear();
+		});
+		const savedEditedMovies = sessionStorage.getItem(editedMoviesStorageKey);
+		if (savedEditedMovies) {
+			try {
+				const parsed = JSON.parse(savedEditedMovies) as Record<string, Movie>;
+				untrack(() => {
+					for (const [k, v] of Object.entries(parsed)) {
+						editedMovies.set(k, v);
+					}
+				});
+			} catch {
+				sessionStorage.removeItem(editedMoviesStorageKey);
+			}
+		}
+		const savedOverrides = sessionStorage.getItem(posterPreviewOverridesStorageKey);
+		if (savedOverrides) {
+			try {
+				const parsed = JSON.parse(savedOverrides) as Record<string, PosterPreviewOverride>;
+				untrack(() => {
+					for (const [k, v] of Object.entries(parsed)) {
+						posterPreviewOverrides.set(k, v);
+					}
+				});
+			} catch {
+				sessionStorage.removeItem(posterPreviewOverridesStorageKey);
+			}
+		}
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		if (editedMovies.size === 0) {
+			sessionStorage.removeItem(editedMoviesStorageKey);
+			return;
+		}
+		const entries: Record<string, Movie> = {};
+		editedMovies.forEach((v, k) => {
+			entries[k] = v;
+		});
+		sessionStorage.setItem(editedMoviesStorageKey, JSON.stringify(entries));
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		if (posterPreviewOverrides.size === 0) {
+			sessionStorage.removeItem(posterPreviewOverridesStorageKey);
+			return;
+		}
+		const entries: Record<string, PosterPreviewOverride> = {};
+		posterPreviewOverrides.forEach((v, k) => {
+			entries[k] = v;
+		});
+		sessionStorage.setItem(posterPreviewOverridesStorageKey, JSON.stringify(entries));
 	});
 
 	$effect(() => {
@@ -856,43 +1159,36 @@ export function createReviewState(pageStore: Page) {
 		return unsubscribe;
 	});
 
-	$effect(() => {
-		const unsubscribe = websocketStore.subscribe((ws) => {
-			if (!bulkRescraping) return;
-			const msg = ws.messages.at(-1);
-			if (!msg || msg.job_id !== jobId || !msg.file_path) return;
-			const idx = bulkRescrapeProgress.findIndex(p => p.movie_id === msg.file_path);
-			if (idx === -1) return;
-			bulkRescrapeProgress[idx] = { movie_id: msg.file_path, status: msg.status, error: msg.error };
-			if (bulkRescrapeProgress.every(p => p.status !== 'pending')) {
-				bulkRescraping = false;
-				void queryClient.invalidateQueries({ queryKey: ['batch-job', jobId] });
-			}
-		});
-
-		return unsubscribe;
-	});
-
-	let organizeStateRestored = false;
-	$effect(() => {
-		if (!job || organizeStateRestored) return;
-		organizeStateRestored = true;
-		organizeController.restoreOrganizeState(job.status);
-	});
-
 	onMount(() => {
 		if (browser) {
-			showFieldScraperSources =
-				localStorage.getItem(SHOW_FIELD_SCRAPER_SOURCES_KEY) === 'true';
+			showFieldScraperSources = localStorage.getItem(SHOW_FIELD_SCRAPER_SOURCES_KEY) === 'true';
 			const savedViewMode = localStorage.getItem(VIEW_MODE_KEY);
-			if (savedViewMode === 'grid-cover' || savedViewMode === 'grid-poster' || savedViewMode === 'grid') {
+			if (
+				savedViewMode === 'grid-cover' ||
+				savedViewMode === 'grid-poster' ||
+				savedViewMode === 'grid'
+			) {
 				viewMode = savedViewMode === 'grid' ? 'grid-poster' : savedViewMode;
 			} else {
+				// 'detail' is intentionally NOT restored from storage here, even
+				// though it is a valid view mode. 'detail' is a transient drill-in
+				// state reached by clicking a grid card (+page.svelte), not a list-
+				// view preference. Restoring it would make the review list open in
+				// detail view after a user drilled into one movie and navigated
+				// away — the configured default (cfgDefault below) should govern
+				// the initial list view instead. Only the grid variants persist as
+				// genuine view-mode preferences.
 				const cfgDefault = config?.webui?.default_review_view ?? 'grid-poster';
-				if (cfgDefault === 'grid-cover' || cfgDefault === 'grid-poster' || cfgDefault === 'detail') {
+				if (
+					cfgDefault === 'grid-cover' ||
+					cfgDefault === 'grid-poster' ||
+					cfgDefault === 'detail'
+				) {
 					viewMode = cfgDefault;
 				} else {
-					console.warn(`Invalid webui.default_review_view value "${cfgDefault}", falling back to "grid-poster"`);
+					console.warn(
+						`Invalid webui.default_review_view value "${cfgDefault}", falling back to "grid-poster"`,
+					);
 					viewMode = 'grid-poster';
 				}
 			}
@@ -911,24 +1207,11 @@ export function createReviewState(pageStore: Page) {
 				}
 			}
 
-			const organizeKey = `javinizer.organize.state.${jobId}`;
-			const savedOrganize = localStorage.getItem(organizeKey);
-			if (savedOrganize) {
-				try {
-					const saved = JSON.parse(savedOrganize) as { status: string; progress: number; fileStatuses: [string, FileStatus][] };
-					if (saved.status && saved.status !== 'idle') {
-						untrack(() => {
-							organizeStatus = saved.status as typeof organizeStatus;
-							organizeProgress = saved.progress ?? 0;
-							for (const [k, v] of (saved.fileStatuses || [])) {
-								fileStatuses.set(k, v);
-							}
-						});
-					}
-				} catch {
-					localStorage.removeItem(organizeKey);
-				}
-			}
+			// editedMovies + posterPreviewOverrides restore moved to a $effect
+			// declared before the persistence $effects above — restore-on-mount
+			// now runs as an $effect (in declaration order, before persistence)
+			// so the persistence effect's initial-mount removeItem-when-empty
+			// branch no longer destroys the entries before restore reads them.
 		}
 
 		window.addEventListener('resize', posterCropController.handleWindowResize);
@@ -944,144 +1227,417 @@ export function createReviewState(pageStore: Page) {
 	});
 
 	return {
-		get job() { return job; },
-		get loading() { return loading; },
-		get error() { return error; },
-		get config() { return config; },
-		get completenessConfig() { return completenessConfig; },
-		get currentMovieIndex() { return currentMovieIndex; },
-		navigateToMovieIndex,
-		get loadingResultId() { return loadingResultId; },
-		set currentMovieIndex(v) { void navigateToMovieIndex(v); },
-		get editedMovies() { return editedMovies; },
-		get organizing() { return organizing; },
-		set organizing(v) { organizing = v; },
-		get destinationPath() { return destinationPath; },
-		set destinationPath(v) { destinationPath = v; },
-		get organizeOperation() { return organizeOperation; },
-		set organizeOperation(v) { organizeOperation = v; },
-		get showDestinationBrowser() { return showDestinationBrowser; },
-		set showDestinationBrowser(v) { showDestinationBrowser = v; },
-		get tempDestinationPath() { return tempDestinationPath; },
-		set tempDestinationPath(v) { tempDestinationPath = v; },
-		get showTrailerModal() { return showTrailerModal; },
-		set showTrailerModal(v) { showTrailerModal = v; },
-		get isUpdateMode() { return isUpdateMode; },
-		get showFieldScraperSources() { return showFieldScraperSources; },
-		set showFieldScraperSources(v) { showFieldScraperSources = v; },
-		get viewMode() { return viewMode; },
-		set viewMode(v) { viewMode = v; },
-		get organizeProgress() { return organizeProgress; },
-		set organizeProgress(v) { organizeProgress = v; },
-		get organizeStatus() { return organizeStatus; },
-		set organizeStatus(v) { organizeStatus = v; },
-		get fileStatuses() { return fileStatuses; },
-		get expectedOrganizeFilePaths() { return expectedOrganizeFilePaths; },
-		set expectedOrganizeFilePaths(v) { expectedOrganizeFilePaths = v; },
-		get showCoverPanel() { return showCoverPanel; },
-		get showPosterPanel() { return showPosterPanel; },
-		get showTrailerPanel() { return showTrailerPanel; },
-		get showScreenshotsPanel() { return showScreenshotsPanel; },
-		get showImageViewer() { return showImageViewer; },
-		set showImageViewer(v) { showImageViewer = v; },
-		get imageViewerImages() { return imageViewerImages; },
-		set imageViewerImages(v) { imageViewerImages = v; },
-		get imageViewerIndex() { return imageViewerIndex; },
-		set imageViewerIndex(v) { imageViewerIndex = v; },
-		get imageViewerTitle() { return imageViewerTitle; },
-		set imageViewerTitle(v) { imageViewerTitle = v; },
-		get showAllSidebarScreenshots() { return showAllSidebarScreenshots; },
-		set showAllSidebarScreenshots(v) { showAllSidebarScreenshots = v; },
-		get showFullSourcePath() { return showFullSourcePath; },
-		set showFullSourcePath(v) { showFullSourcePath = v; },
-		get forceOverwrite() { return forceOverwrite; },
-		set forceOverwrite(v) { forceOverwrite = v; },
-		get preserveNfo() { return preserveNfo; },
-		set preserveNfo(v) { preserveNfo = v; },
-		get skipNfo() { return skipNfo; },
-		set skipNfo(v) { skipNfo = v; },
-		get skipDownload() { return skipDownload; },
-		set skipDownload(v) { skipDownload = v; },
-		get showImagePanelContent() { return showImagePanelContent; },
-		set showImagePanelContent(v) { showImagePanelContent = v; },
-		get showAllPreviewScreenshots() { return showAllPreviewScreenshots; },
-		set showAllPreviewScreenshots(v) { showAllPreviewScreenshots = v; },
-		get showPosterCropModal() { return showPosterCropModal; },
-		set showPosterCropModal(v) { showPosterCropModal = v; },
-		get posterCropLoadError() { return posterCropLoadError; },
-		set posterCropLoadError(v) { posterCropLoadError = v; },
-		get cropSourceURL() { return cropSourceURL; },
-		set cropSourceURL(v) { cropSourceURL = v; },
-		get cropImageElement() { return cropImageElement; },
-		set cropImageElement(v) { cropImageElement = v; },
-		get cropMetrics() { return cropMetrics; },
-		set cropMetrics(v) { cropMetrics = v; },
-		get cropBox() { return cropBox; },
-		set cropBox(v) { cropBox = v; },
-		get cropDragState() { return cropDragState; },
-		set cropDragState(v) { cropDragState = v; },
-		get posterPreviewOverrides() { return posterPreviewOverrides; },
-		get posterCropStates() { return posterCropStates; },
-		get availableScrapers() { return availableScrapers; },
-		set availableScrapers(v) { availableScrapers = v; },
-		get showRescrapeModal() { return showRescrapeModal; },
-		set showRescrapeModal(v) { showRescrapeModal = v; },
-		get rescrapeMovieId() { return rescrapeMovieId; },
-		set rescrapeMovieId(v) { rescrapeMovieId = v; },
-		get rescrapeSelectedScrapers() { return rescrapeSelectedScrapers; },
-		set rescrapeSelectedScrapers(v) { rescrapeSelectedScrapers = v; },
-		get rescrapingStates() { return rescrapingStates; },
-		get manualSearchMode() { return manualSearchMode; },
-		set manualSearchMode(v) { manualSearchMode = v; },
-		get manualSearchInput() { return manualSearchInput; },
-		set manualSearchInput(v) { manualSearchInput = v; },
-		get rescrapePreset() { return rescrapePreset; },
-		set rescrapePreset(v) { rescrapePreset = v; },
-		get rescrapeScalarStrategy() { return rescrapeScalarStrategy; },
-		set rescrapeScalarStrategy(v) { rescrapeScalarStrategy = v; },
-		get rescrapeArrayStrategy() { return rescrapeArrayStrategy; },
-		set rescrapeArrayStrategy(v) { rescrapeArrayStrategy = v; },
-		get rescrapeSelectedSections() { return rescrapeSelectedSections; },
-		set rescrapeSelectedSections(v) { rescrapeSelectedSections = v; },
-		get movieGroups() { return movieGroups; },
-		get failedResults() { return failedResults; },
-		get movieResults() { return movieResults; },
-		get currentMovieGroup() { return currentMovieGroup; },
-		get currentResult() { return currentResult; },
-		get currentMovie() { return currentMovie; },
-		get displayPosterUrl() { return displayPosterUrl; },
-		get preview() { return preview; },
-		get previewNeedsDestination() { return previewNeedsDestination; },
-		get canOrganize() { return canOrganize; },
+		get job() {
+			return job;
+		},
+		get loading() {
+			return loading;
+		},
+		get error() {
+			return error;
+		},
+		get config() {
+			return config;
+		},
+		get completenessConfig() {
+			return completenessConfig;
+		},
+		get currentMovieIndex() {
+			return currentMovieIndex;
+		},
+		set currentMovieIndex(v) {
+			currentMovieIndex = v;
+		},
+		get editedMovies() {
+			return editedMovies;
+		},
+		get organizing() {
+			return organizing;
+		},
+		set organizing(v) {
+			organizing = v;
+		},
+		get destinationPath() {
+			return destinationPath;
+		},
+		set destinationPath(v) {
+			destinationPath = v;
+		},
+		get organizeOperation() {
+			return organizeOperation;
+		},
+		set organizeOperation(v) {
+			organizeOperation = v;
+		},
+		get showDestinationBrowser() {
+			return showDestinationBrowser;
+		},
+		set showDestinationBrowser(v) {
+			showDestinationBrowser = v;
+		},
+		get tempDestinationPath() {
+			return tempDestinationPath;
+		},
+		set tempDestinationPath(v) {
+			tempDestinationPath = v;
+		},
+		get showTrailerModal() {
+			return showTrailerModal;
+		},
+		set showTrailerModal(v) {
+			showTrailerModal = v;
+		},
+		get isUpdateMode() {
+			return isUpdateMode;
+		},
+		get showFieldScraperSources() {
+			return showFieldScraperSources;
+		},
+		set showFieldScraperSources(v) {
+			showFieldScraperSources = v;
+		},
+		get viewMode() {
+			return viewMode;
+		},
+		set viewMode(v) {
+			viewMode = v;
+		},
+		get organizeProgress() {
+			return organizeProgress;
+		},
+		get organizeStatus() {
+			return organizeStatus;
+		},
+		set organizeStatus(v) {
+			organizeStatus = v;
+		},
+		get fileStatuses() {
+			return fileStatuses;
+		},
+		get expectedOrganizeFilePaths() {
+			return expectedOrganizeFilePaths;
+		},
+		set expectedOrganizeFilePaths(v) {
+			expectedOrganizeFilePaths = v;
+		},
+		get showCoverPanel() {
+			return showCoverPanel;
+		},
+		get showPosterPanel() {
+			return showPosterPanel;
+		},
+		get showTrailerPanel() {
+			return showTrailerPanel;
+		},
+		get showScreenshotsPanel() {
+			return showScreenshotsPanel;
+		},
+		get showImageViewer() {
+			return showImageViewer;
+		},
+		set showImageViewer(v) {
+			showImageViewer = v;
+		},
+		get imageViewerImages() {
+			return imageViewerImages;
+		},
+		set imageViewerImages(v) {
+			imageViewerImages = v;
+		},
+		get imageViewerIndex() {
+			return imageViewerIndex;
+		},
+		set imageViewerIndex(v) {
+			imageViewerIndex = v;
+		},
+		get imageViewerTitle() {
+			return imageViewerTitle;
+		},
+		set imageViewerTitle(v) {
+			imageViewerTitle = v;
+		},
+		get showAllSidebarScreenshots() {
+			return showAllSidebarScreenshots;
+		},
+		set showAllSidebarScreenshots(v) {
+			showAllSidebarScreenshots = v;
+		},
+		get showFullSourcePath() {
+			return showFullSourcePath;
+		},
+		set showFullSourcePath(v) {
+			showFullSourcePath = v;
+		},
+		get forceOverwrite() {
+			return forceOverwrite;
+		},
+		set forceOverwrite(v) {
+			forceOverwrite = v;
+		},
+		get preserveNfo() {
+			return preserveNfo;
+		},
+		set preserveNfo(v) {
+			preserveNfo = v;
+		},
+		get skipNfo() {
+			return skipNfo;
+		},
+		set skipNfo(v) {
+			skipNfo = v;
+		},
+		get skipDownload() {
+			return skipDownload;
+		},
+		set skipDownload(v) {
+			skipDownload = v;
+		},
+		get showImagePanelContent() {
+			return showImagePanelContent;
+		},
+		set showImagePanelContent(v) {
+			showImagePanelContent = v;
+		},
+		get showAllPreviewScreenshots() {
+			return showAllPreviewScreenshots;
+		},
+		set showAllPreviewScreenshots(v) {
+			showAllPreviewScreenshots = v;
+		},
+		get showPosterCropModal() {
+			return showPosterCropModal;
+		},
+		set showPosterCropModal(v) {
+			showPosterCropModal = v;
+		},
+		get showSourceViewerModal() {
+			return showSourceViewerModal;
+		},
+		set showSourceViewerModal(v) {
+			showSourceViewerModal = v;
+		},
+		openSourceViewerModal,
+		loadSources,
+		applyFieldOverride,
+		get fieldOverridePending() {
+			return mutations.fieldOverrideMutation.isPending;
+		},
+		get posterCropLoadError() {
+			return posterCropLoadError;
+		},
+		set posterCropLoadError(v) {
+			posterCropLoadError = v;
+		},
+		get cropSourceURL() {
+			return cropSourceURL;
+		},
+		set cropSourceURL(v) {
+			cropSourceURL = v;
+		},
+		get cropImageElement() {
+			return cropImageElement;
+		},
+		set cropImageElement(v) {
+			cropImageElement = v;
+		},
+		get cropMetrics() {
+			return cropMetrics;
+		},
+		set cropMetrics(v) {
+			cropMetrics = v;
+		},
+		get cropBox() {
+			return cropBox;
+		},
+		set cropBox(v) {
+			cropBox = v;
+		},
+		get maxPosterHeight() {
+			return maxPosterHeight;
+		},
+		set maxPosterHeight(v) {
+			maxPosterHeight = v;
+		},
+		get cropDragState() {
+			return cropDragState;
+		},
+		set cropDragState(v) {
+			cropDragState = v;
+		},
+		get posterPreviewOverrides() {
+			return posterPreviewOverrides;
+		},
+		get posterCropStates() {
+			return posterCropStates;
+		},
+		get availableScrapers() {
+			return availableScrapers;
+		},
+		set availableScrapers(v) {
+			availableScrapers = v;
+		},
+		get showRescrapeModal() {
+			return showRescrapeModal;
+		},
+		set showRescrapeModal(v) {
+			showRescrapeModal = v;
+		},
+		get rescrapeMovieId() {
+			return rescrapeMovieId;
+		},
+		set rescrapeMovieId(v) {
+			rescrapeMovieId = v;
+		},
+		get rescrapeResultId() {
+			return rescrapeResultId;
+		},
+		set rescrapeResultId(v) {
+			rescrapeResultId = v;
+		},
+		get rescrapeSelectedScrapers() {
+			return rescrapeSelectedScrapers;
+		},
+		set rescrapeSelectedScrapers(v) {
+			rescrapeSelectedScrapers = v;
+		},
+		get rescrapeSelectedSections() {
+			return rescrapeSelectedSections;
+		},
+		set rescrapeSelectedSections(v) {
+			rescrapeSelectedSections = v;
+		},
+		get rescrapingStates() {
+			return rescrapingStates;
+		},
+		get manualSearchMode() {
+			return manualSearchMode;
+		},
+		set manualSearchMode(v) {
+			manualSearchMode = v;
+		},
+		get manualSearchInput() {
+			return manualSearchInput;
+		},
+		set manualSearchInput(v) {
+			manualSearchInput = v;
+		},
+		get rescrapePreset() {
+			return rescrapePreset;
+		},
+		set rescrapePreset(v) {
+			rescrapePreset = v;
+		},
+		get rescrapeScalarStrategy() {
+			return rescrapeScalarStrategy;
+		},
+		set rescrapeScalarStrategy(v) {
+			rescrapeScalarStrategy = v;
+		},
+		get rescrapeArrayStrategy() {
+			return rescrapeArrayStrategy;
+		},
+		set rescrapeArrayStrategy(v) {
+			rescrapeArrayStrategy = v;
+		},
+		get movieGroups() {
+			return movieGroups;
+		},
+		get failedResults() {
+			return failedResults;
+		},
+		get movieResults() {
+			return movieResults;
+		},
+		get currentMovieGroup() {
+			return currentMovieGroup;
+		},
+		get currentResult() {
+			return currentResult;
+		},
+		get canResetPoster() {
+			return canResetPoster;
+		},
+		get canResetCover() {
+			return canResetCover;
+		},
+		get currentMovie() {
+			return currentMovie;
+		},
+		get displayPosterUrl() {
+			return displayPosterUrl;
+		},
+		get preview() {
+			return preview;
+		},
+		get previewNeedsDestination() {
+			return previewNeedsDestination;
+		},
+		get canOrganize() {
+			return canOrganize;
+		},
 		posterFromUrlMutation: mutations.posterFromUrlMutation,
 		posterCropMutation: mutations.posterCropMutation,
+		get posterCropSaving() {
+			return mutations.posterCropMutation.isPending || cropApplying;
+		},
 		bulkExcludeMutation: mutations.bulkExcludeMutation,
 		bulkRescrapeMutation: mutations.bulkRescrapeMutation,
 		resolvePosterUrl,
+		getEffectiveMovie,
 		getEffectiveOperationMode,
 		updateCurrentMovie,
 		resetCurrentMovie,
 		resetPoster,
+		resetCover,
 		useScreenshotAsPoster,
+		useScreenshotAsCover,
 		saveAllEdits,
-		get selectedMovieIds() { return selectedMovieIds; },
-		get selectedCount() { return selectedCount; },
-		get allSelected() { return allSelected; },
+		get isSavingEdits() {
+			return mutations.saveEditsMutation.isPending;
+		},
+		get editedMovieCount() {
+			return editedMovies.size;
+		},
+		get selectedMovieIds() {
+			return selectedMovieIds;
+		},
+		get selectedCount() {
+			return selectedCount;
+		},
+		get allSelected() {
+			return allSelected;
+		},
 		toggleMovieSelection,
 		selectMovieRange,
 		selectAllMovies,
 		deselectAllMovies,
-		get completenessFilter() { return completenessFilter; },
-		get selectionMode() { return selectionMode; },
-		get filteredMovieGroups() { return filteredMovieGroups; },
-		get tierCounts() { return tierCounts; },
+		get completenessFilter() {
+			return completenessFilter;
+		},
+		get selectionMode() {
+			return selectionMode;
+		},
+		get filteredMovieGroups() {
+			return filteredMovieGroups;
+		},
+		get tierCounts() {
+			return tierCounts;
+		},
 		toggleCompletenessTier,
 		toggleSelectionMode,
 		bulkExcludeMovies,
-		get bulkRescraping() { return bulkRescraping; },
-		get bulkRescrapeProgress() { return bulkRescrapeProgress; },
-		get bulkRescrapeMovieIds() { return bulkRescrapeMovieIds; },
-		dismissBulkRescrapeProgress() { bulkRescrapeProgress = []; },
+		get bulkRescraping() {
+			return bulkRescraping;
+		},
+		get bulkRescrapeProgress() {
+			return bulkRescrapeProgress;
+		},
+		get bulkRescrapeMovieIds() {
+			return bulkRescrapeMovieIds;
+		},
+		dismissBulkRescrapeProgress() {
+			bulkRescrapeProgress = [];
+		},
 		openBulkRescrapeModal,
 		executeBulkRescrape,
 		organizeController,

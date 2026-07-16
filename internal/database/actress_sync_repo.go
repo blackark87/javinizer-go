@@ -12,14 +12,17 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// ActressSyncRepository persists durable actress-sync jobs, tasks, and leases.
 type ActressSyncRepository struct {
 	db *DB
 }
 
+// NewActressSyncRepository creates an actress-sync repository backed by db.
 func NewActressSyncRepository(db *DB) *ActressSyncRepository {
 	return &ActressSyncRepository{db: db}
 }
 
+// CreateJob atomically persists a sync job and its deduplicated tasks.
 func (r *ActressSyncRepository) CreateJob(job *models.ActressSyncJob, tasks []models.ActressSyncTask) error {
 	err := retryOnLocked(func() error {
 		return r.db.Transaction(func(tx *gorm.DB) error {
@@ -57,6 +60,7 @@ func (r *ActressSyncRepository) CreateJob(job *models.ActressSyncJob, tasks []mo
 	return err
 }
 
+// FindJob loads a durable actress-sync job by ID.
 func (r *ActressSyncRepository) FindJob(id string) (*models.ActressSyncJob, error) {
 	var job models.ActressSyncJob
 	if err := r.db.First(&job, "id = ?", id).Error; err != nil {
@@ -65,6 +69,7 @@ func (r *ActressSyncRepository) FindJob(id string) (*models.ActressSyncJob, erro
 	return &job, nil
 }
 
+// ListActiveJobs returns pending and running actress-sync jobs.
 func (r *ActressSyncRepository) ListActiveJobs() ([]models.ActressSyncJob, error) {
 	jobs := make([]models.ActressSyncJob, 0)
 	if err := r.db.Where("status IN ?", []string{models.ActressSyncJobPending, models.ActressSyncJobRunning}).
@@ -74,6 +79,7 @@ func (r *ActressSyncRepository) ListActiveJobs() ([]models.ActressSyncJob, error
 	return jobs, nil
 }
 
+// ListTasks returns all tasks for a job in stable creation order.
 func (r *ActressSyncRepository) ListTasks(jobID string) ([]models.ActressSyncTask, error) {
 	tasks := make([]models.ActressSyncTask, 0)
 	if err := r.db.Where("job_id = ?", jobID).Order("created_at ASC, id ASC").Find(&tasks).Error; err != nil {
@@ -82,6 +88,7 @@ func (r *ActressSyncRepository) ListTasks(jobID string) ([]models.ActressSyncTas
 	return tasks, nil
 }
 
+// HasActiveTask reports whether a pending or running task owns dedupeKey.
 func (r *ActressSyncRepository) HasActiveTask(dedupeKey string) (bool, error) {
 	var count int64
 	err := r.db.Model(&models.ActressSyncTask{}).
@@ -97,12 +104,12 @@ func (r *ActressSyncRepository) RecoverExpiredLeases(now time.Time) error {
 			expired := "status = ? AND (lease_expires_at IS NULL OR datetime(lease_expires_at) <= datetime(?))"
 			var cancelledJobIDs []string
 			if err := tx.Model(&models.ActressSyncTask{}).
-				Where(expired+" AND job_id IN (SELECT id FROM actress_sync_jobs WHERE cancel_requested = 1)", models.ActressSyncTaskRunning, now.UTC().Format(SqliteTimeFormat)).
+				Where(expired+" AND job_id IN (SELECT id FROM actress_sync_jobs WHERE cancel_requested = 1)", models.ActressSyncTaskRunning, now.UTC().Format(sqliteTimeFormat)).
 				Distinct("job_id").Pluck("job_id", &cancelledJobIDs).Error; err != nil {
 				return err
 			}
 			if err := tx.Model(&models.ActressSyncTask{}).
-				Where(expired+" AND job_id IN (SELECT id FROM actress_sync_jobs WHERE cancel_requested = 1)", models.ActressSyncTaskRunning, now.UTC().Format(SqliteTimeFormat)).
+				Where(expired+" AND job_id IN (SELECT id FROM actress_sync_jobs WHERE cancel_requested = 1)", models.ActressSyncTaskRunning, now.UTC().Format(sqliteTimeFormat)).
 				Updates(map[string]interface{}{
 					"status": models.ActressSyncTaskCancelled, "stage": "completed", "outcome": "cancelled",
 					"completed_at": now, "lease_owner": "", "lease_token": "", "lease_expires_at": nil,
@@ -110,7 +117,7 @@ func (r *ActressSyncRepository) RecoverExpiredLeases(now time.Time) error {
 				return err
 			}
 			if err := tx.Model(&models.ActressSyncTask{}).
-				Where(expired, models.ActressSyncTaskRunning, now.UTC().Format(SqliteTimeFormat)).
+				Where(expired, models.ActressSyncTaskRunning, now.UTC().Format(sqliteTimeFormat)).
 				Updates(map[string]interface{}{
 					"status": models.ActressSyncTaskPending, "stage": "queued", "lease_owner": "", "lease_token": "", "lease_expires_at": nil,
 				}).Error; err != nil {
@@ -185,6 +192,7 @@ func (r *ActressSyncRepository) NormalizeActiveMovieTasks(now time.Time) error {
 	})
 }
 
+// ReleaseOwnerLeases returns an owner's running tasks to a recoverable state.
 func (r *ActressSyncRepository) ReleaseOwnerLeases(owner string) error {
 	if owner == "" {
 		return nil
@@ -290,6 +298,7 @@ func (r *ActressSyncRepository) ClaimNext(owner string, leaseUntil time.Time) (*
 	return &claimed, nil
 }
 
+// Heartbeat extends the lease for a running task.
 func (r *ActressSyncRepository) Heartbeat(taskID, leaseToken string, leaseUntil time.Time) error {
 	now := time.Now().UTC()
 	return r.db.Model(&models.ActressSyncTask{}).
@@ -297,6 +306,7 @@ func (r *ActressSyncRepository) Heartbeat(taskID, leaseToken string, leaseUntil 
 		Updates(map[string]interface{}{"heartbeat_at": now, "lease_expires_at": leaseUntil}).Error
 }
 
+// UpdateStage records incremental stage and message progress for a leased task.
 func (r *ActressSyncRepository) UpdateStage(taskID, leaseToken, stage string, messages []string) error {
 	updates := map[string]interface{}{"stage": stage}
 	if messages != nil {
@@ -307,6 +317,7 @@ func (r *ActressSyncRepository) UpdateStage(taskID, leaseToken, stage string, me
 		Updates(updates).Error
 }
 
+// CompleteTask atomically finalizes a leased task and refreshes its job totals.
 func (r *ActressSyncRepository) CompleteTask(task *models.ActressSyncTask, leaseToken string) error {
 	if task == nil {
 		return ErrInvalidLookup
@@ -353,6 +364,7 @@ func serializedStringSlice(values []string) string {
 	return string(encoded)
 }
 
+// CancelJob requests cancellation and finalizes tasks that have not started.
 func (r *ActressSyncRepository) CancelJob(jobID string) error {
 	now := time.Now().UTC()
 	return retryOnLocked(func() error {

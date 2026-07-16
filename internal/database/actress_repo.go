@@ -1,91 +1,88 @@
 package database
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"strings"
-	"time"
-	"unicode"
 
 	"github.com/javinizer/javinizer-go/internal/models"
 	"gorm.io/gorm"
 )
 
+// ActressRepository persists and queries actress records, providing CRUD,
+// lookup, search, and merge operations on top of BaseRepository.
 type ActressRepository struct {
 	*BaseRepository[models.Actress, uint]
+	merger *actressMerger
 }
 
-var (
-	ErrActressMergeSameID           = errors.New("target_id and source_id must be different")
-	ErrActressMergeInvalidID        = errors.New("target_id and source_id must be greater than 0")
-	ErrActressMergeInvalidField     = errors.New("invalid merge field")
-	ErrActressMergeInvalidDecision  = errors.New("invalid merge resolution")
-	ErrActressMergeUniqueConstraint = errors.New("merge would violate unique constraints")
-)
-
-type ActressMergeConflict struct {
-	Field             string      `json:"field"`
-	TargetValue       interface{} `json:"target_value,omitempty"`
-	SourceValue       interface{} `json:"source_value,omitempty"`
-	DefaultResolution string      `json:"default_resolution"`
-}
-
-type ActressMergePreview struct {
-	Target             models.Actress                  `json:"target"`
-	Source             models.Actress                  `json:"source"`
-	ProposedMerged     models.Actress                  `json:"proposed_merged"`
-	Conflicts          []ActressMergeConflict          `json:"conflicts"`
-	DefaultResolutions map[string]string               `json:"default_resolutions"`
-	ConflictByField    map[string]ActressMergeConflict `json:"-"`
-}
-
-type ActressMergeResult struct {
-	MergedActress     models.Actress `json:"merged_actress"`
-	MergedFromID      uint           `json:"merged_from_id"`
-	UpdatedMovies     int            `json:"updated_movies"`
-	ConflictsResolved int            `json:"conflicts_resolved"`
-	AliasesAdded      int            `json:"aliases_added"`
-}
-
+// NewActressRepository constructs an ActressRepository backed by the given DB
+// with the default sort order for listing actresses.
 func NewActressRepository(db *DB) *ActressRepository {
-	return &ActressRepository{
+	repo := &ActressRepository{
 		BaseRepository: NewBaseRepository[models.Actress, uint](
 			db, "actress",
 			func(a models.Actress) string { return fmt.Sprintf("%d", a.ID) },
-			WithDefaultOrder[models.Actress, uint]("japanese_name ASC, last_name ASC, first_name ASC, id ASC"),
+			withDefaultOrder[models.Actress, uint]("japanese_name ASC, last_name ASC, first_name ASC, id ASC"),
 			WithNewEntity[models.Actress, uint](func() models.Actress { return models.Actress{} }),
 		),
 	}
+	repo.merger = &actressMerger{repo: repo}
+	return repo
 }
 
-func (r *ActressRepository) Create(actress *models.Actress) error {
-	return r.BaseRepository.Create(actress)
+// Create inserts a new actress record.
+func (r *ActressRepository) Create(ctx context.Context, actress *models.Actress) error {
+	return r.BaseRepository.Create(ctx, actress)
 }
 
-func (r *ActressRepository) Update(actress *models.Actress) error {
-	if err := r.GetDB().Save(actress).Error; err != nil {
+// Update saves all fields of the given actress record.
+func (r *ActressRepository) Update(ctx context.Context, actress *models.Actress) error {
+	if err := r.GetDB().WithContext(ctx).Save(actress).Error; err != nil {
 		return wrapDBErr("update", fmt.Sprintf("actress %s", actress.JapaneseName), err)
 	}
 	return nil
 }
 
-func (r *ActressRepository) FindByID(id uint) (*models.Actress, error) {
-	return r.BaseRepository.FindByID(id)
+// RenameNameFields updates only the editable name columns (first_name,
+// last_name, japanese_name) of the actress identified by id. It is used by the
+// review-page edit path to apply an explicit actress rename without clobbering
+// other columns (created_at, dmm_id, thumb_url, aliases) the way a full-row
+// Save would. Callers should gate on a name-field change to avoid bumping
+// updated_at for unedited actresses.
+func (r *ActressRepository) RenameNameFields(ctx context.Context, id uint, firstName, lastName, japaneseName string) error {
+	if id == 0 {
+		return wrapDBErr("rename", "actress id 0", ErrInvalidLookup)
+	}
+	updates := map[string]interface{}{
+		"first_name":    firstName,
+		"last_name":     lastName,
+		"japanese_name": japaneseName,
+	}
+	if err := r.GetDB().WithContext(ctx).Model(&models.Actress{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		return wrapDBErr("rename", fmt.Sprintf("actress %d", id), err)
+	}
+	return nil
 }
 
-func (r *ActressRepository) Delete(id uint) error {
-	return r.BaseRepository.Delete(id)
+// FindByID loads an actress by its primary key.
+func (r *ActressRepository) FindByID(ctx context.Context, id uint) (*models.Actress, error) {
+	return r.BaseRepository.FindByID(ctx, id)
 }
 
-// DeleteByIDs deletes the given actress rows together with their movie
-// associations, so no orphaned movie_actresses join rows remain.
-func (r *ActressRepository) DeleteByIDs(ids []uint) (int64, error) {
+// Delete removes the actress with the given primary key.
+func (r *ActressRepository) Delete(ctx context.Context, id uint) error {
+	return r.BaseRepository.Delete(ctx, id)
+}
+
+// DeleteByIDs deletes actress rows and their movie associations atomically.
+func (r *ActressRepository) DeleteByIDs(ctx context.Context, ids []uint) (int64, error) {
 	if len(ids) == 0 {
 		return 0, nil
 	}
 	var deleted int64
 	err := retryOnLocked(func() error {
-		return r.GetDB().Transaction(func(tx *gorm.DB) error {
+		return r.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			if err := tx.Exec("DELETE FROM movie_actresses WHERE actress_id IN ?", ids).Error; err != nil {
 				return err
 			}
@@ -103,11 +100,11 @@ func (r *ActressRepository) DeleteByIDs(ids []uint) (int64, error) {
 	return deleted, nil
 }
 
-// DeleteAll deletes every actress row and all movie associations.
-func (r *ActressRepository) DeleteAll() (int64, error) {
+// DeleteAll deletes every actress row and all movie associations atomically.
+func (r *ActressRepository) DeleteAll(ctx context.Context) (int64, error) {
 	var deleted int64
 	err := retryOnLocked(func() error {
-		return r.GetDB().Transaction(func(tx *gorm.DB) error {
+		return r.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			if err := tx.Exec("DELETE FROM movie_actresses").Error; err != nil {
 				return err
 			}
@@ -125,11 +122,14 @@ func (r *ActressRepository) DeleteAll() (int64, error) {
 	return deleted, nil
 }
 
-func (r *ActressRepository) Count() (int64, error) {
-	return r.BaseRepository.Count()
+// Count returns the total number of actress records.
+func (r *ActressRepository) Count(ctx context.Context) (int64, error) {
+	return r.BaseRepository.Count(ctx)
 }
 
-func (r *ActressRepository) FindByDMMID(dmmID int) (*models.Actress, error) {
+// FindByDMMID loads the actress with the given DMM identifier, returning
+// ErrNotFound when the id is zero and ErrInvalidLookup when negative.
+func (r *ActressRepository) FindByDMMID(ctx context.Context, dmmID int) (*models.Actress, error) {
 	if dmmID < 0 {
 		return nil, wrapDBErr("find", fmt.Sprintf("actress by dmm_id %d", dmmID), ErrInvalidLookup)
 	}
@@ -137,95 +137,60 @@ func (r *ActressRepository) FindByDMMID(dmmID int) (*models.Actress, error) {
 		return nil, wrapDBErr("find", fmt.Sprintf("actress by dmm_id %d", dmmID), ErrNotFound)
 	}
 	var actress models.Actress
-	err := r.GetDB().First(&actress, "dmm_id = ?", dmmID).Error
+	err := r.GetDB().WithContext(ctx).First(&actress, "dmm_id = ?", dmmID).Error
 	if err != nil {
 		return nil, wrapDBErr("find", fmt.Sprintf("actress by dmm_id %d", dmmID), err)
 	}
 	return &actress, nil
 }
 
-func (r *ActressRepository) FindByJapaneseName(name string) (*models.Actress, error) {
+// FindByJapaneseName loads the first actress matching the given Japanese name,
+// preferring higher DMM ids when duplicates exist.
+func (r *ActressRepository) FindByJapaneseName(ctx context.Context, name string) (*models.Actress, error) {
 	var actress models.Actress
-	err := r.GetDB().Order("dmm_id DESC, id ASC").First(&actress, "japanese_name = ?", name).Error
+	err := r.GetDB().WithContext(ctx).Order("dmm_id DESC, id ASC").First(&actress, "japanese_name = ?", name).Error
 	if err != nil {
 		return nil, wrapDBErr("find", fmt.Sprintf("actress %s", name), err)
 	}
 	return &actress, nil
 }
 
-// FindUnverifiedByJapaneseName returns only a DMM-ID-less exact-name row.
-// Unverified scrape values must never inherit a positive DMM identity by name.
-func (r *ActressRepository) FindUnverifiedByJapaneseName(name string) (*models.Actress, error) {
-	key := normalizeExactActressName(name)
-	if key == "" {
-		return nil, wrapDBErr("find", "unverified actress by japanese name", ErrInvalidLookup)
-	}
-	var actresses []models.Actress
-	if err := r.GetDB().Where("dmm_id <= 0").Order("id ASC").Find(&actresses).Error; err != nil {
-		return nil, wrapDBErr("find", fmt.Sprintf("unverified actress %s", name), err)
-	}
-	for i := range actresses {
-		if normalizeExactActressName(actresses[i].JapaneseName) == key {
-			return &actresses[i], nil
-		}
-	}
-	return nil, wrapDBErr("find", fmt.Sprintf("unverified actress %s", name), ErrNotFound)
-}
-
-func (r *ActressRepository) FindByFirstNameLastName(firstName, lastName string) (*models.Actress, error) {
+// FindByFirstNameLastName loads the first actress matching the given first and
+// last name, preferring higher DMM ids when duplicates exist.
+func (r *ActressRepository) FindByFirstNameLastName(ctx context.Context, firstName, lastName string) (*models.Actress, error) {
 	var actress models.Actress
-	err := r.GetDB().Order("dmm_id DESC, id ASC").First(&actress, "first_name = ? AND last_name = ?", firstName, lastName).Error
+	err := r.GetDB().WithContext(ctx).Order("dmm_id DESC, id ASC").First(&actress, "first_name = ? AND last_name = ?", firstName, lastName).Error
 	if err != nil {
 		return nil, wrapDBErr("find", fmt.Sprintf("actress %s %s", lastName, firstName), err)
 	}
 	return &actress, nil
 }
 
-// FindUnverifiedByFirstNameLastName returns only an exact primary-name row
-// without a verified DMM identity. Name-only scrape values must not inherit a
-// positive DMM identity.
-func (r *ActressRepository) FindUnverifiedByFirstNameLastName(firstName, lastName string) (*models.Actress, error) {
-	firstKey := normalizeExactActressName(firstName)
-	lastKey := normalizeExactActressName(lastName)
-	if firstKey == "" || lastKey == "" {
-		return nil, wrapDBErr("find", "unverified actress by primary name", ErrInvalidLookup)
-	}
-	var actresses []models.Actress
-	if err := r.GetDB().Where("dmm_id <= 0").Order("id ASC").Find(&actresses).Error; err != nil {
-		return nil, wrapDBErr("find", fmt.Sprintf("unverified actress %s %s", lastName, firstName), err)
-	}
-	for i := range actresses {
-		if normalizeExactActressName(actresses[i].FirstName) == firstKey &&
-			normalizeExactActressName(actresses[i].LastName) == lastKey {
-			return &actresses[i], nil
-		}
-	}
-	return nil, wrapDBErr("find", fmt.Sprintf("unverified actress %s %s", lastName, firstName), ErrNotFound)
-}
-
-func (r *ActressRepository) FindByJapaneseNameAndDMMID(name string, dmmID int) (*models.Actress, error) {
+// FindByJapaneseNameAndDMMID loads an actress by Japanese name and DMM id,
+// falling back to whichever identifier is provided when only one is set.
+func (r *ActressRepository) FindByJapaneseNameAndDMMID(ctx context.Context, name string, dmmID int) (*models.Actress, error) {
 	var actress models.Actress
 	if name != "" && dmmID > 0 {
-		err := r.GetDB().First(&actress, "japanese_name = ? AND dmm_id = ?", name, dmmID).Error
+		err := r.GetDB().WithContext(ctx).First(&actress, "japanese_name = ? AND dmm_id = ?", name, dmmID).Error
 		if err != nil {
 			return nil, wrapDBErr("find", fmt.Sprintf("actress %s dmm_id %d", name, dmmID), err)
 		}
 		return &actress, nil
 	} else if name != "" {
-		return r.FindByJapaneseName(name)
+		return r.FindByJapaneseName(ctx, name)
 	} else if dmmID > 0 {
-		return r.FindByDMMID(dmmID)
+		return r.FindByDMMID(ctx, dmmID)
 	}
 	return nil, wrapDBErr("find", "actress by japanese_name and dmm_id", ErrInvalidLookup)
 }
 
-func (r *ActressRepository) ListAll() ([]models.Actress, error) {
-	return r.BaseRepository.ListAll()
+// ListAll returns every actress record in the default sort order.
+func (r *ActressRepository) ListAll(ctx context.Context) ([]models.Actress, error) {
+	return r.BaseRepository.ListAll(ctx)
 }
 
-// ListMissingMetadataIDs returns actresses that are missing either a verified
-// DMM ID or a profile thumbnail. IDs are stable-sorted so callers can process
-// the result deterministically.
+// ListMissingMetadataIDs returns stable actress IDs missing a verified DMM ID
+// or profile thumbnail. It is used to seed explicit actress-sync jobs.
 func (r *ActressRepository) ListMissingMetadataIDs() ([]uint, error) {
 	actresses, err := r.ListMissingMetadata()
 	if err != nil {
@@ -238,140 +203,89 @@ func (r *ActressRepository) ListMissingMetadataIDs() ([]uint, error) {
 	return ids, nil
 }
 
-// ListMissingMetadata returns the actress rows used by sync so the UI can show
-// a stable name even when an individual sync request fails.
+// ListMissingMetadata returns actresses without a verified DMM ID or thumbnail.
 func (r *ActressRepository) ListMissingMetadata() ([]models.Actress, error) {
 	var actresses []models.Actress
-	if err := r.GetDB().
+	err := r.GetDB().WithContext(context.Background()).
 		Where("dmm_id <= 0 OR TRIM(COALESCE(thumb_url, '')) = ''").
-		Order("id ASC").
-		Find(&actresses).Error; err != nil {
+		Order("id ASC").Find(&actresses).Error
+	if err != nil {
 		return nil, wrapDBErr("find", "actresses missing metadata", err)
 	}
 	return actresses, nil
 }
 
-func (r *ActressRepository) FindOrCreate(actress *models.Actress) error {
-	if actress != nil && actress.DMMID > 0 && hasVerifiedActressName(*actress) {
-		resolution, err := r.ResolveVerifiedIdentity(0, *actress, true)
-		if err != nil {
-			return err
-		}
-		*actress = resolution.Actress
-		return nil
-	}
-	return retryOnLocked(func() error { return r.findOrCreateOnce(actress) })
-}
-
-func (r *ActressRepository) findOrCreateOnce(actress *models.Actress) error {
-	if actress.DMMID > 0 {
-		existing, err := r.FindByDMMID(actress.DMMID)
-		if err == nil {
-			return r.reuseActressWithBackfill(actress, existing)
-		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) && !errors.Is(err, ErrNotFound) {
-			return err
-		}
+// FindOrCreate returns the existing actress with the given Japanese name, or
+// creates a new record when none is found.
+func (r *ActressRepository) FindOrCreate(ctx context.Context, actress *models.Actress) error {
+	if actress == nil {
+		return wrapDBErr("find or create", "nil actress", ErrInvalidLookup)
 	}
 
-	if existing, err := r.findExactReusableActress(*actress); err != nil {
-		return err
-	} else if existing != nil {
-		return r.reuseActressWithBackfill(actress, existing)
-	}
+	// Keep each retry independent: a failed SQLite INSERT can still mutate the
+	// model's primary key, which must not leak into the next attempt.
+	incoming := *actress
+	var resolved models.Actress
+	err := retryOnLocked(func() error {
+		candidate := incoming
+		candidate.ID = 0
+		db := r.GetDB().WithContext(ctx)
 
-	if err := r.Create(actress); err != nil {
-		// Verified Unknown/movie tasks can resolve the same performer at the same
-		// time. The DMM unique index chooses the winner; all other workers then
-		// reuse and backfill that canonical row.
-		if actress.DMMID > 0 && strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
-			existing, findErr := r.FindByDMMID(actress.DMMID)
-			if findErr != nil {
-				return findErr
+		var existing models.Actress
+		var found bool
+		var findErr error
+		switch {
+		case candidate.DMMID > 0:
+			existing, found, findErr = lookupActressByDMMID(db, &candidate)
+		case candidate.JapaneseName != "":
+			existing, found, findErr = lookupActressByJapaneseName(db, &candidate)
+		}
+		if findErr != nil {
+			return findErr
+		}
+		if found {
+			resolved = existing
+			return nil
+		}
+
+		if createErr := db.Create(&candidate).Error; createErr != nil {
+			if errors.Is(createErr, gorm.ErrDuplicatedKey) && candidate.DMMID > 0 {
+				existing, found, findErr = lookupActressByDMMID(db, &candidate)
+				if findErr != nil {
+					return findErr
+				}
+				if found {
+					resolved = existing
+					return nil
+				}
 			}
-			actress.ID = 0
-			return r.reuseActressWithBackfill(actress, existing)
+			return createErr
 		}
-		return err
+		resolved = candidate
+		return nil
+	})
+	if err != nil {
+		return wrapDBErr("find or create", "actress", err)
 	}
+	*actress = resolved
 	return nil
 }
 
-func (r *ActressRepository) reuseActressWithBackfill(incoming, existing *models.Actress) error {
-	changed := false
-	if incoming.DMMID > 0 && existing.DMMID <= 0 {
-		existing.DMMID = incoming.DMMID
-		changed = true
-	}
-	if incoming.ThumbURL != "" && existing.ThumbURL == "" {
-		existing.ThumbURL = incoming.ThumbURL
-		changed = true
-	}
-	if incoming.JapaneseName != "" && (existing.JapaneseName == "" || models.IsUnknownActressName(existing.JapaneseName)) {
-		existing.JapaneseName = incoming.JapaneseName
-		changed = true
-	}
-	incomingHasHangul := containsHangul(incoming.FirstName) || containsHangul(incoming.LastName)
-	existingHasHangul := containsHangul(existing.FirstName) || containsHangul(existing.LastName)
-	if incoming.FirstName != "" && (existing.FirstName == "" || models.IsUnknownActressName(existing.FirstName) || (incomingHasHangul && !existingHasHangul)) {
-		existing.FirstName = incoming.FirstName
-		changed = true
-	}
-	if incoming.LastName != "" && (existing.LastName == "" || models.IsUnknownActressName(existing.LastName) || (incomingHasHangul && !existingHasHangul)) {
-		existing.LastName = incoming.LastName
-		changed = true
-	}
-	if changed {
-		if err := r.Update(existing); err != nil {
-			return err
-		}
-	}
-	*incoming = *existing
-	return nil
+// List returns a page of actresses limited by limit and offset.
+func (r *ActressRepository) List(ctx context.Context, limit, offset int) ([]models.Actress, error) {
+	return r.BaseRepository.List(ctx, limit, offset)
 }
 
-// findExactReusableActress only reuses a DMM-ID-less row whose Japanese name is
-// an exact normalized match. A name alone can never select another positive DMM
-// identity, and aliases/translated names are not identity proof.
-func (r *ActressRepository) findExactReusableActress(incoming models.Actress) (*models.Actress, error) {
-	var actresses []models.Actress
-	if err := r.GetDB().Where("dmm_id <= 0").Order("id ASC").Find(&actresses).Error; err != nil {
-		return nil, wrapDBErr("find", "exact reusable actress", err)
-	}
-	key := normalizeExactActressName(incoming.JapaneseName)
-	if key == "" {
-		return nil, nil
-	}
-	for i := range actresses {
-		if normalizeExactActressName(actresses[i].JapaneseName) == key {
-			return &actresses[i], nil
-		}
-	}
-	return nil, nil
-}
-
-func normalizeExactActressName(value string) string {
-	var normalized strings.Builder
-	for _, char := range strings.ToLower(strings.TrimSpace(value)) {
-		if unicode.IsLetter(char) || unicode.IsNumber(char) {
-			normalized.WriteRune(char)
-		}
-	}
-	return normalized.String()
-}
-
-func (r *ActressRepository) List(limit, offset int) ([]models.Actress, error) {
-	return r.BaseRepository.List(limit, offset)
-}
-
-func (r *ActressRepository) ListSorted(limit, offset int, sortBy, sortOrder string) ([]models.Actress, error) {
+// ListSorted returns a page of actresses ordered by the validated sortBy and
+// sortOrder columns.
+func (r *ActressRepository) ListSorted(ctx context.Context, limit, offset int, sortBy, sortOrder string) ([]models.Actress, error) {
 	var actresses []models.Actress
 
 	sortBy, sortOrder, err := normalizeActressSort(sortBy, sortOrder)
 	if err != nil {
 		return nil, err
 	}
-	dbq := r.GetDB().DB
+	dbq := r.GetDB().WithContext(ctx)
 	for _, clause := range actressOrderClauses(sortBy, sortOrder) {
 		dbq = dbq.Order(clause)
 	}
@@ -383,11 +297,13 @@ func (r *ActressRepository) ListSorted(limit, offset int, sortBy, sortOrder stri
 	return actresses, nil
 }
 
-func (r *ActressRepository) SearchPaged(query string, limit, offset int) ([]models.Actress, error) {
+// SearchPaged returns a page of actresses whose names match the query, ordered
+// by the default sort.
+func (r *ActressRepository) SearchPaged(ctx context.Context, query string, limit, offset int) ([]models.Actress, error) {
 	var actresses []models.Actress
 
 	searchPattern := "%" + query + "%"
-	err := r.GetDB().Where("first_name LIKE ? OR last_name LIKE ? OR japanese_name LIKE ?",
+	err := r.GetDB().WithContext(ctx).Where("first_name LIKE ? OR last_name LIKE ? OR japanese_name LIKE ?",
 		searchPattern, searchPattern, searchPattern).
 		Order("japanese_name ASC, last_name ASC, first_name ASC, id ASC").
 		Limit(limit).
@@ -399,7 +315,9 @@ func (r *ActressRepository) SearchPaged(query string, limit, offset int) ([]mode
 	return actresses, nil
 }
 
-func (r *ActressRepository) SearchPagedSorted(query string, limit, offset int, sortBy, sortOrder string) ([]models.Actress, error) {
+// SearchPagedSorted returns a page of actresses matching the query, ordered by
+// the validated sortBy and sortOrder columns.
+func (r *ActressRepository) SearchPagedSorted(ctx context.Context, query string, limit, offset int, sortBy, sortOrder string) ([]models.Actress, error) {
 	var actresses []models.Actress
 
 	sortBy, sortOrder, err := normalizeActressSort(sortBy, sortOrder)
@@ -408,7 +326,7 @@ func (r *ActressRepository) SearchPagedSorted(query string, limit, offset int, s
 	}
 	searchPattern := "%" + query + "%"
 
-	dbq := r.GetDB().Where("first_name LIKE ? OR last_name LIKE ? OR japanese_name LIKE ?",
+	dbq := r.GetDB().WithContext(ctx).Where("first_name LIKE ? OR last_name LIKE ? OR japanese_name LIKE ?",
 		searchPattern, searchPattern, searchPattern)
 	for _, clause := range actressOrderClauses(sortBy, sortOrder) {
 		dbq = dbq.Order(clause)
@@ -421,10 +339,11 @@ func (r *ActressRepository) SearchPagedSorted(query string, limit, offset int, s
 	return actresses, nil
 }
 
-func (r *ActressRepository) CountSearch(query string) (int64, error) {
+// CountSearch returns the number of actresses whose names match the query.
+func (r *ActressRepository) CountSearch(ctx context.Context, query string) (int64, error) {
 	var count int64
 	searchPattern := "%" + query + "%"
-	err := r.GetDB().Model(&models.Actress{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.Actress{}).
 		Where("first_name LIKE ? OR last_name LIKE ? OR japanese_name LIKE ?",
 			searchPattern, searchPattern, searchPattern).
 		Count(&count).Error
@@ -434,11 +353,13 @@ func (r *ActressRepository) CountSearch(query string) (int64, error) {
 	return count, nil
 }
 
-func (r *ActressRepository) Search(query string) ([]models.Actress, error) {
+// Search returns up to 50 actresses matching the query, or up to 100 when
+// the query is empty.
+func (r *ActressRepository) Search(ctx context.Context, query string) ([]models.Actress, error) {
 	var actresses []models.Actress
 
 	if query == "" {
-		err := r.GetDB().Limit(100).Order("japanese_name ASC, last_name ASC, first_name ASC").Find(&actresses).Error
+		err := r.GetDB().WithContext(ctx).Limit(100).Order("japanese_name ASC, last_name ASC, first_name ASC").Find(&actresses).Error
 		if err != nil {
 			return nil, wrapDBErr("find", "actresses", err)
 		}
@@ -446,7 +367,7 @@ func (r *ActressRepository) Search(query string) ([]models.Actress, error) {
 	}
 
 	searchPattern := "%" + query + "%"
-	err := r.GetDB().Where("first_name LIKE ? OR last_name LIKE ? OR japanese_name LIKE ?",
+	err := r.GetDB().WithContext(ctx).Where("first_name LIKE ? OR last_name LIKE ? OR japanese_name LIKE ?",
 		searchPattern, searchPattern, searchPattern).
 		Order("japanese_name ASC, last_name ASC, first_name ASC").
 		Limit(50).
@@ -457,156 +378,14 @@ func (r *ActressRepository) Search(query string) ([]models.Actress, error) {
 	return actresses, nil
 }
 
-func (r *ActressRepository) loadPair(targetID, sourceID uint) (*models.Actress, *models.Actress, error) {
-	if targetID == 0 || sourceID == 0 {
-		return nil, nil, ErrActressMergeInvalidID
-	}
-	if targetID == sourceID {
-		return nil, nil, ErrActressMergeSameID
-	}
-
-	target, err := r.FindByID(targetID)
-	if err != nil {
-		return nil, nil, err
-	}
-	source, err := r.FindByID(sourceID)
-	if err != nil {
-		return nil, nil, err
-	}
-	return target, source, nil
+// PreviewMerge computes a non-persistent preview of merging the source
+// actress into the target actress.
+func (r *ActressRepository) PreviewMerge(ctx context.Context, targetID, sourceID uint) (*ActressMergePreview, error) {
+	return r.merger.PreviewMerge(ctx, targetID, sourceID)
 }
 
-func (r *ActressRepository) PreviewMerge(targetID, sourceID uint) (*ActressMergePreview, error) {
-	target, source, err := r.loadPair(targetID, sourceID)
-	if err != nil {
-		return nil, err
-	}
-
-	conflicts := buildActressMergeConflicts(target, source)
-	defaultResolutions := defaultResolutionsFromConflicts(conflicts)
-	merged, err := mergeActressValues(target, source, defaultResolutions)
-	if err != nil {
-		return nil, err
-	}
-
-	canonicalName := canonicalActressName(&merged)
-	merged.Aliases, _, _ = mergeAliasValues(target.Aliases, collectActressAliasCandidates(source), canonicalName)
-
-	byField := make(map[string]ActressMergeConflict, len(conflicts))
-	for _, conflict := range conflicts {
-		byField[conflict.Field] = conflict
-	}
-
-	return &ActressMergePreview{
-		Target:             *target,
-		Source:             *source,
-		ProposedMerged:     merged,
-		Conflicts:          conflicts,
-		DefaultResolutions: defaultResolutions,
-		ConflictByField:    byField,
-	}, nil
-}
-
-func (r *ActressRepository) Merge(targetID, sourceID uint, resolutions map[string]string) (*ActressMergeResult, error) {
-	preview, err := r.PreviewMerge(targetID, sourceID)
-	if err != nil {
-		return nil, err
-	}
-
-	normalizedResolutions, err := normalizeMergeResolutions(resolutions)
-	if err != nil {
-		return nil, err
-	}
-	for _, conflict := range preview.Conflicts {
-		if _, exists := normalizedResolutions[conflict.Field]; !exists {
-			normalizedResolutions[conflict.Field] = MergeResolutionTarget
-		}
-	}
-
-	merged, err := mergeActressValues(&preview.Target, &preview.Source, normalizedResolutions)
-	if err != nil {
-		return nil, err
-	}
-
-	canonicalName := canonicalActressName(&merged)
-	aliasesAdded := 0
-	sourceCandidates := collectActressAliasCandidates(&preview.Source)
-	merged.Aliases, aliasesAdded, _ = mergeAliasValues(
-		preview.Target.Aliases,
-		sourceCandidates,
-		canonicalName,
-	)
-	sourceAliasUpserts := sourceAliasesForUpsert(sourceCandidates, canonicalName)
-
-	updatedMovies := 0
-	conflictsResolved := len(preview.Conflicts)
-	err = r.GetDB().Transaction(func(tx *gorm.DB) error {
-		if merged.DMMID > 0 {
-			var existing models.Actress
-			checkErr := tx.Where("dmm_id = ? AND id NOT IN ?", merged.DMMID, []uint{targetID, sourceID}).First(&existing).Error
-			if checkErr == nil {
-				return fmt.Errorf("%w: dmm_id %d is already used by actress #%d", ErrActressMergeUniqueConstraint, merged.DMMID, existing.ID)
-			}
-			if checkErr != nil && !errors.Is(checkErr, gorm.ErrRecordNotFound) {
-				return wrapDBErr("find", fmt.Sprintf("actress by dmm_id %d for merge", merged.DMMID), checkErr)
-			}
-		}
-
-		if merged.DMMID > 0 && merged.DMMID == preview.Source.DMMID && preview.Target.DMMID != preview.Source.DMMID {
-			tempDMMID := -int(sourceID)
-			if tempDMMID == 0 {
-				tempDMMID = -1
-			}
-			if err := tx.Model(&models.Actress{}).Where("id = ?", sourceID).Update("dmm_id", tempDMMID).Error; err != nil {
-				return wrapDBErr("update", fmt.Sprintf("merge actress %d temp dmm_id", sourceID), err)
-			}
-		}
-
-		if err := tx.Model(&models.Actress{}).Where("id = ?", targetID).Updates(map[string]interface{}{
-			"dmm_id":        merged.DMMID,
-			"first_name":    merged.FirstName,
-			"last_name":     merged.LastName,
-			"japanese_name": merged.JapaneseName,
-			"thumb_url":     merged.ThumbURL,
-			"aliases":       merged.Aliases,
-			"updated_at":    time.Now().UTC(),
-		}).Error; err != nil {
-			if errors.Is(err, gorm.ErrDuplicatedKey) {
-				return ErrActressMergeUniqueConstraint
-			}
-			return wrapDBErr("update", fmt.Sprintf("merge actress %d", targetID), err)
-		}
-
-		var moveErr error
-		updatedMovies, moveErr = moveMovieAssociations(tx, sourceID, targetID)
-		if moveErr != nil {
-			return wrapDBErr("merge", fmt.Sprintf("actress movie associations from %d to %d", sourceID, targetID), moveErr)
-		}
-
-		if err := upsertActressAliases(tx, sourceAliasUpserts, canonicalName); err != nil {
-			return wrapDBErr("merge", fmt.Sprintf("actress aliases for %s", canonicalName), err)
-		}
-
-		if err := tx.Delete(&models.Actress{}, sourceID).Error; err != nil {
-			return wrapDBErr("delete", fmt.Sprintf("merge source actress %d", sourceID), err)
-		}
-
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	mergedRecord, err := r.FindByID(targetID)
-	if err != nil {
-		return nil, err
-	}
-
-	return &ActressMergeResult{
-		MergedActress:     *mergedRecord,
-		MergedFromID:      sourceID,
-		UpdatedMovies:     updatedMovies,
-		ConflictsResolved: conflictsResolved,
-		AliasesAdded:      aliasesAdded,
-	}, nil
+// Merge computes a merge plan for the source actress into the target and
+// executes it within a transaction.
+func (r *ActressRepository) Merge(ctx context.Context, targetID, sourceID uint, resolutions map[string]string) (*ActressMergeResult, error) {
+	return r.merger.Merge(ctx, targetID, sourceID, resolutions, r.GetDB())
 }

@@ -8,6 +8,7 @@ import (
 	"unicode"
 )
 
+// CleanString collapses whitespace and replaces non-breaking spaces with regular spaces.
 func CleanString(v string) string {
 	v = strings.ReplaceAll(v, "\u00a0", " ")
 	v = strings.TrimSpace(v)
@@ -15,6 +16,7 @@ func CleanString(v string) string {
 	return v
 }
 
+// NormalizeLanguage maps a language code to one of the supported canonical codes: ja, en, or zh.
 func NormalizeLanguage(lang string) string {
 	switch strings.ToLower(strings.TrimSpace(lang)) {
 	case "ja":
@@ -35,6 +37,7 @@ var dateFormats = []string{
 	"01-02-2006",
 }
 
+// ParseDate parses s against a set of common date formats and returns the first match.
 func ParseDate(s string) *time.Time {
 	s = CleanString(s)
 	for _, f := range dateFormats {
@@ -45,28 +48,33 @@ func ParseDate(s string) *time.Time {
 	return nil
 }
 
+// IntPtr returns a pointer to the given int value.
 func IntPtr(i int) *int { return &i }
+
+// BoolPtr returns a pointer to the given bool value.
+func BoolPtr(b bool) *bool { return &b }
 
 var nonAlphaNumRegex = regexp.MustCompile(`[^a-z0-9]+`)
 
+// NormalizeID lowercases v and removes non-alphanumeric characters.
 func NormalizeID(v string) string {
 	v = strings.ToLower(strings.TrimSpace(v))
 	return nonAlphaNumRegex.ReplaceAllString(v, "")
 }
 
-// CleanActressName normalizes an actress name by stripping parenthetical extras.
-// Sites often include age, alternate names, or other info in parentheses next to
-// the actress name, e.g. "セリナ（本名：佐藤セリナ）" or "セリナ(" (truncated).
+// CleanActressName removes parenthetical aliases and descriptive suffixes
+// commonly appended to actress names by scraper sites.
 func CleanActressName(name string) string {
 	name = CleanString(name)
 	for _, paren := range []string{"（", "("} {
-		if idx := strings.Index(name, paren); idx >= 0 {
-			name = strings.TrimSpace(name[:idx])
+		if index := strings.Index(name, paren); index >= 0 {
+			name = strings.TrimSpace(name[:index])
 		}
 	}
 	return name
 }
 
+// HasJapanese reports whether v contains any Hiragana, Katakana, or Han characters.
 func HasJapanese(v string) bool {
 	for _, r := range v {
 		if unicode.In(r, unicode.Hiragana, unicode.Katakana, unicode.Han) {
@@ -76,6 +84,7 @@ func HasJapanese(v string) bool {
 	return false
 }
 
+// IsHTTPURL reports whether v parses as an http or https URL with a host.
 func IsHTTPURL(v string) bool {
 	u, err := url.Parse(strings.TrimSpace(v))
 	if err != nil {
@@ -84,6 +93,7 @@ func IsHTTPURL(v string) bool {
 	return (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
 
+// ResolveURL resolves raw against base into an absolute URL, handling protocol-relative and absolute inputs.
 func ResolveURL(base, raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {

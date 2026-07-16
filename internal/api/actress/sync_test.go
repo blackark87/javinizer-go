@@ -2,6 +2,7 @@ package actress
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,14 +18,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newActressSyncAPITest(t *testing.T) (*gin.Engine, *core.ServerDependencies) {
+func newActressSyncAPITest(t *testing.T) (*gin.Engine, *core.APIDeps, *core.APIRuntime) {
 	t.Helper()
-	cfg := config.DefaultConfig()
+	cfg := config.DefaultConfig(nil, nil)
 	cfg.Scrapers.Priority = []string{"sougouwiki"}
 	deps := testkit.CreateTestDeps(t, cfg, "")
+	rt := testkit.GetTestRuntime(deps)
 	router := gin.New()
-	RegisterRoutes(router.Group("/api/v1"), deps)
-	return router, deps
+	actressDeps := NewActressDeps(deps.Repos.ContentRepos, deps.Repos.TranslationRepos)
+	RegisterRoutes(router.Group("/api/v1"), actressDeps, rt)
+	return router, deps, rt
 }
 
 func performActressSyncAPIRequest(router *gin.Engine, method, path string) *httptest.ResponseRecorder {
@@ -42,14 +45,14 @@ func performActressSyncAPIJSONRequest(router *gin.Engine, method, path, body str
 }
 
 func TestListActressSyncCandidates(t *testing.T) {
-	router, deps := newActressSyncAPITest(t)
+	router, deps, _ := newActressSyncAPITest(t)
 	actresses := []*models.Actress{
 		{DMMID: 1, JapaneseName: "Complete", ThumbURL: "complete.jpg"},
 		{DMMID: 0, JapaneseName: "Missing ID", ThumbURL: "id.jpg"},
 		{DMMID: 2, JapaneseName: "Missing thumbnail"},
 	}
 	for _, actress := range actresses {
-		require.NoError(t, deps.ActressRepo.Create(actress))
+		require.NoError(t, deps.Repos.ActressRepo.Create(context.Background(), actress))
 	}
 
 	response := performActressSyncAPIRequest(router, http.MethodGet, "/api/v1/actresses/sync-candidates")
@@ -64,17 +67,17 @@ func TestListActressSyncCandidates(t *testing.T) {
 }
 
 func TestListActressSyncCandidatesDatabaseError(t *testing.T) {
-	router, deps := newActressSyncAPITest(t)
-	require.NoError(t, deps.DB.Close())
+	router, deps, _ := newActressSyncAPITest(t)
+	require.NoError(t, deps.CoreDeps.DB.Close())
 	response := performActressSyncAPIRequest(router, http.MethodGet, "/api/v1/actresses/sync-candidates")
 	assert.Equal(t, http.StatusInternalServerError, response.Code)
 }
 
 func TestActressSyncJobAPIRoutesCreateReadListAndCancel(t *testing.T) {
-	router, deps := newActressSyncAPITest(t)
-	t.Cleanup(deps.Shutdown)
+	router, deps, rt := newActressSyncAPITest(t)
+	t.Cleanup(rt.Shutdown)
 	actress := &models.Actress{DMMID: 123, JapaneseName: "Complete", ThumbURL: "complete.jpg"}
-	require.NoError(t, deps.ActressRepo.Create(actress))
+	require.NoError(t, deps.Repos.ActressRepo.Create(context.Background(), actress))
 
 	invalid := performActressSyncAPIJSONRequest(router, http.MethodPost, "/api/v1/actresses/sync-jobs", `{}`)
 	assert.Equal(t, http.StatusBadRequest, invalid.Code)

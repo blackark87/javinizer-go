@@ -2,9 +2,9 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
-	"github.com/javinizer/javinizer-go/internal/configutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -21,11 +21,10 @@ metadata:
 `
 
 	// Write test config
-	tmpFile := "/tmp/test_new_config.yaml"
+	tmpFile := filepath.Join(t.TempDir(), "test_new_config.yaml")
 	if err := os.WriteFile(tmpFile, []byte(newConfig), 0644); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
 	}
-	defer func() { _ = os.Remove(tmpFile) }()
 
 	// Load config
 	cfg, err := Load(tmpFile)
@@ -63,11 +62,10 @@ metadata:
 `
 
 	// Write test config
-	tmpFile := "/tmp/test_old_config_fails.yaml"
+	tmpFile := filepath.Join(t.TempDir(), "test_old_config_fails.yaml")
 	if err := os.WriteFile(tmpFile, []byte(oldConfig), 0644); err != nil {
 		t.Fatalf("Failed to write config: %v", err)
 	}
-	defer func() { _ = os.Remove(tmpFile) }()
 
 	// Load config - old field names should be ignored, defaults used
 	cfg, err := Load(tmpFile)
@@ -116,7 +114,7 @@ func TestLoadEmptyConfig(t *testing.T) {
 			}
 
 			// Verify defaults were applied
-			defaultCfg := DefaultConfig()
+			defaultCfg := DefaultConfig(nil, nil)
 			if cfg.Scrapers.UserAgent != defaultCfg.Scrapers.UserAgent {
 				t.Errorf("Expected default user agent %q, got %q", defaultCfg.Scrapers.UserAgent, cfg.Scrapers.UserAgent)
 			}
@@ -158,7 +156,7 @@ scrapers:
 	}
 
 	// Verify unspecified fields use defaults
-	defaultCfg := DefaultConfig()
+	defaultCfg := DefaultConfig(nil, nil)
 	if cfg.Scrapers.UserAgent != defaultCfg.Scrapers.UserAgent {
 		t.Error("Expected default user agent for unspecified field")
 	}
@@ -179,9 +177,9 @@ func TestResolveScraperUserAgent(t *testing.T) {
 			expectedUA: "Custom-UA",
 		},
 		{
-			name:       "default fake user-agent when scraper UA empty",
+			name:       "Chrome UA fallback when scraper UA empty",
 			userAgent:  "",
-			expectedUA: configutil.DefaultScraperUserAgent,
+			expectedUA: DefaultScraperUserAgent,
 		},
 	}
 
@@ -196,7 +194,7 @@ func TestResolveScraperUserAgent(t *testing.T) {
 }
 
 func TestValidateTranslationConfig_Disabled(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := DefaultConfig(nil, nil)
 	cfg.Metadata.Translation.Enabled = false
 	err := cfg.validateTranslationConfig()
 	assert.NoError(t, err)
@@ -204,7 +202,7 @@ func TestValidateTranslationConfig_Disabled(t *testing.T) {
 
 func TestValidateTranslationConfig_OpenAI(t *testing.T) {
 	t.Run("valid openai config", func(t *testing.T) {
-		cfg := DefaultConfig()
+		cfg := DefaultConfig(nil, nil)
 		cfg.Metadata.Translation.Enabled = true
 		cfg.Metadata.Translation.Provider = "openai"
 		cfg.Metadata.Translation.OpenAI.APIKey = "sk-test-key"
@@ -214,7 +212,7 @@ func TestValidateTranslationConfig_OpenAI(t *testing.T) {
 	})
 
 	t.Run("missing openai api key", func(t *testing.T) {
-		cfg := DefaultConfig()
+		cfg := DefaultConfig(nil, nil)
 		cfg.Metadata.Translation.Enabled = true
 		cfg.Metadata.Translation.Provider = "openai"
 		cfg.Metadata.Translation.OpenAI.APIKey = ""
@@ -224,7 +222,7 @@ func TestValidateTranslationConfig_OpenAI(t *testing.T) {
 	})
 
 	t.Run("invalid openai base url", func(t *testing.T) {
-		cfg := DefaultConfig()
+		cfg := DefaultConfig(nil, nil)
 		cfg.Metadata.Translation.Enabled = true
 		cfg.Metadata.Translation.Provider = "openai"
 		cfg.Metadata.Translation.OpenAI.APIKey = "sk-test"
@@ -237,7 +235,7 @@ func TestValidateTranslationConfig_OpenAI(t *testing.T) {
 
 func TestValidateTranslationConfig_DeepL(t *testing.T) {
 	t.Run("valid deepl config", func(t *testing.T) {
-		cfg := DefaultConfig()
+		cfg := DefaultConfig(nil, nil)
 		cfg.Metadata.Translation.Enabled = true
 		cfg.Metadata.Translation.Provider = "deepl"
 		cfg.Metadata.Translation.DeepL.APIKey = "test-key"
@@ -246,7 +244,7 @@ func TestValidateTranslationConfig_DeepL(t *testing.T) {
 	})
 
 	t.Run("invalid deepl mode", func(t *testing.T) {
-		cfg := DefaultConfig()
+		cfg := DefaultConfig(nil, nil)
 		cfg.Metadata.Translation.Enabled = true
 		cfg.Metadata.Translation.Provider = "deepl"
 		cfg.Metadata.Translation.DeepL.APIKey = "test-key"
@@ -257,7 +255,7 @@ func TestValidateTranslationConfig_DeepL(t *testing.T) {
 	})
 
 	t.Run("missing deepl api key", func(t *testing.T) {
-		cfg := DefaultConfig()
+		cfg := DefaultConfig(nil, nil)
 		cfg.Metadata.Translation.Enabled = true
 		cfg.Metadata.Translation.Provider = "deepl"
 		cfg.Metadata.Translation.DeepL.APIKey = ""
@@ -269,7 +267,7 @@ func TestValidateTranslationConfig_DeepL(t *testing.T) {
 
 func TestValidateTranslationConfig_Google(t *testing.T) {
 	t.Run("free mode no api key needed", func(t *testing.T) {
-		cfg := DefaultConfig()
+		cfg := DefaultConfig(nil, nil)
 		cfg.Metadata.Translation.Enabled = true
 		cfg.Metadata.Translation.Provider = "google"
 		cfg.Metadata.Translation.Google.Mode = "free"
@@ -278,7 +276,7 @@ func TestValidateTranslationConfig_Google(t *testing.T) {
 	})
 
 	t.Run("paid mode requires api key", func(t *testing.T) {
-		cfg := DefaultConfig()
+		cfg := DefaultConfig(nil, nil)
 		cfg.Metadata.Translation.Enabled = true
 		cfg.Metadata.Translation.Provider = "google"
 		cfg.Metadata.Translation.Google.Mode = "paid"
@@ -289,7 +287,7 @@ func TestValidateTranslationConfig_Google(t *testing.T) {
 	})
 
 	t.Run("invalid google mode", func(t *testing.T) {
-		cfg := DefaultConfig()
+		cfg := DefaultConfig(nil, nil)
 		cfg.Metadata.Translation.Enabled = true
 		cfg.Metadata.Translation.Provider = "google"
 		cfg.Metadata.Translation.Google.Mode = "invalid"
@@ -301,7 +299,7 @@ func TestValidateTranslationConfig_Google(t *testing.T) {
 
 func TestValidateTranslationConfig_OpenAICompatible(t *testing.T) {
 	t.Run("missing base url", func(t *testing.T) {
-		cfg := DefaultConfig()
+		cfg := DefaultConfig(nil, nil)
 		cfg.Metadata.Translation.Enabled = true
 		cfg.Metadata.Translation.Provider = "openai-compatible"
 		cfg.Metadata.Translation.OpenAICompatible.BaseURL = ""
@@ -311,7 +309,7 @@ func TestValidateTranslationConfig_OpenAICompatible(t *testing.T) {
 	})
 
 	t.Run("missing model", func(t *testing.T) {
-		cfg := DefaultConfig()
+		cfg := DefaultConfig(nil, nil)
 		cfg.Metadata.Translation.Enabled = true
 		cfg.Metadata.Translation.Provider = "openai-compatible"
 		cfg.Metadata.Translation.OpenAICompatible.BaseURL = "http://localhost:11434"
@@ -322,7 +320,7 @@ func TestValidateTranslationConfig_OpenAICompatible(t *testing.T) {
 	})
 
 	t.Run("valid config", func(t *testing.T) {
-		cfg := DefaultConfig()
+		cfg := DefaultConfig(nil, nil)
 		cfg.Metadata.Translation.Enabled = true
 		cfg.Metadata.Translation.Provider = "openai-compatible"
 		cfg.Metadata.Translation.OpenAICompatible.BaseURL = "http://localhost:11434"
@@ -332,7 +330,7 @@ func TestValidateTranslationConfig_OpenAICompatible(t *testing.T) {
 	})
 
 	t.Run("invalid base url", func(t *testing.T) {
-		cfg := DefaultConfig()
+		cfg := DefaultConfig(nil, nil)
 		cfg.Metadata.Translation.Enabled = true
 		cfg.Metadata.Translation.Provider = "openai-compatible"
 		cfg.Metadata.Translation.OpenAICompatible.BaseURL = "not-a-url"
@@ -343,7 +341,7 @@ func TestValidateTranslationConfig_OpenAICompatible(t *testing.T) {
 	})
 
 	t.Run("invalid backend type", func(t *testing.T) {
-		cfg := DefaultConfig()
+		cfg := DefaultConfig(nil, nil)
 		cfg.Metadata.Translation.Enabled = true
 		cfg.Metadata.Translation.Provider = "openai-compatible"
 		cfg.Metadata.Translation.OpenAICompatible.BaseURL = "http://localhost:11434"
@@ -357,7 +355,7 @@ func TestValidateTranslationConfig_OpenAICompatible(t *testing.T) {
 
 func TestValidateTranslationConfig_Anthropic(t *testing.T) {
 	t.Run("valid anthropic config", func(t *testing.T) {
-		cfg := DefaultConfig()
+		cfg := DefaultConfig(nil, nil)
 		cfg.Metadata.Translation.Enabled = true
 		cfg.Metadata.Translation.Provider = "anthropic"
 		cfg.Metadata.Translation.Anthropic.APIKey = "sk-ant-test"
@@ -368,7 +366,7 @@ func TestValidateTranslationConfig_Anthropic(t *testing.T) {
 	})
 
 	t.Run("missing base url", func(t *testing.T) {
-		cfg := DefaultConfig()
+		cfg := DefaultConfig(nil, nil)
 		cfg.Metadata.Translation.Enabled = true
 		cfg.Metadata.Translation.Provider = "anthropic"
 		cfg.Metadata.Translation.Anthropic.APIKey = "sk-ant-test"
@@ -380,7 +378,7 @@ func TestValidateTranslationConfig_Anthropic(t *testing.T) {
 	})
 
 	t.Run("missing model", func(t *testing.T) {
-		cfg := DefaultConfig()
+		cfg := DefaultConfig(nil, nil)
 		cfg.Metadata.Translation.Enabled = true
 		cfg.Metadata.Translation.Provider = "anthropic"
 		cfg.Metadata.Translation.Anthropic.APIKey = "sk-ant-test"
@@ -392,7 +390,7 @@ func TestValidateTranslationConfig_Anthropic(t *testing.T) {
 	})
 
 	t.Run("missing api key", func(t *testing.T) {
-		cfg := DefaultConfig()
+		cfg := DefaultConfig(nil, nil)
 		cfg.Metadata.Translation.Enabled = true
 		cfg.Metadata.Translation.Provider = "anthropic"
 		cfg.Metadata.Translation.Anthropic.APIKey = ""
@@ -405,7 +403,7 @@ func TestValidateTranslationConfig_Anthropic(t *testing.T) {
 }
 
 func TestValidateTranslationConfig_InvalidProvider(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := DefaultConfig(nil, nil)
 	cfg.Metadata.Translation.Enabled = true
 	cfg.Metadata.Translation.Provider = "nonexistent"
 	err := cfg.validateTranslationConfig()
@@ -415,7 +413,7 @@ func TestValidateTranslationConfig_InvalidProvider(t *testing.T) {
 
 func TestValidateTranslationConfig_Timeout(t *testing.T) {
 	t.Run("timeout too low", func(t *testing.T) {
-		cfg := DefaultConfig()
+		cfg := DefaultConfig(nil, nil)
 		cfg.Metadata.Translation.Enabled = true
 		cfg.Metadata.Translation.Provider = "openai"
 		cfg.Metadata.Translation.OpenAI.APIKey = "sk-test"
@@ -426,7 +424,7 @@ func TestValidateTranslationConfig_Timeout(t *testing.T) {
 	})
 
 	t.Run("timeout too high", func(t *testing.T) {
-		cfg := DefaultConfig()
+		cfg := DefaultConfig(nil, nil)
 		cfg.Metadata.Translation.Enabled = true
 		cfg.Metadata.Translation.Provider = "openai"
 		cfg.Metadata.Translation.OpenAI.APIKey = "sk-test"

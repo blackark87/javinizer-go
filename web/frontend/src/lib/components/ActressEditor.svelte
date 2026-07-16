@@ -6,20 +6,30 @@
 	import { alertDialog, confirmDialog } from '$lib/stores/dialog.svelte';
 	import { portalToBody } from '$lib/actions/portal';
 	import { apiClient } from '$lib/api/client';
-	import { previewImageUrl } from '$lib/utils/image';
-	import type { Movie, Actress } from '$lib/api/types';
+	import type { Movie, Actress, ActressAliasGroup } from '$lib/api/types';
+	import { formatActressName } from '$lib/utils/actress';
+	import { createConfigQuery } from '$lib/query/queries';
 	import Button from './ui/Button.svelte';
 	import Card from './ui/Card.svelte';
-	import { Plus, SquarePen, Trash2, X, Save, Search, ImageOff } from 'lucide-svelte';
+	import { Plus, SquarePen, Trash2, X, Save, Search } from 'lucide-svelte';
 
 	interface Props {
 		movie: Movie;
 		onUpdate: (movie: Movie) => void;
+		onPersistEdits?: () => void | Promise<void>;
 		actressSources?: Record<string, string>;
 		showFieldSources?: boolean;
+		savingEdits?: boolean;
+		organizing?: boolean;
 	}
 
-	let { movie, onUpdate, actressSources, showFieldSources = false }: Props = $props();
+	let { movie, onUpdate, onPersistEdits, actressSources, showFieldSources = false, savingEdits = false, organizing = false }: Props = $props();
+	const configQuery = createConfigQuery();
+	let firstNameOrder = $derived(configQuery.data?.output?.first_name_order ?? false);
+	let japaneseNames = $derived(
+		(configQuery.data?.output?.actress_language_ja ?? false) ||
+		(configQuery.data?.metadata?.nfo?.actress_language_ja ?? false)
+	);
 
 	let actresses = $state<Actress[]>([]);
 	let showEditModal = $state(false);
@@ -31,53 +41,40 @@
 		thumb_url: ''
 	});
 
+	// Whether the thumbnail preview failed to load for the current URL. Reset
+	// whenever the URL changes so a corrected URL re-fetches instead of staying
+	// hidden by a stale onerror (display:none) from a prior failed URL.
+	let thumbPreviewError = $state(false);
+
 	// Autocomplete state
 	let searchQuery = $state('');
 	let searchResults = $state<Actress[]>([]);
 	let showSearchResults = $state(false);
+	let isSearchFocused = $state(false);
 	let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 	let searchRequestId = 0;
-	let searchTotal = $state(0);
-	let searchLimit = $state(50);
-	let searchOffset = $state(0);
-	let isSearching = $state(false);
-	let imgErrorKeys = $state(new Set<string>());
-	let searchImgErrorKeys = $state(new Set<string>());
-	let previewImgError = $state(false);
 
-	const ACTRESS_SEARCH_LIMIT = 50;
+	// Alias group for the actress currently being edited. When the resolver
+	// knows more than one name for this performer (canonical + aliases), a
+	// "Write to NFO as" dropdown is shown so the user can pick which name the
+	// NFO <name> tag gets. The chosen value is written to japanese_name.
+	let aliasGroup = $state<ActressAliasGroup | null>(null);
+	let aliasGroupFetching = $state(false);
+	let aliasRequestId = 0;
 
-	let hasMoreSearchResults = $derived(searchResults.length < searchTotal);
-
-	async function searchActresses(query: string, offset = 0, append = false) {
+	async function searchActresses(query: string) {
 		const requestId = ++searchRequestId;
-		const q = query.trim();
-		isSearching = true;
-
 		try {
-			const response = await apiClient.listActresses({
-				q,
-				limit: ACTRESS_SEARCH_LIMIT,
-				offset,
-				sort_by: 'name',
-				sort_order: 'asc'
-			});
-
+			const q = query.trim();
+			const url = q ? `/api/v1/actresses/search?q=${encodeURIComponent(q)}` : '/api/v1/actresses/search?q=';
+			const results = await apiClient.request<Actress[]>(url);
 			if (requestId === searchRequestId) {
-				searchResults = append ? [...searchResults, ...response.actresses] : response.actresses;
-				searchTotal = response.total;
-				searchLimit = response.limit;
-				searchOffset = response.offset;
+				searchResults = results;
 			}
 		} catch (error) {
 			if (requestId === searchRequestId) {
 				console.error('Failed to search actresses:', error);
-				searchResults = append ? searchResults : [];
-				searchTotal = append ? searchTotal : 0;
-			}
-		} finally {
-			if (requestId === searchRequestId) {
-				isSearching = false;
+				searchResults = [];
 			}
 		}
 	}
@@ -86,12 +83,7 @@
 		if (searchDebounceTimer) { clearTimeout(searchDebounceTimer); searchDebounceTimer = null; }
 		searchDebounceTimer = setTimeout(() => {
 			searchActresses(searchQuery);
-		}, 250);
-	}
-
-	function loadMoreActresses() {
-		if (isSearching || !hasMoreSearchResults) return;
-		searchActresses(searchQuery, searchOffset + searchLimit, true);
+		}, 200);
 	}
 
 	$effect(() => {
@@ -106,19 +98,105 @@
 		untrack(() => { actresses = data || []; });
 	});
 
+	// Reset the thumbnail preview error whenever the URL being edited changes
+	// (including when the editor opens on a different actress). Without this,
+	// a previously-failed URL leaves the preview <img> hidden via a stale
+	// onerror display:none, so correcting the URL does not re-fetch.
+	$effect(() => {
+		editingActress.thumb_url;
+		thumbPreviewError = false;
+	});
+
+	// Fetch the alias group for the actress being edited, keyed on a
+	// name-form-agnostic lookup (Japanese name preferred, else romanized
+	// "First Last"). The dropdown only renders when the group has >1 name, so a
+	// silent no-op for actresses with no known aliases is fine. Stale requests
+	// are discarded via aliasRequestId.
+	async function fetchAliasGroup(name: string) {
+		const requestId = ++aliasRequestId;
+		const trimmed = name.trim();
+		if (!trimmed) {
+			if (requestId === aliasRequestId) {
+				aliasGroup = null;
+				aliasGroupFetching = false;
+			}
+			return;
+		}
+		if (requestId === aliasRequestId) aliasGroupFetching = true;
+		try {
+			const group = await apiClient.actresses.getAliasGroup(trimmed);
+			if (requestId === aliasRequestId) {
+				aliasGroup = group.names.length > 1 ? group : null;
+			}
+		} catch (error) {
+			if (requestId === aliasRequestId) {
+				console.error('Failed to fetch actress alias group:', error);
+				aliasGroup = null;
+			}
+		} finally {
+			if (requestId === aliasRequestId) aliasGroupFetching = false;
+		}
+	}
+
+	// Debounce the alias fetch so manual typing does not hit the API per
+	// keystroke.
+	let aliasDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		// Name-form-agnostic lookup: prefer the Japanese name, fall back to the
+		// romanized "First Last" form so an actress with only romanized names can
+		// still resolve a known alias group. The chosen alias is always written
+		// back to japanese_name (the NFO <name> source), regardless of which form
+		// matched — see the select onchange below.
+		const jp = (editingActress.japanese_name ?? '').trim();
+		const first = (editingActress.first_name ?? '').trim();
+		const last = (editingActress.last_name ?? '').trim();
+		const name = jp || `${first} ${last}`.trim();
+		if (!name) {
+			aliasGroup = null;
+			return;
+		}
+		// Skip the refetch when the name is already part of the loaded group:
+		// the select onchange writes to japanese_name, so without this guard
+		// picking an alias would re-fire the effect, briefly hide the select
+		// behind "Checking known aliases…", and make a redundant network call.
+		// This holds for both forms: the matched lookup name is always present in
+		// the returned group (canonical + its aliases), so once it's loaded the
+		// guard short-circuits further fetches for that name.
+		if (aliasGroup && aliasGroup.names.includes(name)) return;
+		if (aliasDebounceTimer) { clearTimeout(aliasDebounceTimer); aliasDebounceTimer = null; }
+		aliasDebounceTimer = setTimeout(() => fetchAliasGroup(name), 300);
+		return () => {
+			if (aliasDebounceTimer) { clearTimeout(aliasDebounceTimer); aliasDebounceTimer = null; }
+		};
+	});
+
+	// Debounced copy of the thumbnail URL used ONLY for the preview <img src>
+	// and its {#if}/fallback, so rapid typing does not re-fetch per keystroke.
+	// The input stays bound to the live editingActress.thumb_url, and the
+	// error-reset $effect above still tracks the LIVE URL (clears immediately),
+	// so a corrected URL re-fetches once typing pauses.
+	let thumbPreviewSrc = $state('');
+	let thumbDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+	$effect(() => {
+		const url = editingActress.thumb_url ?? '';
+		if (thumbDebounceTimer) { clearTimeout(thumbDebounceTimer); thumbDebounceTimer = null; }
+		thumbPreviewSrc = '';
+		thumbDebounceTimer = setTimeout(() => {
+			thumbPreviewSrc = url;
+		}, 250);
+		return () => {
+			if (thumbDebounceTimer) { clearTimeout(thumbDebounceTimer); thumbDebounceTimer = null; }
+		};
+	});
+
 	// Helper to get full name
 	function getFullName(actress: Actress): string {
-		if (actress.last_name && actress.first_name) {
-			return `${actress.last_name} ${actress.first_name}`;
-		}
-		if (actress.first_name) {
-			return actress.first_name;
-		}
-		return actress.japanese_name || 'Unknown';
+		return formatActressName(actress, { firstNameOrder, japaneseNames });
 	}
 
 	function notifyParent() {
 		onUpdate({ ...movie, actresses });
+		void Promise.resolve(onPersistEdits?.()).catch(() => {});
 	}
 
 	function openAddActress() {
@@ -129,7 +207,7 @@
 			japanese_name: '',
 			thumb_url: ''
 		};
-		previewImgError = false;
+		aliasGroup = null;
 		showEditModal = true;
 		loadAllActresses(); // Load actresses when opening modal
 	}
@@ -137,7 +215,7 @@
 	function openEditActress(index: number) {
 		editingIndex = index;
 		editingActress = { ...actresses[index] };
-		previewImgError = false;
+		aliasGroup = null;
 		showEditModal = true;
 		loadAllActresses(); // Load actresses when opening modal
 	}
@@ -155,6 +233,7 @@
 		}
 
 		showEditModal = false;
+		aliasGroup = null;
 		notifyParent();
 	}
 
@@ -167,12 +246,11 @@
 
 	function cancelEdit() {
 		showEditModal = false;
+		aliasGroup = null;
 		if (searchDebounceTimer) { clearTimeout(searchDebounceTimer); searchDebounceTimer = null; }
 		searchQuery = '';
 		showSearchResults = false;
 		searchResults = [];
-		searchTotal = 0;
-		searchOffset = 0;
 	}
 
 	// Load all actresses on modal open
@@ -183,7 +261,6 @@
 	// Select an actress from search results
 	function selectActressFromSearch(actress: Actress) {
 		editingActress = { ...actress };
-		previewImgError = false;
 		searchQuery = getFullName(actress); // Show selected name in input
 		showSearchResults = false;
 	}
@@ -205,12 +282,6 @@
 	function normalizeName(value: string | undefined): string {
 		if (!value) return '';
 		return value.trim().toLowerCase().split(/\s+/).filter(Boolean).join(' ');
-	}
-
-	function actressImageKey(actress: Actress, index: number, prefix = 'actress'): string {
-		if (actress.id != null) return `${prefix}:id:${actress.id}`;
-		if (actress.dmm_id && actress.dmm_id > 0) return `${prefix}:dmmid:${actress.dmm_id}`;
-		return `${prefix}:${actress.thumb_url || 'no-thumb'}:${index}`;
 	}
 
 	function actressKey(actress: Actress): string {
@@ -263,7 +334,7 @@
 <div class="space-y-4">
 	<div class="flex items-center justify-between">
 		<h3 class="text-lg font-semibold">Actresses ({actresses.length})</h3>
-		<Button onclick={openAddActress} size="sm">
+		<Button onclick={openAddActress} size="sm" disabled={savingEdits || organizing}>
 			{#snippet children()}
 				<Plus class="h-4 w-4 mr-2" />
 				Add Actress
@@ -274,7 +345,7 @@
 	{#if actresses.length === 0}
 		<div class="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
 			<p>No actresses added</p>
-			<Button onclick={openAddActress} size="sm" class="mt-2">
+			<Button onclick={openAddActress} size="sm" class="mt-2" disabled={savingEdits || organizing}>
 				{#snippet children()}
 					<Plus class="h-4 w-4 mr-2" />
 					Add First Actress
@@ -284,24 +355,24 @@
 	{:else}
 		<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
 			{#each actresses as actress, index (actress.id || `${actress.first_name}-${actress.last_name}-${actress.japanese_name}-${index}`)}
-				{@const imageKey = actressImageKey(actress, index)}
 				<div animate:flip={{ duration: 220, easing: quintOut }}>
 					<Card class="p-3 hover:shadow-md transition-shadow">
 					<div class="space-y-2">
-						{#if actress.thumb_url && !imgErrorKeys.has(imageKey)}
+						{#if actress.thumb_url}
 							<img
-								src={previewImageUrl(actress.thumb_url)}
+								src={actress.thumb_url}
 								alt={getFullName(actress)}
 								class="w-full aspect-2/3 object-cover rounded"
-								onerror={() => {
-									imgErrorKeys = new Set([...imgErrorKeys, imageKey]);
+								onerror={(e) => {
+									(e.currentTarget as HTMLImageElement).src =
+										"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='300' fill='%23374151'%3E%3Crect width='200' height='300'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%239CA3AF' font-family='system-ui' font-size='14'%3ENo Image%3C/text%3E%3C/svg%3E";
 								}}
 							/>
 						{:else}
 							<div
-								class="w-full aspect-2/3 bg-muted rounded flex items-center justify-center text-muted-foreground"
+								class="w-full aspect-2/3 bg-accent rounded flex items-center justify-center text-xs text-muted-foreground"
 							>
-								<ImageOff class="h-5 w-5" />
+								No Image
 							</div>
 						{/if}
 
@@ -320,7 +391,7 @@
 						</div>
 
 						<div class="flex gap-1">
-							<Button variant="outline" size="sm" onclick={() => openEditActress(index)} class="flex-1">
+							<Button variant="outline" size="sm" onclick={() => openEditActress(index)} class="flex-1" disabled={savingEdits || organizing}>
 								{#snippet children()}
 									<SquarePen class="h-3 w-3" />
 								{/snippet}
@@ -329,7 +400,7 @@
 								variant="outline"
 								size="sm"
 								onclick={() => removeActress(index)}
-								class="flex-1 text-destructive hover:bg-destructive/10"
+								class="flex-1 text-destructive hover:bg-destructive/10" disabled={savingEdits || organizing}
 							>
 								{#snippet children()}
 									<Trash2 class="h-3 w-3" />
@@ -381,27 +452,23 @@
 						/>
 
 						{#if showSearchResults}
-							<div class="absolute z-10 w-full mt-1 bg-background border rounded-md shadow-lg max-h-64 overflow-y-auto">
 							{#if searchResults.length > 0}
-									{#each searchResults as actress, index}
-										{@const searchImageKey = actressImageKey(actress, index, 'search')}
+								<div class="absolute z-10 w-full mt-1 bg-background border rounded-md shadow-lg max-h-64 overflow-y-auto">
+									{#each searchResults as actress}
 										<button
 											type="button"
 											onclick={() => selectActressFromSearch(actress)}
 											class="w-full px-3 py-2 hover:bg-muted text-left flex items-center gap-3 border-b last:border-b-0 transition-colors cursor-pointer"
 										>
-											{#if actress.thumb_url && !searchImgErrorKeys.has(searchImageKey)}
+											{#if actress.thumb_url}
 												<img
-													src={previewImageUrl(actress.thumb_url)}
+													src={actress.thumb_url}
 													alt={getFullName(actress)}
 													class="w-12 h-16 object-cover rounded"
-													onerror={() => {
-														searchImgErrorKeys = new Set([...searchImgErrorKeys, searchImageKey]);
-													}}
 												/>
 											{:else}
-												<div class="w-12 h-16 bg-muted rounded flex items-center justify-center text-muted-foreground">
-													<ImageOff class="h-4 w-4" />
+												<div class="w-12 h-16 bg-accent rounded flex items-center justify-center text-xs">
+													No Img
 												</div>
 											{/if}
 											<div class="flex-1">
@@ -412,26 +479,16 @@
 											</div>
 										</button>
 									{/each}
-
-									{#if hasMoreSearchResults}
-										<button
-											type="button"
-											onmousedown={(event) => event.preventDefault()}
-											onclick={loadMoreActresses}
-											disabled={isSearching}
-											class="w-full px-3 py-2 text-sm font-medium text-primary hover:bg-muted disabled:opacity-60 disabled:cursor-not-allowed"
-										>
-											{isSearching ? 'Loading...' : `Show more (${searchResults.length}/${searchTotal})`}
-										</button>
-									{/if}
-								{:else if isSearching}
-									<div class="p-3 text-sm text-muted-foreground text-center">Loading actresses...</div>
-								{:else if searchQuery.trim().length === 0}
-									<div class="p-3 text-sm text-muted-foreground text-center">No actresses in database yet</div>
-								{:else}
-									<div class="p-3 text-sm text-muted-foreground text-center">No matches found</div>
-								{/if}
-							</div>
+								</div>
+							{:else if searchQuery.trim().length === 0}
+								<div class="absolute z-10 w-full mt-1 bg-background border rounded-md shadow-lg p-3 text-sm text-muted-foreground text-center">
+									No actresses in database yet
+								</div>
+							{:else}
+								<div class="absolute z-10 w-full mt-1 bg-background border rounded-md shadow-lg p-3 text-sm text-muted-foreground text-center">
+									No matches found
+								</div>
+							{/if}
 						{/if}
 					</div>
 					<p class="text-xs text-muted-foreground">
@@ -482,6 +539,27 @@
 								placeholder="e.g., 西宮ゆめ"
 								class="w-full px-3 py-2 border rounded-md bg-background focus:ring-2 focus:ring-primary focus:border-primary transition-all"
 							/>
+							{#if aliasGroupFetching}
+								<p class="mt-1 text-xs text-muted-foreground">Checking known aliases…</p>
+							{:else if aliasGroup}
+								<label class="mt-2 text-xs font-medium block" for="actress-nfo-name">Write to NFO as</label>
+								<select
+									id="actress-nfo-name"
+									value={editingActress.japanese_name}
+									onchange={(event) => {
+										editingActress.japanese_name = (event.currentTarget as HTMLSelectElement).value;
+									}}
+									class="mt-1 w-full px-3 py-2 border rounded-md bg-background text-sm focus:ring-2 focus:ring-primary focus:border-primary transition-all"
+									title="This actress has multiple known names; pick the one to write to the NFO"
+								>
+								{#each aliasGroup.names as name}
+										<option value={name}>{name}{name === aliasGroup.canonical ? ' (canonical)' : ''}</option>
+									{/each}
+								</select>
+								<p class="mt-1 text-xs text-muted-foreground">
+									{aliasGroup.names.length} known names for this performer. Selected name is written to the NFO &lt;name&gt; tag.
+								</p>
+							{/if}
 						</div>
 
 						<div>
@@ -490,9 +568,6 @@
 								id="actress-thumb-url"
 								type="url"
 								bind:value={editingActress.thumb_url}
-								oninput={() => {
-									previewImgError = false;
-								}}
 								placeholder="https://..."
 								class="w-full px-3 py-2 border rounded-md bg-background focus:ring-2 focus:ring-primary focus:border-primary transition-all font-mono text-sm"
 							/>
@@ -503,20 +578,21 @@
 					<div>
 						<span class="text-sm font-medium mb-1 block">Preview</span>
 						<Card class="p-3">
-							{#if editingActress.thumb_url && !previewImgError}
+							<!-- Preview hides via {#if}+thumbPreviewError (unmounts the element),
+							     not the HTML [hidden] attr. If changed to hidden=, avoid Tailwind
+							     'block'/'flex' on this <img> — display utilities override [hidden]. -->
+							{#if thumbPreviewSrc && !thumbPreviewError}
 								<img
-									src={previewImageUrl(editingActress.thumb_url)}
+									src={thumbPreviewSrc}
 									alt={getFullName(editingActress) || 'Preview'}
 									class="w-full aspect-2/3 object-cover rounded mb-2"
-									onerror={() => {
-										previewImgError = true;
-									}}
+									onerror={() => { thumbPreviewError = true; }}
 								/>
 							{:else}
 								<div
-									class="w-full aspect-2/3 bg-muted rounded flex items-center justify-center text-muted-foreground mb-2"
+									class="w-full aspect-2/3 bg-accent rounded flex items-center justify-center text-sm text-muted-foreground mb-2"
 								>
-									<ImageOff class="h-5 w-5" />
+									{thumbPreviewSrc ? 'Unable to load image' : 'No Thumbnail'}
 								</div>
 							{/if}
 							<p class="font-medium text-sm truncate">
@@ -537,7 +613,7 @@
 				<Button variant="outline" onclick={cancelEdit}>
 					{#snippet children()}Cancel{/snippet}
 				</Button>
-				<Button onclick={saveActress}>
+				<Button onclick={saveActress} disabled={savingEdits || organizing}>
 					{#snippet children()}
 						<Save class="h-4 w-4 mr-2" />
 						{editingIndex !== null ? 'Save Changes' : 'Add Actress'}

@@ -37,6 +37,7 @@
 		selectedFolders?: string[];
 		triggerScan?: number;
 		whitelistPaths?: string[];
+		scope?: 'operation' | 'configure';
 	}
 
 	let {
@@ -50,7 +51,8 @@
 		recursiveScan = $bindable(false),
 		selectedFolders: selectedFolders = $bindable([]),
 		triggerScan = 0,
-		whitelistPaths = []
+		whitelistPaths = [],
+		scope = 'operation',
 	}: Props = $props();
 
 	let currentPath = $state('');
@@ -193,7 +195,7 @@
 		selectedFolders = [];
 		anchorFolderPath = null;
 		try {
-			const response: BrowseResponse = await apiClient.browse({ path: path || '/' });
+			const response: BrowseResponse = await apiClient.browse({ path: path || '/', scope });
 			currentPath = response.current_path;
 			parentPath = response.parent_path || '';
 			pathInputValue = response.current_path; // Sync path input
@@ -201,8 +203,42 @@
 			// Items will be sorted by sortedAndFilteredItems derived
 			items = response.items;
 			currentPage = 1;
+
+			// Prune "phantom" selections: a file that lived in THIS directory but has
+			// since been moved/renamed/deleted out from under us (e.g. the user ran
+			// Scrape & Organize and moved the movie + its art out, then hit Refresh)
+			// is no longer in the listing. Without this, its path lingers in the
+			// queue with no checkbox in the file list to toggle off, and a later
+			// scrape would error or write art/NFO for a file that's gone. Only
+			// entries that were children of the directory we just listed are
+			// candidates — selections from OTHER folders (recursive scans, other
+			// browsed dirs) are preserved untouched.
+			const currentDir = response.current_path;
+			const presentPaths = new Set(
+				items.filter((i) => !i.is_dir).map((i) => i.path)
+			);
+			const normDir = (d: string): string => d.replace(/[\\/]+$/, '') || d;
+			const isChildOfCurrent = (p: string): boolean => {
+				const parent = p.substring(
+					0,
+					Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'))
+				);
+				return normDir(parent) === normDir(currentDir);
+			};
+			const pruned = externalSelectedFiles.filter(
+				(p) => !isChildOfCurrent(p) || presentPaths.has(p)
+			);
+			if (pruned.length !== externalSelectedFiles.length) {
+				externalSelectedFiles = pruned;
+				onFileSelect?.(externalSelectedFiles);
+			}
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to browse directory';
+			const msg = e instanceof Error ? e.message : 'Failed to browse directory';
+			if (scope === 'operation' && (msg.includes('allowed directories') || msg.includes('403'))) {
+				error = 'This path is outside your allowed directories. Add it in Settings → Security.';
+			} else {
+				error = msg;
+			}
 		} finally {
 			loading = false;
 		}
@@ -410,6 +446,8 @@
 				navigateDisabled={!pathInputValue.trim() || loading}
 				{loading}
 				whitelistPaths={whitelistPaths}
+				drillOnSelect={true}
+				{scope}
 			/>
 		</div>
 	</div>
@@ -565,7 +603,10 @@
 	{/if}
 
 	<!-- File List -->
-	<div class="space-y-1">
+	<!-- max-h + overflow-y-auto: cap the list height so a long browse page (PAGE_SIZE=100)
+	     can't stretch the persistent layout wrapper ~6000px and bleed that height into other
+	     routes (e.g. /jobs) after browse -> scrape navigations. -->
+	<div class="space-y-1 max-h-[70vh] overflow-y-auto pr-1">
 		{#if loading}
 			<div class="text-center py-8 text-muted-foreground">
 				<RefreshCw class="h-8 w-8 animate-spin mx-auto mb-2" />

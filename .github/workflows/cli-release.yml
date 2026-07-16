@@ -66,7 +66,7 @@ jobs:
       nightly_should_run: ${{ steps.meta.outputs.nightly_should_run }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           fetch-depth: 0
 
@@ -222,14 +222,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: web/frontend/package-lock.json
 
       - name: Install frontend dependencies
         run: npm ci --prefix web/frontend
@@ -242,7 +240,7 @@ jobs:
           cp -R web/frontend/build/. web/dist/
 
       - name: Upload web assets
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: web-dist
           path: web/dist
@@ -273,15 +271,16 @@ jobs:
             cc: aarch64-linux-gnu-gcc
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: false
 
       - name: Download web assets
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: web-dist
           path: .artifacts/web-dist
@@ -324,7 +323,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          output="${{ env.BINARY_NAME }}-${VERSION}-${{ matrix.artifact_suffix }}"
+          output="${{ env.BINARY_NAME }}-${{ matrix.artifact_suffix }}"
 
           go build -trimpath -ldflags="-w -s \
             -X github.com/javinizer/javinizer-go/internal/version.Version=${VERSION} \
@@ -333,7 +332,7 @@ jobs:
             -o "dist/${output}" ./cmd/javinizer
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: ${{ matrix.id }}
           path: dist/*
@@ -345,15 +344,16 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: false
 
       - name: Download web assets
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: web-dist
           path: .artifacts/web-dist
@@ -392,27 +392,25 @@ jobs:
             -X github.com/javinizer/javinizer-go/internal/version.Version=${VERSION} \
             -X github.com/javinizer/javinizer-go/internal/version.Commit=${COMMIT} \
             -X github.com/javinizer/javinizer-go/internal/version.BuildDate=${BUILD_DATE}" \
-            -o "dist/${{ env.BINARY_NAME }}-${VERSION}-darwin-amd64" ./cmd/javinizer
+            -o "dist/${{ env.BINARY_NAME }}-darwin-amd64" ./cmd/javinizer
 
           GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-w -s \
             -X github.com/javinizer/javinizer-go/internal/version.Version=${VERSION} \
             -X github.com/javinizer/javinizer-go/internal/version.Commit=${COMMIT} \
             -X github.com/javinizer/javinizer-go/internal/version.BuildDate=${BUILD_DATE}" \
-            -o "dist/${{ env.BINARY_NAME }}-${VERSION}-darwin-arm64" ./cmd/javinizer
+            -o "dist/${{ env.BINARY_NAME }}-darwin-arm64" ./cmd/javinizer
 
       - name: Create universal binary
         shell: bash
-        env:
-          VERSION: ${{ needs.prepare-release.outputs.version }}
         run: |
           set -euo pipefail
           lipo -create \
-            "dist/${{ env.BINARY_NAME }}-${VERSION}-darwin-amd64" \
-            "dist/${{ env.BINARY_NAME }}-${VERSION}-darwin-arm64" \
-            -output "dist/${{ env.BINARY_NAME }}-${VERSION}-darwin-universal"
+            "dist/${{ env.BINARY_NAME }}-darwin-amd64" \
+            "dist/${{ env.BINARY_NAME }}-darwin-arm64" \
+            -output "dist/${{ env.BINARY_NAME }}-darwin-universal"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: darwin
           path: dist/*
@@ -424,15 +422,16 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: false
 
       - name: Download web assets
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: web-dist
           path: .artifacts/web-dist
@@ -470,30 +469,352 @@ jobs:
           BUILD_DATE: ${{ needs.prepare-release.outputs.build_date }}
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          $output = "${{ env.BINARY_NAME }}-$env:VERSION-windows-amd64.exe"
+          $output = "${{ env.BINARY_NAME }}-windows-amd64.exe"
           go build -trimpath -ldflags "-w -s -X github.com/javinizer/javinizer-go/internal/version.Version=$env:VERSION -X github.com/javinizer/javinizer-go/internal/version.Commit=$env:COMMIT -X github.com/javinizer/javinizer-go/internal/version.BuildDate=$env:BUILD_DATE" -o "dist/$output" ./cmd/javinizer
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: windows-amd64
           path: dist/*
 
-  build-docker:
-    name: Build/push Docker image (GHCR)
-    needs: prepare-release
+  build-desktop-darwin:
+    name: Build desktop app (macOS)
+    needs: [prepare-release, build-web-assets]
     if: github.event_name != 'schedule' || needs.prepare-release.outputs.nightly_should_run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: false
+
+      - name: Download web assets
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: web-dist
+          path: .artifacts/web-dist
+
+      - name: Restore web assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf web/dist
+          mkdir -p web/dist
+          cp -R .artifacts/web-dist/. web/dist/
+
+      - name: Verify embedded web bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f web/dist/index.html
+          test -d web/dist/_app
+          if grep -q "Javinizer Web UI Placeholder" web/dist/index.html; then
+            echo "Placeholder web bundle detected in release build input"
+            exit 1
+          fi
+
+      - name: Build AMD64 and ARM64 desktop binaries
+        shell: bash
+        env:
+          CGO_ENABLED: '1'
+          CGO_LDFLAGS: '-framework UniformTypeIdentifiers'
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+          COMMIT: ${{ needs.prepare-release.outputs.commit }}
+          BUILD_DATE: ${{ needs.prepare-release.outputs.build_date }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          # -tags desktop,production: `desktop` pulls in the Wails runner
+          # (internal/desktop/app.go); `production` is required by Wails to
+          # enable its real frontend (the default build returns an error).
+          # -X .../internal/desktop.BuildDesktop=1 makes a no-arg launch open
+          # the GUI instead of printing help.
+          for arch in amd64 arm64; do
+            GOOS=darwin GOARCH="${arch}" go build -trimpath -tags 'desktop,production' \
+              -ldflags="-w -s \
+                -X github.com/javinizer/javinizer-go/internal/version.Version=${VERSION} \
+                -X github.com/javinizer/javinizer-go/internal/version.Commit=${COMMIT} \
+                -X github.com/javinizer/javinizer-go/internal/version.BuildDate=${BUILD_DATE} \
+                -X github.com/javinizer/javinizer-go/internal/desktop.BuildDesktop=1" \
+              -o "dist/javinizer-app-darwin-${arch}" ./cmd/javinizer
+          done
+
+      - name: Create universal binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          lipo -create dist/javinizer-app-darwin-amd64 dist/javinizer-app-darwin-arm64 \
+            -output dist/javinizer-app-darwin-universal
+          # Per-arch intermediates are no longer needed once the universal exists.
+          rm -f dist/javinizer-app-darwin-amd64 dist/javinizer-app-darwin-arm64
+
+      - name: Package .app bundle
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          ./scripts/package-app-darwin.sh dist/javinizer-app-darwin-universal dist/Javinizer.app "${VERSION}" internal/desktop/icons/javinizer.icns
+          # Release assets must be flat files; zip the .app bundle.
+          # The .app bundle inside stays "Javinizer.app" (what the cask's
+          # `app "Javinizer.app"` installs); only the release asset filename
+          # uses the javinizer-desktop-* scheme to distinguish it from CLI
+          # binaries on the releases page.
+          cd dist && ditto -c -k --keepParent Javinizer.app javinizer-desktop-macos-universal.zip
+          rm -rf Javinizer.app javinizer-app-darwin-universal
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: desktop-darwin
+          path: dist/*
+
+  build-desktop-windows:
+    name: Build desktop app (Windows)
+    needs: [prepare-release, build-web-assets]
+    if: github.event_name != 'schedule' || needs.prepare-release.outputs.nightly_should_run == 'true'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: false
+
+      - name: Download web assets
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: web-dist
+          path: .artifacts/web-dist
+
+      - name: Restore web assets
+        shell: pwsh
+        run: |
+          if (Test-Path web/dist) {
+            Remove-Item web/dist -Recurse -Force
+          }
+          New-Item -ItemType Directory -Force -Path web/dist | Out-Null
+          Copy-Item .artifacts/web-dist/* web/dist -Recurse -Force
+
+      - name: Verify embedded web bundle
+        shell: pwsh
+        run: |
+          if (-not (Test-Path web/dist/index.html)) {
+            throw "web/dist/index.html is missing"
+          }
+          if (-not (Test-Path web/dist/_app)) {
+            throw "web/dist/_app is missing"
+          }
+          if (Select-String -Path web/dist/index.html -Pattern 'Javinizer Web UI Placeholder' -Quiet) {
+            throw "Placeholder web bundle detected in release build input"
+          }
+
+      - name: Embed Windows icon
+        shell: pwsh
+        run: |
+          # Generate a .syso COFF resource from the .ico so `go build`
+          # embeds it into the .exe. genicon (internal/desktop/icons/genicon)
+          # embeds the icon as RT_GROUP_ICON at resource ID 3 — the ID Wails'
+          # window manager loads (AppIconID = 3), so both the .exe/taskbar
+          # icon and the in-app window title-bar icon resolve. rsrc -ico
+          # assigns ID 1, which leaves the window icon generic.
+          # The .syso must live in the main package dir (cmd/javinizer).
+          go run ./internal/desktop/icons/genicon `
+            -ico internal/desktop/icons/javinizer.ico `
+            -o cmd/javinizer/javinizer.syso -arch amd64
+
+      - name: Build desktop binary
+        shell: pwsh
+        env:
+          CGO_ENABLED: '1'
+          GOOS: windows
+          GOARCH: amd64
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+          COMMIT: ${{ needs.prepare-release.outputs.commit }}
+          BUILD_DATE: ${{ needs.prepare-release.outputs.build_date }}
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          # See build-desktop-darwin for the tags/ldflags rationale.
+          go build -trimpath -tags 'desktop,production' -ldflags "-w -s -H windowsgui -X github.com/javinizer/javinizer-go/internal/version.Version=$env:VERSION -X github.com/javinizer/javinizer-go/internal/version.Commit=$env:COMMIT -X github.com/javinizer/javinizer-go/internal/version.BuildDate=$env:BUILD_DATE -X github.com/javinizer/javinizer-go/internal/desktop.BuildDesktop=1" -o "dist/javinizer-desktop-windows-amd64.exe" ./cmd/javinizer
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: desktop-windows
+          path: dist/*
+
+  build-desktop-linux:
+    name: Build desktop app (Linux, ${{ matrix.arch }})
+    needs: [prepare-release, build-web-assets]
+    if: github.event_name != 'schedule' || needs.prepare-release.outputs.nightly_should_run == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Native runners per arch: CGO + pkg-config against webkit2gtk
+          # needs native libs, and linuxdeploy/appimagetool are themselves
+          # arch-specific (no cross-compile).
+          - arch: amd64
+            runner: ubuntu-latest
+            goarch: amd64
+            appimage_arch: x86_64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            goarch: arm64
+            appimage_arch: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: false
+
+      - name: Install webkit2gtk + gtk3 dev dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev
+
+      - name: Download web assets
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: web-dist
+          path: .artifacts/web-dist
+
+      - name: Restore web assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf web/dist
+          mkdir -p web/dist
+          cp -R .artifacts/web-dist/. web/dist/
+
+      - name: Verify embedded web bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f web/dist/index.html
+          test -d web/dist/_app
+          if grep -q "Javinizer Web UI Placeholder" web/dist/index.html; then
+            echo "Placeholder web bundle detected in release build input"
+            exit 1
+          fi
+
+      - name: Build desktop binary
+        shell: bash
+        env:
+          CGO_ENABLED: '1'
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+          COMMIT: ${{ needs.prepare-release.outputs.commit }}
+          BUILD_DATE: ${{ needs.prepare-release.outputs.build_date }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          # webkit2_41 selects libwebkit2gtk-4.1 (Ubuntu 24.04's version).
+          # See build-desktop-darwin for the desktop/production tags rationale.
+          go build -trimpath -tags 'desktop,production,webkit2_41' -ldflags="-w -s \
+            -X github.com/javinizer/javinizer-go/internal/version.Version=${VERSION} \
+            -X github.com/javinizer/javinizer-go/internal/version.Commit=${COMMIT} \
+            -X github.com/javinizer/javinizer-go/internal/version.BuildDate=${BUILD_DATE} \
+            -X github.com/javinizer/javinizer-go/internal/desktop.BuildDesktop=1" \
+            -o "dist/javinizer-app-linux-${{ matrix.arch }}" ./cmd/javinizer
+
+      - name: Build AppImage
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          ./scripts/package-app-linux.sh "dist/javinizer-app-linux-${{ matrix.arch }}" \
+            "dist/javinizer-desktop-linux-${{ matrix.appimage_arch }}.AppImage" "${VERSION}" internal/desktop/icons/javinizer.png
+          rm -f "dist/javinizer-app-linux-${{ matrix.arch }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: desktop-linux-${{ matrix.arch }}
+          path: dist/*
+
+  build-docker:
+    name: Build Docker image (${{ matrix.platform }})
+    needs: prepare-release
+    if: github.event_name != 'schedule' || needs.prepare-release.outputs.nightly_should_run == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            suffix: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            suffix: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
 
+      - name: Normalize image name
+        id: image
+        shell: bash
+        run: |
+          echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        if: needs.prepare-release.outputs.create_release == 'true' || needs.prepare-release.outputs.is_nightly == 'true'
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and (optionally) push single-arch image
+        id: build
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ matrix.platform }}
+          push: ${{ needs.prepare-release.outputs.create_release == 'true' || needs.prepare-release.outputs.is_nightly == 'true' }}
+          tags: ${{ steps.image.outputs.name }}:${{ needs.prepare-release.outputs.docker_version }}-${{ matrix.suffix }}
+          build-args: |
+            VERSION=${{ needs.prepare-release.outputs.version }}
+            COMMIT=${{ needs.prepare-release.outputs.commit }}
+            BUILD_DATE=${{ needs.prepare-release.outputs.build_date }}
+          cache-from: type=gha,scope=${{ matrix.suffix }}
+          cache-to: type=gha,scope=${{ matrix.suffix }},mode=max
+
+  merge-manifest:
+    name: Merge multi-arch manifest (GHCR)
+    needs: [prepare-release, build-docker]
+    if: |
+      (github.event_name != 'schedule' || needs.prepare-release.outputs.nightly_should_run == 'true') &&
+      (needs.prepare-release.outputs.create_release == 'true' || needs.prepare-release.outputs.is_nightly == 'true')
+    runs-on: ubuntu-latest
+    steps:
       - name: Normalize image name
         id: image
         shell: bash
@@ -518,56 +839,72 @@ jobs:
           echo "minor=${minor}" >> "$GITHUB_OUTPUT"
 
       - name: Login to GHCR
-        if: needs.prepare-release.outputs.create_release == 'true' || needs.prepare-release.outputs.is_nightly == 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ steps.image.outputs.name }}
-          tags: |
-            type=raw,value=${{ needs.prepare-release.outputs.docker_version }}
-            type=raw,value=latest,enable=${{ needs.prepare-release.outputs.publish_latest == 'true' }}
-            type=raw,value=nightly,enable=${{ needs.prepare-release.outputs.is_nightly == 'true' }}
-            type=raw,value=nightly-${{ needs.prepare-release.outputs.commit }},enable=${{ needs.prepare-release.outputs.is_nightly == 'true' }}
-            type=raw,value=v${{ steps.semver.outputs.major }},enable=${{ needs.prepare-release.outputs.prerelease != 'true' && steps.semver.outputs.major != '' }}
-            type=raw,value=v${{ steps.semver.outputs.major }}.${{ steps.semver.outputs.minor }},enable=${{ needs.prepare-release.outputs.prerelease != 'true' && steps.semver.outputs.major != '' && steps.semver.outputs.minor != '' }}
-          labels: |
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ needs.prepare-release.outputs.docker_version }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
 
-      - name: Build and (optionally) push Docker image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: ${{ needs.prepare-release.outputs.create_release == 'true' || needs.prepare-release.outputs.is_nightly == 'true' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: |
-            ${{ steps.meta.outputs.labels }}
-          build-args: |
-            VERSION=${{ needs.prepare-release.outputs.version }}
-            COMMIT=${{ needs.prepare-release.outputs.commit }}
-            BUILD_DATE=${{ needs.prepare-release.outputs.build_date }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Assemble multi-arch manifest tags
+        id: tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          img="${{ steps.image.outputs.name }}"
+          ver="${{ needs.prepare-release.outputs.docker_version }}"
+          publish_latest="${{ needs.prepare-release.outputs.publish_latest }}"
+          is_nightly="${{ needs.prepare-release.outputs.is_nightly }}"
+          commit="${{ needs.prepare-release.outputs.commit }}"
+          major="${{ steps.semver.outputs.major }}"
+          minor="${{ steps.semver.outputs.minor }}"
+          prerelease="${{ needs.prepare-release.outputs.prerelease }}"
+
+          tags=("${ver}")
+          [[ "${publish_latest}" == "true" ]] && tags+=("latest")
+          [[ "${is_nightly}" == "true" ]] && tags+=("nightly" "nightly-${commit}")
+          if [[ "${prerelease}" != "true" && -n "${major}" ]]; then
+            tags+=("v${major}")
+            [[ -n "${minor}" ]] && tags+=("v${major}.${minor}")
+          fi
+
+          args=""
+          for t in "${tags[@]}"; do args+=" -t ${img}:${t}"; done
+          echo "args=${args}" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "${tags[@]}" > /tmp/tags.txt
+
+      - name: Merge per-arch images into multi-arch manifest
+        run: |
+          set -euo pipefail
+          img="${{ steps.image.outputs.name }}"
+          ver="${{ needs.prepare-release.outputs.docker_version }}"
+          docker buildx imagetools create \
+            ${{ steps.tags.outputs.args }} \
+            "${img}:${ver}-amd64" \
+            "${img}:${ver}-arm64"
+
+      - name: Verify manifest
+        run: |
+          set -euo pipefail
+          img="${{ steps.image.outputs.name }}"
+          ver="${{ needs.prepare-release.outputs.docker_version }}"
+          echo "=== ${img}:${ver} manifest ==="
+          docker buildx imagetools inspect "${img}:${ver}"
 
   create-release:
     name: Create GitHub release
-    needs: [prepare-release, build-linux, build-darwin, build-windows-amd64, build-docker]
+    needs: [prepare-release, build-linux, build-darwin, build-windows-amd64, build-desktop-darwin, build-desktop-windows, build-desktop-linux, merge-manifest]
     if: needs.prepare-release.outputs.create_release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
 
       - name: Extract changelog notes for version
         id: changelog
@@ -651,28 +988,52 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Download linux-amd64 artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: linux-amd64
           path: ./artifacts/linux-amd64
 
       - name: Download linux-arm64 artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: linux-arm64
           path: ./artifacts/linux-arm64
 
       - name: Download darwin artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: darwin
           path: ./artifacts/darwin
 
       - name: Download windows-amd64 artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: windows-amd64
           path: ./artifacts/windows-amd64
+
+      - name: Download desktop-darwin artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: desktop-darwin
+          path: ./artifacts/desktop-darwin
+
+      - name: Download desktop-windows artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: desktop-windows
+          path: ./artifacts/desktop-windows
+
+      - name: Download desktop-linux-amd64 artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: desktop-linux-amd64
+          path: ./artifacts/desktop-linux-amd64
+
+      - name: Download desktop-linux-arm64 artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: desktop-linux-arm64
+          path: ./artifacts/desktop-linux-arm64
 
       - name: Consolidate release files
         shell: bash
@@ -691,14 +1052,14 @@ jobs:
           cat checksums.txt
 
       - name: Upload release bundle artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: release-bundle-${{ needs.prepare-release.outputs.version }}
           path: ./release/*
 
       - name: Publish GitHub release
         if: needs.prepare-release.outputs.create_release == 'true'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ needs.prepare-release.outputs.tag_name }}
           target_commitish: ${{ github.sha }}
@@ -708,6 +1069,240 @@ jobs:
           generate_release_notes: ${{ steps.changelog.outputs.notes == '' }}
           draft: ${{ needs.prepare-release.outputs.draft == 'true' }}
           prerelease: ${{ needs.prepare-release.outputs.prerelease == 'true' }}
+          make_latest: ${{ needs.prepare-release.outputs.prerelease != 'true' }}
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-homebrew-tap:
+    name: Update Homebrew tap
+    needs: [prepare-release, create-release]
+    # Only update the tap for stable releases. Prereleases (v1.0.0-rc.*) never
+    # reach the tap, so `brew upgrade` never hands a user a release candidate.
+    # Also skip nightlies/snapshots (create_release == 'false').
+    if: needs.prepare-release.outputs.create_release == 'true' && needs.prepare-release.outputs.prerelease != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout javinizer-go (formula template + render script)
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Download release bundle (checksums.txt)
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: release-bundle-${{ needs.prepare-release.outputs.version }}
+          path: ./release
+
+      - name: Render formula
+        env:
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          ./scripts/homebrew/render-formula.sh "$VERSION" ./release/checksums.txt scripts/homebrew/javinizer.rb.tmpl > out/javinizer.rb
+          ./scripts/homebrew/render-formula.sh "$VERSION" ./release/checksums.txt scripts/homebrew/javinizer-app.cask.tmpl > out/javinizer-app.rb
+          echo "=== rendered Formula/javinizer.rb ==="
+          cat out/javinizer.rb
+          echo "=== rendered Casks/javinizer-app.rb ==="
+          cat out/javinizer-app.rb
+
+      - name: Checkout tap repo
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          repository: javinizer/homebrew-tap
+          path: tap
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+
+      - name: Commit formula to tap
+        env:
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p tap/Formula tap/Casks
+          cp out/javinizer.rb tap/Formula/javinizer.rb
+          cp out/javinizer-app.rb tap/Casks/javinizer-app.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/javinizer.rb Casks/javinizer-app.rb
+          if git diff --cached --quiet; then
+            echo "No formula changes to commit."
+          else
+            git commit -m "brew: javinizer ${VERSION}"
+            git push
+          fi
+
+  update-scoop-bucket:
+    name: Update Scoop bucket
+    needs: [prepare-release, create-release]
+    # Only update the bucket for stable releases. Prereleases (v1.0.0-rc.*) never
+    # reach the bucket, so `scoop update` never hands a user a release candidate.
+    # Also skip nightlies/snapshots (create_release == 'false').
+    if: needs.prepare-release.outputs.create_release == 'true' && needs.prepare-release.outputs.prerelease != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout javinizer-go (manifest template + render script)
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Download release bundle (checksums.txt)
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: release-bundle-${{ needs.prepare-release.outputs.version }}
+          path: ./release
+
+      - name: Render manifest
+        env:
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          ./scripts/scoop/render-manifest.sh "$VERSION" ./release/checksums.txt scripts/scoop/javinizer.json.tmpl > out/javinizer.json
+          ./scripts/scoop/render-manifest.sh "$VERSION" ./release/checksums.txt scripts/scoop/javinizer-app.json.tmpl > out/javinizer-app.json
+          echo "=== rendered bucket/javinizer.json ==="
+          cat out/javinizer.json
+          echo "=== rendered bucket/javinizer-app.json ==="
+          cat out/javinizer-app.json
+
+      - name: Checkout bucket repo
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          repository: javinizer/scoop-javinizer
+          path: bucket-repo
+          ssh-key: ${{ secrets.SCOOP_BUCKET_DEPLOY_KEY }}
+
+      - name: Commit manifest to bucket
+        env:
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p bucket-repo/bucket
+          cp out/javinizer.json bucket-repo/bucket/javinizer.json
+          cp out/javinizer-app.json bucket-repo/bucket/javinizer-app.json
+          cd bucket-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bucket/javinizer.json bucket/javinizer-app.json
+          if git diff --cached --quiet; then
+            echo "No manifest changes to commit."
+          else
+            git commit -m "scoop: javinizer ${VERSION}"
+            git push
+          fi
+
+  notify-discord:
+    name: Notify Discord
+    needs: [prepare-release, create-release]
+    # Notify on every published release (stable + prerelease); skip drafts
+    # and non-release runs (snapshots/nightlies where create_release == 'false').
+    #
+    # NOTE: This lives in cli-release.yml rather than a separate
+    # release-event-triggered workflow because the release above is published
+    # with GITHUB_TOKEN, and events triggered by GITHUB_TOKEN do not spawn
+    # downstream workflow runs (GitHub anti-loop protection). Running in the
+    # same workflow avoids that limitation entirely.
+    if: needs.prepare-release.outputs.create_release == 'true' && needs.prepare-release.outputs.draft != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post release to Discord webhook
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TAG: ${{ needs.prepare-release.outputs.tag_name }}
+          NAME: ${{ needs.prepare-release.outputs.release_name }}
+          PRERELEASE: ${{ needs.prepare-release.outputs.prerelease }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DISCORD_WEBHOOK_URL}" ]; then
+            echo "DISCORD_WEBHOOK_URL secret is not set; skipping"
+            exit 0
+          fi
+
+          url="https://github.com/${REPO}/releases/tag/${TAG}"
+
+          # Fetch the published release so we can mirror its body, author,
+          # and publish timestamp in the Discord embed.
+          release_json="$(gh api "repos/${REPO}/releases/tags/${TAG}" 2>/dev/null || echo '{}')"
+          body="$(printf '%s' "${release_json}" | jq -r '.body // ""')"
+          author_login="$(printf '%s' "${release_json}" | jq -r '.author.login // ""')"
+          author_avatar="$(printf '%s' "${release_json}" | jq -r '.author.avatar_url // ""')"
+          published_at="$(printf '%s' "${release_json}" | jq -r '.published_at // (now | todate)')"
+
+          # Truncate the release notes so the embed stays compact. Discord
+          # caps the description at 4096 chars, but a full changelog makes
+          # the card unwieldy; show the first 500 characters and link out for
+          # the rest. jq's slice (.[0:500]) operates on Unicode codepoints, so
+          # multibyte UTF-8 sequences are never split mid-character (head -c
+          # would truncate by byte and could emit invalid UTF-8).
+          body_excerpt="$(printf '%s' "${body}" | jq -rR '.[0:500]')"
+          body_len="$(printf '%s' "${body}" | jq -rR 'length')"
+          if [ "${body_len}" -gt 500 ]; then
+            body_preview="${body_excerpt}
+            
+            … *[read full release notes](${url})*"
+          else
+            body_preview="${body_excerpt}"
+          fi
+          title="${NAME:-${TAG}}"
+          title="$(printf '%s' "${title}" | head -c 250)"
+
+          if [ "${PRERELEASE}" = "true" ]; then
+            color="15844367" # orange — prerelease
+            type_label="Pre-release"
+          else
+            color="32768"   # green — stable
+            type_label="Release"
+          fi
+
+          # GitHub renders a per-repo Open Graph social card (repo name,
+          # description, stars). Using it as the embed thumbnail gives the
+          # bot post a rich preview comparable to Discord's auto link embed.
+          thumbnail="https://opengraph.githubassets.com/1/${REPO}"
+          repo_url="https://github.com/${REPO}"
+
+          payload="$(jq -n \
+            --arg title "${title}" \
+            --arg tag "${TAG}" \
+            --arg url "${url}" \
+            --arg type "${type_label}" \
+            --arg color "${color}" \
+            --arg body "${body_preview}" \
+            --arg repo "${REPO}" \
+            --arg repo_url "${repo_url}" \
+            --arg thumbnail "${thumbnail}" \
+            --arg author "${author_login}" \
+            --arg author_avatar "${author_avatar}" \
+            --arg published_at "${published_at}" \
+            --argjson has_body "$([ -n "${body_preview}" ] && echo true || echo false)" \
+            --argjson has_author "$([ -n "${author_login}" ] && echo true || echo false)" \
+            '{
+              content: ("New " + $type + " published: [" + $tag + "](" + $url + ")"),
+              embeds: [{
+                title: $title,
+                url: $url,
+                color: ($color | tonumber),
+                description: (if $has_body then $body else "*(no release notes)*" end),
+                thumbnail: { url: $thumbnail },
+                fields: [
+                  { name: "Version", value: ("`" + $tag + "`"), inline: true },
+                  { name: "Type", value: $type, inline: true },
+                  { name: "Repository", value: ("[" + $repo + "](" + $repo_url + ")"), inline: true },
+                  { name: "Download", value: ("[Release assets](" + $url + ")"), inline: true }
+                ],
+                author: (if $has_author then { name: $author, url: ("https://github.com/" + $author), icon_url: $author_avatar } else null end),
+                footer: { text: $repo },
+                timestamp: $published_at
+              }]
+            }')"
+
+          echo "Posting release ${TAG} to Discord..."
+          curl -fsSL -X POST \
+            -H "Content-Type: application/json" \
+            -d "${payload}" \
+            "${DISCORD_WEBHOOK_URL}"
+
+          echo "Discord notification sent for ${TAG}"

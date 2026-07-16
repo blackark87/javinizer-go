@@ -9,7 +9,9 @@ import (
 
 	"github.com/javinizer/javinizer-go/cmd/javinizer/commands/actress"
 	"github.com/javinizer/javinizer-go/cmd/javinizer/commands/api"
+	"github.com/javinizer/javinizer-go/cmd/javinizer/commands/app"
 	configcmd "github.com/javinizer/javinizer-go/cmd/javinizer/commands/config"
+	"github.com/javinizer/javinizer-go/cmd/javinizer/commands/dump"
 	"github.com/javinizer/javinizer-go/cmd/javinizer/commands/genre"
 	"github.com/javinizer/javinizer-go/cmd/javinizer/commands/history"
 	"github.com/javinizer/javinizer-go/cmd/javinizer/commands/info"
@@ -21,12 +23,15 @@ import (
 	"github.com/javinizer/javinizer-go/cmd/javinizer/commands/token"
 	"github.com/javinizer/javinizer-go/cmd/javinizer/commands/tui"
 	"github.com/javinizer/javinizer-go/cmd/javinizer/commands/update"
+	"github.com/javinizer/javinizer-go/cmd/javinizer/commands/upgrade"
 	versioncmd "github.com/javinizer/javinizer-go/cmd/javinizer/commands/version"
 	"github.com/javinizer/javinizer-go/cmd/javinizer/commands/word"
 	"github.com/javinizer/javinizer-go/internal/config"
 	_ "github.com/javinizer/javinizer-go/internal/config/migrations"
-	"github.com/javinizer/javinizer-go/internal/configutil"
+	"github.com/javinizer/javinizer-go/internal/desktop"
+
 	"github.com/javinizer/javinizer-go/internal/logging"
+	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -35,6 +40,7 @@ var (
 	cfgFile           string
 	verboseFlag       bool
 	originalLogOutput string
+	currentCmd        *cobra.Command
 )
 
 // rootCmd represents the base command
@@ -45,7 +51,37 @@ var rootCmd = &cobra.Command{
 	Version: version.Short(),
 }
 
+// initDesktopDefault wires no-arg → GUI for desktop builds only. In CLI builds
+// (BuildDesktop="0") rootCmd keeps no Run, so no-args prints help as before.
+func initDesktopDefault() {
+	if !desktop.IsDesktopBuild() {
+		return
+	}
+	rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
+		cmd.SilenceUsage = true
+		return desktop.Run(desktop.Options{ConfigFile: cfgFile})
+	}
+}
+
+// disableMousetrapForDesktopBuild clears cobra's mousetrap help text for
+// desktop builds so double-click launches open the GUI instead of showing
+// cobra's "This is a command line tool..." dialog and exiting. Extracted from
+// init() so it can be tested: init() runs before any test can toggle
+// BuildDesktop, so the body would otherwise be unreachable in coverage.
+func disableMousetrapForDesktopBuild() {
+	if !desktop.IsDesktopBuild() {
+		return
+	}
+	cobra.MousetrapHelpText = ""
+}
+
+// cleanupStaleWindowsOldExe removes a leftover <exe>.old from a prior
+// interrupted desktop self-upgrade (Windows can't overwrite a running exe).
+// The Windows implementation lives in cleanup_windows.go; on other platforms
+// it is a no-op (cleanup_unix.go).
+
 func init() {
+	disableMousetrapForDesktopBuild()
 	// Customize version template
 	rootCmd.SetVersionTemplate(version.Info() + "\n")
 
@@ -53,11 +89,33 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "configs/config.yaml", "config file path")
 	rootCmd.PersistentFlags().BoolVarP(&verboseFlag, "verbose", "v", false, "enable debug logging")
 
-	// Initialize configuration for commands that need it.
+	// Desktop builds (injected via -X internal/desktop.BuildDesktop=1) run with
+	// a portable user-data dir so config/db/logs land in a writable,
+	// CWD-independent location regardless of how the app was launched
+	// (Finder/Explorer set CWD to "/" or the bundle dir). This must run before
+	// config init so ApplyEnvironmentOverrides picks the portable paths up.
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		if desktop.IsDesktopBuild() {
+			cleanupStaleWindowsOldExe()
+			// Only set up the portable env when the user did not pass a custom
+			// --config. With a custom config, the user owns their data layout;
+			// injecting JAVINIZER_DB/LOG_DIR here would have ApplyEnvironmentOverrides
+			// override that file's DB/log settings with the portable paths.
+			if cfgFile == "" || cfgFile == "configs/config.yaml" {
+				if err := desktop.SetupPortableEnv(); err != nil {
+					_, _ = fmt.Fprintf(os.Stderr, "desktop: %v\n", err)
+				}
+				cfgFile = desktop.DefaultConfigPath()
+			}
+			// Write the resolved path back to the flag so subcommands that read
+			// cmd.Flags().GetString("config") (web, app, tui, …) see the portable
+			// path, not the default "configs/config.yaml".
+			_ = cmd.Flags().Set("config", cfgFile)
+		}
 		if shouldSkipConfigInit(cmd) {
 			return
 		}
+		currentCmd = cmd
 		initConfig()
 	}
 
@@ -65,7 +123,9 @@ func init() {
 	rootCmd.AddCommand(
 		actress.NewCommand(),
 		api.NewCommand(),
+		app.NewCommand(),
 		configcmd.NewCommand(),
+		dump.NewCommand(),
 		genre.NewCommand(),
 		history.NewCommand(),
 		info.NewCommand(),
@@ -77,9 +137,12 @@ func init() {
 		tag.NewCommand(),
 		tui.NewCommand(),
 		update.NewCommand(),
+		upgrade.NewCommand(),
 		word.NewCommand(),
 		versioncmd.NewCommand(),
 	)
+
+	initDesktopDefault()
 }
 
 func shouldSkipConfigInit(cmd *cobra.Command) bool {
@@ -88,13 +151,34 @@ func shouldSkipConfigInit(cmd *cobra.Command) bool {
 	}
 
 	// Built-in/help/version paths should not require config or logger setup.
-	if cmd.Name() == "version" || cmd.Name() == "help" || cmd.Name() == "completion" {
+	// `upgrade` also runs without config: it only talks to GitHub and replaces
+	// the binary, and forcing config init would create a config file as a side
+	// effect of a self-update.
+	// `app` on a non-desktop build always errors (the desktop runner is a
+	// build-tagged stub), so initConfig would create config/DB/log files before
+	// the command fails — the same side-effect concern as `upgrade`.
+	if cmd.Name() == "version" || cmd.Name() == "help" || cmd.Name() == "completion" || cmd.Name() == "upgrade" {
+		return true
+	}
+	if cmd.Name() == "app" && !desktop.IsDesktopBuild() {
 		return true
 	}
 
 	// `javinizer --version` should stay lightweight and side-effect free.
 	versionFlag := cmd.Flags().Lookup("version")
 	return versionFlag != nil && versionFlag.Changed
+}
+
+// isTUICommand reports whether cmd (or any ancestor) is the tui subcommand.
+// Used to suppress stdout logging during initial setup so startup messages don't
+// leak to the terminal before the TUI's AltScreen activates.
+func isTUICommand(cmd *cobra.Command) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		if c.Name() == "tui" {
+			return true
+		}
+	}
+	return false
 }
 
 // Execute runs the root command
@@ -131,7 +215,7 @@ func initConfig() {
 		} else {
 			_, applied := applyUmask(int(umaskValue))
 			if applied {
-				configutil.StoreUmask(int(umaskValue))
+				config.StoreUmask(int(umaskValue))
 			} else {
 				_, _ = fmt.Fprintf(os.Stderr, "Umask not supported on this platform\n")
 			}
@@ -154,13 +238,33 @@ func initConfig() {
 		logCfg.Level = "debug"
 	}
 
+	// For the TUI subcommand, strip stdout/stderr from the FIRST logger so startup
+	// messages (e.g. "Log file: ...") don't leak to the terminal before AltScreen
+	// activates. Only logCfg.Output is modified; cfg.Logging.Output is left intact
+	// so the JAVINIZER_LOG_DIR relocation check below still compares correctly.
+	// When the config has no file target at all (e.g. pure "stdout"), the fallback
+	// path honors JAVINIZER_LOG_DIR so logs still land in the env-configured dir.
+	// The TUI's run() reinitializes the logger via configureTUILogging afterwards.
+	if isTUICommand(currentCmd) {
+		defaultTUILog := "data/logs/javinizer-tui.log"
+		if len(logging.GetFileOutputs(logCfg.Output)) == 0 {
+			if envLogDir := os.Getenv("JAVINIZER_LOG_DIR"); envLogDir != "" {
+				defaultTUILog = filepath.Join(envLogDir, "javinizer-tui.log")
+			}
+		}
+		logCfg.Output = logging.FileOnlyOutput(logCfg.Output, defaultTUILog)
+	}
+	actualLogOutput := logCfg.Output
+
 	if err := logging.InitLogger(logCfg); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Log file output location (INFO level for visibility)
-	if logPaths := logging.GetFileOutputs(cfg.Logging.Output); len(logPaths) > 0 {
+	// Log file output location (INFO level for visibility). Use the actual logger
+	// output (which for the TUI is the stripped/relocated file-only path) rather than
+	// the original cfg.Logging.Output, so the reported path matches what is written.
+	if logPaths := logging.GetFileOutputs(actualLogOutput); len(logPaths) > 0 {
 		for _, path := range logPaths {
 			absPath, err := filepath.Abs(path)
 			if err != nil {
@@ -192,7 +296,7 @@ func initConfig() {
 
 	// Validate proxy configuration
 	if cfg.Scrapers.Proxy.Enabled {
-		resolvedScraperProxy := config.ResolveGlobalProxy(cfg.Scrapers.Proxy)
+		resolvedScraperProxy := models.ResolveGlobalProxy(cfg.Scrapers.Proxy)
 		if resolvedScraperProxy.URL == "" {
 			logging.Warn("Scraper proxy is enabled but resolved profile URL is empty, disabling proxy")
 			cfg.Scrapers.Proxy.Enabled = false
@@ -201,11 +305,11 @@ func initConfig() {
 		}
 	}
 
-	if cfg.Output.DownloadProxy.Enabled {
-		resolvedDownloadProxy := config.ResolveScraperProxy(cfg.Scrapers.Proxy, &cfg.Output.DownloadProxy)
+	if cfg.Output.Download.DownloadProxy.Enabled {
+		resolvedDownloadProxy := models.ResolveScraperProxy(cfg.Scrapers.Proxy, &cfg.Output.Download.DownloadProxy)
 		if resolvedDownloadProxy.URL == "" {
 			logging.Warn("Download proxy is enabled but resolved profile URL is empty, disabling proxy")
-			cfg.Output.DownloadProxy.Enabled = false
+			cfg.Output.Download.DownloadProxy.Enabled = false
 		} else {
 			logging.Infof("Download proxy enabled: %s", sanitizeProxyURL(resolvedDownloadProxy.URL))
 		}

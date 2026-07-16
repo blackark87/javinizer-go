@@ -2,8 +2,10 @@ package system
 
 import (
 	"context"
+
 	"encoding/json"
 	"fmt"
+	"github.com/javinizer/javinizer-go/internal/api/core"
 	"io"
 	"net/http"
 	"sort"
@@ -12,10 +14,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/javinizer/javinizer-go/internal/httpclient"
+	"github.com/javinizer/javinizer-go/internal/models"
+
+	contracts "github.com/javinizer/javinizer-go/internal/api/contracts"
 )
 
 const maxTranslationAPIResponseSize = 10 * 1024 * 1024 // 10MB
 
+// DeepLUsageResponse mirrors the DeepL usage API response (character counts and limits).
 type DeepLUsageResponse struct {
 	CharacterCount int64  `json:"character_count"`
 	CharacterLimit int64  `json:"character_limit"`
@@ -25,6 +31,7 @@ type DeepLUsageResponse struct {
 	APIKeyLimit    int64  `json:"api_key_character_limit,omitempty"`
 }
 
+// DeepLUsageRequest carries the mode, base URL, and API key for a DeepL usage lookup.
 type DeepLUsageRequest struct {
 	Mode    string `json:"mode"`
 	BaseURL string `json:"base_url"`
@@ -37,16 +44,17 @@ type DeepLUsageRequest struct {
 // @Tags system
 // @Accept json
 // @Produce json
-// @Param request body TranslationModelsRequest true "Translation model lookup request"
-// @Success 200 {object} TranslationModelsResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 502 {object} ErrorResponse
+// @Param request body contracts.TranslationModelsRequest true "Translation model lookup request"
+// @Success 200 {object} contracts.TranslationModelsResponse
+// @Failure 400 {object} contracts.ErrorResponse
+// @Failure 502 {object} contracts.ErrorResponse
 // @Router /api/v1/translation/models [post]
-func getTranslationModels(deps *ServerDependencies) gin.HandlerFunc {
+func getTranslationModels(deps *core.APIDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var req TranslationModelsRequest
+		_ = deps
+		var req contracts.TranslationModelsRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(400, ErrorResponse{Error: "Invalid request format"})
+			c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: "Invalid request format"})
 			return
 		}
 
@@ -56,36 +64,36 @@ func getTranslationModels(deps *ServerDependencies) gin.HandlerFunc {
 		switch provider {
 		case "openai", "openai-compatible":
 			if !isValidHTTPURL(baseURL) {
-				c.JSON(400, ErrorResponse{Error: "base_url must be a valid http(s) URL"})
+				c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: "base_url must be a valid http(s) URL"})
 				return
 			}
 			if provider == "openai" && strings.TrimSpace(req.APIKey) == "" {
-				c.JSON(400, ErrorResponse{Error: "api_key is required for model discovery"})
+				c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: "api_key is required for model discovery"})
 				return
 			}
 			models, err := fetchOpenAICompatibleModels(c.Request.Context(), baseURL, req.APIKey)
 			if err != nil {
-				c.JSON(http.StatusBadGateway, ErrorResponse{Error: "Failed to fetch models: " + err.Error()})
+				c.JSON(http.StatusBadGateway, contracts.ErrorResponse{Error: "Failed to fetch models: " + err.Error()})
 				return
 			}
-			c.JSON(200, TranslationModelsResponse{Models: models})
+			c.JSON(http.StatusOK, contracts.TranslationModelsResponse{Models: models})
 		case "anthropic":
 			if !isValidHTTPURL(baseURL) {
-				c.JSON(400, ErrorResponse{Error: "base_url must be a valid http(s) URL"})
+				c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: "base_url must be a valid http(s) URL"})
 				return
 			}
 			if strings.TrimSpace(req.APIKey) == "" {
-				c.JSON(400, ErrorResponse{Error: "api_key is required for model discovery"})
+				c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: "api_key is required for model discovery"})
 				return
 			}
 			models, err := fetchAnthropicModels(c.Request.Context(), baseURL, req.APIKey)
 			if err != nil {
-				c.JSON(http.StatusBadGateway, ErrorResponse{Error: "Failed to fetch models: " + err.Error()})
+				c.JSON(http.StatusBadGateway, contracts.ErrorResponse{Error: "Failed to fetch models: " + err.Error()})
 				return
 			}
-			c.JSON(200, TranslationModelsResponse{Models: models})
+			c.JSON(http.StatusOK, contracts.TranslationModelsResponse{Models: models})
 		default:
-			c.JSON(400, ErrorResponse{Error: "Only provider=openai, openai-compatible, or anthropic are supported for model discovery"})
+			c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: "Only provider=openai, openai-compatible, or anthropic are supported for model discovery"})
 			return
 		}
 	}
@@ -214,48 +222,55 @@ func fetchAnthropicModels(ctx context.Context, baseURL, apiKey string) ([]string
 // @Produce json
 // @Param request body DeepLUsageRequest true "DeepL usage lookup request"
 // @Success 200 {object} DeepLUsageResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 502 {object} ErrorResponse
+// @Failure 400 {object} contracts.ErrorResponse
+// @Failure 502 {object} contracts.ErrorResponse
 // @Router /api/v1/translation/deepl/usage [post]
-func getDeepLUsage(deps *ServerDependencies) gin.HandlerFunc {
+func getDeepLUsage(deps *core.APIDeps) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		_ = deps
 		var req DeepLUsageRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(400, ErrorResponse{Error: "Invalid request format"})
+			c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: "Invalid request format"})
 			return
 		}
 
-		mode := strings.ToLower(strings.TrimSpace(req.Mode))
+		mode := models.DeepLMode(strings.ToLower(strings.TrimSpace(req.Mode)))
 		if mode == "" {
-			mode = "free"
+			mode = models.DeepLModeFree
 		}
-		if mode != "free" && mode != "pro" {
-			c.JSON(400, ErrorResponse{Error: "mode must be either 'free' or 'pro'"})
+		if mode != models.DeepLModeFree && mode != models.DeepLModePro {
+			c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: "mode must be either 'free' or 'pro'"})
 			return
 		}
 
 		baseURL := strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
 		if baseURL == "" {
-			if mode == "pro" {
+			if mode == models.DeepLModePro {
 				baseURL = "https://api.deepl.com"
 			} else {
 				baseURL = "https://api-free.deepl.com"
 			}
+		} else if !isValidHTTPURL(baseURL) {
+			// Validate user-supplied base_url before forwarding it upstream to
+			// prevent SSRF and avoid masking bad input as a 502. Mirrors the
+			// validation used by getTranslationModels.
+			c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: "base_url must be a valid http(s) URL"})
+			return
 		}
 
 		apiKey := strings.TrimSpace(req.APIKey)
 		if apiKey == "" {
-			c.JSON(400, ErrorResponse{Error: "api_key is required"})
+			c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: "api_key is required"})
 			return
 		}
 
 		usage, err := fetchDeepLUsage(c.Request.Context(), baseURL, apiKey)
 		if err != nil {
-			c.JSON(http.StatusBadGateway, ErrorResponse{Error: "Failed to fetch usage: " + err.Error()})
+			c.JSON(http.StatusBadGateway, contracts.ErrorResponse{Error: "Failed to fetch usage: " + err.Error()})
 			return
 		}
 
-		c.JSON(200, usage)
+		c.JSON(http.StatusOK, usage)
 	}
 }
 

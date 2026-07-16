@@ -26,6 +26,8 @@ type VerifiedActressResolution struct {
 	AliasesAdded   []string
 }
 
+// ResolveVerifiedIdentity reconciles a positive DMM identity with existing
+// name-only or duplicate actress rows in one transaction.
 func (r *ActressRepository) ResolveVerifiedIdentity(sourceID uint, verified models.Actress, allowCreate bool) (*VerifiedActressResolution, error) {
 	if verified.DMMID <= 0 {
 		return nil, fmt.Errorf("verified actress requires a positive DMM ID")

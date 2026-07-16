@@ -1,0 +1,47 @@
+coverage:
+  status:
+    project:
+      default:
+        # Allow small fluctuations without failing the status check.
+        # target: auto sets the target to the current coverage; the
+        # threshold gives a small tolerance so a 0.02% blip (e.g. from
+        # adding config defaults) doesn't break the check.
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        # New/changed code in a PR must be at least 80% covered — a standard
+        # floor that catches genuinely untested features while accepting that
+        # defensive error branches (sync/close/chmod failures, OS-specific
+        # dispatch, rollback-also-fails paths) are impractical to exercise
+        # without fragile tests. The project status above (90%+) remains the
+        # primary overall gate; this is a real (non-informational) floor so a
+        # PR that ships mostly-untested code still fails.
+        target: 80%
+
+# Paths excluded from both project and patch coverage. These are either
+# never compiled into the coverage run or are generated/vendored — counting
+# them as diff lines produces false patch-coverage failures.
+ignore:
+  # Build-tagged e2e suites (//go:build e2e / live). `go test -cover` does
+  # not compile them, so they never appear in coverage.out; without this
+  # ignore, adding an e2e test file fails the 80% patch gate on every PR.
+  - "test/e2e/**"
+  # Desktop-only build-tagged file (//go:build desktop). The real Wails
+  # runner pulls in per-platform webview headers and must not enter the
+  # default build/test path; without this ignore, its new lines all count
+  # as patch misses and fail the 80% gate. The non-tagged companion logic
+  # (paths.go, server.go, redirector.go, app_stub.go) IS covered.
+  - "internal/desktop/app.go"
+  # swag-generated API docs + //go:embed wrappers (no testable logic).
+  - "docs/swagger/**"
+  # //go:embed wrapper for the built frontend; the frontend has its own
+  # vitest suite, not Go coverage.
+  - "web/**"
+  # Vendored deps that ship Go files (e.g. flatted/golang).
+  - "**/node_modules/**"
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: false

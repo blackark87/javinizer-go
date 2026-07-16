@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -63,12 +62,12 @@ func TestResolveActressesKnownMappingsEUCJP(t *testing.T) {
 			})
 			defer server.Close()
 
-			scraper := New(config.ScraperSettings{
+			scraper := New(models.ScraperSettings{
 				Enabled:   true,
 				BaseURL:   server.URL + "/",
 				RateLimit: 0,
 				Timeout:   2,
-			}, nil, config.FlareSolverrConfig{})
+			}, nil, models.FlareSolverrConfig{})
 
 			result, err := scraper.ResolveActresses(context.Background(), test.movieID)
 			if err != nil {
@@ -107,7 +106,7 @@ func TestResolveActressesMultipleAndDuplicateDMMIDs(t *testing.T) {
 	})
 	defer server.Close()
 
-	scraper := New(config.ScraperSettings{Enabled: true, BaseURL: server.URL + "/"}, nil, config.FlareSolverrConfig{})
+	scraper := New(models.ScraperSettings{Enabled: true, BaseURL: server.URL + "/"}, nil, models.FlareSolverrConfig{})
 	result, err := scraper.ResolveActresses(context.Background(), "ABC-123")
 	if err != nil {
 		t.Fatalf("ResolveActresses() error = %v", err)
@@ -129,7 +128,7 @@ func TestResolveActressesNoVerifiedPage(t *testing.T) {
 	})
 	defer server.Close()
 
-	scraper := New(config.ScraperSettings{Enabled: true, BaseURL: server.URL + "/"}, nil, config.FlareSolverrConfig{})
+	scraper := New(models.ScraperSettings{Enabled: true, BaseURL: server.URL + "/"}, nil, models.FlareSolverrConfig{})
 	_, err := scraper.ResolveActresses(context.Background(), "JNT-051")
 	if err == nil {
 		t.Fatal("ResolveActresses() error = nil, want not found")
@@ -166,7 +165,7 @@ func TestResolveActressIdentityUsesExactEUCJPPageNameSearch(t *testing.T) {
 	})
 	defer server.Close()
 
-	scraper := New(config.ScraperSettings{Enabled: true, BaseURL: server.URL + "/"}, nil, config.FlareSolverrConfig{})
+	scraper := New(models.ScraperSettings{Enabled: true, BaseURL: server.URL + "/"}, nil, models.FlareSolverrConfig{})
 	result, err := scraper.ResolveActressIdentity(context.Background(), models.ActressIdentityQuery{
 		Names: []string{"波多野結衣", "Alias"},
 	})
@@ -253,8 +252,8 @@ func laterDMMLinkFixture(title, movieID string) string {
 }
 
 func TestGetURL(t *testing.T) {
-	scraper := New(config.ScraperSettings{BaseURL: "https://example.com/wiki/"}, nil, config.FlareSolverrConfig{})
-	raw, err := scraper.GetURL("300MIUM-834")
+	scraper := New(models.ScraperSettings{BaseURL: "https://example.com/wiki/"}, nil, models.FlareSolverrConfig{})
+	raw, err := scraper.GetURL(context.Background(), "300MIUM-834")
 	if err != nil {
 		t.Fatalf("GetURL() error = %v", err)
 	}

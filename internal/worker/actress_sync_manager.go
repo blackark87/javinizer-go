@@ -15,9 +15,11 @@ import (
 	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/logging"
 	"github.com/javinizer/javinizer-go/internal/models"
+	"github.com/javinizer/javinizer-go/internal/scraperutil"
 	"github.com/javinizer/javinizer-go/internal/translation"
 )
 
+// ActressSyncManagerDeps contains the durable sync manager's dependencies.
 type ActressSyncManagerDeps struct {
 	DB              *database.DB
 	ActressRepo     *database.ActressRepository
@@ -25,15 +27,17 @@ type ActressSyncManagerDeps struct {
 	HistoryRepo     *database.HistoryRepository
 	BatchFileOpRepo *database.BatchFileOperationRepository
 	GetConfig       func() *config.Config
-	GetRegistry     func() *models.ScraperRegistry
+	GetRegistry     func() *scraperutil.ScraperRegistry
 }
 
+// ActressSyncCreateRequest selects actresses for a durable background sync.
 type ActressSyncCreateRequest struct {
 	Scope      string `json:"scope"`
 	ActressIDs []uint `json:"actress_ids"`
 	Missing    bool   `json:"missing"`
 }
 
+// ActressSyncManager claims and executes durable actress metadata sync tasks.
 type ActressSyncManager struct {
 	deps  ActressSyncManagerDeps
 	repo  *database.ActressSyncRepository
@@ -51,6 +55,7 @@ type ActressSyncManager struct {
 	llmActive int
 }
 
+// NewActressSyncManager constructs a durable actress sync manager.
 func NewActressSyncManager(deps ActressSyncManagerDeps) *ActressSyncManager {
 	manager := &ActressSyncManager{
 		deps: deps, owner: uuid.NewString(), wake: make(chan struct{}, 1),
@@ -61,6 +66,7 @@ func NewActressSyncManager(deps ActressSyncManagerDeps) *ActressSyncManager {
 	return manager
 }
 
+// Start begins dispatching pending actress sync tasks.
 func (m *ActressSyncManager) Start() {
 	if m == nil || m.repo == nil {
 		return
@@ -82,6 +88,7 @@ func (m *ActressSyncManager) Start() {
 	go m.dispatch()
 }
 
+// Stop waits for workers and releases their task leases.
 func (m *ActressSyncManager) Stop() {
 	if m == nil {
 		return
@@ -155,6 +162,7 @@ func (m *ActressSyncManager) taskTimeout() time.Duration {
 	return 60 * time.Second
 }
 
+// CreateJob persists and starts a durable actress sync job.
 func (m *ActressSyncManager) CreateJob(ctx context.Context, req ActressSyncCreateRequest) (*models.ActressSyncJob, error) {
 	if m == nil || m.repo == nil || m.deps.ActressRepo == nil || m.deps.MovieRepo == nil {
 		return nil, fmt.Errorf("actress sync manager is unavailable")
@@ -186,12 +194,12 @@ func (m *ActressSyncManager) CreateJob(ctx context.Context, req ActressSyncCreat
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		actress, err := m.deps.ActressRepo.FindByID(id)
+		actress, err := m.deps.ActressRepo.FindByID(ctx, id)
 		if err != nil {
 			return nil, err
 		}
 		if actress.DMMID <= 0 {
-			movies, err := m.deps.MovieRepo.ListByActressID(id, 0, 0)
+			movies, err := m.deps.MovieRepo.ListByActressID(ctx, id, 0, 0)
 			if err != nil {
 				return nil, err
 			}
@@ -250,7 +258,7 @@ func (m *ActressSyncManager) deduplicateTask(task models.ActressSyncTask) models
 		now := time.Now().UTC()
 		task.Status = models.ActressSyncTaskSkipped
 		task.Stage = "completed"
-		task.Outcome = "skipped"
+		task.Outcome = string(ActressSyncSkipped)
 		task.Messages = []string{"An equivalent actress sync item is already pending or running"}
 		task.CompletedAt = &now
 		task.DedupeKey += ":duplicate:" + task.ID
@@ -263,19 +271,22 @@ func (m *ActressSyncManager) skippedTask(jobID, dedupe string, actressID uint, m
 	return models.ActressSyncTask{
 		ID: uuid.NewString(), JobID: jobID, Kind: models.ActressSyncTaskKindActress, ActressID: &actressID,
 		MovieContentID: movieContentID, MovieID: movieID, Label: message, DedupeKey: dedupe + ":" + uuid.NewString(),
-		Status: models.ActressSyncTaskSkipped, Stage: "completed", Outcome: "skipped", Messages: []string{message},
+		Status: models.ActressSyncTaskSkipped, Stage: "completed", Outcome: string(ActressSyncSkipped), Messages: []string{message},
 		UpdatedFields: []string{}, CreatedAt: now, CompletedAt: &now,
 	}
 }
 
+// GetJob returns a durable actress sync job by ID.
 func (m *ActressSyncManager) GetJob(id string) (*models.ActressSyncJob, error) {
 	return m.repo.FindJob(id)
 }
 
+// ListActiveJobs returns pending and running actress sync jobs.
 func (m *ActressSyncManager) ListActiveJobs() ([]models.ActressSyncJob, error) {
 	return m.repo.ListActiveJobs()
 }
 
+// ListTasks returns all durable tasks for an actress sync job.
 func (m *ActressSyncManager) ListTasks(jobID string) ([]models.ActressSyncTask, error) {
 	if _, err := m.repo.FindJob(jobID); err != nil {
 		return nil, err
@@ -283,6 +294,7 @@ func (m *ActressSyncManager) ListTasks(jobID string) ([]models.ActressSyncTask, 
 	return m.repo.ListTasks(jobID)
 }
 
+// CancelJob requests cancellation of an actress sync job.
 func (m *ActressSyncManager) CancelJob(jobID string) error {
 	if err := m.repo.CancelJob(jobID); err != nil {
 		return err
@@ -364,7 +376,7 @@ func (m *ActressSyncManager) processActress(ctx context.Context, task *models.Ac
 	if task.ActressID == nil {
 		return fmt.Errorf("actress task has no actress ID")
 	}
-	existing, err := m.deps.ActressRepo.FindByID(*task.ActressID)
+	existing, err := m.deps.ActressRepo.FindByID(ctx, *task.ActressID)
 	if err != nil {
 		return err
 	}
@@ -392,7 +404,7 @@ func (m *ActressSyncManager) processActress(ctx context.Context, task *models.Ac
 	if !preserveExistingProfile {
 		m.setStage(task, "romanizing")
 		if translation.ApplyDMMHepburnName(&canonical) {
-			if err := m.deps.ActressRepo.Update(&canonical); err != nil {
+			if err := m.deps.ActressRepo.Update(ctx, &canonical); err != nil {
 				return err
 			}
 			task.UpdatedFields = append(task.UpdatedFields, "hepburn_name")
@@ -412,7 +424,7 @@ func (m *ActressSyncManager) processActress(ctx context.Context, task *models.Ac
 	translationChanged := containsAnyField(task.UpdatedFields, "actress_translations")
 	if displayChanged || translationChanged {
 		m.setStage(task, "mapping")
-		movies, listErr := m.deps.MovieRepo.ListByActressID(canonical.ID, 0, 0)
+		movies, listErr := m.deps.MovieRepo.ListByActressID(ctx, canonical.ID, 0, 0)
 		if listErr != nil {
 			return listErr
 		}
@@ -422,7 +434,7 @@ func (m *ActressSyncManager) processActress(ctx context.Context, task *models.Ac
 				nfoMovieIDs[movie.ContentID] = struct{}{}
 			}
 		}
-		m.refreshAffectedMovies(task, movies, nfoMovieIDs)
+		m.refreshAffectedMovies(ctx, task, movies, nfoMovieIDs)
 	}
 
 	switch {
@@ -435,7 +447,7 @@ func (m *ActressSyncManager) processActress(ctx context.Context, task *models.Ac
 	case result.Status == ActressSyncFailed:
 		task.Status, task.Outcome = models.ActressSyncTaskFailed, "failed"
 	default:
-		task.Status, task.Outcome = models.ActressSyncTaskSkipped, "skipped"
+		task.Status, task.Outcome = models.ActressSyncTaskSkipped, string(ActressSyncSkipped)
 	}
 	return nil
 }
@@ -444,7 +456,7 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 	if task.ActressID == nil || task.MovieContentID == "" {
 		return fmt.Errorf("placeholder movie task is incomplete")
 	}
-	movie, err := m.deps.MovieRepo.FindByContentID(task.MovieContentID)
+	movie, err := m.deps.MovieRepo.FindByContentID(ctx, task.MovieContentID)
 	if err != nil {
 		return err
 	}
@@ -455,7 +467,7 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 	if registry == nil {
 		return fmt.Errorf("movie %s: SougouWiki resolver is unavailable; enable scrapers.sougouwiki.enabled in scraper settings", movie.ID)
 	}
-	scraper, ok := registry.Get("sougouwiki")
+	scraper, ok := registry.GetInstance("sougouwiki")
 	if !ok || scraper == nil || !scraper.IsEnabled() {
 		return fmt.Errorf("movie %s: SougouWiki is disabled; enable scrapers.sougouwiki.enabled in scraper settings", movie.ID)
 	}
@@ -483,7 +495,7 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 	refreshCanonicalIDs := make(map[uint]struct{})
 	nfoCanonicalIDs := make(map[uint]struct{})
 	for _, info := range verified {
-		existing, findErr := m.deps.ActressRepo.FindByDMMID(info.DMMID)
+		existing, findErr := m.deps.ActressRepo.FindByDMMID(ctx, info.DMMID)
 		if findErr != nil && !database.IsNotFound(findErr) {
 			return findErr
 		}
@@ -538,7 +550,7 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 		for index, canonicalIndex := range enrichmentIndexes {
 			beforeEnrichment := canonical[canonicalIndex]
 			canonical[canonicalIndex] = toEnrich[index]
-			if updateErr := m.deps.ActressRepo.Update(&canonical[canonicalIndex]); updateErr != nil {
+			if updateErr := m.deps.ActressRepo.Update(ctx, &canonical[canonicalIndex]); updateErr != nil {
 				return updateErr
 			}
 			if beforeEnrichment.FirstName != canonical[canonicalIndex].FirstName ||
@@ -551,7 +563,7 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 	}
 
 	m.setStage(task, "mapping")
-	removedIDs, err := m.deps.MovieRepo.ReplaceUnverifiedActressesForMovie(movie.ContentID, canonical)
+	removedIDs, err := m.deps.MovieRepo.ReplaceUnverifiedActressesForMovie(ctx, movie.ContentID, canonical)
 	if err != nil {
 		return err
 	}
@@ -563,7 +575,7 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 		for index, canonicalIndex := range enrichmentIndexes {
 			translatedActresses[index] = canonical[canonicalIndex]
 		}
-		if err := m.storeActressTranslations(translationRecords, translatedActresses); err != nil {
+		if err := m.storeActressTranslations(ctx, translationRecords, translatedActresses); err != nil {
 			warning = appendWarning(warning, err.Error())
 		} else if len(translationRecords) > 0 {
 			task.UpdatedFields = appendUnique(task.UpdatedFields, "actress_translations")
@@ -580,7 +592,7 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 	refreshMovies := make(map[string]models.Movie)
 	nfoMovieIDs := make(map[string]struct{})
 	if len(removedIDs) > 0 {
-		updatedMovie, findErr := m.deps.MovieRepo.FindByContentID(movie.ContentID)
+		updatedMovie, findErr := m.deps.MovieRepo.FindByContentID(ctx, movie.ContentID)
 		if findErr != nil {
 			return findErr
 		}
@@ -588,7 +600,7 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 		nfoMovieIDs[updatedMovie.ContentID] = struct{}{}
 	}
 	for actressID := range refreshCanonicalIDs {
-		movies, listErr := m.deps.MovieRepo.ListByActressID(actressID, 0, 0)
+		movies, listErr := m.deps.MovieRepo.ListByActressID(ctx, actressID, 0, 0)
 		if listErr != nil {
 			return listErr
 		}
@@ -604,15 +616,15 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 		for _, affected := range refreshMovies {
 			movies = append(movies, affected)
 		}
-		m.refreshAffectedMovies(task, movies, nfoMovieIDs)
+		m.refreshAffectedMovies(ctx, task, movies, nfoMovieIDs)
 	}
 	for _, removedID := range removedIDs {
-		if count, countErr := m.deps.MovieRepo.CountByActressID(removedID); countErr == nil && count == 0 {
-			_ = m.deps.ActressRepo.Delete(removedID)
+		if count, countErr := m.deps.MovieRepo.CountByActressID(ctx, removedID); countErr == nil && count == 0 {
+			_ = m.deps.ActressRepo.Delete(ctx, removedID)
 		}
 	}
 	if len(task.UpdatedFields) == 0 && task.Warning == "" {
-		task.Status, task.Outcome = models.ActressSyncTaskSkipped, "skipped"
+		task.Status, task.Outcome = models.ActressSyncTaskSkipped, string(ActressSyncSkipped)
 	} else if task.Warning != "" {
 		task.Status, task.Outcome = models.ActressSyncTaskCompleted, "updated_with_warning"
 	} else {
@@ -628,7 +640,7 @@ func (m *ActressSyncManager) cleanFallbackMovieActresses(ctx context.Context, ta
 		if mapped.DMMID > 0 {
 			continue
 		}
-		actress, err := m.deps.ActressRepo.FindByID(mapped.ID)
+		actress, err := m.deps.ActressRepo.FindByID(ctx, mapped.ID)
 		if err != nil {
 			if database.IsNotFound(err) {
 				continue
@@ -638,12 +650,12 @@ func (m *ActressSyncManager) cleanFallbackMovieActresses(ctx context.Context, ta
 		if !translation.CleanStoredActress(actress) {
 			continue
 		}
-		if err := m.deps.ActressRepo.Update(actress); err != nil {
+		if err := m.deps.ActressRepo.Update(ctx, actress); err != nil {
 			return err
 		}
 		changed = append(changed, *actress)
 		task.UpdatedFields = appendUnique(task.UpdatedFields, "japanese_name")
-		movies, listErr := m.deps.MovieRepo.ListByActressID(actress.ID, 0, 0)
+		movies, listErr := m.deps.MovieRepo.ListByActressID(ctx, actress.ID, 0, 0)
 		if listErr != nil {
 			return listErr
 		}
@@ -653,7 +665,7 @@ func (m *ActressSyncManager) cleanFallbackMovieActresses(ctx context.Context, ta
 	}
 
 	if len(changed) == 0 {
-		task.Status, task.Outcome = models.ActressSyncTaskSkipped, "skipped"
+		task.Status, task.Outcome = models.ActressSyncTaskSkipped, string(ActressSyncSkipped)
 		task.Messages = append(task.Messages, "SougouWiki returned no verified actresses; the cleaned fallback cast was unchanged")
 		return nil
 	}
@@ -673,7 +685,7 @@ func (m *ActressSyncManager) cleanFallbackMovieActresses(ctx context.Context, ta
 			movies = append(movies, affected)
 			nfoMovieIDs[affected.ContentID] = struct{}{}
 		}
-		m.refreshAffectedMovies(task, movies, nfoMovieIDs)
+		m.refreshAffectedMovies(ctx, task, movies, nfoMovieIDs)
 	}
 	if task.Warning != "" {
 		task.Status, task.Outcome = models.ActressSyncTaskCompleted, "updated_with_warning"
@@ -703,14 +715,14 @@ func (m *ActressSyncManager) translateAndStore(ctx context.Context, task *models
 				translated[i].JapaneseName = actresses[i].JapaneseName
 			}
 			nameChanged := translated[i].FirstName != actresses[i].FirstName || translated[i].LastName != actresses[i].LastName
-			if updateErr := m.deps.ActressRepo.Update(&translated[i]); updateErr != nil {
+			if updateErr := m.deps.ActressRepo.Update(ctx, &translated[i]); updateErr != nil {
 				return warning, updateErr
 			}
 			if nameChanged {
 				task.UpdatedFields = appendUnique(task.UpdatedFields, "translated_name")
 			}
 		}
-		if storeErr := m.storeActressTranslations(records, translated); storeErr != nil {
+		if storeErr := m.storeActressTranslations(ctx, records, translated); storeErr != nil {
 			return appendWarning(warning, storeErr.Error()), err
 		} else if len(records) > 0 {
 			task.UpdatedFields = appendUnique(task.UpdatedFields, "actress_translations")
@@ -719,7 +731,7 @@ func (m *ActressSyncManager) translateAndStore(ctx context.Context, task *models
 	return warning, err
 }
 
-func (m *ActressSyncManager) storeActressTranslations(records []models.MovieTranslation, actresses []models.Actress) error {
+func (m *ActressSyncManager) storeActressTranslations(ctx context.Context, records []models.MovieTranslation, actresses []models.Actress) error {
 	if len(records) == 0 {
 		return nil
 	}
@@ -729,9 +741,11 @@ func (m *ActressSyncManager) storeActressTranslations(records []models.MovieTran
 			if i >= len(actresses) || strings.TrimSpace(name) == "" {
 				continue
 			}
-			if err := repo.Upsert(&models.ActressTranslation{
-				ActressID: actresses[i].ID, Language: record.Language, Name: name,
-				SourceName: record.SourceName, SettingsHash: record.SettingsHash,
+			firstName, lastName := models.SplitFullName(name)
+			if err := repo.Upsert(ctx, &models.ActressTranslation{
+				ActressID: actresses[i].ID, Language: record.Language,
+				FirstName: firstName, LastName: lastName, JapaneseName: actresses[i].JapaneseName,
+				DisplayName: name, SourceName: record.SourceName, SettingsHash: record.SettingsHash,
 			}); err != nil {
 				return err
 			}
@@ -740,13 +754,13 @@ func (m *ActressSyncManager) storeActressTranslations(records []models.MovieTran
 	return nil
 }
 
-func (m *ActressSyncManager) refreshAffectedMovies(task *models.ActressSyncTask, movies []models.Movie, nfoMovieIDs map[string]struct{}) {
+func (m *ActressSyncManager) refreshAffectedMovies(ctx context.Context, task *models.ActressSyncTask, movies []models.Movie, nfoMovieIDs map[string]struct{}) {
 	cfg := m.deps.GetConfig()
 	translationCfg := cfg.Metadata.Translation
 	translationRepo := database.NewMovieTranslationRepository(m.deps.DB)
 	actressTranslationRepo := database.NewActressTranslationRepository(m.deps.DB)
 	for i := range movies {
-		movie, err := m.deps.MovieRepo.FindByContentID(movies[i].ContentID)
+		movie, err := m.deps.MovieRepo.FindByContentID(ctx, movies[i].ContentID)
 		if err != nil {
 			task.Warning = appendWarning(task.Warning, err.Error())
 			continue
@@ -758,20 +772,20 @@ func (m *ActressSyncManager) refreshAffectedMovies(task *models.ActressSyncTask,
 				for _, actress := range movie.Actresses {
 					ids = append(ids, actress.ID)
 				}
-				stored, lookupErr := actressTranslationRepo.FindByActressIDsAndLanguage(ids, language)
+				stored, lookupErr := actressTranslationRepo.FindByActressIDsAndLanguage(ctx, ids, language)
 				if lookupErr != nil {
 					task.Warning = appendWarning(task.Warning, lookupErr.Error())
 					continue
 				}
 				names := make([]string, len(movie.Actresses))
 				for idx, actress := range movie.Actresses {
-					if translated, exists := stored[actress.ID]; exists && translated.Name != "" {
-						names[idx] = translated.Name
+					if translations := stored[actress.ID]; len(translations) > 0 && translations[0].DisplayName != "" {
+						names[idx] = translations[0].DisplayName
 					} else {
 						names[idx] = actress.FullName()
 					}
 				}
-				record, findErr := translationRepo.FindByMovieAndLanguage(movie.ContentID, language)
+				record, findErr := translationRepo.FindByMovieAndLanguage(ctx, movie.ContentID, language)
 				if findErr != nil && !database.IsNotFound(findErr) {
 					task.Warning = appendWarning(task.Warning, findErr.Error())
 					continue
@@ -781,7 +795,7 @@ func (m *ActressSyncManager) refreshAffectedMovies(task *models.ActressSyncTask,
 				}
 				record.Actresses = names
 				record.SettingsHash = translationCfg.SettingsHash()
-				if err := translationRepo.Upsert(record); err != nil {
+				if err := translationRepo.Upsert(ctx, record); err != nil {
 					task.Warning = appendWarning(task.Warning, err.Error())
 				} else {
 					task.UpdatedFields = appendUnique(task.UpdatedFields, "movie_translation_actresses")
@@ -793,7 +807,7 @@ func (m *ActressSyncManager) refreshAffectedMovies(task *models.ActressSyncTask,
 			continue
 		}
 		m.setStage(task, "nfo")
-		path, nfoErr := syncMovieNFO(movie, cfg, m.deps.DB, m.deps.HistoryRepo, m.deps.BatchFileOpRepo)
+		path, nfoErr := syncMovieNFO(ctx, movie, cfg, m.deps.HistoryRepo, m.deps.BatchFileOpRepo)
 		if nfoErr != nil {
 			task.Warning = appendWarning(task.Warning, fmt.Sprintf("%s: %v", movie.ID, nfoErr))
 		} else if path != "" {

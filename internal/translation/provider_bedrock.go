@@ -15,11 +15,34 @@ import (
 	"strings"
 	"time"
 
+	"github.com/javinizer/javinizer-go/internal/httpclient"
 	"github.com/javinizer/javinizer-go/internal/logging"
 )
 
-func (s *Service) translateWithBedrock(ctx context.Context, systemPrompt, userPrompt string, markers []string) (*translationResult, error) {
-	cfg := s.cfg.Bedrock
+// BedrockProvider translates text through the AWS Bedrock Runtime invoke API.
+type BedrockProvider struct {
+	cfg        Config
+	httpClient httpclient.HTTPClient
+}
+
+// NewBedrockProvider constructs a Bedrock provider from the translation bridge config.
+func NewBedrockProvider(cfg Config, httpClient httpclient.HTTPClient) *BedrockProvider {
+	return &BedrockProvider{cfg: cfg, httpClient: httpClient}
+}
+
+// Name returns the provider registry name.
+func (p *BedrockProvider) Name() string { return "bedrock" }
+
+// Translate sends a labeled translation request to AWS Bedrock Runtime.
+func (p *BedrockProvider) Translate(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
+	if p == nil {
+		return nil, fmt.Errorf("nil receiver: *BedrockProvider")
+	}
+	if len(texts) == 0 {
+		return &translationResult{}, nil
+	}
+
+	cfg := p.cfg.Bedrock
 	region := strings.TrimSpace(cfg.Region)
 	if region == "" {
 		region = "us-east-1"
@@ -37,7 +60,12 @@ func (s *Service) translateWithBedrock(ctx context.Context, systemPrompt, userPr
 		model = "anthropic.claude-3-5-sonnet-20241022-v2:0"
 	}
 
-	body, err := json.Marshal(map[string]interface{}{
+	markers := translationMarkersFromContext(ctx, len(texts))
+	systemPrompt, userPrompt, err := buildLLMTranslationPromptsWithMarkers(sourceLang, targetLang, texts, markers)
+	if err != nil {
+		return nil, err
+	}
+	body, err := json.Marshal(map[string]any{
 		"anthropic_version": "bedrock-2023-05-31",
 		"max_tokens":        4096,
 		"system":            systemPrompt,
@@ -52,7 +80,7 @@ func (s *Service) translateWithBedrock(ctx context.Context, systemPrompt, userPr
 		baseURL = "https://bedrock-runtime." + region + ".amazonaws.com"
 	}
 	endpoint := baseURL + "/model/" + url.PathEscape(model) + "/invoke"
-	logging.Debugf("Translation (bedrock): POST %s model=%s texts=%d", endpoint, model, len(markers))
+	logging.Debugf("Translation (bedrock): POST %s model=%s texts=%d", endpoint, model, len(texts))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
@@ -62,7 +90,7 @@ func (s *Service) translateWithBedrock(ctx context.Context, systemPrompt, userPr
 	req.Header.Set("accept", "application/json")
 	signBedrockRequest(req, body, region, accessKeyID, secretAccessKey, strings.TrimSpace(cfg.SessionToken), time.Now().UTC())
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -72,14 +100,22 @@ func (s *Service) translateWithBedrock(ctx context.Context, systemPrompt, userPr
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, &TranslationError{Kind: TranslationErrorHTTPStatus, StatusCode: resp.StatusCode, Message: fmt.Sprintf("bedrock translation failed with status %d: %s", resp.StatusCode, string(respBody))}
+		return nil, &translationError{Kind: TranslationErrorHTTPStatus, StatusCode: resp.StatusCode, Message: fmt.Sprintf("bedrock translation failed with status %d: %s", resp.StatusCode, string(respBody))}
 	}
 
-	content, err := decodeClaudeMessageContent("bedrock", respBody)
-	if err != nil {
-		return nil, err
+	var decoded struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
 	}
-	return buildLLMTranslationResult(content, markers)
+	if err := json.Unmarshal(respBody, &decoded); err != nil {
+		return nil, fmt.Errorf("failed to decode bedrock response: %w", err)
+	}
+	if len(decoded.Content) == 0 {
+		return nil, fmt.Errorf("bedrock response contained no content blocks")
+	}
+	return buildLLMTranslationResult(strings.TrimSpace(decoded.Content[0].Text), markers)
 }
 
 func signBedrockRequest(req *http.Request, payload []byte, region, accessKeyID, secretAccessKey, sessionToken string, now time.Time) {
@@ -104,11 +140,13 @@ func signBedrockRequest(req *http.Request, payload []byte, region, accessKeyID, 
 }
 
 func sha256Hex(b []byte) string { sum := sha256.Sum256(b); return hex.EncodeToString(sum[:]) }
+
 func hmacSHA256(key []byte, data string) []byte {
 	h := hmac.New(sha256.New, key)
-	h.Write([]byte(data))
+	_, _ = h.Write([]byte(data))
 	return h.Sum(nil)
 }
+
 func signedHeaderNames(h http.Header) []string {
 	names := make([]string, 0, len(h))
 	for n := range h {
@@ -117,6 +155,7 @@ func signedHeaderNames(h http.Header) []string {
 	sort.Strings(names)
 	return names
 }
+
 func canonicalHeaders(h http.Header, names []string) string {
 	var b strings.Builder
 	for _, n := range names {

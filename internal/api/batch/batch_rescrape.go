@@ -7,43 +7,121 @@ import (
 	"sync"
 
 	"github.com/gin-gonic/gin"
-	"github.com/javinizer/javinizer-go/internal/config"
+	"github.com/javinizer/javinizer-go/internal/api/contracts"
+	"github.com/javinizer/javinizer-go/internal/api/core"
 	"github.com/javinizer/javinizer-go/internal/logging"
 	"github.com/javinizer/javinizer-go/internal/models"
-	ws "github.com/javinizer/javinizer-go/internal/websocket"
+	"github.com/javinizer/javinizer-go/internal/panicutil"
 	"github.com/javinizer/javinizer-go/internal/worker"
 )
 
 const bulkRescrapeWorkers = 5
 const bulkRescrapeMaxMovies = 100
 
-func batchRescrapeMovies(deps *ServerDependencies) gin.HandlerFunc {
+// bulkRescrapePool runs the bulk rescrape worker pool. It accepts a job,
+// movie IDs, request parameters, a batch job factory, and a progress
+// broadcast function, and returns per-movie results.
+func bulkRescrapePool(
+	ctx context.Context,
+	job worker.BatchJobInterface,
+	movieIDs []string,
+	req *contracts.BatchRescrapeRequest,
+	factory worker.BatchJobFactoryInterface,
+	progressFn func(movieID string, result *contracts.BulkRescrapeMovieResult, progress float64),
+) []contracts.BulkRescrapeMovieResult {
+	type rescrapeMovieResult struct {
+		movieID string
+		result  *contracts.BulkRescrapeMovieResult
+	}
+
+	var mu sync.Mutex
+	var completedCount int
+	results := make([]contracts.BulkRescrapeMovieResult, 0, len(movieIDs))
+
+	movieChan := make(chan string, len(movieIDs))
+	resultChan := make(chan rescrapeMovieResult, len(movieIDs))
+
+	workerCount := bulkRescrapeWorkers
+	if workerCount > len(movieIDs) {
+		workerCount = len(movieIDs)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var currentMovieID string
+			defer func() {
+				if r := recover(); r != nil {
+					panicErr := panicutil.FormatRecover(r)
+					logging.Errorf("Batch rescrape worker panicked on movie %s: %v", currentMovieID, panicErr)
+					resultChan <- rescrapeMovieResult{movieID: currentMovieID, result: &contracts.BulkRescrapeMovieResult{
+						MovieID: currentMovieID,
+						Status:  models.RescrapeStatusFailed,
+						Error:   panicErr.Error(),
+					}}
+				}
+			}()
+			for movieID := range movieChan {
+				currentMovieID = movieID
+				r := processBulkRescrapeMovie(ctx, movieID, job, req, factory)
+				resultChan <- rescrapeMovieResult{movieID: movieID, result: r}
+			}
+		}()
+	}
+
+	for _, movieID := range movieIDs {
+		movieChan <- movieID
+	}
+	close(movieChan)
+
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	for mr := range resultChan {
+		mu.Lock()
+		results = append(results, *mr.result)
+		completedCount++
+		if progressFn != nil {
+			progressFn(mr.movieID, mr.result, float64(completedCount)/float64(len(movieIDs))*100)
+		}
+		mu.Unlock()
+	}
+
+	return results
+}
+
+func batchRescrapeMovies(rt *core.APIRuntime) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		deps := rt.Deps()
 		jobID := c.Param("id")
 
-		var req BulkRescrapeRequest
+		var req contracts.BulkRescrapeRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+			c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: err.Error()})
 			return
 		}
 
 		if len(req.MovieIDs) == 0 {
-			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "movie_ids is required and must not be empty"})
+			c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: "movie_ids is required and must not be empty"})
 			return
 		}
 
 		if len(req.MovieIDs) > bulkRescrapeMaxMovies {
-			c.JSON(http.StatusBadRequest, ErrorResponse{Error: fmt.Sprintf("movie_ids must not exceed %d items", bulkRescrapeMaxMovies)})
+			c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: fmt.Sprintf("movie_ids must not exceed %d items", bulkRescrapeMaxMovies)})
 			return
 		}
 
-		rescrapeReq := &BatchRescrapeRequest{
+		rescrapeReq := &contracts.BatchRescrapeRequest{
 			Force:            req.Force,
 			SelectedScrapers: req.SelectedScrapers,
 			Preset:           req.Preset,
 			ScalarStrategy:   req.ScalarStrategy,
 			ArrayStrategy:    req.ArrayStrategy,
-			Sections:         req.Sections,
+			Sections:         append([]string(nil), req.Sections...),
 		}
 
 		if httpStatus, errMsg := validateRescrapeRequest(rescrapeReq); errMsg != "" {
@@ -51,174 +129,112 @@ func batchRescrapeMovies(deps *ServerDependencies) gin.HandlerFunc {
 			return
 		}
 
-		job, ok := deps.JobQueue.GetJobPointer(jobID)
+		job, ok := deps.GetJobStore().GetBatchJob(jobID)
 		if !ok {
-			c.JSON(http.StatusNotFound, ErrorResponse{Error: "Job not found"})
+			c.JSON(http.StatusNotFound, contracts.ErrorResponse{Error: "Job not found"})
 			return
 		}
 
-		if isGone, httpStatus, errMsg := validateJobState(job); errMsg != "" {
-			writeErrorResponse(c, httpStatus, isGone, errMsg)
+		statusSnap := job.GetStatus()
+		if rescrapeNotAllowed(statusSnap) {
+			if statusSnap.IsDeleted {
+				writeErrorResponse(c, http.StatusGone, true, "Job has been deleted")
+			} else {
+				writeErrorResponse(c, http.StatusConflict, false, fmt.Sprintf("Cannot rescrape %s job", statusSnap.Status))
+			}
 			return
 		}
 
-		cfg := deps.GetConfig()
-
-		job.Lock()
-		if job.IsDeleted() {
-			job.Unlock()
-			writeErrorResponse(c, http.StatusGone, true, "Job has been deleted")
+		// Delegate to orchestrator for resolve→construct→execute pipeline.
+		// Snapshot so the workflow factory and batch job factory see the same
+		// reload epoch (issue #44).
+		rtSnap := rt.Snapshot()
+		factory := rtSnap.BatchJobFactory()
+		if factory == nil {
+			c.JSON(http.StatusServiceUnavailable, contracts.ErrorResponse{Error: "batch job factory unavailable — workflow factory not ready; retry the request"})
 			return
 		}
-		job.Unlock()
+		orch := NewRescrapeOrchestrator(RescrapeDeps{
+			JobStore:  deps.GetJobStore(),
+			WfFactory: &apiWorkflowFactory{snap: rtSnap},
+			Factory:   factory,
+			Persist:   deps.GetJobStore(),
+			Broadcast: &runtimeStateBroadcaster{rs: rt.GetRuntime()},
+			ServerCtx: rt.ServerCtx(),
+		})
 
-		logging.Infof("Bulk rescrape request for job %s: %d movies, scrapers=%v, force=%v",
-			jobID, len(req.MovieIDs), req.SelectedScrapers, req.Force)
+		result, err := orch.BulkRescrape(c.Request.Context(), jobID, req.MovieIDs, rescrapeReq)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: err.Error()})
+			return
+		}
 
-		// Return immediately — actual work runs in background to avoid broken-pipe
-		// errors when proxies time out long-running HTTP connections.
-		c.JSON(http.StatusAccepted, gin.H{"message": "Bulk rescrape started"})
+		jobResponse := buildBatchJobResponse(result.JobStatus, deps.Repos.ActressRepo)
 
-		// Copy values that the goroutine needs; do NOT capture c (Gin recycles it).
-		movieIDs := make([]string, len(req.MovieIDs))
-		copy(movieIDs, req.MovieIDs)
-		rescrapeReqCopy := *rescrapeReq
-
-		go func() {
-			ctx := context.Background()
-
-			type movieResult struct {
-				movieID string
-				result  *BulkRescrapeMovieResult
-			}
-
-			var mu sync.Mutex
-			var completedCount int
-
-			movieChan := make(chan string, len(movieIDs))
-			resultChan := make(chan movieResult, len(movieIDs))
-
-			workerCount := bulkRescrapeWorkers
-			if workerCount > len(movieIDs) {
-				workerCount = len(movieIDs)
-			}
-
-			var wg sync.WaitGroup
-			for i := 0; i < workerCount; i++ {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					for movieID := range movieChan {
-						r := processBulkRescrapeMovie(ctx, jobID, movieID, job, &rescrapeReqCopy, deps, cfg)
-						resultChan <- movieResult{movieID: movieID, result: r}
-					}
-				}()
-			}
-
-			for _, id := range movieIDs {
-				movieChan <- id
-			}
-			close(movieChan)
-
-			go func() {
-				wg.Wait()
-				close(resultChan)
-			}()
-
-			succeeded := 0
-			failed := 0
-			for mr := range resultChan {
-				mu.Lock()
-				completedCount++
-				if mr.result.Status == "success" {
-					succeeded++
-				} else {
-					failed++
-				}
-				broadcastProgress(&ws.ProgressMessage{
-					JobID:    jobID,
-					FilePath: mr.movieID,
-					Status:   mr.result.Status,
-					Message:  fmt.Sprintf("Rescrape %s: %s", mr.movieID, mr.result.Status),
-					Error:    mr.result.Error,
-					Progress: float64(completedCount) / float64(len(movieIDs)) * 100,
-				})
-				mu.Unlock()
-			}
-
-			deps.JobQueue.PersistJob(job)
-			logging.Infof("Bulk rescrape complete for job %s: %d succeeded, %d failed", jobID, succeeded, failed)
-		}()
+		c.JSON(http.StatusOK, contracts.BulkRescrapeResponse{
+			Results:   result.Results,
+			Succeeded: result.Succeeded,
+			Failed:    result.Failed,
+			Job:       jobResponse,
+		})
 	}
 }
 
-func processBulkRescrapeMovie(ctx context.Context, jobID string, movieID string, job *worker.BatchJob, req *BatchRescrapeRequest, deps *ServerDependencies, cfg *config.Config) *BulkRescrapeMovieResult {
-	lookup, httpStatus, errMsg := findFileForMovieID(job, movieID)
-	if errMsg != "" {
-		return &BulkRescrapeMovieResult{
+func processBulkRescrapeMovie(ctx context.Context, movieID string, job worker.BatchJobInterface, req *contracts.BatchRescrapeRequest, factory worker.BatchJobFactoryInterface) *contracts.BulkRescrapeMovieResult {
+	mergeOpts, mergeEnabled, mergeErr := resolveRescrapeMergeOptions(req)
+	if mergeErr != nil {
+		return &contracts.BulkRescrapeMovieResult{
 			MovieID: movieID,
-			Status:  "failed",
-			Error:   fmt.Sprintf("Movie lookup failed: %s (HTTP %d)", errMsg, httpStatus),
+			Status:  models.RescrapeStatusFailed,
+			Error:   fmt.Sprintf("invalid merge options: %v", mergeErr),
 		}
 	}
-
-	params, _ := resolveScrapeParams(req, movieID, deps)
-
-	result, err := executeRescrape(ctx, params, job, lookup.foundFilePath, deps, req, cfg)
+	cmd := factory.NewRescrapeCmd(
+		movieID,
+		"", // filePath resolved by job
+		req.ManualSearchInput,
+		req.SelectedScrapers,
+		req.Force,
+		mergeOpts,
+	)
+	cmd.MergeEnabled = mergeEnabled
+	cmd.Sections = append([]string(nil), req.Sections...)
+	result, err := job.Rescrape(ctx, cmd)
 	if err != nil {
-		return &BulkRescrapeMovieResult{
+		return &contracts.BulkRescrapeMovieResult{
 			MovieID: movieID,
-			Status:  "failed",
+			Status:  models.RescrapeStatusFailed,
 			Error:   fmt.Sprintf("Rescrape failed: %v", err),
 		}
 	}
 
-	if result == nil {
-		return &BulkRescrapeMovieResult{
+	if result.Status == models.RescrapeStatusGone {
+		return &contracts.BulkRescrapeMovieResult{
 			MovieID: movieID,
-			Status:  "failed",
-			Error:   "Rescrape produced no result",
+			Status:  models.RescrapeStatusFailed,
+			Error:   "Job was deleted during rescrape",
 		}
 	}
 
-	if result.Status != worker.JobStatusCompleted {
-		errorMsg := "Unknown error"
-		if result.Error != "" {
-			errorMsg = result.Error
-		}
-		return &BulkRescrapeMovieResult{
+	if result.Status == models.RescrapeStatusConflict {
+		return &contracts.BulkRescrapeMovieResult{
 			MovieID: movieID,
-			Status:  "failed",
-			Error:   fmt.Sprintf("Rescrape failed: %s", errorMsg),
+			Status:  models.RescrapeStatusFailed,
+			Error:   "Concurrent rescrape conflict",
 		}
 	}
 
-	var movie *models.Movie
-	if result.Data != nil {
-		if m, ok := result.Data.(*models.Movie); ok {
-			movie = m
-		}
-	}
-
-	if applySectionMask(movie, lookup.oldMovie, req.Sections) {
-		logging.Infof("[Bulk Rescrape] Applied section mask for %s: sections=%v", lookup.foundFilePath, req.Sections)
-	}
-
-	updateRes := validateAndUpdateResult(job, result, lookup.foundFilePath, lookup.capturedRevision, movie, lookup.oldMovieID, cfg, jobID)
-	if updateRes.shouldAbort {
-		cleanupPosterPaths(updateRes.posterPaths)
-		return &BulkRescrapeMovieResult{
+	if result.Status == models.RescrapeStatusFailed {
+		return &contracts.BulkRescrapeMovieResult{
 			MovieID: movieID,
-			Status:  "failed",
-			Error:   updateRes.errorMessage,
+			Status:  models.RescrapeStatusFailed,
+			Error:   result.Error,
 		}
 	}
 
-	cleanupPosterPaths(updateRes.posterPaths)
-
-	return &BulkRescrapeMovieResult{
+	return &contracts.BulkRescrapeMovieResult{
 		MovieID: movieID,
-		Status:  "success",
-		Movie:   movie,
+		Status:  models.RescrapeStatusSuccess,
+		Movie:   contracts.MovieViewFromModel(result.Movie),
 	}
 }

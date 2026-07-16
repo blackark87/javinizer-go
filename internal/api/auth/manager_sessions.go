@@ -92,9 +92,14 @@ func (m *AuthManager) Login(username, password string, rememberMe bool) (string,
 
 	m.enforceSessionLimitLocked()
 
+	ttl := m.sessionTTL
+	if rememberMe {
+		ttl = m.persistentSessionTTL
+	}
+
 	m.sessions[sessionID] = sessionRecord{
 		Username:   m.credentials.Username,
-		ExpiresAt:  now.Add(m.sessionTTL),
+		ExpiresAt:  now.Add(ttl),
 		Persistent: rememberMe,
 	}
 

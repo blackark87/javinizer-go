@@ -3,49 +3,105 @@ package template
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
 
+// Package-level compiled regexes for performance
 var (
 	cjkRegex              = regexp.MustCompile(`[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]`)
 	conditionalTokenRegex = regexp.MustCompile(`(?i)<IF:[A-Z_]+(?::[a-zA-Z]{2,5})?>|</IF>`)
 )
 
+// DefaultMaxTemplateBytes, DefaultMaxOutputBytes, and DefaultMaxConditionalDepth are the default size and depth limits for template rendering.
 const (
 	DefaultMaxTemplateBytes    = 64 * 1024
 	DefaultMaxOutputBytes      = 10 * 1024 * 1024
 	DefaultMaxConditionalDepth = 32
 )
 
+// EngineOptions defines validation, execution, and language settings for an Engine.
 type EngineOptions struct {
 	MaxTemplateBytes    int
 	MaxOutputBytes      int
 	MaxConditionalDepth int
-	DefaultLanguage     string
-	FallbackLanguages   []string
+	// Template language configuration (OPT-IN behavior change)
+	// Setting DefaultLanguage changes how unqualified tags like <TITLE> behave
+	DefaultLanguage   string
+	FallbackLanguages []string
 }
 
+// Keep the internal name as an alias so existing package-level helpers and
+// tests continue to use the same type while external callers can configure it.
+type engineOptions = EngineOptions
+
+// parsedModifier represents a parsed tag modifier with language awareness
+// plus optional per-tag overrides (ACTORS tags only).
 type parsedModifier struct {
-	isLanguage       bool
-	languageSpec     string
-	legacyModifier   string
-	rejectedLanguage bool
+	isLanguage         bool
+	languageSpec       string
+	truncationModifier string
+	firstNameOrder     *bool  // nil = use ctx.FirstNameOrder; non-nil = tag-level override
+	delimiter          string // explicit per-tag joiner from <TAG:DELIM=X> (may be empty)
+	delimSet           bool   // true = DELIM= was present (distinguishes empty value from absent)
+	rejectedLanguage   bool
 }
 
+// tagResolver resolves a tag name to its raw string value from the context.
+// Modifier processing is handled separately by applyModifier.
+type tagResolver func(ctx *Context) (string, error)
+
+// listDelimiterSentinel is an internal marker used by list-type tag resolvers
+// (ACTORS, ACTRESSES, GENRES) to mark the boundary between items.
+// applyModifier replaces this sentinel with the actual delimiter.
+const listDelimiterSentinel = "\x00SEP\x00"
+
+// Engine is a template processor for format strings
 type Engine struct {
-	tagPattern         *regexp.Regexp
+	// Tag pattern matches: <TAG>, <TAG:modifier>, <TAG:value>
+	tagPattern *regexp.Regexp
+	// Conditional pattern matches: <IF:TAG>content</IF>
 	conditionalPattern *regexp.Regexp
-	options            EngineOptions
+	options            engineOptions
+	// tagRegistry maps tag names to their resolver functions.
+	// Adding a new tag = adding a registry entry.
+	tagRegistry map[string]tagResolver
+	// modifierPipeline is the ordered list of modifier transformation steps.
+	// Each step is tried in order; the first that returns handled=true wins.
+	modifierPipeline []modifierStep
+	// translationResolver handles language-modifier parsing and translated
+	// field lookup, keeping this concern separate from the core engine.
+	translationResolver *translationResolver
 }
 
+// EngineInterface is the contract for template rendering and path validation operations.
+type EngineInterface interface {
+	Execute(template string, ctx *Context) (string, error)
+	ExecuteWithContext(execCtx context.Context, template string, ctx *Context) (string, error)
+	ExecuteWithMaxBytes(tmpl string, ctx *Context, maxBytes int) (string, error)
+	TruncateTitle(title string, maxLen int) string
+	TruncateTitleBytes(title string, maxBytes int) string
+	ValidatePathLength(path string, maxLen int) error
+}
+
+var _ EngineInterface = (*Engine)(nil)
+
+// NewEngine creates a new template engine
 func NewEngine() *Engine {
-	return NewEngineWithOptions(EngineOptions{})
+	return newEngineWithOptions(engineOptions{})
 }
 
+// NewEngineWithOptions creates a template engine with custom limits and
+// translated-field language preferences.
 func NewEngineWithOptions(opts EngineOptions) *Engine {
+	return newEngineWithOptions(opts)
+}
+
+// newEngineWithOptions creates a new template engine with custom limits.
+func newEngineWithOptions(opts engineOptions) *Engine {
 	if opts.MaxTemplateBytes <= 0 {
 		opts.MaxTemplateBytes = DefaultMaxTemplateBytes
 	}
@@ -55,20 +111,31 @@ func NewEngineWithOptions(opts EngineOptions) *Engine {
 	if opts.MaxConditionalDepth <= 0 {
 		opts.MaxConditionalDepth = DefaultMaxConditionalDepth
 	}
+
 	opts.DefaultLanguage = normalizeLanguageCode(opts.DefaultLanguage)
 	opts.FallbackLanguages = normalizeLanguageList(opts.FallbackLanguages)
 
-	return &Engine{
-		tagPattern:         regexp.MustCompile(`(?i)<([A-Z_]+)(?::([^>]+))?>`),
-		conditionalPattern: regexp.MustCompile(`(?i)<IF:([A-Z_]+(?::[a-zA-Z]{2,5})??)>(.*?)(?:<ELSE>(.*?))?</IF>`),
-		options:            opts,
+	eng := &Engine{
+		// Matches: <ID>, <TITLE:50>, <RELEASEDATE:YYYY-MM-DD>, etc.
+		// Case-insensitive to allow <id>, <Id>, <ID>, etc.
+		tagPattern: regexp.MustCompile(`(?i)<([A-Z_]+)(?::([^>]+))?>`),
+		// Matches: <IF:TAG>content</IF> or <IF:TAG>true<ELSE>false</IF>
+		// Case-insensitive to allow <if:tag>, <IF:TAG>, etc.
+		conditionalPattern:  regexp.MustCompile(`(?i)<IF:([A-Z_]+(?::[a-zA-Z]{2,5})?)>(.*?)(?:<ELSE>(.*?))?</IF>`),
+		options:             opts,
+		tagRegistry:         newTagRegistry(),
+		translationResolver: newTranslationResolver(opts),
 	}
+	eng.modifierPipeline = newModifierPipeline(eng)
+	return eng
 }
 
+// Execute processes a template string with the given context
 func (e *Engine) Execute(template string, ctx *Context) (string, error) {
 	return e.ExecuteWithContext(context.Background(), template, ctx)
 }
 
+// ExecuteWithMaxBytes renders tmpl so the rendered output stays within maxBytes, truncating the title when needed.
 func (e *Engine) ExecuteWithMaxBytes(tmpl string, ctx *Context, maxBytes int) (string, error) {
 	sentinel := "\x00MAXBYTES\x00"
 	frameCtx := ctx.Clone()
@@ -82,7 +149,12 @@ func (e *Engine) ExecuteWithMaxBytes(tmpl string, ctx *Context, maxBytes int) (s
 
 	frameBytes := len(frame) - strings.Count(frame, sentinel)*len(sentinel)
 	titleBudget := maxBytes - frameBytes
-	if titleBudget <= 0 || len(ctx.Title) <= titleBudget {
+	if titleBudget <= 0 {
+		return e.Execute(tmpl, ctx)
+	}
+
+	titleBytes := len(ctx.Title)
+	if titleBytes <= titleBudget {
 		return e.Execute(tmpl, ctx)
 	}
 
@@ -94,9 +166,11 @@ func (e *Engine) ExecuteWithMaxBytes(tmpl string, ctx *Context, maxBytes int) (s
 	} else {
 		truncatedCtx.OriginalTitle = e.TruncateTitleBytes(ctx.OriginalTitle, titleBudget)
 	}
+
 	return e.Execute(tmpl, truncatedCtx)
 }
 
+// ExecuteWithContext processes a template string with cancellation support and output limits.
 func (e *Engine) ExecuteWithContext(execCtx context.Context, template string, ctx *Context) (string, error) {
 	if execCtx == nil {
 		return "", fmt.Errorf("execution context cannot be nil")
@@ -111,7 +185,11 @@ func (e *Engine) ExecuteWithContext(execCtx context.Context, template string, ct
 		return "", err
 	}
 
-	result, err := e.processConditionalsWithContext(execCtx, template, ctx)
+	result := template
+
+	// Step 1: Process conditional blocks first
+	var err error
+	result, err = e.processConditionalsWithContext(execCtx, result, ctx)
 	if err != nil {
 		return "", err
 	}
@@ -119,44 +197,63 @@ func (e *Engine) ExecuteWithContext(execCtx context.Context, template string, ct
 		return "", err
 	}
 
+	// Step 2: Process regular tags
+	// Build replacement map to avoid quadratic string operations
 	tagReplacements := make(map[string]string)
 	matches := e.tagPattern.FindAllStringSubmatch(result, -1)
+
 	for i, match := range matches {
 		if i%25 == 0 {
 			if err := e.checkExecutionContext(execCtx); err != nil {
 				return "", err
 			}
 		}
-		fullTag := match[0]
-		tagName := strings.ToUpper(match[1])
+
+		fullTag := match[0]                  // e.g., "<TITLE:50>" or "<title:50>"
+		tagName := strings.ToUpper(match[1]) // Normalize to uppercase: "TITLE"
 		modifier := ""
 		if len(match) > 2 {
-			modifier = match[2]
+			modifier = match[2] // e.g., "50"
 		}
+
+		// Get the value for this tag (only once per unique fullTag)
 		if _, seen := tagReplacements[fullTag]; !seen {
 			value, err := e.resolveTag(tagName, modifier, ctx)
 			if err != nil {
+				// If tag cannot be resolved, use empty string
 				value = ""
 			}
 			tagReplacements[fullTag] = value
 		}
 	}
 
+	// Replace all tags at once using single-pass replacement
 	result = e.tagPattern.ReplaceAllStringFunc(result, func(match string) string {
 		return tagReplacements[match]
 	})
+
 	if err := e.ensureOutputWithinLimit(result); err != nil {
 		return "", err
 	}
+
+	// Note: sanitization is done by caller if needed
+	// We don't sanitize here because templates might be used for folder paths
+	// which need to preserve slashes
+
 	if err := e.checkExecutionContext(execCtx); err != nil {
 		return "", err
 	}
 	return result, nil
 }
 
+// processConditionals processes conditional blocks in the template
 func (e *Engine) processConditionalsWithContext(execCtx context.Context, template string, ctx *Context) (string, error) {
 	result := template
+
+	// Find all conditional blocks
 	matches := e.conditionalPattern.FindAllStringSubmatch(result, -1)
+
+	// Build replacement map to avoid quadratic string operations
 	blockReplacements := make(map[string]string)
 
 	for i, match := range matches {
@@ -165,40 +262,53 @@ func (e *Engine) processConditionalsWithContext(execCtx context.Context, templat
 				return "", err
 			}
 		}
-		fullBlock := match[0]
+		fullBlock := match[0] // e.g., "<IF:SERIES>Series: <SERIES></IF>" or "<if:series>..."
 		rawTag := match[1]
 		tagName := strings.ToUpper(rawTag)
 		modifier := ""
-		if idx := strings.Index(rawTag, ":"); idx != -1 {
+		if idx := strings.Index(rawTag, ":"); idx >= 0 {
 			tagName = strings.ToUpper(rawTag[:idx])
 			modifier = strings.ToLower(rawTag[idx+1:])
 		}
-		trueContent := match[2]
+		trueContent := match[2] // e.g., "Series: <SERIES>"
 		falseContent := ""
 		if len(match) > 3 {
-			falseContent = match[3]
+			falseContent = match[3] // Content after <ELSE>
 		}
+
+		// Check if the tag has a value
 		value, _ := e.resolveTag(tagName, modifier, ctx)
-		if value != "" {
-			blockReplacements[fullBlock] = trueContent
+		hasValue := value != ""
+
+		// Choose which content to use
+		replacement := ""
+		if hasValue {
+			replacement = trueContent
 		} else {
-			blockReplacements[fullBlock] = falseContent
+			replacement = falseContent
 		}
+
+		blockReplacements[fullBlock] = replacement
 	}
 
+	// Replace all conditional blocks at once using single-pass replacement
 	result = e.conditionalPattern.ReplaceAllStringFunc(result, func(match string) string {
 		return blockReplacements[match]
 	})
+
 	if err := e.ensureOutputWithinLimit(result); err != nil {
 		return "", err
 	}
+
 	return result, nil
 }
 
+// Validate checks template shape and size before execution.
 func (e *Engine) Validate(template string) error {
 	if len(template) > e.options.MaxTemplateBytes {
 		return fmt.Errorf("template size %d exceeds maximum %d bytes", len(template), e.options.MaxTemplateBytes)
 	}
+
 	depth := 0
 	tokens := conditionalTokenRegex.FindAllString(template, -1)
 	for _, token := range tokens {
@@ -209,14 +319,17 @@ func (e *Engine) Validate(template string) error {
 			}
 			continue
 		}
+
 		depth--
 		if depth < 0 {
 			return fmt.Errorf("invalid template conditionals: unexpected closing </IF>")
 		}
 	}
+
 	if depth != 0 {
 		return fmt.Errorf("invalid template conditionals: unclosed <IF> block")
 	}
+
 	return nil
 }
 
@@ -234,41 +347,207 @@ func (e *Engine) checkExecutionContext(execCtx context.Context) error {
 	return nil
 }
 
+// resolveTag resolves a tag to its value using the three-step pipeline:
+//  1. Lookup tag in registry → resolve raw value
+//  2. If translatable tag with valid language spec, override with translated value
+//  3. Apply modifier transformation (truncation, case, formatting, etc.)
 func (e *Engine) resolveTag(tagName, modifier string, ctx *Context) (string, error) {
-	parsed := e.parseModifier(tagName, modifier)
-
+	// Actress-family tags (<ACTORS>, <ACTRESSES>, <ACTRESS>, <ACTORNAME>,
+	// <ACTRESSNAME>) support per-tag modifiers — language (JA), name order
+	// (FIRST/LAST), and delimiter (DELIM=x). These need both the context and
+	// the modifier at resolution time, so they bypass the registry/applyModifier
+	// split (which keeps modifier handling context-free).
 	switch tagName {
-	case "ID":
-		value := ctx.ID
-		if modifier != "" {
-			return e.applyCaseModifier(value, modifier), nil
+	case "ACTORS", "ACTRESSES":
+		return e.resolveActressListTag(modifier, ctx), nil
+	case "ACTRESS", "ACTORNAME", "ACTRESSNAME":
+		return e.resolveActressNameTag(modifier, ctx), nil
+	}
+
+	resolver, ok := e.tagRegistry[tagName]
+	if !ok {
+		return "", fmt.Errorf("unknown tag: %s", tagName)
+	}
+
+	value, err := resolver(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	// For translatable tags, check if translation should override the base value
+	parsed := e.translationResolver.parseModifier(tagName, modifier)
+	if e.translationResolver.isTranslatableTag(tagName) && !parsed.rejectedLanguage {
+		translated := e.translationResolver.resolveTranslatedTag(tagName, parsed.languageSpec, ctx)
+		if translated != "" {
+			value = translated
 		}
-		return value, nil
-	case "CONTENTID":
-		value := ctx.ContentID
-		if modifier != "" {
-			return e.applyCaseModifier(value, modifier), nil
+	}
+
+	value = e.applyModifier(value, modifier, tagName, parsed)
+
+	return value, nil
+}
+
+// applyModifier applies post-resolution modifier transformations to a resolved tag value.
+// This separates value resolution from value transformation.
+// modifierStep is a single transformation step in the modifier pipeline.
+// Each step receives the current value, the raw modifier string, the tag name,
+// and the parsed modifier. If the step handles the tag, it returns the
+// transformed value and true; otherwise it returns the original value and false.
+type modifierStep func(value, modifier, tagName string, parsed parsedModifier) (string, bool)
+
+// applyModifier applies post-resolution modifier transformations to a resolved tag value
+// using a pipeline of modifierStep functions. Each step is tried in order; the first
+// step that returns true (handled) short-circuits the pipeline.
+// This separates value resolution from value transformation and keeps each
+// modifier type in sync with parseModifier without a monolithic switch.
+func (e *Engine) applyModifier(value, modifier, tagName string, parsed parsedModifier) string {
+	for _, step := range e.modifierPipeline {
+		if result, handled := step(value, modifier, tagName, parsed); handled {
+			return result
 		}
-		return value, nil
-	case "TITLE":
-		if e.isTranslatableTag(tagName) && !parsed.rejectedLanguage {
-			value := e.resolveTranslatedTag(tagName, parsed.languageSpec, ctx)
-			if parsed.legacyModifier != "" {
-				return e.truncate(value, parsed.legacyModifier), nil
+	}
+	return value
+}
+
+// newModifierPipeline builds the ordered pipeline of modifier steps.
+// The order matters: list-sentinel resolution must run first (even with empty modifier),
+// then case-modifier tags, then translatable truncation, then date formatting, then padding.
+func newModifierPipeline(e *Engine) []modifierStep {
+	return []modifierStep{
+		// Step 1: List-type tags — sentinel delimiter resolution.
+		func(value, modifier, tagName string, _ parsedModifier) (string, bool) {
+			switch tagName {
+			case "ACTORS", "ACTRESSES", "GENRES":
+				if strings.Contains(value, listDelimiterSentinel) {
+					delimiter := ", "
+					if modifier != "" {
+						delimiter = modifier
+					}
+					return strings.ReplaceAll(value, listDelimiterSentinel, delimiter), true
+				}
 			}
-			return value, nil
+			return value, false
+		},
+
+		// Step 2: Short-circuit when no modifier is present (after list sentinel check).
+		func(value, modifier, _ string, _ parsedModifier) (string, bool) {
+			if modifier == "" {
+				return value, true
+			}
+			return value, false
+		},
+
+		// Step 3: Case-modifier tags (ID, CONTENTID).
+		func(value, modifier, tagName string, _ parsedModifier) (string, bool) {
+			switch tagName {
+			case "ID", "CONTENTID":
+				return e.applyCaseModifier(value, modifier), true
+			}
+			return value, false
+		},
+
+		// Step 4: Translatable tags — truncation from parsed modifier or numeric fallback.
+		func(value, modifier, tagName string, parsed parsedModifier) (string, bool) {
+			if e.translationResolver.isTranslatableTag(tagName) {
+				if parsed.truncationModifier != "" {
+					return e.truncate(value, parsed.truncationModifier), true
+				}
+				// For TITLE with a plain numeric modifier (not a language spec), truncate
+				if tagName == "TITLE" && e.translationResolver.isNumericModifier(modifier) {
+					return e.truncate(value, modifier), true
+				}
+			}
+			return value, false
+		},
+
+		// Step 5: RELEASEDATE format modifier.
+		func(value, modifier, tagName string, _ parsedModifier) (string, bool) {
+			if tagName == "RELEASEDATE" && value != "" {
+				return e.formatDateFromString(value, modifier), true
+			}
+			return value, false
+		},
+
+		// Step 6: Padding modifiers for numeric fields (INDEX, PART, DISC).
+		func(value, modifier, tagName string, _ parsedModifier) (string, bool) {
+			switch tagName {
+			case "INDEX", "PART", "DISC":
+				if modifier != "" && value != "" {
+					// Preserve original behavior: use modifier as format width even if invalid
+					// (e.g., <INDEX:xyz> with Index=5 produces "5yzd" via fmt.Sprintf("%0xyzd", 5))
+					format := fmt.Sprintf("%%0%sd", modifier)
+					num, parseErr := strconv.Atoi(value)
+					if parseErr == nil {
+						return fmt.Sprintf(format, num), true
+					}
+				}
+			}
+			return value, false
+		},
+	}
+}
+
+// formatDateFromString formats a date string (expected "2006-01-02") according to a pattern.
+func (e *Engine) formatDateFromString(dateStr, pattern string) string {
+	t, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return dateStr // Return as-is if parsing fails
+	}
+	return e.formatDate(&t, pattern)
+}
+
+// newTagRegistry builds the map of tag names to resolver functions.
+// Each resolver extracts the raw value from context; modifier processing
+// is handled separately by applyModifier.
+// newSimpleTagRegistry returns direct-field and translatable tags.
+func newSimpleTagRegistry() map[string]tagResolver {
+	registry := make(map[string]tagResolver)
+
+	registry["ID"] = func(ctx *Context) (string, error) { return ctx.ID, nil }
+	registry["CONTENTID"] = func(ctx *Context) (string, error) { return ctx.ContentID, nil }
+	registry["FILENAME"] = func(ctx *Context) (string, error) {
+		name := ctx.OriginalFilename
+		if ext := filepath.Ext(name); ext != "" && len(ext) < len(name) {
+			name = strings.TrimSuffix(name, ext)
 		}
-		value := ctx.Title
-		if modifier != "" {
-			return e.truncate(value, modifier), nil
-		}
-		return value, nil
-	case "ORIGINALTITLE":
-		if e.isTranslatableTag(tagName) && !parsed.rejectedLanguage {
-			return e.resolveTranslatedTag(tagName, parsed.languageSpec, ctx), nil
-		}
-		return ctx.OriginalTitle, nil
-	case "YEAR":
+		return name, nil
+	}
+	registry["FILENAME_EXT"] = func(ctx *Context) (string, error) { return ctx.OriginalFilename, nil }
+	registry["FILENAMEEXT"] = registry["FILENAME_EXT"]
+	registry["SOURCEPATH"] = func(ctx *Context) (string, error) { return ctx.SourcePath, nil }
+	registry["SOURCEDIR"] = func(ctx *Context) (string, error) { return ctx.SourceDir, nil }
+	registry["SOURCEFOLDER"] = func(ctx *Context) (string, error) { return ctx.SourceFolder, nil }
+	registry["SOURCEPARENT"] = func(ctx *Context) (string, error) { return ctx.SourceParent, nil }
+	registry["SOURCEFILE"] = func(ctx *Context) (string, error) { return ctx.SourceFile, nil }
+	registry["SOURCEFILENAME"] = func(ctx *Context) (string, error) { return ctx.SourceFilename, nil }
+	registry["SOURCEEXT"] = func(ctx *Context) (string, error) { return ctx.SourceExtension, nil }
+	registry["SOURCEEXTENSION"] = registry["SOURCEEXT"]
+	registry["FIRSTNAME"] = func(ctx *Context) (string, error) { return ctx.FirstName, nil }
+	registry["LASTNAME"] = func(ctx *Context) (string, error) { return ctx.LastName, nil }
+	registry["PARTSUFFIX"] = func(ctx *Context) (string, error) { return ctx.PartSuffix, nil }
+
+	// Translatable tags — resolved via resolveTranslatedTag with parsed language
+	registry["TITLE"] = func(ctx *Context) (string, error) {
+		return ctx.Title, nil // applyModifier handles translation when engine has language config
+	}
+	registry["ORIGINALTITLE"] = func(ctx *Context) (string, error) { return ctx.OriginalTitle, nil }
+	registry["DIRECTOR"] = func(ctx *Context) (string, error) { return ctx.Director, nil }
+	registry["DESCRIPTION"] = func(ctx *Context) (string, error) { return ctx.Description, nil }
+	registry["STUDIO"] = func(ctx *Context) (string, error) { return ctx.Maker, nil }
+	registry["MAKER"] = func(ctx *Context) (string, error) { return ctx.Maker, nil }
+	registry["LABEL"] = func(ctx *Context) (string, error) { return ctx.Label, nil }
+	registry["SERIES"] = func(ctx *Context) (string, error) { return ctx.Series, nil }
+	registry["SET"] = func(ctx *Context) (string, error) { return ctx.Series, nil }
+
+	return registry
+}
+
+// newComputedTagRegistry returns computed-value tags (YEAR, RELEASEDATE, etc.).
+func newComputedTagRegistry() map[string]tagResolver {
+	registry := make(map[string]tagResolver)
+
+	registry["YEAR"] = func(ctx *Context) (string, error) {
 		if ctx.ReleaseDate != nil {
 			return fmt.Sprintf("%d", ctx.ReleaseDate.Year()), nil
 		}
@@ -276,45 +555,75 @@ func (e *Engine) resolveTag(tagName, modifier string, ctx *Context) (string, err
 			return fmt.Sprintf("%d", ctx.ReleaseYear), nil
 		}
 		return "", nil
-	case "RELEASEDATE":
+	}
+
+	registry["RELEASEDATE"] = func(ctx *Context) (string, error) {
 		if ctx.ReleaseDate != nil {
-			if modifier != "" {
-				return e.formatDate(ctx.ReleaseDate, modifier), nil
-			}
 			return ctx.ReleaseDate.Format("2006-01-02"), nil
 		}
 		return "", nil
-	case "RUNTIME":
+	}
+
+	registry["RUNTIME"] = func(ctx *Context) (string, error) {
 		if ctx.Runtime > 0 {
 			return fmt.Sprintf("%d", ctx.Runtime), nil
 		}
 		return "", nil
-	case "DIRECTOR":
-		if e.isTranslatableTag(tagName) && !parsed.rejectedLanguage {
-			return e.resolveTranslatedTag(tagName, parsed.languageSpec, ctx), nil
+	}
+
+	registry["RATING"] = func(ctx *Context) (string, error) {
+		if ctx.Rating > 0 {
+			return fmt.Sprintf("%.1f", ctx.Rating), nil
 		}
-		return ctx.Director, nil
-	case "DESCRIPTION":
-		if e.isTranslatableTag(tagName) && !parsed.rejectedLanguage {
-			return e.resolveTranslatedTag(tagName, parsed.languageSpec, ctx), nil
+		return "", nil
+	}
+
+	registry["MULTIPART"] = func(ctx *Context) (string, error) {
+		if ctx.IsMultiPart {
+			return "true", nil
 		}
-		return ctx.Description, nil
-	case "STUDIO", "MAKER":
-		if e.isTranslatableTag(tagName) && !parsed.rejectedLanguage {
-			return e.resolveTranslatedTag(tagName, parsed.languageSpec, ctx), nil
+		return "", nil
+	}
+
+	// Numeric tags with padding support
+	registry["INDEX"] = func(ctx *Context) (string, error) {
+		if ctx.Index > 0 {
+			return fmt.Sprintf("%d", ctx.Index), nil
 		}
-		return ctx.Maker, nil
-	case "LABEL":
-		if e.isTranslatableTag(tagName) && !parsed.rejectedLanguage {
-			return e.resolveTranslatedTag(tagName, parsed.languageSpec, ctx), nil
+		return "", nil
+	}
+
+	registry["PART"] = func(ctx *Context) (string, error) {
+		if ctx.PartNumber > 0 {
+			return fmt.Sprintf("%d", ctx.PartNumber), nil
 		}
-		return ctx.Label, nil
-	case "SERIES", "SET":
-		if e.isTranslatableTag(tagName) && !parsed.rejectedLanguage {
-			return e.resolveTranslatedTag(tagName, parsed.languageSpec, ctx), nil
+		return "", nil
+	}
+	registry["DISC"] = registry["PART"]
+
+	// Media info tags
+	registry["RESOLUTION"] = func(ctx *Context) (string, error) {
+		info := ctx.GetMediaInfo()
+		if info != nil {
+			return info.GetResolution(), nil
 		}
-		return ctx.Series, nil
-	case "ACTORS", "ACTRESSES":
+		return "", nil
+	}
+	registry["VR"] = func(ctx *Context) (string, error) {
+		if ctx.IsVR() {
+			return "true", nil
+		}
+		return "", nil
+	}
+
+	return registry
+}
+
+// newListTagRegistry returns list-type tags (ACTORS, GENRES, etc.).
+func newListTagRegistry() map[string]tagResolver {
+	registry := make(map[string]tagResolver)
+
+	registry["ACTORS"] = func(ctx *Context) (string, error) {
 		if len(ctx.Actresses) > 0 {
 			if ctx.GroupActress && len(ctx.Actresses) > 1 {
 				groupName := ctx.GroupActressName
@@ -323,22 +632,28 @@ func (e *Engine) resolveTag(tagName, modifier string, ctx *Context) (string, err
 				}
 				return groupName, nil
 			}
-			delimiter := ", "
-			if modifier != "" {
-				delimiter = modifier
-			}
-			if len(e.languageCandidates("", ctx)) > 0 {
-				return e.resolveActressNamesWithDelimiter(delimiter, ctx), nil
-			}
-			return strings.Join(ctx.formatActressNames(), delimiter), nil
+			names := ctx.formatActressNames()
+			return strings.Join(names, listDelimiterSentinel), nil
 		}
 		return "", nil
-	case "ACTRESS", "ACTORNAME", "ACTRESSNAME":
-		if len(e.languageCandidates("", ctx)) > 0 {
-			if name := e.resolveActressName(0, ctx); name != "" {
-				return name, nil
-			}
+	}
+	registry["ACTRESSES"] = registry["ACTORS"]
+
+	registry["GENRES"] = func(ctx *Context) (string, error) {
+		if len(ctx.Genres) > 0 {
+			return strings.Join(ctx.Genres, listDelimiterSentinel), nil
 		}
+		return "", nil
+	}
+
+	return registry
+}
+
+// newActressTagRegistry returns actress name resolution tags.
+func newActressTagRegistry() map[string]tagResolver {
+	registry := make(map[string]tagResolver)
+
+	actressNameResolver := func(ctx *Context) (string, error) {
 		if ctx.ActressName != "" {
 			return ctx.ActressName, nil
 		}
@@ -349,90 +664,44 @@ func (e *Engine) resolveTag(tagName, modifier string, ctx *Context) (string, err
 			return ctx.Actresses[0], nil
 		}
 		return "", nil
-	case "GENRES":
-		if len(ctx.Genres) > 0 {
-			delimiter := ", "
-			if modifier != "" {
-				delimiter = modifier
-			}
-			return strings.Join(ctx.Genres, delimiter), nil
-		}
-		return "", nil
-	case "FILENAME":
-		if ctx.OriginalFilename != "" {
-			return ctx.OriginalFilename, nil
-		}
-		return ctx.SourceFilename, nil
-	case "SOURCEPATH":
-		return ctx.SourcePath, nil
-	case "SOURCEDIR":
-		return ctx.SourceDir, nil
-	case "SOURCEFOLDER":
-		return ctx.SourceFolder, nil
-	case "SOURCEPARENT":
-		return ctx.SourceParent, nil
-	case "SOURCEFILE":
-		return ctx.SourceFile, nil
-	case "SOURCEFILENAME":
-		return ctx.SourceFilename, nil
-	case "SOURCEEXT", "SOURCEEXTENSION":
-		return ctx.SourceExtension, nil
-	case "INDEX":
-		if ctx.Index > 0 {
-			if modifier != "" {
-				format := fmt.Sprintf("%%0%sd", modifier)
-				return fmt.Sprintf(format, ctx.Index), nil
-			}
-			return fmt.Sprintf("%d", ctx.Index), nil
-		}
-		return "", nil
-	case "FIRSTNAME":
-		return ctx.FirstName, nil
-	case "LASTNAME":
-		return ctx.LastName, nil
-	case "RESOLUTION":
-		info := ctx.GetMediaInfo()
-		if info != nil {
-			return info.GetResolution(), nil
-		}
-		return "", nil
-	case "PART", "DISC":
-		if ctx.PartNumber > 0 {
-			if modifier != "" {
-				format := fmt.Sprintf("%%0%sd", modifier)
-				return fmt.Sprintf(format, ctx.PartNumber), nil
-			}
-			return fmt.Sprintf("%d", ctx.PartNumber), nil
-		}
-		return "", nil
-	case "PARTSUFFIX":
-		return ctx.PartSuffix, nil
-	case "RATING":
-		if ctx.Rating > 0 {
-			return fmt.Sprintf("%.1f", ctx.Rating), nil
-		}
-		return "", nil
-	case "MULTIPART":
-		if ctx.IsMultiPart {
-			return "true", nil
-		}
-		return "", nil
-	case "VR":
-		if ctx.IsVR() {
-			return "true", nil
-		}
-		return "", nil
-	default:
-		return "", fmt.Errorf("unknown tag: %s", tagName)
 	}
+	registry["ACTRESS"] = actressNameResolver
+	registry["ACTORNAME"] = actressNameResolver
+	registry["ACTRESSNAME"] = actressNameResolver
+
+	return registry
 }
 
+// newTagRegistry builds the map of tag names to resolver functions by merging
+// the four sub-registries.
+func newTagRegistry() map[string]tagResolver {
+	registry := make(map[string]tagResolver)
+	for k, v := range newSimpleTagRegistry() {
+		registry[k] = v
+	}
+	for k, v := range newComputedTagRegistry() {
+		registry[k] = v
+	}
+	for k, v := range newListTagRegistry() {
+		registry[k] = v
+	}
+	for k, v := range newActressTagRegistry() {
+		registry[k] = v
+	}
+	return registry
+}
+
+// TruncateTitle smartly truncates a title to maxLen characters
 func (e *Engine) TruncateTitle(title string, maxLen int) string {
 	if maxLen <= 0 || len(title) <= maxLen {
 		return title
 	}
+
 	marker := "..."
-	if e.containsCJK(title) {
+
+	isCJK := e.containsCJK(title)
+
+	if isCJK {
 		if maxLen > 3 {
 			runes := []rune(title)
 			if len(runes) > maxLen-3 {
@@ -441,71 +710,102 @@ func (e *Engine) TruncateTitle(title string, maxLen int) string {
 		}
 		return title
 	}
+
 	runes := []rune(title)
 	if maxLen > 3 {
 		if len(runes) > maxLen-3 {
-			truncated := string(runes[:maxLen-3])
-			if lastSpace := strings.LastIndex(truncated, " "); lastSpace > 0 {
-				return truncated[:lastSpace] + marker
+			truncated := runes[:maxLen-3]
+			truncStr := string(truncated)
+			lastSpace := strings.LastIndex(truncStr, " ")
+			if lastSpace > 0 {
+				return truncStr[:lastSpace] + marker
 			}
-			return truncated + marker
+			return truncStr + marker
 		}
 		return title
 	}
+
+	// maxLen <= 3: truncate at rune boundary
 	if len(runes) > maxLen {
 		return string(runes[:maxLen])
 	}
 	return title
 }
 
+// TruncateTitleBytes smartly truncates a title to fit within maxBytes (byte length)
+// This is needed because file paths have byte length limits, not rune count limits
 func (e *Engine) TruncateTitleBytes(title string, maxBytes int) string {
+	// Handle edge cases
 	if maxBytes <= 0 {
 		return ""
 	}
 	if len(title) <= maxBytes {
 		return title
 	}
+
 	marker := "..."
 	markerReserve := 3
+
+	// Preserve legacy budget behavior by reserving 3 bytes for truncation marker.
+	// This keeps truncation cut points stable while changing only visible suffix.
 	if maxBytes <= markerReserve {
+		// Return as many bytes as we can fit (no marker)
 		runes := []rune(title)
 		currentBytes := 0
 		for i, r := range runes {
 			runeSize := len(string(r))
 			if currentBytes+runeSize > maxBytes {
 				if i == 0 {
-					return ""
+					return "" // Can't fit even one rune
 				}
 				return string(runes[:i])
 			}
 			currentBytes += runeSize
 		}
-		return title
+		return title // Shouldn't reach here
 	}
+
+	// Reserve space for marker
 	budget := maxBytes - markerReserve
 	runes := []rune(title)
 	currentBytes := 0
 	endIdx := 0
+
+	// Find the cut point within budget
 	for i, r := range runes {
 		runeSize := len(string(r))
 		if currentBytes+runeSize > budget {
 			break
 		}
 		currentBytes += runeSize
-		endIdx = i + 1
+		endIdx = i + 1 // +1 because we want slice [:endIdx]
 	}
+
 	if endIdx == 0 {
+		// Can't fit even one rune in budget
 		return marker
 	}
+
+	// Build the truncated string
 	truncated := string(runes[:endIdx])
+
+	// For non-CJK text, try to break at word boundary
 	if !e.containsCJK(title) {
-		if lastSpacePos := strings.LastIndex(truncated, " "); lastSpacePos > 0 {
+		// Find the last space in the truncated string
+		lastSpacePos := strings.LastIndex(truncated, " ")
+		if lastSpacePos > 0 {
+			// Use word boundary
 			truncated = truncated[:lastSpacePos]
 		}
 	}
-	return strings.TrimRight(truncated, " ") + marker
+
+	// Always trim trailing spaces before adding marker
+	truncated = strings.TrimRight(truncated, " ")
+
+	return truncated + marker
 }
 
+// ValidatePathLength returns an error if the length of path exceeds maxLen.
 func (e *Engine) ValidatePathLength(path string, maxLen int) error {
 	if maxLen <= 0 {
 		return nil
@@ -516,19 +816,29 @@ func (e *Engine) ValidatePathLength(path string, maxLen int) error {
 	return nil
 }
 
+// containsCJK checks if a string contains CJK characters
 func (e *Engine) containsCJK(s string) bool {
+	// Check for CJK characters (Chinese, Japanese, Korean)
+	// Uses package-level cached regex for performance
 	return cjkRegex.MatchString(s)
 }
 
+// Deprecated: Use TruncateTitle directly instead of truncate.
+// truncate limits a string to maxLen characters, delegating to TruncateTitle.
 func (e *Engine) truncate(s string, maxLenStr string) string {
-	maxLen, err := strconv.Atoi(maxLenStr)
+	var maxLen int
+	_, err := fmt.Sscanf(maxLenStr, "%d", &maxLen)
 	if err != nil || maxLen <= 0 {
 		return s
 	}
+
+	// Use the new smart truncation
 	return e.TruncateTitle(s, maxLen)
 }
 
+// formatDate formats a date according to a pattern
 func (e *Engine) formatDate(date *time.Time, pattern string) string {
+	// Map common patterns to Go's time format
 	pattern = strings.ReplaceAll(pattern, "YYYY", "2006")
 	pattern = strings.ReplaceAll(pattern, "YY", "06")
 	pattern = strings.ReplaceAll(pattern, "MM", "01")
@@ -536,9 +846,11 @@ func (e *Engine) formatDate(date *time.Time, pattern string) string {
 	pattern = strings.ReplaceAll(pattern, "HH", "15")
 	pattern = strings.ReplaceAll(pattern, "mm", "04")
 	pattern = strings.ReplaceAll(pattern, "ss", "05")
+
 	return date.Format(pattern)
 }
 
+// applyCaseModifier applies case conversion modifiers (UPPERCASE, LOWERCASE)
 func (e *Engine) applyCaseModifier(value, modifier string) string {
 	switch strings.ToUpper(modifier) {
 	case "UPPERCASE", "UPPER":
@@ -546,252 +858,267 @@ func (e *Engine) applyCaseModifier(value, modifier string) string {
 	case "LOWERCASE", "LOWER":
 		return strings.ToLower(value)
 	default:
+		// Unknown modifier, return value as-is
 		return value
 	}
 }
 
-func normalizeLanguageList(langs []string) []string {
-	if len(langs) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(langs))
-	seen := map[string]struct{}{}
-	for _, lang := range langs {
-		norm := normalizeLanguageCode(lang)
-		if norm == "" {
-			continue
-		}
-		if _, ok := seen[norm]; ok {
-			continue
-		}
-		seen[norm] = struct{}{}
-		out = append(out, norm)
-	}
-	return out
-}
-
-func (e *Engine) parseModifier(tagName, modifier string) parsedModifier {
-	if modifier == "" {
-		return parsedModifier{}
-	}
-	if normalized := normalizeLanguageCode(modifier); normalized != "" {
-		return parsedModifier{isLanguage: true, languageSpec: normalized}
-	}
-	if strings.Contains(modifier, "|") {
-		parts := strings.Split(modifier, "|")
-		valid := true
-		for _, part := range parts {
-			if normalizeLanguageCode(part) == "" {
-				valid = false
-				break
-			}
-		}
-		if valid {
-			return parsedModifier{isLanguage: true, languageSpec: modifier}
-		}
-	}
-	if tagName == "TITLE" && e.isNumericModifier(modifier) {
-		return parsedModifier{legacyModifier: modifier}
-	}
-	if e.isTranslatableTag(tagName) && e.looksLikeLanguageSpec(modifier) {
-		return parsedModifier{rejectedLanguage: true}
-	}
-	return parsedModifier{legacyModifier: modifier}
-}
-
-func (e *Engine) isNumericModifier(modifier string) bool {
-	if modifier == "" {
-		return false
-	}
-	n, err := strconv.Atoi(modifier)
-	return err == nil && n > 0
-}
-
-func (e *Engine) looksLikeLanguageSpec(modifier string) bool {
-	if modifier == "" {
-		return false
-	}
-	if strings.Contains(modifier, "|") {
-		return true
-	}
-	trimmed := strings.TrimSpace(modifier)
-	if idx := strings.IndexAny(trimmed, "-_"); idx > 0 {
-		prefix := trimmed[:idx]
-		if len(prefix) >= 2 && len(prefix) <= 3 {
-			for _, r := range strings.ToLower(prefix) {
-				if r < 'a' || r > 'z' {
-					return false
-				}
-			}
-			return true
-		}
-		return false
-	}
-	lower := strings.ToLower(trimmed)
-	if len(lower) >= 2 && len(lower) <= 3 {
-		for _, r := range lower {
-			if r < 'a' || r > 'z' {
-				return false
-			}
-		}
-		return true
-	}
-	return false
-}
-
-func (e *Engine) isTranslatableTag(tagName string) bool {
-	switch tagName {
-	case "TITLE", "ORIGINALTITLE", "DIRECTOR", "MAKER", "STUDIO", "LABEL", "SERIES", "SET", "DESCRIPTION":
-		return true
-	default:
-		return false
-	}
-}
-
-func (e *Engine) languageCandidates(explicitLang string, ctx *Context) []string {
-	var candidates []string
-	seen := map[string]struct{}{}
-	addCandidate := func(lang string) {
-		lang = normalizeLanguageCode(lang)
-		if lang == "" {
-			return
-		}
-		if _, exists := seen[lang]; exists {
-			return
-		}
-		seen[lang] = struct{}{}
-		candidates = append(candidates, lang)
-	}
-	if explicitLang != "" {
-		for _, lang := range strings.Split(explicitLang, "|") {
-			addCandidate(lang)
-		}
-	}
-	if ctx.DefaultLanguage != "" {
-		addCandidate(ctx.DefaultLanguage)
-	}
-	if e.options.DefaultLanguage != "" {
-		addCandidate(e.options.DefaultLanguage)
-	}
-	for _, lang := range e.options.FallbackLanguages {
-		addCandidate(lang)
-	}
-	return candidates
-}
-
-func (e *Engine) resolveTranslatedTag(tagName, explicitLang string, ctx *Context) string {
-	for _, lang := range e.languageCandidates(explicitLang, ctx) {
-		if value := e.translationFieldValue(tagName, lang, ctx); value != "" {
-			return value
-		}
-	}
-	return e.resolveBaseTag(tagName, ctx)
-}
-
-// resolveActressNamesWithDelimiter joins actress names resolved via the global
-// translation languages (no explicit per-tag language spec is supported).
-func (e *Engine) resolveActressNamesWithDelimiter(delimiter string, ctx *Context) string {
+// resolveActressListTag resolves <ACTORS>/<ACTRESSES> with modifier-driven
+// behavior: per-tag JA language preference, FIRST/LAST name order, and the
+// DELIM= keyword for the joiner. It also honours GroupActress substitution
+// (multiple -> @Group, empty/unknown -> @Unknown).
+func (e *Engine) resolveActressListTag(modifier string, ctx *Context) string {
 	if len(ctx.Actresses) == 0 && len(ctx.ActressDetails) == 0 {
+		// No actresses at all. Under GroupActress, mirror the original
+		// PowerShell javinizer which substitutes @Unknown when the actress
+		// list is empty (so folder naming stays "@Unknown" rather than
+		// blank). Without GroupActress, return empty.
+		if ctx.GroupActress {
+			return resolveGroupUnknownName(ctx.GroupUnknownActressName)
+		}
 		return ""
 	}
-	names := make([]string, 0, max(len(ctx.Actresses), len(ctx.ActressDetails)))
-	count := len(ctx.ActressDetails)
-	if len(ctx.Actresses) > count {
-		count = len(ctx.Actresses)
+
+	pm := e.parseActressModifier(modifier)
+	preferJa := ctx.ActressLanguageJa
+	if pm.isLanguage {
+		preferJa = languageSpecPrefersJapanese(pm.languageSpec)
 	}
-	for i := 0; i < count; i++ {
-		if name := e.resolveActressName(i, ctx); name != "" {
-			names = append(names, name)
+	names := e.resolveTranslatedActressNames(pm.languageSpec, ctx)
+	if len(names) == 0 {
+		names = ctx.formatActressNamesLang(preferJa, pm.firstNameOrder)
+	}
+
+	if ctx.GroupActress {
+		if len(names) > 1 {
+			groupName := ctx.GroupActressName
+			if groupName == "" {
+				groupName = "@Group"
+			}
+			return groupName
 		}
+		// Single actress: mirror the original javinizer which substitutes
+		// @Unknown when the only name is unknown or empty.
+		if len(names) == 0 || isUnknownActressName(names[0]) {
+			return resolveGroupUnknownName(ctx.GroupUnknownActressName)
+		}
+		return names[0]
+	}
+
+	// Join delimiter precedence (main's coherent ACTORS design):
+	//  1. Tag-level DELIM= modifier (explicit, may be empty: <ACTORS:DELIM=>).
+	//  2. ctx.ActressDelimiter (config-level actress_delimiter).
+	//  3. Default ", ".
+	// A bare non-keyword modifier (e.g. <ACTORS:|>) does NOT act as a
+	// delimiter for ACTORS — use <ACTORS:DELIM=|> instead. This avoids
+	// ambiguity with the JA/FIRST keyword modifiers. (GENRES still supports
+	// bare-modifier-as-delimiter via the registry sentinel pipeline.)
+	delimiter := ctx.ActressDelimiter
+	if delimiter == "" {
+		delimiter = ", "
+	}
+	if pm.delimSet {
+		delimiter = pm.delimiter
+	} else if strings.Contains(modifier, "|") && strings.TrimSpace(modifier) != modifier &&
+		!pm.isLanguage && pm.firstNameOrder == nil {
+		// Preserve the custom branch's historical spaced delimiter form
+		// (<ACTORS: | >) without undoing main's deliberate hard break for
+		// the ambiguous compact form (<ACTORS:|>).
+		delimiter = modifier
 	}
 	return strings.Join(names, delimiter)
 }
 
-func (e *Engine) resolveActressName(index int, ctx *Context) string {
-	primaryLang := ""
-	for _, lang := range e.languageCandidates("", ctx) {
-		if primaryLang == "" {
-			primaryLang = lang
-		}
-		if name := e.translatedActressName(lang, index, ctx); name != "" {
-			return name
-		}
+// resolveActressNameTag resolves the single-name actress tags
+// <ACTRESS>, <ACTORNAME>, <ACTRESSNAME> with the same modifier handling as
+// resolveActressListTag (JA / FIRST / LAST) applied to the first actress.
+func (e *Engine) resolveActressNameTag(modifier string, ctx *Context) string {
+	if ctx.ActressName != "" {
+		return ctx.ActressName
 	}
-	if index < len(ctx.ActressDetails) {
-		detail := ctx.ActressDetails[index]
-		// Language-shaped name (JapaneseName for ja, CJK rejection for en)
-		if name := ctx.formatActressNameForLanguage(detail, primaryLang); name != "" {
-			return name
-		}
-		if rawName := ctx.formatActressName(detail); rawName != "" {
-			return rawName
-		}
+	pm := e.parseActressModifier(modifier)
+	if names := e.resolveTranslatedActressNames(pm.languageSpec, ctx); len(names) > 0 {
+		return names[0]
 	}
-	// Fall back to raw Actresses slice (covers case where ActressDetails is absent)
-	if index < len(ctx.Actresses) {
-		if rawName := ctx.Actresses[index]; rawName != "" {
-			return rawName
-		}
+	preferJa := ctx.ActressLanguageJa
+	if pm.isLanguage {
+		preferJa = languageSpecPrefersJapanese(pm.languageSpec)
+	}
+	if len(ctx.ActressDetails) > 0 {
+		return ctx.formatActressNameLang(ctx.ActressDetails[0], preferJa, pm.firstNameOrder)
+	}
+	if len(ctx.Actresses) > 0 {
+		return ctx.Actresses[0]
 	}
 	return ""
 }
 
-func (e *Engine) translatedActressName(lang string, index int, ctx *Context) string {
-	if ctx.Translations == nil {
-		return ""
+func (e *Engine) resolveTranslatedActressNames(explicitLang string, ctx *Context) []string {
+	for _, lang := range e.translationResolver.languageCandidates(explicitLang, ctx) {
+		translation, ok := ctx.Translations[lang]
+		if !ok || len(translation.Actresses) == 0 {
+			continue
+		}
+		names := make([]string, 0, len(translation.Actresses))
+		for _, name := range translation.Actresses {
+			if name = strings.TrimSpace(name); name != "" {
+				names = append(names, name)
+			}
+		}
+		if len(names) > 0 {
+			return names
+		}
 	}
-	translation, ok := ctx.Translations[lang]
-	if !ok || index < 0 || index >= len(translation.Actresses) {
-		return ""
-	}
-	return strings.TrimSpace(translation.Actresses[index])
+	return nil
 }
 
-func (e *Engine) resolveBaseTag(tagName string, ctx *Context) string {
-	switch tagName {
-	case "TITLE":
-		return ctx.Title
-	case "ORIGINALTITLE":
-		return ctx.OriginalTitle
-	case "DIRECTOR":
-		return ctx.Director
-	case "MAKER", "STUDIO":
-		return ctx.Maker
-	case "LABEL":
-		return ctx.Label
-	case "SERIES", "SET":
-		return ctx.Series
-	case "DESCRIPTION":
-		return ctx.Description
-	default:
-		return ""
+// parseActressModifier parses a modifier on the actress tags (<ACTORS>,
+// <ACTRESS>, <ACTORNAME>). It supports three kinds of components combined
+// with a comma:
+//   - Delimiter: DELIM=<value> — explicit joiner between names. Captures the
+//     remainder of the modifier literally (may contain commas).
+//   - Language spec: JA, EN, JA|EN, ...
+//   - Name order: FIRST|FIRSTNAMEORDER | LAST|LASTNAMEORDER
+//
+// Hard break: the legacy implicit-delimiter form <ACTORS:|> is no longer
+// supported. Use <ACTORS:DELIM=|> instead. When the modifier has no
+// recognized keyword and no DELIM= prefix, parseActressModifier returns an
+// empty parsedModifier and the resolver falls back to ctx.ActressDelimiter
+// (the configured actress_delimiter, default ", ").
+func (e *Engine) parseActressModifier(modifier string) parsedModifier {
+	if modifier == "" {
+		return parsedModifier{}
 	}
+
+	// Extract DELIM=value first so the value can freely contain commas.
+	// The keyword is case-insensitive but the value itself is preserved as-is.
+	var delimited string
+	delimSet := false
+	prefix := modifier
+	if idx := strings.Index(strings.ToUpper(modifier), "DELIM="); idx >= 0 {
+		delimSet = true
+		delimited = modifier[idx+len("DELIM="):]
+		prefix = modifier[:idx]
+		// Trim any trailing comma in prefix so the keyword-split step doesn't
+		// see an empty trailing element.
+		prefix = strings.TrimRight(prefix, ",")
+	}
+
+	// Split the prefix on commas into keyword components.
+	var parts []string
+	if prefix != "" {
+		if strings.Contains(prefix, ",") {
+			parts = strings.Split(prefix, ",")
+		} else {
+			parts = []string{prefix}
+		}
+	}
+
+	var (
+		languageSpec   string
+		firstNameOrder *bool
+		sawKeyword     bool
+	)
+	for _, raw := range parts {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			continue
+		}
+		if order := parseActressOrderModifier(trimmed); order != nil {
+			firstNameOrder = order
+			sawKeyword = true
+			continue
+		}
+		if e.translationResolver.looksLikeLanguageSpec(trimmed) {
+			// Accept the component; preserve the original (single code or chain).
+			normalized := normalizeLanguageCode(trimmed)
+			if normalized == "" {
+				// try as fallback chain
+				chainParts := strings.Split(trimmed, "|")
+				valid := true
+				for _, p := range chainParts {
+					if normalizeLanguageCode(p) == "" {
+						valid = false
+						break
+					}
+				}
+				if !valid {
+					continue
+				}
+				normalized = trimmed
+			}
+			if normalized != "" {
+				if languageSpec != "" {
+					languageSpec = languageSpec + "|" + normalized
+				} else {
+					languageSpec = normalized
+				}
+				sawKeyword = true
+			}
+		}
+	}
+
+	// No DELIM= and no keyword: hard break — return empty so the resolver
+	// falls back to ctx.ActressDelimiter.
+	if !sawKeyword && !delimSet {
+		return parsedModifier{}
+	}
+
+	pm := parsedModifier{firstNameOrder: firstNameOrder, delimSet: delimSet}
+	if languageSpec != "" {
+		pm.isLanguage = true
+		pm.languageSpec = languageSpec
+	}
+	pm.delimiter = delimited
+	return pm
 }
 
-func (e *Engine) translationFieldValue(tagName, lang string, ctx *Context) string {
-	if ctx.Translations == nil {
-		return ""
+// parseActressOrderModifier recognizes name-order keywords for the
+// <ACTORS>/<ACTRESS>/<ACTORNAME> tags. Returns nil if the token is not an
+// order modifier.
+func parseActressOrderModifier(part string) *bool {
+	switch strings.ToLower(strings.TrimSpace(part)) {
+	case "first", "firstnameorder":
+		b := true
+		return &b
+	case "last", "lastnameorder":
+		b := false
+		return &b
 	}
-	translation, ok := ctx.Translations[lang]
-	if !ok {
-		return ""
+	return nil
+}
+
+// languageSpecPrefersJapanese reports whether the given language spec (which
+// may be a single code like "ja" or a fallback chain like "ja|en") includes
+// Japanese. Used by the <ACTORS:JA> / <ACTRESS:JA> tag modifiers to select
+// actress Japanese-name rendering.
+func languageSpecPrefersJapanese(languageSpec string) bool {
+	for _, lang := range strings.Split(languageSpec, "|") {
+		if strings.EqualFold(strings.TrimSpace(lang), "ja") {
+			return true
+		}
 	}
-	switch tagName {
-	case "TITLE":
-		return translation.Title
-	case "ORIGINALTITLE":
-		return translation.OriginalTitle
-	case "DIRECTOR":
-		return translation.Director
-	case "MAKER", "STUDIO":
-		return translation.Maker
-	case "LABEL":
-		return translation.Label
-	case "SERIES", "SET":
-		return translation.Series
-	case "DESCRIPTION":
-		return translation.Description
-	default:
-		return ""
+	return false
+}
+
+// resolveGroupUnknownName returns the configured @Unknown replacement name,
+// falling back to the original PowerShell javinizer's hard-coded "@Unknown".
+// Used by the <ACTORS>/<ACTRESSES> resolver when GroupActress is enabled and
+// the actress list is empty or the only name is unknown.
+func resolveGroupUnknownName(configured string) string {
+	if configured == "" {
+		return "@Unknown"
 	}
+	return configured
+}
+
+// isUnknownActressName reports whether a name should be treated as 'unknown'
+// for GroupActress substitution. Mirrors the original PowerShell javinizer
+// check: an exact empty string, or any name containing "unknown"
+// (case-insensitive).
+func isUnknownActressName(name string) bool {
+	if name == "" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(name), "unknown")
 }

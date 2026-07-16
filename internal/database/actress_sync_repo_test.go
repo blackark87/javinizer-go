@@ -1,12 +1,12 @@
 package database
 
 import (
+	"context"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,10 +14,10 @@ import (
 
 func newActressSyncRepositoryTestDB(t *testing.T) *DB {
 	t.Helper()
-	db, err := New(&config.Config{Database: config.DatabaseConfig{Type: "sqlite", DSN: filepath.Join(t.TempDir(), "sync-queue.db")}})
+	db, err := New(&Config{Type: "sqlite", DSN: filepath.Join(t.TempDir(), "sync-queue.db")})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	require.NoError(t, db.AutoMigrate())
+	require.NoError(t, db.RunMigrationsOnStartup(context.Background()))
 	return db
 }
 

@@ -5,6 +5,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/javinizer/javinizer-go/internal/system"
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,8 +27,8 @@ func TestIsRunningInContainer(t *testing.T) {
 			cleanup: func() {
 				_ = os.Unsetenv("CHROME_BIN")
 			},
-			expected:    true,
-			description: "Should detect container when CHROME_BIN is set",
+			expected:    false,
+			description: "CHROME_BIN points at the Chrome binary, not a container signal; must not detect a container",
 		},
 		{
 			name: "CHROME_PATH environment variable set",
@@ -36,8 +38,8 @@ func TestIsRunningInContainer(t *testing.T) {
 			cleanup: func() {
 				_ = os.Unsetenv("CHROME_PATH")
 			},
-			expected:    true,
-			description: "Should detect container when CHROME_PATH is set",
+			expected:    false,
+			description: "CHROME_PATH points at the Chrome binary, not a container signal; must not detect a container",
 		},
 		{
 			name: "No container indicators",
@@ -57,7 +59,10 @@ func TestIsRunningInContainer(t *testing.T) {
 			tt.setup()
 			defer tt.cleanup()
 
-			result := isRunningInContainer()
+			// Use the injected filesystem contract rather than the host root: this
+			// test verifies that Chrome env vars alone are not container signals and
+			// must behave the same when the test suite itself runs in Docker.
+			result := system.IsRunningInContainer(afero.NewMemMapFs())
 			assert.Equal(t, tt.expected, result, tt.description)
 		})
 	}
@@ -160,7 +165,7 @@ func TestFetchWithBrowser_FailsFastOnInvalidURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := FetchWithBrowser(context.Background(), tt.url, tt.timeout, nil)
+			_, err := fetchWithBrowser(context.Background(), tt.url, tt.timeout, nil, os.Getenv, afero.NewOsFs())
 			if assert.Error(t, err, tt.description) {
 				assert.ErrorContains(t, err, tt.wantErr, tt.description)
 			}

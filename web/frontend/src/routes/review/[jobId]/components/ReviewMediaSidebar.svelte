@@ -4,6 +4,7 @@
 	import Button from '$lib/components/ui/Button.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 	import { Image as ImageIcon, ImagePlus, Play, RotateCcw } from 'lucide-svelte';
+	import { tooltip } from '$lib/actions/tooltip';
 
 	interface Props {
 		currentMovie: Movie;
@@ -18,7 +19,11 @@
 		onOpenCoverViewer: () => void;
 		onOpenScreenshotViewer: (index: number) => void;
 		onUseScreenshotAsPoster: (url: string) => void;
+		onUseScreenshotAsCover: (url: string) => void;
 		onResetPoster?: () => void;
+		onResetCover?: () => void;
+		canResetPoster?: boolean;
+		canResetCover?: boolean;
 		previewImageURL: (url: string | undefined) => string;
 	}
 
@@ -35,7 +40,11 @@
 		onOpenCoverViewer,
 		onOpenScreenshotViewer,
 		onUseScreenshotAsPoster,
+		onUseScreenshotAsCover,
 		onResetPoster,
+		onResetCover,
+		canResetPoster = true,
+		canResetCover = true,
 		previewImageURL
 	}: Props = $props();
 </script>
@@ -51,7 +60,7 @@
 							size="sm"
 							variant="outline"
 							onclick={onResetPoster}
-							disabled={!currentMovie.id}
+							disabled={!currentMovie.id || !canResetPoster}
 							class="text-xs"
 							title="Reset to original scraped poster"
 						>
@@ -105,7 +114,21 @@
 
 	{#if showCoverPanel}
 		<Card class="p-4">
-			<h3 class="font-semibold mb-3 text-sm">Cover/Fanart</h3>
+			<div class="flex items-center justify-between gap-2 mb-3">
+				<h3 class="font-semibold text-sm">Cover/Fanart</h3>
+				{#if onResetCover}
+					<Button
+						size="sm"
+						variant="outline"
+						onclick={onResetCover}
+						disabled={!currentMovie.id || !canResetCover}
+						class="text-xs"
+						title="Reset to original scraped cover"
+					>
+						{#snippet children()}<RotateCcw class="h-3 w-3 mr-1" />Reset{/snippet}
+					</Button>
+				{/if}
+			</div>
 			{#if currentMovie.cover_url}
 				<button onclick={onOpenCoverViewer} class="cursor-pointer hover:opacity-80 transition-opacity w-full">
 					<img
@@ -159,10 +182,17 @@
 						</button>
 						<button
 							onclick={(e: MouseEvent) => { e.stopPropagation(); onUseScreenshotAsPoster(url); }}
-							title="Use as Poster"
+							use:tooltip={"Use as Poster"}
 							class="absolute bottom-1 right-1 p-1 rounded-full bg-black/60 hover:bg-black/80 text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
 						>
 							<ImagePlus class="h-3 w-3" />
+						</button>
+						<button
+							onclick={(e: MouseEvent) => { e.stopPropagation(); onUseScreenshotAsCover(url); }}
+							use:tooltip={"Use as Cover/Fanart"}
+							class="absolute bottom-1 left-1 p-1 rounded-full bg-black/60 hover:bg-black/80 text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+						>
+							<ImageIcon class="h-3 w-3" />
 						</button>
 					</div>
 				{/each}

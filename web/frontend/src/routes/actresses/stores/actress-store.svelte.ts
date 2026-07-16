@@ -1,17 +1,10 @@
 import { untrack } from 'svelte';
-import {
-	createQuery,
-	createMutation,
-	useQueryClient
-} from '@tanstack/svelte-query';
-import { apiClient } from '$lib/api/client';
 import { confirmDialog } from '$lib/stores/dialog.svelte';
+import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
+import { apiClient } from '$lib/api/client';
 import { toastStore } from '$lib/stores/toast';
-import type {
-	Actress,
-	ActressUpsertRequest,
-	ActressMergeResolution
-} from '$lib/api/types';
+import type { Actress, ActressUpsertRequest, ActressMergeResolution } from '$lib/api/types';
+import { formatActressName } from '$lib/utils/actress';
 
 export type ActressForm = {
 	dmm_id: string;
@@ -32,7 +25,9 @@ export function createActressStore() {
 	let limit = $state(DEFAULT_LIMIT);
 	let offset = $state(0);
 	let viewMode = $state<'cards' | 'compact' | 'table'>('cards');
-	let sortBy = $state<'name' | 'japanese_name' | 'id' | 'dmm_id' | 'updated_at' | 'created_at'>('name');
+	let sortBy = $state<'name' | 'japanese_name' | 'id' | 'dmm_id' | 'updated_at' | 'created_at'>(
+		'name',
+	);
 	let sortOrder = $state<'asc' | 'desc'>('asc');
 
 	let editingId = $state<number | null>(null);
@@ -41,15 +36,19 @@ export function createActressStore() {
 	let selectedIds = $state<number[]>([]);
 
 	const actressesQuery = createQuery(() => ({
-		queryKey: ['actresses', { limit, offset, q: activeQuery, sort_by: sortBy, sort_order: sortOrder }],
-		queryFn: () => apiClient.listActresses({
-			limit,
-			offset,
-			q: activeQuery || undefined,
-			sort_by: sortBy,
-			sort_order: sortOrder
-		}),
-		placeholderData: (prev) => prev
+		queryKey: [
+			'actresses',
+			{ limit, offset, q: activeQuery, sort_by: sortBy, sort_order: sortOrder },
+		],
+		queryFn: () =>
+			apiClient.listActresses({
+				limit,
+				offset,
+				q: activeQuery || undefined,
+				sort_by: sortBy,
+				sort_order: sortOrder,
+			}),
+		placeholderData: (prev) => prev,
 	}));
 
 	let actresses = $derived(actressesQuery.data?.actresses ?? []);
@@ -72,11 +71,13 @@ export function createActressStore() {
 				toastStore.success('Actress created');
 			}
 			queryClient.invalidateQueries({ queryKey: ['actresses'] });
+			queryClient.invalidateQueries({ queryKey: ['batch-job'] });
+			queryClient.invalidateQueries({ queryKey: ['batch-job-slim'] });
 			resetForm();
 		},
 		onError: (err: Error) => {
 			formError = err.message;
-		}
+		},
 	}));
 
 	const deleteActressMutation = createMutation(() => ({
@@ -92,10 +93,12 @@ export function createActressStore() {
 				resetForm();
 			}
 			queryClient.invalidateQueries({ queryKey: ['actresses'] });
+			queryClient.invalidateQueries({ queryKey: ['batch-job'] });
+			queryClient.invalidateQueries({ queryKey: ['batch-job-slim'] });
 		},
 		onError: (err: Error) => {
 			toastStore.error(err.message);
-		}
+		},
 	}));
 
 	const bulkDeleteActressesMutation = createMutation(() => ({
@@ -103,18 +106,24 @@ export function createActressStore() {
 		onSuccess: (result, ids) => {
 			toastStore.success(`Deleted ${result.deleted} actress(es)`);
 			selectedIds = [];
-			// Step back a page when every row on the current page was deleted.
 			const deleted = new Set(ids);
 			const currentActresses = actressesQuery.data?.actresses ?? [];
-			if (offset > 0 && currentActresses.every((a) => a.id === undefined || deleted.has(a.id))) {
+			if (
+				offset > 0 &&
+				currentActresses.every((actress) =>
+					actress.id === undefined ? true : deleted.has(actress.id),
+				)
+			) {
 				offset = Math.max(0, offset - limit);
 			}
 			resetForm();
 			queryClient.invalidateQueries({ queryKey: ['actresses'] });
+			queryClient.invalidateQueries({ queryKey: ['batch-job'] });
+			queryClient.invalidateQueries({ queryKey: ['batch-job-slim'] });
 		},
 		onError: (err: Error) => {
 			toastStore.error(err.message);
-		}
+		},
 	}));
 
 	const deleteAllActressesMutation = createMutation(() => ({
@@ -125,17 +134,19 @@ export function createActressStore() {
 			offset = 0;
 			resetForm();
 			queryClient.invalidateQueries({ queryKey: ['actresses'] });
+			queryClient.invalidateQueries({ queryKey: ['batch-job'] });
+			queryClient.invalidateQueries({ queryKey: ['batch-job-slim'] });
 		},
 		onError: (err: Error) => {
 			toastStore.error(err.message);
-		}
+		},
 	}));
 
 	$effect(() => {
 		const data = actressesQuery.data;
 		if (!data || showMergeModal) return;
 		const pageIDs = new Set(
-			data.actresses.map((actress) => actress.id).filter((id): id is number => id !== undefined)
+			data.actresses.map((actress) => actress.id).filter((id): id is number => id !== undefined),
 		);
 		untrack(() => {
 			const pruned = selectedIds.filter((id) => pageIDs.has(id));
@@ -153,32 +164,41 @@ export function createActressStore() {
 	let mergeSummary = $state<{ success: number; failed: number; messages: string[] }>({
 		success: 0,
 		failed: 0,
-		messages: []
+		messages: [],
 	});
 
 	const mergePreviewQuery = createQuery(() => ({
 		queryKey: ['actress-merge-preview', mergePrimaryId, mergeCurrentSourceId],
-		queryFn: () => apiClient.previewActressMerge({
-			target_id: mergePrimaryId!,
-			source_id: mergeCurrentSourceId!
-		}),
-		enabled: !!mergePrimaryId && !!mergeCurrentSourceId
+		queryFn: () =>
+			apiClient.previewActressMerge({
+				target_id: mergePrimaryId!,
+				source_id: mergeCurrentSourceId!,
+			}),
+		enabled: !!mergePrimaryId && !!mergeCurrentSourceId,
 	}));
 
 	let mergePreview = $derived(mergePreviewQuery.data ?? null);
 
 	const mergeActressMutation = createMutation(() => ({
-		mutationFn: (params: { target_id: number; source_id: number; resolutions: Record<string, ActressMergeResolution> }) =>
-			apiClient.mergeActresses(params),
+		mutationFn: (params: {
+			target_id: number;
+			source_id: number;
+			resolutions: Record<string, ActressMergeResolution>;
+		}) => apiClient.mergeActresses(params),
 		onSuccess: (result, variables) => {
 			mergeSummary = {
 				...mergeSummary,
 				success: mergeSummary.success + 1,
-				messages: [...mergeSummary.messages, `Merged #${result.merged_from_id} into #${variables.target_id}`]
+				messages: [
+					...mergeSummary.messages,
+					`Merged #${result.merged_from_id} into #${variables.target_id}`,
+				],
 			};
 			selectedIds = selectedIds.filter((id) => id !== variables.source_id);
 			mergeSourceQueue = mergeSourceQueue.slice(1);
 			queryClient.invalidateQueries({ queryKey: ['actresses'] });
+			queryClient.invalidateQueries({ queryKey: ['batch-job'] });
+			queryClient.invalidateQueries({ queryKey: ['batch-job-slim'] });
 			queryClient.invalidateQueries({ queryKey: ['actress-merge-preview'] });
 			advanceMergeQueue();
 		},
@@ -186,12 +206,12 @@ export function createActressStore() {
 			mergeSummary = {
 				...mergeSummary,
 				failed: mergeSummary.failed + 1,
-				messages: [...mergeSummary.messages, `Failed #${variables.source_id}: ${err.message}`]
+				messages: [...mergeSummary.messages, `Failed #${variables.source_id}: ${err.message}`],
 			};
 			mergeSourceQueue = mergeSourceQueue.slice(1);
 			queryClient.invalidateQueries({ queryKey: ['actress-merge-preview'] });
 			advanceMergeQueue();
-		}
+		},
 	}));
 
 	$effect(() => {
@@ -206,14 +226,18 @@ export function createActressStore() {
 	let lastPreviewErrorSourceId = $state<number | null>(null);
 
 	$effect(() => {
-		if (mergePreviewQuery.isError && mergeCurrentSourceId && mergeCurrentSourceId !== lastPreviewErrorSourceId) {
+		if (
+			mergePreviewQuery.isError &&
+			mergeCurrentSourceId &&
+			mergeCurrentSourceId !== lastPreviewErrorSourceId
+		) {
 			lastPreviewErrorSourceId = mergeCurrentSourceId;
 			const message = mergePreviewQuery.error?.message ?? 'Failed to preview merge';
 			untrack(() => {
 				mergeSummary = {
 					...mergeSummary,
 					failed: mergeSummary.failed + 1,
-					messages: [...mergeSummary.messages, `Skipped #${mergeCurrentSourceId}: ${message}`]
+					messages: [...mergeSummary.messages, `Skipped #${mergeCurrentSourceId}: ${message}`],
 				};
 				mergeSourceQueue = mergeSourceQueue.slice(1);
 			});
@@ -237,21 +261,26 @@ export function createActressStore() {
 			last_name: '',
 			japanese_name: '',
 			thumb_url: '',
-			aliases: ''
+			aliases: '',
 		};
 	}
 
-	function getDisplayName(actress: Actress): string {
-		if (actress.last_name && actress.first_name) return `${actress.last_name} ${actress.first_name}`;
-		if (actress.first_name) return actress.first_name;
-		if (actress.japanese_name) return actress.japanese_name;
-		return 'Unnamed';
+	function getDisplayName(
+		actress: Actress,
+		firstNameOrder: boolean,
+		japaneseNames: boolean,
+	): string {
+		return formatActressName(actress, { firstNameOrder, japaneseNames });
 	}
 
-	function getActressLabelByID(id: number): string {
+	function getActressLabelByID(
+		id: number,
+		firstNameOrder: boolean,
+		japaneseNames: boolean,
+	): string {
 		const actress = actresses.find((item) => item.id === id);
 		if (!actress) return `Actress #${id}`;
-		return `#${id} - ${getDisplayName(actress)}`;
+		return `#${id} - ${getDisplayName(actress, firstNameOrder, japaneseNames)}`;
 	}
 
 	function isSelected(actress: Actress): boolean {
@@ -268,7 +297,9 @@ export function createActressStore() {
 	}
 
 	function selectCurrentPage() {
-		const ids = actresses.map((actress) => actress.id).filter((id): id is number => id !== undefined);
+		const ids = actresses
+			.map((actress) => actress.id)
+			.filter((id): id is number => id !== undefined);
 		selectedIds = [...new Set([...selectedIds, ...ids])];
 	}
 
@@ -284,7 +315,7 @@ export function createActressStore() {
 			last_name: form.last_name.trim(),
 			japanese_name: form.japanese_name.trim(),
 			thumb_url: form.thumb_url.trim(),
-			aliases: form.aliases.trim()
+			aliases: form.aliases.trim(),
 		};
 	}
 
@@ -313,7 +344,7 @@ export function createActressStore() {
 			last_name: actress.last_name ?? '',
 			japanese_name: actress.japanese_name ?? '',
 			thumb_url: actress.thumb_url ?? '',
-			aliases: actress.aliases ?? ''
+			aliases: actress.aliases ?? '',
 		};
 		formError = null;
 	}
@@ -324,24 +355,42 @@ export function createActressStore() {
 		saveActressMutation.mutate(toPayload());
 	}
 
-	async function removeActress(actress: Actress) {
+	async function removeActress(actress: Actress, firstNameOrder: boolean, japaneseNames: boolean) {
 		if (!actress.id) return;
-		const name = getDisplayName(actress);
-		if (!(await confirmDialog('Delete Actress', `Delete actress "${name}"?`, { variant: 'danger', confirmLabel: 'Delete' }))) return;
+		const name = getDisplayName(actress, firstNameOrder, japaneseNames);
+		if (
+			!(await confirmDialog('Delete Actress', `Delete actress "${name}"?`, {
+				confirmLabel: 'Delete',
+				variant: 'danger',
+			}))
+		)
+			return;
 		deleteActressMutation.mutate(actress.id);
 	}
 
 	async function removeSelected() {
 		if (selectedIds.length === 0 || bulkDeleteActressesMutation.isPending) return;
 		const message = `Delete ${selectedIds.length} selected actress(es)? Their movie links are removed as well.`;
-		if (!(await confirmDialog('Delete Selected Actresses', message, { variant: 'danger', confirmLabel: 'Delete' }))) return;
+		if (
+			!(await confirmDialog('Delete Selected Actresses', message, {
+				confirmLabel: 'Delete',
+				variant: 'danger',
+			}))
+		)
+			return;
 		bulkDeleteActressesMutation.mutate([...selectedIds]);
 	}
 
 	async function removeAll() {
 		if (deleteAllActressesMutation.isPending) return;
 		const message = `Delete ALL ${total} actress(es) in the database? This cannot be undone.`;
-		if (!(await confirmDialog('Delete All Actresses', message, { variant: 'danger', confirmLabel: 'Delete All' }))) return;
+		if (
+			!(await confirmDialog('Delete All Actresses', message, {
+				confirmLabel: 'Delete All',
+				variant: 'danger',
+			}))
+		)
+			return;
 		deleteAllActressesMutation.mutate();
 	}
 
@@ -425,11 +474,17 @@ export function createActressStore() {
 	}
 
 	function applyCurrentMerge() {
-		if (!mergePrimaryId || !mergeCurrentSourceId || !mergePreviewQuery.data || mergeActressMutation.isPending) return;
+		if (
+			!mergePrimaryId ||
+			!mergeCurrentSourceId ||
+			!mergePreviewQuery.data ||
+			mergeActressMutation.isPending
+		)
+			return;
 		mergeActressMutation.mutate({
 			target_id: mergePrimaryId,
 			source_id: mergeCurrentSourceId,
-			resolutions: mergeResolutions
+			resolutions: mergeResolutions,
 		});
 	}
 
@@ -437,7 +492,7 @@ export function createActressStore() {
 		if (!mergeCurrentSourceId || mergeActressMutation.isPending) return;
 		mergeSummary = {
 			...mergeSummary,
-			messages: [...mergeSummary.messages, `Skipped #${mergeCurrentSourceId}`]
+			messages: [...mergeSummary.messages, `Skipped #${mergeCurrentSourceId}`],
 		};
 		mergeSourceQueue = mergeSourceQueue.slice(1);
 		advanceMergeQueue();
@@ -448,46 +503,126 @@ export function createActressStore() {
 	}
 
 	return {
-		get queryInput() { return queryInput; },
-		set queryInput(v: string) { queryInput = v; },
-		get activeQuery() { return activeQuery; },
-		get limit() { return limit; },
-		get offset() { return offset; },
-		get viewMode() { return viewMode; },
-		set viewMode(v: 'cards' | 'compact' | 'table') { viewMode = v; },
-		get sortBy() { return sortBy; },
-		set sortBy(v: string) { sortBy = v as typeof sortBy; },
-		get sortOrder() { return sortOrder; },
-		get editingId() { return editingId; },
-		get form() { return form; },
-		set form(v: ActressForm) { form = v; },
-		get formError() { return formError; },
-		get selectedIds() { return selectedIds; },
-		get actresses() { return actresses; },
-		get total() { return total; },
-		get loading() { return loading; },
-		get error() { return error; },
-		get isRefreshing() { return isRefreshing; },
-		get saveActressMutation() { return saveActressMutation; },
-		get deleteActressMutation() { return deleteActressMutation; },
-		get bulkDeleteActressesMutation() { return bulkDeleteActressesMutation; },
-		get deleteAllActressesMutation() { return deleteAllActressesMutation; },
-		get showMergeModal() { return showMergeModal; },
-		set showMergeModal(v: boolean) { showMergeModal = v; },
-		get mergePrimaryId() { return mergePrimaryId; },
-		set mergePrimaryId(v: number | null) { mergePrimaryId = v; },
-		get mergeSourceQueue() { return mergeSourceQueue; },
-		get mergeCurrentSourceId() { return mergeCurrentSourceId; },
-		get mergeResolutions() { return mergeResolutions; },
-		set mergeResolutions(v: Record<string, ActressMergeResolution>) { mergeResolutions = v; },
-		get mergeSummary() { return mergeSummary; },
-		get mergePreview() { return mergePreview; },
-		get mergePreviewQuery() { return mergePreviewQuery; },
-		get mergeActressMutation() { return mergeActressMutation; },
-		get currentPage() { return currentPage; },
-		get totalPages() { return totalPages; },
-		get canGoPrev() { return canGoPrev; },
-		get canGoNext() { return canGoNext; },
+		get queryInput() {
+			return queryInput;
+		},
+		set queryInput(v: string) {
+			queryInput = v;
+		},
+		get activeQuery() {
+			return activeQuery;
+		},
+		get limit() {
+			return limit;
+		},
+		get offset() {
+			return offset;
+		},
+		get viewMode() {
+			return viewMode;
+		},
+		set viewMode(v: 'cards' | 'compact' | 'table') {
+			viewMode = v;
+		},
+		get sortBy() {
+			return sortBy;
+		},
+		set sortBy(v: string) {
+			sortBy = v as typeof sortBy;
+		},
+		get sortOrder() {
+			return sortOrder;
+		},
+		get editingId() {
+			return editingId;
+		},
+		get form() {
+			return form;
+		},
+		set form(v: ActressForm) {
+			form = v;
+		},
+		get formError() {
+			return formError;
+		},
+		get selectedIds() {
+			return selectedIds;
+		},
+		get actresses() {
+			return actresses;
+		},
+		get total() {
+			return total;
+		},
+		get loading() {
+			return loading;
+		},
+		get error() {
+			return error;
+		},
+		get isRefreshing() {
+			return isRefreshing;
+		},
+		get saveActressMutation() {
+			return saveActressMutation;
+		},
+		get deleteActressMutation() {
+			return deleteActressMutation;
+		},
+		get bulkDeleteActressesMutation() {
+			return bulkDeleteActressesMutation;
+		},
+		get deleteAllActressesMutation() {
+			return deleteAllActressesMutation;
+		},
+		get showMergeModal() {
+			return showMergeModal;
+		},
+		set showMergeModal(v: boolean) {
+			showMergeModal = v;
+		},
+		get mergePrimaryId() {
+			return mergePrimaryId;
+		},
+		set mergePrimaryId(v: number | null) {
+			mergePrimaryId = v;
+		},
+		get mergeSourceQueue() {
+			return mergeSourceQueue;
+		},
+		get mergeCurrentSourceId() {
+			return mergeCurrentSourceId;
+		},
+		get mergeResolutions() {
+			return mergeResolutions;
+		},
+		set mergeResolutions(v: Record<string, ActressMergeResolution>) {
+			mergeResolutions = v;
+		},
+		get mergeSummary() {
+			return mergeSummary;
+		},
+		get mergePreview() {
+			return mergePreview;
+		},
+		get mergePreviewQuery() {
+			return mergePreviewQuery;
+		},
+		get mergeActressMutation() {
+			return mergeActressMutation;
+		},
+		get currentPage() {
+			return currentPage;
+		},
+		get totalPages() {
+			return totalPages;
+		},
+		get canGoPrev() {
+			return canGoPrev;
+		},
+		get canGoNext() {
+			return canGoNext;
+		},
 		itemDelay,
 		emptyForm,
 		getDisplayName,
@@ -514,6 +649,6 @@ export function createActressStore() {
 		setResolution,
 		applyCurrentMerge,
 		skipCurrentMerge,
-		refresh
+		refresh,
 	};
 }

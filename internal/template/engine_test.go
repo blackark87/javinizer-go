@@ -80,7 +80,7 @@ func TestTemplateEngine_Execute(t *testing.T) {
 		},
 		{
 			name:     "Actresses with custom delimiter",
-			template: "<ID> - <ACTORS: and >",
+			template: "<ID> - <ACTORS:DELIM= and >",
 			want:     "IPX-535 - Sakura Momo and Test Actress",
 		},
 		{
@@ -692,17 +692,6 @@ func TestTemplateEngine_Conditionals(t *testing.T) {
 			},
 			want: "IPX-535",
 		},
-		{
-			name:     "Unqualified IF still true for Japanese-only actress (backward compat)",
-			template: "<IF:ACTRESS><ACTRESS><ELSE>Unknown</IF>",
-			ctx: &Context{
-				Actresses: []string{"波多野結衣"},
-				ActressDetails: []ActressDetail{
-					{JapaneseName: "波多野結衣"},
-				},
-			},
-			want: "波多野結衣",
-		},
 	}
 
 	for _, tt := range tests {
@@ -723,12 +712,13 @@ func TestTemplateEngine_GroupActress(t *testing.T) {
 	engine := NewEngine()
 
 	tests := []struct {
-		name             string
-		actresses        []string
-		groupActress     bool
-		groupActressName string
-		template         string
-		want             string
+		name                    string
+		actresses               []string
+		groupActress            bool
+		groupActressName        string
+		groupUnknownActressName string
+		template                string
+		want                    string
 	}{
 		{
 			name:             "Multiple actresses with GroupActress enabled (default name)",
@@ -776,7 +766,49 @@ func TestTemplateEngine_GroupActress(t *testing.T) {
 			groupActress:     true,
 			groupActressName: "",
 			template:         "<ID> - <ACTORS>",
-			want:             "IPX-535 - ",
+			want:             "IPX-535 - @Unknown",
+		},
+		{
+			name:                    "No actresses with GroupActress enabled (custom unknown name)",
+			actresses:               []string{},
+			groupActress:            true,
+			groupActressName:        "",
+			groupUnknownActressName: "Unknown",
+			template:                "<ID> - <ACTORS>",
+			want:                    "IPX-535 - Unknown",
+		},
+		{
+			name:                    "No actresses with GroupActress enabled (custom label)",
+			actresses:               []string{},
+			groupActress:            true,
+			groupActressName:        "",
+			groupUnknownActressName: "@Various",
+			template:                "<ID> - <ACTORS>",
+			want:                    "IPX-535 - @Various",
+		},
+		{
+			name:             "Single unknown actress with GroupActress enabled",
+			actresses:        []string{"Unknown"},
+			groupActress:     true,
+			groupActressName: "",
+			template:         "<ID> - <ACTORS>",
+			want:             "IPX-535 - @Unknown",
+		},
+		{
+			name:             "Single unknown actress with GroupActress enabled (memory check, case-insensitive)",
+			actresses:        []string{"unknown actress"},
+			groupActress:     true,
+			groupActressName: "",
+			template:         "<ID> - <ACTORS>",
+			want:             "IPX-535 - @Unknown",
+		},
+		{
+			name:             "Single unknown actress with GroupActress disabled returns raw name",
+			actresses:        []string{"Unknown"},
+			groupActress:     false,
+			groupActressName: "",
+			template:         "<ID> - <ACTORS>",
+			want:             "IPX-535 - Unknown",
 		},
 		{
 			name:             "Two actresses with GroupActress enabled",
@@ -791,10 +823,11 @@ func TestTemplateEngine_GroupActress(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := &Context{
-				ID:               "IPX-535",
-				Actresses:        tt.actresses,
-				GroupActress:     tt.groupActress,
-				GroupActressName: tt.groupActressName,
+				ID:                      "IPX-535",
+				Actresses:               tt.actresses,
+				GroupActress:            tt.groupActress,
+				GroupActressName:        tt.groupActressName,
+				GroupUnknownActressName: tt.groupUnknownActressName,
 			}
 
 			got, err := engine.Execute(tt.template, ctx)
@@ -846,7 +879,7 @@ func TestTemplateEngine_FirstNameOrder(t *testing.T) {
 				{FirstName: "Ai", LastName: "Uehara"},
 			},
 			firstNameOrder: true,
-			template:       "<ACTRESSES: & >",
+			template:       "<ACTRESSES:DELIM= & >",
 			want:           "Yui Hatano & Ai Uehara",
 		},
 		{
@@ -984,6 +1017,438 @@ func TestTemplateEngine_FirstNameOrderFallback(t *testing.T) {
 
 	if got != "Hatano Yui, Uehara Ai" {
 		t.Errorf("fallback without ActressDetails = %q, want %q", got, "Hatano Yui, Uehara Ai")
+	}
+}
+
+// TestTemplateEngine_ActorsLanguageModifier covers the tag-level language
+// modifier (<ACTORS:JA>, <ACTORS:EN>) and the config-level ActressLanguageJa
+// default for both <ACTORS> and <ACTRESS> tags. Regression test for issue #32.
+func TestTemplateEngine_ActorsLanguageModifier(t *testing.T) {
+	engine := NewEngine()
+
+	actresses := []ActressDetail{
+		{FirstName: "Yui", LastName: "Hatano", JapaneseName: "波多野結衣"},
+		{FirstName: "Ai", LastName: "Uehara", JapaneseName: "上原亜衣"},
+	}
+	prebuilt := func(details []ActressDetail) []string {
+		out := make([]string, len(details))
+		for i, d := range details {
+			if d.LastName != "" {
+				out[i] = d.LastName + " " + d.FirstName
+			} else {
+				out[i] = d.FirstName
+			}
+		}
+		return out
+	}
+
+	tests := []struct {
+		name              string
+		sliceSingle       bool // true: use only first actress (for <ACTRESS> tests)
+		actressLanguageJa bool
+		template          string
+		want              string
+	}{
+		// Tag-level modifier takes precedence over config default
+		{
+			name:              "explicit JA modifier forces Japanese regardless of config",
+			actressLanguageJa: false,
+			template:          "<ACTORS:JA>",
+			want:              "波多野結衣, 上原亜衣",
+		},
+		{
+			name:              "explicit EN modifier forces English when config prefers Japanese",
+			actressLanguageJa: true,
+			template:          "<ACTORS:EN>",
+			want:              "Hatano Yui, Uehara Ai",
+		},
+		{
+			name:              "JA fallback chain modifier",
+			actressLanguageJa: false,
+			template:          "<ACTORS:JA|EN>",
+			want:              "波多野結衣, 上原亜衣",
+		},
+		// Config-level default
+		{
+			name:              "no modifier honors config default true",
+			actressLanguageJa: true,
+			template:          "<ACTORS>",
+			want:              "波多野結衣, 上原亜衣",
+		},
+		{
+			name:              "no modifier honors config default false",
+			actressLanguageJa: false,
+			template:          "<ACTORS>",
+			want:              "Hatano Yui, Uehara Ai",
+		},
+		// Backward compat: legacy delimiter modifier still works when not a language code
+		{
+			name:              "DELIM= pipe delimiter",
+			actressLanguageJa: false,
+			template:          "<ACTORS:DELIM=|>",
+			want:              "Hatano Yui|Uehara Ai",
+		},
+		// Single-actress ACTRESS tag
+		{
+			name:              "ACTRESS JA modifier",
+			sliceSingle:       true,
+			actressLanguageJa: false,
+			template:          "<ACTRESS:JA>",
+			want:              "波多野結衣",
+		},
+		{
+			name:              "ACTRESS config default true",
+			sliceSingle:       true,
+			actressLanguageJa: true,
+			template:          "<ACTRESS>",
+			want:              "波多野結衣",
+		},
+		{
+			name:              "ACTORNAME JA modifier",
+			sliceSingle:       true,
+			actressLanguageJa: false,
+			template:          "<ACTORNAME:JA>",
+			want:              "波多野結衣",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			details := actresses
+			if tt.sliceSingle {
+				details = actresses[:1]
+			}
+			ctx := &Context{
+				ID:                "IPX-535",
+				Actresses:         prebuilt(details),
+				ActressDetails:    details,
+				ActressLanguageJa: tt.actressLanguageJa,
+			}
+			got, err := engine.Execute(tt.template, ctx)
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("Execute() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestTemplateEngine_ActorsFirstNameOrderModifier covers the tag-level
+// name-order modifier (<ACTORS:FIRST>, <ACTORS:LAST>, <ACTORS:FIRSTNAMEORDER>,
+// <ACTORS:LASTNAMEORDER>) on <ACTORS>/<ACTRESS>/<ACTORNAME> tags, alone and
+// combined with the language modifier (<ACTORS:JA,FIRST>).
+func TestTemplateEngine_ActorsFirstNameOrderModifier(t *testing.T) {
+	engine := NewEngine()
+
+	actresses := []ActressDetail{
+		{FirstName: "Yui", LastName: "Hatano", JapaneseName: "波多野結衣"},
+		{FirstName: "Ai", LastName: "Uehara", JapaneseName: "上原亜衣"},
+	}
+	prebuilt := func(details []ActressDetail) []string {
+		out := make([]string, len(details))
+		for i, d := range details {
+			if d.LastName != "" {
+				out[i] = d.LastName + " " + d.FirstName
+			} else {
+				out[i] = d.FirstName
+			}
+		}
+		return out
+	}
+
+	tests := []struct {
+		name           string
+		sliceSingle    bool // true: use only first actress (for <ACTRESS> tests)
+		firstNameOrder bool // config-level default
+		template       string
+		want           string
+	}{
+		// Order-only modifiers (config default is false / LastName First)
+		{
+			name:           "FIRST alias forces First Last",
+			firstNameOrder: false,
+			template:       "<ACTORS:FIRST>",
+			want:           "Yui Hatano, Ai Uehara",
+		},
+		{
+			name:           "LAST alias forces Last First",
+			firstNameOrder: true,
+			template:       "<ACTORS:LAST>",
+			want:           "Hatano Yui, Uehara Ai",
+		},
+		{
+			name:           "FIRSTNAMEORDER long form",
+			firstNameOrder: false,
+			template:       "<ACTORS:FIRSTNAMEORDER>",
+			want:           "Yui Hatano, Ai Uehara",
+		},
+		{
+			name:           "LASTNAMEORDER long form",
+			firstNameOrder: true,
+			template:       "<ACTORS:LASTNAMEORDER>",
+			want:           "Hatano Yui, Uehara Ai",
+		},
+		{
+			name:           "case-insensitive lowercase first",
+			firstNameOrder: false,
+			template:       "<ACTORS:first>",
+			want:           "Yui Hatano, Ai Uehara",
+		},
+		// No modifier honors config default
+		{
+			name:           "no modifier honors config true",
+			firstNameOrder: true,
+			template:       "<ACTORS>",
+			want:           "Yui Hatano, Ai Uehara",
+		},
+		{
+			name:           "no modifier honors config false",
+			firstNameOrder: false,
+			template:       "<ACTORS>",
+			want:           "Hatano Yui, Uehara Ai",
+		},
+		// Combinations with language modifier
+		{
+			name:           "JA,FIRST uses Japanese (order ignored)",
+			firstNameOrder: false,
+			template:       "<ACTORS:JA,FIRST>",
+			want:           "波多野結衣, 上原亜衣",
+		},
+		{
+			name:           "EN,FIRST forces English + First Last",
+			firstNameOrder: false,
+			template:       "<ACTORS:EN,FIRST>",
+			want:           "Yui Hatano, Ai Uehara",
+		},
+		{
+			name:           "EN,LAST forces English + Last First",
+			firstNameOrder: true,
+			template:       "<ACTORS:EN,LAST>",
+			want:           "Hatano Yui, Uehara Ai",
+		},
+		{
+			name:           "JA fallback chain + LAST",
+			firstNameOrder: true,
+			template:       "<ACTORS:JA|EN,LAST>",
+			want:           "波多野結衣, 上原亜衣",
+		},
+		// Legacy delimiter preserved when not matching keyword
+		{
+			name:           "DELIM= pipe delimiter",
+			firstNameOrder: false,
+			template:       "<ACTORS:DELIM=|>",
+			want:           "Hatano Yui|Uehara Ai",
+		},
+		{
+			name:           `DELIM= " & " delimiter`,
+			firstNameOrder: false,
+			template:       "<ACTORS:DELIM= & >",
+			want:           "Hatano Yui & Uehara Ai",
+		},
+		// Single-actress ACTRESS tag
+		{
+			name:           "ACTRESS FIRST override",
+			sliceSingle:    true,
+			firstNameOrder: false,
+			template:       "<ACTRESS:FIRST>",
+			want:           "Yui Hatano",
+		},
+		{
+			name:           "ACTRESS LAST override",
+			sliceSingle:    true,
+			firstNameOrder: true,
+			template:       "<ACTRESS:LAST>",
+			want:           "Hatano Yui",
+		},
+		// ACTORNAME tag
+		{
+			name:           "ACTORNAME FIRST override",
+			sliceSingle:    true,
+			firstNameOrder: false,
+			template:       "<ACTORNAME:FIRST>",
+			want:           "Yui Hatano",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			details := actresses
+			if tt.sliceSingle {
+				details = actresses[:1]
+			}
+			ctx := &Context{
+				ID:             "IPX-535",
+				Actresses:      prebuilt(details),
+				ActressDetails: details,
+				FirstNameOrder: tt.firstNameOrder,
+			}
+			got, err := engine.Execute(tt.template, ctx)
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("Execute() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestTemplateEngine_ActorsDelimModifier covers the explicit DELIM= modifier
+// on the actress tags (<ACTORS>/<ACTRESS>/<ACTORNAME>) plus the hard break
+// of the legacy implicit-delimiter form (<ACTORS:|> is no longer a delimiter).
+// Also verifies ctx.ActressDelimiter (output.actress_delimiter config) honors
+// the configured default joiner when no DELIM= is given.
+func TestTemplateEngine_ActorsDelimModifier(t *testing.T) {
+	engine := NewEngine()
+
+	actresses := []ActressDetail{
+		{FirstName: "Yui", LastName: "Hatano", JapaneseName: "波多野結衣"},
+		{FirstName: "Ai", LastName: "Uehara", JapaneseName: "上原亜衣"},
+	}
+	prebuilt := func(details []ActressDetail) []string {
+		out := make([]string, len(details))
+		for i, d := range details {
+			if d.LastName != "" {
+				out[i] = d.LastName + " " + d.FirstName
+			} else {
+				out[i] = d.FirstName
+			}
+		}
+		return out
+	}
+
+	tests := []struct {
+		name             string
+		actressDelimiter string // ctx-level default
+		template         string
+		want             string
+	}{
+		// DELIM= alone
+		{
+			name:             "DELIM= pipe",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:DELIM=|>",
+			want:             "Hatano Yui|Uehara Ai",
+		},
+		{
+			name:             "DELIM= spaces around pipe",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:DELIM= | >",
+			want:             "Hatano Yui | Uehara Ai",
+		},
+		{
+			name:             "DELIM= colon",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:DELIM=:>",
+			want:             "Hatano Yui:Uehara Ai",
+		},
+		{
+			name:             "DELIM= ampersand",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:DELIM= & >",
+			want:             "Hatano Yui & Uehara Ai",
+		},
+		// DELIM= combined with language/order keywords
+		{
+			name:             "JA+DELIM= pipe",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:JA,DELIM=|>",
+			want:             "波多野結衣|上原亜衣",
+		},
+		{
+			name:             "FIRST+DELIM= pipe",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:FIRST,DELIM=|>",
+			want:             "Yui Hatano|Ai Uehara",
+		},
+		{
+			name:             "JA,FIRST+DELIM= pipe",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:JA,FIRST,DELIM=|>",
+			want:             "波多野結衣|上原亜衣",
+		},
+		// DELIM= value may contain commas
+		{
+			name:             "DELIM= value with comma",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:DELIM=,>",
+			want:             "Hatano Yui,Uehara Ai",
+		},
+		// Case-insensitive DELIM keyword
+		{
+			name:             "lowercase delim= keyword",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:delim=|>",
+			want:             "Hatano Yui|Uehara Ai",
+		},
+		// Config-level actress_delimiter honored when no DELIM= is given
+		{
+			name:             "no modifier uses ctx default",
+			actressDelimiter: " | ",
+			template:         "<ACTORS>",
+			want:             "Hatano Yui | Uehara Ai",
+		},
+		{
+			name:             "JA only inherits ctx delimiter",
+			actressDelimiter: " - ",
+			template:         "<ACTORS:JA>",
+			want:             "波多野結衣 - 上原亜衣",
+		},
+		// Hard break: legacy implicit-delimiter form is NOT treated as delimiter
+		// anymore. <ACTORS:|> now parses as an unknown modifier and falls back
+		// to the configured actress_delimiter (", " by default).
+		{
+			name:             "hard break <ACTORS:|> falls back to default",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:|>",
+			want:             "Hatano Yui, Uehara Ai",
+		},
+		{
+			name:             "hard break <ACTORS: & > falls back to default",
+			actressDelimiter: ", ",
+			template:         "<ACTORS: & >",
+			want:             "Hatano Yui, Uehara Ai",
+		},
+		// Empty DELIM= explicitly joins with an empty string (does not fall
+		// back to the configured actress_delimiter).
+		{
+			name:             "empty DELIM= joins with empty string",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:DELIM=>",
+			want:             "Hatano YuiUehara Ai",
+		},
+		{
+			name:             "empty DELIM= overrides non-default ctx delimiter",
+			actressDelimiter: " | ",
+			template:         "<ACTORS:DELIM=>",
+			want:             "Hatano YuiUehara Ai",
+		},
+		{
+			name:             "JA,DELIM= joins Japanese with empty string",
+			actressDelimiter: ", ",
+			template:         "<ACTORS:JA,DELIM=>",
+			want:             "波多野結衣上原亜衣",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &Context{
+				ID:               "IPX-535",
+				Actresses:        prebuilt(actresses),
+				ActressDetails:   actresses,
+				ActressDelimiter: tt.actressDelimiter,
+			}
+			got, err := engine.Execute(tt.template, ctx)
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("Execute() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -1188,6 +1653,11 @@ func TestTemplateEngine_AllTags(t *testing.T) {
 		{
 			name:     "FILENAME tag",
 			template: "<FILENAME>",
+			want:     "original_file",
+		},
+		{
+			name:     "FILENAME_EXT tag includes extension",
+			template: "<FILENAME_EXT>",
 			want:     "original_file.mp4",
 		},
 		{
@@ -1228,6 +1698,134 @@ func TestTemplateEngine_AllTags(t *testing.T) {
 			if err != nil {
 				t.Errorf("Execute() error = %v", err)
 				return
+			}
+			if got != tt.want {
+				t.Errorf("Execute() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTemplateEngine_FilenameTokens(t *testing.T) {
+	engine := NewEngine()
+
+	tests := []struct {
+		name     string
+		filename string
+		template string
+		want     string
+	}{
+		{
+			name:     "FILENAME strips single extension",
+			filename: "STARS-136.mp4",
+			template: "<FILENAME>.nfo",
+			want:     "STARS-136.nfo",
+		},
+		{
+			name:     "FILENAME strips uppercase extension",
+			filename: "STARS-136.MP4",
+			template: "<FILENAME>",
+			want:     "STARS-136",
+		},
+		{
+			name:     "FILENAME strips mkv extension",
+			filename: "IPX-535.mkv",
+			template: "<FILENAME>.nfo",
+			want:     "IPX-535.nfo",
+		},
+		{
+			name:     "FILENAME strips only final extension on multi-dot name",
+			filename: "SSIS-123.pt1.mp4",
+			template: "<FILENAME>",
+			want:     "SSIS-123.pt1",
+		},
+		{
+			name:     "FILENAME strips only final extension on double-ext name",
+			filename: "archive.tar.gz",
+			template: "<FILENAME>",
+			want:     "archive.tar",
+		},
+		{
+			name:     "FILENAME no extension returned as-is",
+			filename: "STARS-136",
+			template: "<FILENAME>.nfo",
+			want:     "STARS-136.nfo",
+		},
+		{
+			name:     "FILENAME empty yields empty",
+			filename: "",
+			template: "<FILENAME>.nfo",
+			want:     ".nfo",
+		},
+		{
+			name:     "FILENAME dotfile keeps leading dot (no ext to strip)",
+			filename: ".hidden",
+			template: "<FILENAME>",
+			want:     ".hidden",
+		},
+		{
+			name:     "FILENAME preserves directory component",
+			filename: "videos/STARS-136.mp4",
+			template: "<FILENAME>.nfo",
+			want:     "videos/STARS-136.nfo",
+		},
+
+		{
+			name:     "FILENAME_EXT keeps extension",
+			filename: "STARS-136.mp4",
+			template: "<FILENAME_EXT>",
+			want:     "STARS-136.mp4",
+		},
+		{
+			name:     "FILENAME_EXT keeps uppercase extension",
+			filename: "STARS-136.MP4",
+			template: "<FILENAME_EXT>",
+			want:     "STARS-136.MP4",
+		},
+		{
+			name:     "FILENAME_EXT no extension returned as-is",
+			filename: "STARS-136",
+			template: "<FILENAME_EXT>.bak",
+			want:     "STARS-136.bak",
+		},
+		{
+			name:     "FILENAME_EXT empty yields empty",
+			filename: "",
+			template: "<FILENAME_EXT>.nfo",
+			want:     ".nfo",
+		},
+		{
+			name:     "FILENAME_EXT dotfile returned as-is",
+			filename: ".hidden",
+			template: "<FILENAME_EXT>",
+			want:     ".hidden",
+		},
+		{
+			name:     "FILENAMEEXT alias works (no underscore)",
+			filename: "STARS-136.mp4",
+			template: "<FILENAMEEXT>",
+			want:     "STARS-136.mp4",
+		},
+		{
+			name:     "FILENAME numeric modifier ignored (returns full stem)",
+			filename: "STARS-136.mp4",
+			template: "<FILENAME:10>",
+			want:     "STARS-136",
+		},
+		{
+			name:     "FILENAME_EXT numeric modifier ignored (returns full name)",
+			filename: "STARS-136.mp4",
+			template: "<FILENAME_EXT:10>",
+			want:     "STARS-136.mp4",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &Context{OriginalFilename: tt.filename}
+			got, err := engine.Execute(tt.template, ctx)
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
 			}
 			if got != tt.want {
 				t.Errorf("Execute() = %q, want %q", got, tt.want)

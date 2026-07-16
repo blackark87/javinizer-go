@@ -14,9 +14,8 @@ import (
 	"github.com/javinizer/javinizer-go/internal/logging"
 )
 
-// isSameOriginWithConfig checks same-origin using trusted proxy headers when configured.
-// X-Forwarded-Proto, X-Forwarded-Host, and Forwarded are only trusted when
-// the direct client IP (RemoteAddr) matches api.security.trusted_proxies.
+// isSameOriginWithConfig checks same-origin using forwarded scheme/host only
+// when the direct peer is explicitly trusted.
 func isSameOriginWithConfig(origin string, r *http.Request, cfg *config.SecurityConfig) bool {
 	if origin == "" {
 		return true
@@ -59,7 +58,6 @@ func isSameOriginWithConfig(origin string, r *http.Request, cfg *config.Security
 		originPort == reqPort
 }
 
-// externalRequestScheme returns the externally visible request scheme.
 func externalRequestScheme(r *http.Request, cfg *config.SecurityConfig) string {
 	reqScheme := "http"
 	if r != nil && r.TLS != nil {
@@ -200,16 +198,22 @@ func acceptsHTML(c *gin.Context) bool {
 }
 
 // NewServer creates and configures the Gin router with all API endpoints.
-func NewServer(deps *core.ServerDependencies) *gin.Engine {
-	runtime := deps.EnsureRuntime()
-	core.SetDefaultRuntimeState(runtime)
+// NewServer builds the Gin engine from an APIRuntime. The runtime must be
+// initialized (InitAPIConfig called) — BootstrapAPI handles this. Callers
+// that construct APIDeps directly (e.g. tests) should create the APIRuntime
+// via NewAPIRuntime and call InitAPIConfig before passing it here.
+func NewServer(rt *core.APIRuntime) *gin.Engine {
+	rt.InitAPIConfig()
+
+	runtime := rt.EnsureRuntime()
 	runtime.ResetWebSocketHub()
 
 	runtime.SetWebSocketUpgrader(websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			origin := r.Header.Get("Origin")
-			allowedOrigins := deps.GetConfig().API.Security.AllowedOrigins
-			if origin != "" && isSameOriginWithConfig(origin, r, &deps.GetConfig().API.Security) {
+			snap := rt.Snapshot()
+			allowedOrigins := snap.APIConfig().AllowedOrigins
+			if origin != "" && isSameOriginWithConfig(origin, r, &snap.Config().API.Security) {
 				return true
 			}
 			if len(allowedOrigins) == 0 && origin == "" {
@@ -223,17 +227,17 @@ func NewServer(deps *core.ServerDependencies) *gin.Engine {
 		},
 	})
 
-	if deps.GetConfig().Logging.Level != "debug" {
+	if rt.GetAPIConfig().LogLevel != "debug" {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
 	router := gin.Default()
 	webAssets := loadWebUIAssets()
 
-	registerCORSMiddleware(router, deps)
+	registerCORSMiddleware(router, rt)
 	registerDocumentationRoutes(router)
-	registerCoreRoutes(router, deps)
-	registerAPIV1Routes(router, deps)
+	registerCoreRoutes(router, rt)
+	registerAPIV1Routes(router, rt)
 	registerStaticWebRoutes(router, webAssets)
 	registerNoRouteHandler(router, webAssets)
 	logRegisteredRoutes(router)

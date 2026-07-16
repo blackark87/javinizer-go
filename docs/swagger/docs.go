@@ -67,6 +67,12 @@ const docTemplate = `{
                         "description": "Skip results",
                         "name": "offset",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Language code to include translations for (e.g., 'en')",
+                        "name": "include_translations",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -79,13 +85,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -104,7 +110,7 @@ const docTemplate = `{
                 "summary": "Create actress",
                 "parameters": [
                     {
-                        "description": "Actress details",
+                        "description": "models.Actress details",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -117,19 +123,60 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.Actress"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.Actress"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/actresses/alias-group": {
+            "get": {
+                "description": "Resolve a name to its full set of known names (canonical plus all aliases that resolve to it). Returns empty canonical/names when the name is unknown to the alias table.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "actress"
+                ],
+                "summary": "Get actress alias group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Actress name (alias or canonical) to resolve",
+                        "name": "name",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_actress.aliasGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -227,7 +274,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ActressMergeRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ActressMergeRequest"
                         }
                     }
                 ],
@@ -235,31 +282,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ActressMergeResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ActressMergeResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -285,7 +332,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ActressMergePreviewRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ActressMergePreviewRequest"
                         }
                     }
                 ],
@@ -293,31 +340,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ActressMergePreviewResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ActressMergePreviewResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -338,8 +385,7 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Search query",
                         "name": "q",
-                        "in": "query",
-                        "required": true
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -348,20 +394,20 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/internal_api_actress.Actress"
+                                "$ref": "#/definitions/internal_api_actress.actressSearchResponse"
                             }
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -597,35 +643,41 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Actress ID",
+                        "description": "models.Actress ID",
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Language code to include translations for (e.g., 'en')",
+                        "name": "include_translations",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.Actress"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.Actress"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -645,7 +697,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Actress ID",
+                        "description": "models.Actress ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -664,25 +716,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.Actress"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.Actress"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -699,7 +751,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Actress ID",
+                        "description": "models.Actress ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -718,19 +770,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_actress.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -817,7 +869,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_auth.AuthCredentialsRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.AuthCredentialsRequest"
                         }
                     }
                 ],
@@ -825,31 +877,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_auth.AuthStatusResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.AuthStatusResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_auth.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_auth.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "429": {
                         "description": "Too Many Requests",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_auth.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_auth.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -898,7 +950,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_auth.AuthCredentialsRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.AuthCredentialsRequest"
                         }
                     },
                     {
@@ -912,31 +964,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_auth.AuthStatusResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.AuthStatusResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_auth.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_auth.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_auth.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_auth.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -956,13 +1008,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_auth.AuthStatusResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.AuthStatusResponse"
                         }
                     },
                     "503": {
                         "description": "Service Unavailable",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_auth.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -970,7 +1022,7 @@ const docTemplate = `{
         },
         "/api/v1/batch": {
             "get": {
-                "description": "Get a list of batch jobs with operation counts",
+                "description": "Get a paginated list of batch jobs with operation counts. Only job metadata is included; use GET /batch/{id} with include_data=true for full results.",
                 "produces": [
                     "application/json"
                 ],
@@ -978,6 +1030,25 @@ const docTemplate = `{
                     "web"
                 ],
                 "summary": "List batch jobs",
+                "parameters": [
+                    {
+                        "maximum": 200,
+                        "minimum": 1,
+                        "type": "integer",
+                        "default": 50,
+                        "description": "Maximum number of jobs to return (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "minimum": 0,
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Number of jobs to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -988,7 +1059,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -1014,7 +1085,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.BatchScrapeRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchScrapeRequest"
                         }
                     }
                 ],
@@ -1022,13 +1093,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.BatchScrapeResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchScrapeResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -1057,13 +1128,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.BatchJobResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchJobResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -1099,19 +1170,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -1149,7 +1220,7 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -1157,7 +1228,7 @@ const docTemplate = `{
         },
         "/api/v1/batch/{id}/movies/batch-exclude": {
             "post": {
-                "description": "Exclude multiple movies from a batch job in a single request. Best-effort: excludes as many as possible and returns per-movie failures.",
+                "description": "Exclude multiple movies from a batch job in a single request. Best-effort: excludes as many as possible and returns per-result failures.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1177,12 +1248,12 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Movie IDs to exclude",
+                        "description": "Result IDs to exclude",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.BatchExcludeRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchExcludeRequest"
                         }
                     }
                 ],
@@ -1190,19 +1261,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.BatchExcludeResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchExcludeResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -1235,7 +1306,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.OrganizeRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.OrganizeRequest"
                         }
                     }
                 ],
@@ -1252,13 +1323,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -1298,7 +1369,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.UpdateMovieRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.UpdateMovieRequest"
                         }
                     }
                 ],
@@ -1306,19 +1377,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.MovieResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -1363,7 +1434,73 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/batch/{id}/results/{resultId}/field-override": {
+            "post": {
+                "description": "Cherry-pick a single field's value from the named source's raw scraper results, overwriting the aggregated movie field and updating provenance attribution. Mirrors the original Javinizer \"Replace\" button (javinizergui.ps1:2538).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "web"
+                ],
+                "summary": "Override a field with a source's value",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Result ID",
+                        "name": "resultId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Field + source override",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.FieldOverrideRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.FieldOverrideResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -1403,7 +1540,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.PosterCropRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.PosterCropRequest"
                         }
                     }
                 ],
@@ -1411,19 +1548,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.PosterCropResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.PosterCropResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -1463,7 +1600,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.PosterFromURLRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.PosterFromURLRequest"
                         }
                     }
                 ],
@@ -1471,25 +1608,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.PosterFromURLResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.PosterFromURLResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -1529,7 +1666,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.OrganizePreviewRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.OrganizePreviewRequest"
                         }
                     }
                 ],
@@ -1537,19 +1674,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.OrganizePreviewResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.OrganizePreviewResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -1589,7 +1726,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.BatchRescrapeRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchRescrapeRequest"
                         }
                     }
                 ],
@@ -1597,31 +1734,85 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.BatchRescrapeResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchRescrapeResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "410": {
                         "description": "Gone",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/batch/{id}/results/{resultId}/sources": {
+            "get": {
+                "description": "Returns each successful scraper's raw ScraperResult for the movie, used by the review-page source viewer to offer per-field overrides. ScraperResults are persisted in the job envelope and survive server restarts. A synthesized single-source fallback is returned only for legacy envelopes persisted before this feature or when provenance was never set.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "web"
+                ],
+                "summary": "Get per-source raw scraper results for a movie",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Result ID",
+                        "name": "resultId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.SourceResultsResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -1653,7 +1844,7 @@ const docTemplate = `{
                         "name": "request",
                         "in": "body",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.UpdateRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.UpdateRequest"
                         }
                     }
                 ],
@@ -1670,13 +1861,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_batch.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -1702,7 +1893,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_file.BrowseRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BrowseRequest"
                         }
                     }
                 ],
@@ -1710,13 +1901,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_file.BrowseResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BrowseResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_file.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -1742,7 +1933,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_file.PathAutocompleteRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.PathAutocompleteRequest"
                         }
                     }
                 ],
@@ -1750,13 +1941,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_file.PathAutocompleteResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.PathAutocompleteResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_file.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -1783,7 +1974,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_system.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -1822,31 +2013,105 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_system.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_system.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
             }
         },
-        "/api/v1/cwd": {
-            "get": {
-                "description": "Returns the server's default browse directory. For Docker deployments, returns the first allowed directory (typically /media). For manual deployments, returns current working directory if no allowed directories configured.",
+        "/api/v1/config/security": {
+            "put": {
+                "description": "Update the operator-editable api.security block (allowed_directories, denied_directories, allow_unc, allowed_unc_servers) and hot-reload the server. Other security fields are preserved. Requires an authenticated operator session.",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "web"
+                    "system"
                 ],
-                "summary": "Get current working directory",
+                "summary": "Update security settings",
+                "parameters": [
+                    {
+                        "description": "Security block fields to persist",
+                        "name": "security",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_system.SecurityUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Persisted security block after reload",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_system.securityResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/desktop/upgrade": {
+            "post": {
+                "description": "Download, verify, and stage the latest desktop bundle, then relaunch the app. Desktop builds only.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "desktop"
+                ],
+                "summary": "Upgrade the desktop bundle",
+                "parameters": [
+                    {
+                        "description": "Upgrade options (force re-download even when up to date)",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_desktop.upgradeRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_desktop.upgradeResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -1857,7 +2122,39 @@ const docTemplate = `{
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_file.ErrorResponse"
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/desktop/upgrade/status": {
+            "get": {
+                "description": "Return the current desktop bundle upgrade state (idle/downloading/verifying/staging/swapping/relaunching/failed). Desktop builds only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "desktop"
+                ],
+                "summary": "Get desktop upgrade status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_updater.Status"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -1929,13 +2226,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_events.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_events.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -1968,13 +2265,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_events.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_events.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2000,7 +2297,419 @@ const docTemplate = `{
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_events.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/genres": {
+            "get": {
+                "description": "Get a list of all genres, optionally including translations",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "genres"
+                ],
+                "summary": "List genres",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Language code to include translations for (e.g., 'en')",
+                        "name": "include_translations",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_genre.genreListResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/genres/favorites": {
+            "get": {
+                "description": "Get the user's favorite genres (quick-apply list) configured on the Genres page",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "genres"
+                ],
+                "summary": "List favorite genres",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_genre.favoriteGenresResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Replace the entire favorite genres list in one bulk save (the Save/Apply affordance on the Genres page)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "genres"
+                ],
+                "summary": "Replace favorite genres",
+                "parameters": [
+                    {
+                        "description": "Full list of favorite genres",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_genre.genreListUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_genre.favoriteGenresResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Add a single genre to the favorites list. Idempotent — adding an existing favorite returns 200.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "genres"
+                ],
+                "summary": "Add favorite genre",
+                "parameters": [
+                    {
+                        "description": "Genre to favorite",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_genre.genreAddRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Already favorited",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_genre.favoriteGenresResponse"
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_genre.favoriteGenresResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Remove a single genre from the favorites list by name",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "genres"
+                ],
+                "summary": "Remove favorite genre",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Genre name to remove from favorites",
+                        "name": "genre",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_genre.favoriteGenresResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/genres/ignored": {
+            "get": {
+                "description": "Get the configured ignore_genres list (genres excluded from scraping/processing)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "genres"
+                ],
+                "summary": "List ignored genres",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_genre.ignoredGenresResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Replace the entire ignore_genres list in one bulk save. Use for the Save/Apply affordance on the Genres page.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "genres"
+                ],
+                "summary": "Replace ignored genres",
+                "parameters": [
+                    {
+                        "description": "Full list of ignored genres",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_genre.genreListUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_genre.ignoredGenresResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Add a single genre to the ignore_genres list. Idempotent — adding an existing genre returns 200.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "genres"
+                ],
+                "summary": "Add ignored genre",
+                "parameters": [
+                    {
+                        "description": "Genre to ignore",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_genre.genreAddRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Already ignored",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_genre.ignoredGenresResponse"
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_genre.ignoredGenresResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Remove a single genre from the ignore_genres list by name",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "genres"
+                ],
+                "summary": "Remove ignored genre",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Genre name to remove from the ignore list",
+                        "name": "genre",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_genre.ignoredGenresResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2042,7 +2751,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_genre.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2074,25 +2783,25 @@ const docTemplate = `{
                     "200": {
                         "description": "Already exists",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_genre.GenreReplacement"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.GenreReplacement"
                         }
                     },
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_genre.GenreReplacement"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.GenreReplacement"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_genre.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_genre.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2133,19 +2842,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_genre.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_genre.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_genre.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2203,13 +2912,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_history.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_history.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2247,13 +2956,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_history.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_history.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2279,7 +2988,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_history.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2317,19 +3026,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_history.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_history.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_history.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2357,13 +3066,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.JobListResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.JobListResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2392,19 +3101,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.JobListItem"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.JobListItem"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2433,19 +3142,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.OperationListResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.OperationListResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2481,37 +3190,37 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.RevertResultResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.RevertResultResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Revert is disabled",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2540,37 +3249,37 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.RevertResultResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.RevertResultResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Revert is disabled",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2605,19 +3314,19 @@ const docTemplate = `{
                     "403": {
                         "description": "Revert is disabled",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_jobs.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2651,13 +3360,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_movie.MoviesResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MoviesResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_movie.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2680,25 +3389,19 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
-                    },
-                    {
-                        "type": "boolean",
-                        "description": "Include field-level provenance data",
-                        "name": "include_provenance",
-                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_movie.MovieResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_movie.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2729,8 +3432,9 @@ const docTemplate = `{
                         "description": "Comparison options",
                         "name": "request",
                         "in": "body",
+                        "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_movie.NFOComparisonRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.NFOComparisonRequest"
                         }
                     }
                 ],
@@ -2738,25 +3442,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_movie.NFOComparisonResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.NFOComparisonResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_movie.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_movie.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_movie.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2789,7 +3493,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_movie.RescrapeRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.RescrapeRequest"
                         }
                     }
                 ],
@@ -2797,25 +3501,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_movie.MovieResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_movie.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_movie.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_movie.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2847,7 +3551,7 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_temp.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2873,7 +3577,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_system.ProxyTestRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ProxyTestRequest"
                         }
                     }
                 ],
@@ -2881,13 +3585,191 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_system.ProxyTestResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ProxyTestResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_system.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/r18dev/dump": {
+            "delete": {
+                "description": "Delete the local r18.dev dump sidecar database. After clearing, the scraper falls back to HTTP content_id resolution until the dump is re-downloaded.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "r18dev"
+                ],
+                "summary": "Clear the r18.dev dump",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/r18dev/dump/download": {
+            "post": {
+                "description": "Start a full download of the r18.dev database dump and build the local lookup database. Progress is streamed via WebSocket. Returns 409 if a download is already running.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "r18dev"
+                ],
+                "summary": "Download the r18.dev dump",
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/r18dev/dump/search": {
+            "get": {
+                "description": "Look up a dvd_id or content_id in the local r18.dev dump. Tries dvd_id first, then content_id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "r18dev"
+                ],
+                "summary": "Search the r18.dev dump",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "dvd_id or content_id to look up",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_r18devdump.searchResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/r18dev/dump/status": {
+            "get": {
+                "description": "Check whether the local r18.dev dump sidecar is present and return its stats (rows, source date, size).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "r18dev"
+                ],
+                "summary": "Get r18.dev dump status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api_r18devdump.dumpStatusResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/r18dev/dump/update": {
+            "post": {
+                "description": "Re-download the dump only if a newer version is available. Progress is streamed via WebSocket. Returns 409 if a download is already running.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "r18dev"
+                ],
+                "summary": "Update the r18.dev dump",
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -2913,7 +3795,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_file.ScanRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ScanRequest"
                         }
                     }
                 ],
@@ -2921,19 +3803,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_file.ScanResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ScanResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_file.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_file.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -2959,7 +3841,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_movie.ScrapeRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ScrapeRequest"
                         }
                     }
                 ],
@@ -2967,25 +3849,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_movie.ScrapeResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ScrapeResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_movie.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_movie.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_movie.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -3005,13 +3887,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_system.AvailableScrapersResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.AvailableScrapersResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_system.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -3043,13 +3925,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_temp.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "502": {
                         "description": "Bad Gateway",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_temp.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -3088,7 +3970,7 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_temp.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -3114,7 +3996,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_token.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -3152,7 +4034,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_token.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -3190,13 +4072,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_token.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_token.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -3231,13 +4113,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_token.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_token.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -3277,13 +4159,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_system.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "502": {
                         "description": "Bad Gateway",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_system.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -3309,7 +4191,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_api_system.TranslationModelsRequest"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.TranslationModelsRequest"
                         }
                     }
                 ],
@@ -3317,19 +4199,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_system.TranslationModelsResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.TranslationModelsResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_system.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     },
                     "502": {
                         "description": "Bad Gateway",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_system.ErrorResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
                     }
                 }
@@ -3389,7 +4271,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/internal_api_system.HealthResponse"
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.HealthResponse"
                         }
                     }
                 }
@@ -3429,1013 +4311,6 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "config.APIConfig": {
-            "type": "object",
-            "properties": {
-                "security": {
-                    "$ref": "#/definitions/config.SecurityConfig"
-                }
-            }
-        },
-        "config.ActressDatabaseConfig": {
-            "type": "object",
-            "properties": {
-                "auto_add": {
-                    "description": "Automatically add new actresses to database",
-                    "type": "boolean"
-                },
-                "convert_alias": {
-                    "description": "Convert actress names using alias database",
-                    "type": "boolean"
-                },
-                "enabled": {
-                    "description": "Enable actress image lookup from database",
-                    "type": "boolean"
-                }
-            }
-        },
-        "config.AnthropicTranslationConfig": {
-            "type": "object",
-            "properties": {
-                "api_key": {
-                    "description": "Required",
-                    "type": "string"
-                },
-                "base_url": {
-                    "description": "e.g., https://api.anthropic.com",
-                    "type": "string"
-                },
-                "model": {
-                    "description": "e.g., claude-sonnet-4-20250514",
-                    "type": "string"
-                }
-            }
-        },
-        "config.BedrockTranslationConfig": {
-            "type": "object",
-            "properties": {
-                "access_key_id": {
-                    "description": "AWS access key ID",
-                    "type": "string"
-                },
-                "base_url": {
-                    "description": "Optional endpoint override",
-                    "type": "string"
-                },
-                "model": {
-                    "description": "Bedrock model ID, e.g., anthropic.claude-3-5-sonnet-20241022-v2:0",
-                    "type": "string"
-                },
-                "region": {
-                    "description": "AWS region, e.g., us-east-1",
-                    "type": "string"
-                },
-                "secret_access_key": {
-                    "description": "AWS secret access key",
-                    "type": "string"
-                },
-                "session_token": {
-                    "type": "string"
-                }
-            }
-        },
-        "config.BrowserConfig": {
-            "type": "object",
-            "properties": {
-                "binary_path": {
-                    "description": "Chrome/Chromium path (auto-discovered if empty)",
-                    "type": "string"
-                },
-                "block_css": {
-                    "description": "Block CSS for speed (default: false)",
-                    "type": "boolean"
-                },
-                "block_images": {
-                    "description": "Block images for speed (default: true)",
-                    "type": "boolean"
-                },
-                "debug_visible": {
-                    "description": "Show browser window for debugging (default: false)",
-                    "type": "boolean"
-                },
-                "enabled": {
-                    "description": "Master kill-switch (default: false)",
-                    "type": "boolean"
-                },
-                "headless": {
-                    "description": "Run headless (default: true)",
-                    "type": "boolean"
-                },
-                "max_retries": {
-                    "description": "Retry attempts (default: 3)",
-                    "type": "integer"
-                },
-                "slow_mo": {
-                    "description": "Slow motion delay ms (default: 0)",
-                    "type": "integer"
-                },
-                "stealth_mode": {
-                    "description": "Anti-detection measures (default: true)",
-                    "type": "boolean"
-                },
-                "timeout": {
-                    "description": "Operation timeout in seconds (default: 30)",
-                    "type": "integer"
-                },
-                "user_agent": {
-                    "description": "Override UA (empty = use scraper's)",
-                    "type": "string"
-                },
-                "window_height": {
-                    "description": "Viewport height (default: 1080)",
-                    "type": "integer"
-                },
-                "window_width": {
-                    "description": "Viewport width (default: 1920)",
-                    "type": "integer"
-                }
-            }
-        },
-        "config.CompletenessConfig": {
-            "type": "object",
-            "properties": {
-                "enabled": {
-                    "type": "boolean"
-                },
-                "tiers": {
-                    "$ref": "#/definitions/config.CompletenessTierConfig"
-                }
-            }
-        },
-        "config.CompletenessTierConfig": {
-            "type": "object",
-            "properties": {
-                "essential": {
-                    "$ref": "#/definitions/config.CompletenessTierDefinition"
-                },
-                "important": {
-                    "$ref": "#/definitions/config.CompletenessTierDefinition"
-                },
-                "nice_to_have": {
-                    "$ref": "#/definitions/config.CompletenessTierDefinition"
-                }
-            }
-        },
-        "config.CompletenessTierDefinition": {
-            "type": "object",
-            "properties": {
-                "fields": {
-                    "description": "Movie field names assigned to this tier",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "weight": {
-                    "description": "Percentage weight (0-100, must sum to 100 across tiers)",
-                    "type": "integer"
-                }
-            }
-        },
-        "config.DatabaseConfig": {
-            "type": "object",
-            "properties": {
-                "dsn": {
-                    "description": "Data Source Name",
-                    "type": "string"
-                },
-                "log_level": {
-                    "description": "Database query logging: silent, error, warn, info (default: silent)",
-                    "type": "string"
-                },
-                "type": {
-                    "description": "sqlite (currently only supported backend)",
-                    "type": "string"
-                }
-            }
-        },
-        "config.DeepLTranslationConfig": {
-            "type": "object",
-            "properties": {
-                "api_key": {
-                    "description": "DeepL API key",
-                    "type": "string"
-                },
-                "base_url": {
-                    "description": "Optional override (defaults to mode-specific endpoint)",
-                    "type": "string"
-                },
-                "mode": {
-                    "description": "free or pro",
-                    "type": "string"
-                }
-            }
-        },
-        "config.FlareSolverrConfig": {
-            "type": "object",
-            "properties": {
-                "enabled": {
-                    "description": "Enable FlareSolverr for bypassing Cloudflare",
-                    "type": "boolean"
-                },
-                "max_retries": {
-                    "description": "Max retry attempts for FlareSolverr calls (default: 3)",
-                    "type": "integer"
-                },
-                "session_ttl": {
-                    "description": "Session TTL in seconds (default: 300)",
-                    "type": "integer"
-                },
-                "timeout": {
-                    "description": "Request timeout in seconds (default: 30)",
-                    "type": "integer"
-                },
-                "url": {
-                    "description": "FlareSolverr endpoint (default: http://localhost:8191/v1)",
-                    "type": "string"
-                }
-            }
-        },
-        "config.GenreReplacementConfig": {
-            "type": "object",
-            "properties": {
-                "auto_add": {
-                    "description": "Automatically add new genres to database (identity mapping)",
-                    "type": "boolean"
-                },
-                "enabled": {
-                    "description": "Enable genre replacement from database",
-                    "type": "boolean"
-                }
-            }
-        },
-        "config.GoogleTranslationConfig": {
-            "type": "object",
-            "properties": {
-                "api_key": {
-                    "description": "Required for paid mode",
-                    "type": "string"
-                },
-                "base_url": {
-                    "description": "Optional override",
-                    "type": "string"
-                },
-                "mode": {
-                    "description": "free or paid",
-                    "type": "string"
-                }
-            }
-        },
-        "config.LoggingConfig": {
-            "type": "object",
-            "properties": {
-                "compress": {
-                    "description": "Compress rotated files",
-                    "type": "boolean"
-                },
-                "format": {
-                    "description": "json, text",
-                    "type": "string"
-                },
-                "level": {
-                    "description": "debug, info, warn, error",
-                    "type": "string"
-                },
-                "max_age_days": {
-                    "description": "Max age in days to keep log files (0 = no limit)",
-                    "type": "integer"
-                },
-                "max_backups": {
-                    "description": "Max number of old log files to keep (0 = unlimited)",
-                    "type": "integer"
-                },
-                "max_size_mb": {
-                    "description": "Max size in MB before rotation (0 = no rotation)",
-                    "type": "integer"
-                },
-                "output": {
-                    "description": "stdout, file path",
-                    "type": "string"
-                }
-            }
-        },
-        "config.MatchingConfig": {
-            "type": "object",
-            "properties": {
-                "exclude_patterns": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "extensions": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "min_size_mb": {
-                    "type": "integer"
-                },
-                "regex_enabled": {
-                    "type": "boolean"
-                },
-                "regex_pattern": {
-                    "type": "string"
-                }
-            }
-        },
-        "config.MediaInfoConfig": {
-            "type": "object",
-            "properties": {
-                "cli_enabled": {
-                    "description": "Enable MediaInfo CLI fallback (default: false)",
-                    "type": "boolean"
-                },
-                "cli_path": {
-                    "description": "Path to mediainfo binary (default: \"mediainfo\")",
-                    "type": "string"
-                },
-                "cli_timeout": {
-                    "description": "Timeout in seconds for CLI execution (default: 30)",
-                    "type": "integer"
-                }
-            }
-        },
-        "config.MetadataConfig": {
-            "type": "object",
-            "properties": {
-                "actress_database": {
-                    "description": "Actress image database (SQLite-backed)",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/config.ActressDatabaseConfig"
-                        }
-                    ]
-                },
-                "completeness": {
-                    "description": "Completeness scoring configuration",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/config.CompletenessConfig"
-                        }
-                    ]
-                },
-                "genre_replacement": {
-                    "description": "Genre replacement/normalization (SQLite-backed)",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/config.GenreReplacementConfig"
-                        }
-                    ]
-                },
-                "ignore_genres": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "nfo": {
-                    "$ref": "#/definitions/config.NFOConfig"
-                },
-                "priority": {
-                    "$ref": "#/definitions/config.PriorityConfig"
-                },
-                "required_fields": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "tag_database": {
-                    "description": "Per-movie tag database (SQLite-backed)",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/config.TagDatabaseConfig"
-                        }
-                    ]
-                },
-                "translation": {
-                    "description": "Metadata translation pipeline",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/config.TranslationConfig"
-                        }
-                    ]
-                },
-                "word_replacement": {
-                    "description": "Word uncensor/text replacement (SQLite-backed)",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/config.WordReplacementConfig"
-                        }
-                    ]
-                }
-            }
-        },
-        "config.NFOConfig": {
-            "type": "object",
-            "properties": {
-                "actress_as_tag": {
-                    "type": "boolean"
-                },
-                "actress_language_ja": {
-                    "type": "boolean"
-                },
-                "add_generic_role": {
-                    "description": "Add generic \"Actress\" role to all actresses",
-                    "type": "boolean"
-                },
-                "alt_name_role": {
-                    "description": "Use alternate name (Japanese) in role field",
-                    "type": "boolean"
-                },
-                "credits": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "display_title": {
-                    "type": "string"
-                },
-                "enabled": {
-                    "type": "boolean"
-                },
-                "filename_template": {
-                    "type": "string"
-                },
-                "first_name_order": {
-                    "type": "boolean"
-                },
-                "include_fanart": {
-                    "type": "boolean"
-                },
-                "include_originalpath": {
-                    "description": "Include source filename in NFO",
-                    "type": "boolean"
-                },
-                "include_stream_details": {
-                    "type": "boolean"
-                },
-                "include_trailer": {
-                    "type": "boolean"
-                },
-                "per_file": {
-                    "description": "Create separate NFO for each multi-part file",
-                    "type": "boolean"
-                },
-                "rating_source": {
-                    "type": "string"
-                },
-                "tag": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "tagline": {
-                    "type": "string"
-                },
-                "unknown_actress_mode": {
-                    "description": "skip (default) or fallback",
-                    "type": "string"
-                },
-                "unknown_actress_text": {
-                    "description": "Text for fallback mode",
-                    "type": "string"
-                }
-            }
-        },
-        "config.OpenAICompatibleTranslationConfig": {
-            "type": "object",
-            "properties": {
-                "api_key": {
-                    "description": "Optional for local endpoints",
-                    "type": "string"
-                },
-                "base_url": {
-                    "description": "e.g., http://localhost:11434/v1",
-                    "type": "string"
-                },
-                "enable_thinking": {
-                    "description": "Toggle reasoning/thinking when supported by the backend",
-                    "type": "boolean"
-                },
-                "model": {
-                    "description": "e.g., llama3.1",
-                    "type": "string"
-                }
-            }
-        },
-        "config.OpenAITranslationConfig": {
-            "type": "object",
-            "properties": {
-                "api_key": {
-                    "description": "API key for the provider",
-                    "type": "string"
-                },
-                "base_url": {
-                    "description": "OpenAI-compatible base URL (e.g., https://api.openai.com/v1)",
-                    "type": "string"
-                },
-                "model": {
-                    "description": "Model name (e.g., gpt-4o-mini)",
-                    "type": "string"
-                }
-            }
-        },
-        "config.OutputConfig": {
-            "type": "object",
-            "properties": {
-                "actress_folder": {
-                    "type": "string"
-                },
-                "actress_format": {
-                    "type": "string"
-                },
-                "allow_revert": {
-                    "description": "Enable revert operations (default: false — opt-in for safety)",
-                    "type": "boolean"
-                },
-                "delimiter": {
-                    "type": "string"
-                },
-                "download_actress": {
-                    "type": "boolean"
-                },
-                "download_cover": {
-                    "type": "boolean"
-                },
-                "download_extrafanart": {
-                    "type": "boolean"
-                },
-                "download_poster": {
-                    "type": "boolean"
-                },
-                "download_proxy": {
-                    "description": "Separate proxy for downloads (optional)",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/config.ProxyConfig"
-                        }
-                    ]
-                },
-                "download_timeout": {
-                    "description": "Timeout in seconds for HTTP downloads (default: 60)",
-                    "type": "integer"
-                },
-                "download_trailer": {
-                    "type": "boolean"
-                },
-                "fanart_format": {
-                    "type": "string"
-                },
-                "file_format": {
-                    "type": "string"
-                },
-                "first_name_order": {
-                    "description": "true = FirstName LastName, false = LastName FirstName (default: false)",
-                    "type": "boolean"
-                },
-                "folder_format": {
-                    "type": "string"
-                },
-                "group_actress": {
-                    "description": "Replace multiple actresses with group name in templates (default: false)",
-                    "type": "boolean"
-                },
-                "group_actress_name": {
-                    "description": "Folder name when group_actress is enabled and multiple actresses (default: \"@Group\")",
-                    "type": "string"
-                },
-                "max_path_length": {
-                    "type": "integer"
-                },
-                "max_title_length": {
-                    "type": "integer"
-                },
-                "move_subtitles": {
-                    "type": "boolean"
-                },
-                "operation_mode": {
-                    "type": "string"
-                },
-                "poster_format": {
-                    "type": "string"
-                },
-                "rename_file": {
-                    "description": "Rename files using file_format template (default: true)",
-                    "type": "boolean"
-                },
-                "screenshot_folder": {
-                    "type": "string"
-                },
-                "screenshot_format": {
-                    "type": "string"
-                },
-                "screenshot_padding": {
-                    "type": "integer"
-                },
-                "subfolder_format": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "subtitle_extensions": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "trailer_format": {
-                    "type": "string"
-                }
-            }
-        },
-        "config.PerformanceConfig": {
-            "type": "object",
-            "properties": {
-                "buffer_size": {
-                    "description": "Channel buffer size (default: 100)",
-                    "type": "integer"
-                },
-                "max_workers": {
-                    "description": "Maximum concurrent workers (default: 5)",
-                    "type": "integer"
-                },
-                "update_interval": {
-                    "description": "UI update interval in milliseconds (default: 100)",
-                    "type": "integer"
-                },
-                "worker_timeout": {
-                    "description": "Timeout per task in seconds (default: 300)",
-                    "type": "integer"
-                }
-            }
-        },
-        "config.PriorityConfig": {
-            "type": "object",
-            "properties": {
-                "priority": {
-                    "description": "Priority is the global scraper execution order.\nIf empty, derived from registered scraper priorities at initialization.\nIf set, used directly for all metadata fields that lack a Fields override.",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "config.ProxyConfig": {
-            "type": "object",
-            "properties": {
-                "default_profile": {
-                    "description": "Default profile name (for global scrapers.proxy)",
-                    "type": "string"
-                },
-                "enabled": {
-                    "description": "Enable proxy for HTTP requests",
-                    "type": "boolean"
-                },
-                "profile": {
-                    "description": "Named profile to use (for scraper-specific overrides)",
-                    "type": "string"
-                },
-                "profiles": {
-                    "description": "Named proxy profiles (global scrapers.proxy)",
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/config.ProxyProfile"
-                    }
-                }
-            }
-        },
-        "config.ProxyProfile": {
-            "type": "object",
-            "properties": {
-                "password": {
-                    "type": "string"
-                },
-                "url": {
-                    "type": "string"
-                },
-                "username": {
-                    "type": "string"
-                }
-            }
-        },
-        "config.RateLimitConfig": {
-            "type": "object",
-            "properties": {
-                "requests_per_minute": {
-                    "type": "integer"
-                }
-            }
-        },
-        "config.ScrapersConfig": {
-            "type": "object",
-            "properties": {
-                "browser": {
-                    "description": "NEW: Global Browser configuration block",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/config.BrowserConfig"
-                        }
-                    ]
-                },
-                "early_stop": {
-                    "description": "EarlyStop, when true, stops querying lower-priority scrapers once\nEarlyStopMinResults successful results are collected AND all configured\nmetadata.required_fields are covered by those results. Default: false.",
-                    "type": "boolean"
-                },
-                "early_stop_min_results": {
-                    "description": "EarlyStopMinResults is the number of successful scraper results to collect\nbefore stopping early. Default: 2 (a second result confirms the first).",
-                    "type": "integer"
-                },
-                "flaresolverr": {
-                    "description": "Global FlareSolverr config for Cloudflare bypass",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/config.FlareSolverrConfig"
-                        }
-                    ]
-                },
-                "priority": {
-                    "description": "Global scraper priority order",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "proxy": {
-                    "description": "Default HTTP/SOCKS5 proxy for scraper requests",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/config.ProxyConfig"
-                        }
-                    ]
-                },
-                "referer": {
-                    "description": "Referer header for CDN compatibility (default: https://www.dmm.co.jp/)",
-                    "type": "string"
-                },
-                "request_timeout_seconds": {
-                    "description": "Overall request timeout in seconds (default: 60)",
-                    "type": "integer"
-                },
-                "scrape_actress": {
-                    "description": "NEW: Global scrape_actress default (opt-out behavior, default: true)",
-                    "type": "boolean"
-                },
-                "timeout_seconds": {
-                    "description": "HTTP client timeout in seconds (default: 30)",
-                    "type": "integer"
-                },
-                "user_agent": {
-                    "type": "string"
-                }
-            }
-        },
-        "config.SecurityConfig": {
-            "type": "object",
-            "properties": {
-                "allow_unc": {
-                    "type": "boolean"
-                },
-                "allowed_directories": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "allowed_origins": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "allowed_unc_servers": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "denied_directories": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "force_secure_cookies": {
-                    "type": "boolean"
-                },
-                "max_files_per_scan": {
-                    "type": "integer"
-                },
-                "rate_limit": {
-                    "$ref": "#/definitions/config.RateLimitConfig"
-                },
-                "scan_timeout_seconds": {
-                    "type": "integer"
-                },
-                "trusted_proxies": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "config.ServerConfig": {
-            "type": "object",
-            "properties": {
-                "host": {
-                    "type": "string"
-                },
-                "port": {
-                    "type": "integer"
-                }
-            }
-        },
-        "config.SystemConfig": {
-            "type": "object",
-            "properties": {
-                "temp_dir": {
-                    "description": "TempDir is the base directory for temporary files (default: \"data/temp\").\nCan be overridden with JAVINIZER_TEMP_DIR environment variable.\nSubdirectory \"posters/{jobID}\" is created for batch job temp posters.",
-                    "type": "string"
-                },
-                "umask": {
-                    "description": "Umask for file creation (e.g., \"002\" for rwxrwxr-x)\nCan be overridden with UMASK environment variable",
-                    "type": "string"
-                },
-                "version_check_enabled": {
-                    "description": "VersionCheckEnabled enables checking for new releases",
-                    "type": "boolean"
-                },
-                "version_check_interval_hours": {
-                    "description": "VersionCheckIntervalHours is the interval between version checks in hours",
-                    "type": "integer"
-                }
-            }
-        },
-        "config.TagDatabaseConfig": {
-            "type": "object",
-            "properties": {
-                "enabled": {
-                    "description": "Enable per-movie tag lookup from database",
-                    "type": "boolean"
-                }
-            }
-        },
-        "config.TranslationConfig": {
-            "type": "object",
-            "properties": {
-                "anthropic": {
-                    "description": "Anthropic (Claude) provider settings",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/config.AnthropicTranslationConfig"
-                        }
-                    ]
-                },
-                "apply_to_primary": {
-                    "description": "Replace primary movie metadata with translated text",
-                    "type": "boolean"
-                },
-                "bedrock": {
-                    "description": "AWS Bedrock provider settings",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/config.BedrockTranslationConfig"
-                        }
-                    ]
-                },
-                "deepl": {
-                    "description": "DeepL provider settings",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/config.DeepLTranslationConfig"
-                        }
-                    ]
-                },
-                "enabled": {
-                    "description": "Enable metadata translation after aggregation",
-                    "type": "boolean"
-                },
-                "fields": {
-                    "description": "Per-field translation controls",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/config.TranslationFieldsConfig"
-                        }
-                    ]
-                },
-                "google": {
-                    "description": "Google provider settings",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/config.GoogleTranslationConfig"
-                        }
-                    ]
-                },
-                "max_concurrency": {
-                    "description": "Maximum concurrent translation requests",
-                    "type": "integer"
-                },
-                "openai": {
-                    "description": "OpenAI/OpenAI-compatible provider settings",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/config.OpenAITranslationConfig"
-                        }
-                    ]
-                },
-                "openai_compatible": {
-                    "description": "OpenAI-compatible (Ollama, vLLM, etc.) provider settings",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/config.OpenAICompatibleTranslationConfig"
-                        }
-                    ]
-                },
-                "overwrite_existing_target": {
-                    "description": "Overwrite target-language translation if already present",
-                    "type": "boolean"
-                },
-                "provider": {
-                    "description": "openai, openai-compatible, anthropic, bedrock, deepl, google",
-                    "type": "string"
-                },
-                "source_language": {
-                    "description": "Source language code (e.g., en, ja, auto)",
-                    "type": "string"
-                },
-                "target_language": {
-                    "description": "Target language code (e.g., en, ja, zh)",
-                    "type": "string"
-                },
-                "target_languages": {
-                    "description": "Optional list of target language codes for multi-language output",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "timeout_seconds": {
-                    "description": "Request timeout in seconds",
-                    "type": "integer"
-                }
-            }
-        },
-        "config.TranslationFieldsConfig": {
-            "type": "object",
-            "properties": {
-                "actresses": {
-                    "type": "boolean"
-                },
-                "description": {
-                    "type": "boolean"
-                },
-                "director": {
-                    "type": "boolean"
-                },
-                "genres": {
-                    "type": "boolean"
-                },
-                "label": {
-                    "type": "boolean"
-                },
-                "maker": {
-                    "type": "boolean"
-                },
-                "original_title": {
-                    "type": "boolean"
-                },
-                "series": {
-                    "type": "boolean"
-                },
-                "title": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "config.WebUIConfig": {
-            "type": "object",
-            "properties": {
-                "default_review_view": {
-                    "type": "string"
-                }
-            }
-        },
-        "config.WordReplacementConfig": {
-            "type": "object",
-            "properties": {
-                "enabled": {
-                    "description": "Enable word replacement from database",
-                    "type": "boolean"
-                }
-            }
-        },
         "github_com_javinizer_javinizer-go_internal_api_contracts.ActressMergeConflict": {
             "type": "object",
             "properties": {
@@ -4451,6 +4326,229 @@ const docTemplate = `{
                 "target_value": {}
             }
         },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.ActressMergePreviewRequest": {
+            "type": "object",
+            "required": [
+                "source_id",
+                "target_id"
+            ],
+            "properties": {
+                "source_id": {
+                    "type": "integer",
+                    "example": 34
+                },
+                "target_id": {
+                    "type": "integer",
+                    "example": 12
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.ActressMergePreviewResponse": {
+            "type": "object",
+            "properties": {
+                "conflicts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ActressMergeConflict"
+                    }
+                },
+                "default_resolutions": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "proposed_merged": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.Actress"
+                },
+                "source": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.Actress"
+                },
+                "target": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.Actress"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.ActressMergeRequest": {
+            "type": "object",
+            "required": [
+                "source_id",
+                "target_id"
+            ],
+            "properties": {
+                "resolutions": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "dmm_id": "target",
+                        "japanese_name": "source"
+                    }
+                },
+                "source_id": {
+                    "type": "integer",
+                    "example": 34
+                },
+                "target_id": {
+                    "type": "integer",
+                    "example": 12
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.ActressMergeResponse": {
+            "type": "object",
+            "properties": {
+                "aliases_added": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "conflicts_resolved": {
+                    "type": "integer",
+                    "example": 3
+                },
+                "merged_actress": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.Actress"
+                },
+                "merged_from_id": {
+                    "type": "integer",
+                    "example": 34
+                },
+                "updated_movies": {
+                    "type": "integer",
+                    "example": 27
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.ActressTranslationView": {
+            "type": "object",
+            "properties": {
+                "actress_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "first_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "japanese_name": {
+                    "type": "string"
+                },
+                "language": {
+                    "type": "string"
+                },
+                "last_name": {
+                    "type": "string"
+                },
+                "settings_hash": {
+                    "type": "string"
+                },
+                "source_name": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.ActressView": {
+            "type": "object",
+            "properties": {
+                "aliases": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "dmm_id": {
+                    "type": "integer"
+                },
+                "first_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "japanese_name": {
+                    "type": "string"
+                },
+                "last_name": {
+                    "type": "string"
+                },
+                "thumb_url": {
+                    "type": "string"
+                },
+                "translations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ActressTranslationView"
+                    }
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.AuthCredentialsRequest": {
+            "type": "object",
+            "required": [
+                "password",
+                "username"
+            ],
+            "properties": {
+                "password": {
+                    "type": "string",
+                    "example": "your-password"
+                },
+                "remember_me": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "username": {
+                    "type": "string",
+                    "example": "admin"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.AuthStatusResponse": {
+            "type": "object",
+            "properties": {
+                "authenticated": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "initialized": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "session_id": {
+                    "type": "string",
+                    "example": ""
+                },
+                "username": {
+                    "type": "string",
+                    "example": "admin"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.AvailableScrapersResponse": {
+            "type": "object",
+            "properties": {
+                "scrapers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ScraperInfo"
+                    }
+                }
+            }
+        },
         "github_com_javinizer_javinizer-go_internal_api_contracts.BatchExcludeFailed": {
             "type": "object",
             "properties": {
@@ -4464,25 +4562,58 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.BatchExcludeRequest": {
+            "type": "object",
+            "required": [
+                "result_ids"
+            ],
+            "properties": {
+                "result_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "uuid-1",
+                        "uuid-2"
+                    ]
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.BatchExcludeResponse": {
+            "type": "object",
+            "properties": {
+                "excluded": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "failed": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchExcludeFailed"
+                    }
+                },
+                "job": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchJobResponse"
+                }
+            }
+        },
         "github_com_javinizer_javinizer-go_internal_api_contracts.BatchFileResult": {
             "type": "object",
             "properties": {
                 "actress_sources": {
-                    "description": "Actress-level source by scraper/NFO",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
                     }
                 },
                 "candidates": {
-                    "description": "Candidates is a per-scraper summary; HasConflict is true when providers disagree\non the movie, so the UI can offer a selection instead of the auto-merged result.",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.ScrapeCandidate"
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.ScrapeCandidate"
                     }
-                },
-                "data": {
-                    "description": "Movie data"
                 },
                 "ended_at": {
                     "type": "string"
@@ -4491,7 +4622,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "field_sources": {
-                    "description": "Field-level source by scraper/NFO",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
@@ -4506,6 +4636,9 @@ const docTemplate = `{
                 "is_multi_part": {
                     "type": "boolean"
                 },
+                "movie": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieView"
+                },
                 "movie_id": {
                     "type": "string"
                 },
@@ -4516,13 +4649,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "result_id": {
+                    "description": "Stable UUID — survives movie_id changes",
                     "type": "string"
                 },
                 "started_at": {
                     "type": "string"
                 },
                 "status": {
-                    "type": "string"
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.JobStatus"
                 }
             }
         },
@@ -4534,15 +4668,16 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchJobResponse"
                     }
+                },
+                "total": {
+                    "description": "Total number of jobs (before pagination), for pagination metadata",
+                    "type": "integer"
                 }
             }
         },
         "github_com_javinizer_javinizer-go_internal_api_contracts.BatchJobResponse": {
             "type": "object",
             "properties": {
-                "cancelled": {
-                    "type": "integer"
-                },
                 "completed": {
                     "type": "integer"
                 },
@@ -4561,6 +4696,12 @@ const docTemplate = `{
                 "failed": {
                     "type": "integer"
                 },
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "id": {
                     "type": "string"
                 },
@@ -4568,7 +4709,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "operation_mode_override": {
-                    "type": "string"
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_operationmode.OperationMode"
                 },
                 "persist_error": {
                     "type": "string"
@@ -4589,13 +4730,204 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
-                    "type": "string"
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.JobStatus"
                 },
                 "total_files": {
                     "type": "integer"
                 },
                 "update": {
                     "type": "boolean"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.BatchRescrapeRequest": {
+            "type": "object",
+            "properties": {
+                "array_strategy": {
+                    "description": "For Update mode: merge, replace",
+                    "type": "string",
+                    "example": "merge"
+                },
+                "force": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "manual_search_input": {
+                    "type": "string",
+                    "example": "IPX-535"
+                },
+                "preset": {
+                    "description": "Merge strategy preset: conservative, gap-fill, aggressive (overrides scalar/array strategies)",
+                    "type": "string",
+                    "example": "conservative"
+                },
+                "scalar_strategy": {
+                    "description": "For Update mode: prefer-nfo, prefer-scraper, preserve-existing, fill-missing-only",
+                    "type": "string",
+                    "example": "prefer-nfo"
+                },
+                "sections": {
+                    "description": "Sections limits the rescrape to specific metadata sections; unselected sections\nkeep their current values. Empty/omitted means a full rescrape.\nValid keys: title, actresses, genres, credits, rating, release, images, media.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "actresses",
+                        "images"
+                    ]
+                },
+                "selected_scrapers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "r18dev",
+                        "dmm"
+                    ]
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.BatchRescrapeResponse": {
+            "type": "object",
+            "properties": {
+                "actress_sources": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "candidates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.ScrapeCandidate"
+                    }
+                },
+                "field_sources": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "has_conflict": {
+                    "type": "boolean"
+                },
+                "movie": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieView"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.BatchScrapeRequest": {
+            "type": "object",
+            "required": [
+                "files"
+            ],
+            "properties": {
+                "array_strategy": {
+                    "description": "For Update mode: merge, replace",
+                    "type": "string",
+                    "example": "merge"
+                },
+                "destination": {
+                    "description": "Persisted on job for UI retrieval; required for organize mode, optional for in-place modes",
+                    "type": "string",
+                    "example": "/path/to/output"
+                },
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "force": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "manual_inputs": {
+                    "description": "Per-file manual input override keyed by file path; an ID scrapes as that ID (bypasses matcher), a URL scrapes with URL-compatible scrapers",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "example": {
+                        "{\"/path/file.mp4\"": "\"IPX-123\"}"
+                    }
+                },
+                "operation_mode": {
+                    "description": "Override config.output.operation_mode: organize, in-place, in-place-norenamefolder, metadata-artwork, preview",
+                    "type": "string",
+                    "example": "organize"
+                },
+                "preset": {
+                    "description": "Merge strategy preset: conservative, gap-fill, aggressive (overrides scalar/array strategies)",
+                    "type": "string",
+                    "example": "conservative"
+                },
+                "scalar_strategy": {
+                    "description": "For Update mode: prefer-nfo, prefer-scraper, preserve-existing, fill-missing-only",
+                    "type": "string",
+                    "example": "prefer-nfo"
+                },
+                "selected_scrapers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "r18dev",
+                        "dmm"
+                    ]
+                },
+                "strict": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "update": {
+                    "description": "Update mode: only create/update metadata files without moving video files",
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.BatchScrapeResponse": {
+            "type": "object",
+            "properties": {
+                "job_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.BrowseRequest": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "example": "/path/to/directory"
+                },
+                "scope": {
+                    "type": "string",
+                    "example": "configure"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.BrowseResponse": {
+            "type": "object",
+            "properties": {
+                "current_path": {
+                    "type": "string",
+                    "example": "/path/to/directory"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.FileInfo"
+                    }
+                },
+                "parent_path": {
+                    "type": "string",
+                    "example": "/path/to"
                 }
             }
         },
@@ -4619,6 +4951,21 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                    "example": "Movie not found"
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "github_com_javinizer_javinizer-go_internal_api_contracts.FieldDifference": {
             "type": "object",
             "properties": {
@@ -4633,6 +4980,45 @@ const docTemplate = `{
                     "example": "NFO preferred by merge strategy"
                 },
                 "scraped_value": {}
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.FieldOverrideRequest": {
+            "type": "object",
+            "required": [
+                "field",
+                "source"
+            ],
+            "properties": {
+                "field": {
+                    "description": "Field is the canonical field-source key to override (e.g. \"maker\",\n\"title\", \"actresses\", \"genres\"). Must be one of the keys surfaced by the\nsource viewer / field_sources map.",
+                    "type": "string",
+                    "example": "maker"
+                },
+                "source": {
+                    "description": "Source is the scraper source name whose raw value should win the field\n(e.g. \"dmm\", \"r18dev\"). Must be one of the sources that contributed to\nthis movie.",
+                    "type": "string",
+                    "example": "dmm"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.FieldOverrideResponse": {
+            "type": "object",
+            "properties": {
+                "actress_sources": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "field_sources": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "movie": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieView"
+                }
             }
         },
         "github_com_javinizer_javinizer-go_internal_api_contracts.FileInfo": {
@@ -4680,13 +5066,83 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.GenreTranslationView": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "genre_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "language": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "source_name": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.GenreView": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "translations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.GenreTranslationView"
+                    }
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "build_date": {
+                    "type": "string",
+                    "example": "2026-02-23T00:00:00Z"
+                },
+                "commit": {
+                    "type": "string",
+                    "example": "abc123def456"
+                },
+                "scrapers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "r18dev",
+                        "dmm"
+                    ]
+                },
+                "status": {
+                    "type": "string",
+                    "example": "ok"
+                },
+                "version": {
+                    "type": "string",
+                    "example": "v1.2.3"
+                }
+            }
+        },
         "github_com_javinizer_javinizer-go_internal_api_contracts.JobListItem": {
             "type": "object",
             "properties": {
-                "cancelled": {
-                    "type": "integer",
-                    "example": 0
-                },
                 "completed": {
                     "type": "integer",
                     "example": 9
@@ -4732,12 +5188,27 @@ const docTemplate = `{
                     "example": "2026-04-12T10:00:00Z"
                 },
                 "status": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.JobStatus"
+                        }
+                    ],
                     "example": "organized"
                 },
                 "total_files": {
                     "type": "integer",
                     "example": 10
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.JobListResponse": {
+            "type": "object",
+            "properties": {
+                "jobs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.JobListItem"
+                    }
                 }
             }
         },
@@ -4770,6 +5241,334 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.MovieResponse": {
+            "type": "object",
+            "properties": {
+                "merge_stats": {
+                    "description": "Merge statistics when NFO merging occurred",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MergeStatistics"
+                        }
+                    ]
+                },
+                "movie": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieView"
+                },
+                "provenance": {
+                    "description": "Field-level data source tracking",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.DataSource"
+                    }
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.MovieTranslationView": {
+            "type": "object",
+            "properties": {
+                "actresses": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "director": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "language": {
+                    "type": "string"
+                },
+                "maker": {
+                    "type": "string"
+                },
+                "movie_id": {
+                    "type": "string"
+                },
+                "original_title": {
+                    "type": "string"
+                },
+                "series": {
+                    "type": "string"
+                },
+                "settings_hash": {
+                    "type": "string"
+                },
+                "source_name": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.MovieView": {
+            "type": "object",
+            "properties": {
+                "actresses": {
+                    "description": "Relationships (contract DTOs — see collection_views.go; persistence\nmodels.* types never cross the API boundary)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ActressView"
+                    }
+                },
+                "code": {
+                    "description": "Canonical JAV code (e.g., \"IPX-535\"). Renamed from content_id.",
+                    "type": "string",
+                    "example": "IPX-535"
+                },
+                "cover_url": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "description": "Audit timestamps",
+                    "type": "string"
+                },
+                "cropped_poster_url": {
+                    "type": "string"
+                },
+                "description": {
+                    "description": "Metadata",
+                    "type": "string"
+                },
+                "director": {
+                    "type": "string"
+                },
+                "display_title": {
+                    "description": "Titles",
+                    "type": "string",
+                    "example": "IPX-535 Beautiful Woman"
+                },
+                "genres": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.GenreView"
+                    }
+                },
+                "id": {
+                    "description": "Secondary identifier — often equals Code but can differ.",
+                    "type": "string",
+                    "example": "IPX-535"
+                },
+                "label": {
+                    "description": "Sub-label",
+                    "type": "string"
+                },
+                "maker": {
+                    "description": "Studio/maker",
+                    "type": "string"
+                },
+                "original_cover_url": {
+                    "type": "string"
+                },
+                "original_cropped_poster_url": {
+                    "type": "string"
+                },
+                "original_filename": {
+                    "type": "string"
+                },
+                "original_poster_url": {
+                    "type": "string"
+                },
+                "original_should_crop_poster": {
+                    "type": "boolean"
+                },
+                "original_title": {
+                    "type": "string",
+                    "example": "美人"
+                },
+                "poster_url": {
+                    "description": "Poster / cover (flattened from PosterState — no custom marshaler needed)",
+                    "type": "string"
+                },
+                "rating_score": {
+                    "type": "number"
+                },
+                "rating_votes": {
+                    "type": "integer"
+                },
+                "rating_warning": {
+                    "type": "string"
+                },
+                "release_date": {
+                    "type": "string"
+                },
+                "release_year": {
+                    "type": "integer"
+                },
+                "runtime": {
+                    "description": "in minutes",
+                    "type": "integer"
+                },
+                "screenshot_urls": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "series": {
+                    "description": "Series name",
+                    "type": "string"
+                },
+                "should_crop_poster": {
+                    "type": "boolean"
+                },
+                "source_name": {
+                    "description": "Source provenance",
+                    "type": "string"
+                },
+                "source_url": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string",
+                    "example": "Beautiful Woman"
+                },
+                "trailer_url": {
+                    "description": "Media",
+                    "type": "string"
+                },
+                "translations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieTranslationView"
+                    }
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.MoviesResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "example": 20
+                },
+                "movies": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieView"
+                    }
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.NFOComparisonRequest": {
+            "type": "object",
+            "properties": {
+                "array_strategy": {
+                    "description": "Array field merge strategy: merge or replace",
+                    "type": "string",
+                    "example": "merge"
+                },
+                "nfo_path": {
+                    "description": "Required: explicit NFO path",
+                    "type": "string",
+                    "example": "/path/to/movie.nfo"
+                },
+                "preset": {
+                    "description": "Merge strategy preset: conservative, gap-fill, or aggressive (overrides scalar/array strategies)",
+                    "type": "string",
+                    "example": "conservative"
+                },
+                "scalar_strategy": {
+                    "description": "Scalar field merge strategy: prefer-nfo, prefer-scraper, preserve-existing, or fill-missing-only",
+                    "type": "string",
+                    "example": "prefer-nfo"
+                },
+                "selected_scrapers": {
+                    "description": "Optional: custom scrapers for comparison",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "r18dev",
+                        "dmm"
+                    ]
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.NFOComparisonResponse": {
+            "type": "object",
+            "properties": {
+                "differences": {
+                    "description": "List of fields that differ",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.FieldDifference"
+                    }
+                },
+                "merge_stats": {
+                    "description": "Merge statistics",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MergeStatistics"
+                        }
+                    ]
+                },
+                "merged_data": {
+                    "description": "Result of merging",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieView"
+                        }
+                    ]
+                },
+                "movie_id": {
+                    "type": "string",
+                    "example": "IPX-535"
+                },
+                "nfo_data": {
+                    "description": "Data from NFO file",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieView"
+                        }
+                    ]
+                },
+                "nfo_exists": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "nfo_path": {
+                    "description": "Returns filename only for security",
+                    "type": "string",
+                    "example": "movie.nfo"
+                },
+                "provenance": {
+                    "description": "Field-level provenance",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.DataSource"
+                    }
+                },
+                "scraped_data": {
+                    "description": "Fresh scraped data",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieView"
+                        }
+                    ]
+                }
+            }
+        },
         "github_com_javinizer_javinizer-go_internal_api_contracts.OperationItem": {
             "type": "object",
             "properties": {
@@ -4794,7 +5593,11 @@ const docTemplate = `{
                     "example": "/dest/ABC-123 [Studio]/ABC-123.mp4"
                 },
                 "operation_type": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.OperationTypeEnum"
+                        }
+                    ],
                     "example": "move"
                 },
                 "original_path": {
@@ -4802,12 +5605,196 @@ const docTemplate = `{
                     "example": "/source/ABC-123.mp4"
                 },
                 "revert_status": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.RevertStatusEnum"
+                        }
+                    ],
                     "example": "pending"
                 },
                 "reverted_at": {
                     "type": "string",
                     "example": "2026-04-12T11:00:00Z"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.OperationListResponse": {
+            "type": "object",
+            "properties": {
+                "job_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "job_status": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.JobStatus"
+                        }
+                    ],
+                    "example": "organized"
+                },
+                "operations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.OperationItem"
+                    }
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 10
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.OrganizePreviewRequest": {
+            "type": "object",
+            "properties": {
+                "copy_only": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "destination": {
+                    "description": "Required for organize and preview modes; optional for in-place modes",
+                    "type": "string",
+                    "example": "/path/to/output"
+                },
+                "link_mode": {
+                    "description": "Validated at the API layer (HTTP 400 for invalid)",
+                    "type": "string",
+                    "example": "hard"
+                },
+                "movie": {
+                    "description": "Optional movie override for previewing unsaved edits",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieView"
+                        }
+                    ]
+                },
+                "operation_mode": {
+                    "description": "Validated at the API layer (HTTP 400 for invalid)",
+                    "type": "string",
+                    "example": "organize"
+                },
+                "skip_download": {
+                    "type": "boolean"
+                },
+                "skip_nfo": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.OrganizePreviewResponse": {
+            "type": "object",
+            "properties": {
+                "extrafanart_path": {
+                    "type": "string",
+                    "example": "/path/to/output/IPX-535 [IdeaPocket] - Beautiful Woman (2021)/extrafanart"
+                },
+                "fanart_path": {
+                    "type": "string",
+                    "example": "/path/to/output/IPX-535 [IdeaPocket] - Beautiful Woman (2021)/IPX-535-fanart.jpg"
+                },
+                "file_name": {
+                    "type": "string",
+                    "example": "IPX-535"
+                },
+                "folder_name": {
+                    "type": "string",
+                    "example": "IPX-535 [IdeaPocket] - Beautiful Woman (2021)"
+                },
+                "full_path": {
+                    "type": "string",
+                    "example": "/path/to/output/IPX-535 [IdeaPocket] - Beautiful Woman (2021)/IPX-535.mp4"
+                },
+                "nfo_path": {
+                    "description": "Deprecated: Use NFOPaths instead. Remove in v2.0.",
+                    "type": "string",
+                    "example": "/path/to/output/IPX-535 [IdeaPocket] - Beautiful Woman (2021)/IPX-535.nfo"
+                },
+                "nfo_paths": {
+                    "description": "For per_file=true multi-part: all NFO file paths",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "operation_mode": {
+                    "description": "Which mode was used for preview",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_operationmode.OperationMode"
+                        }
+                    ],
+                    "example": "organize"
+                },
+                "poster_path": {
+                    "type": "string",
+                    "example": "/path/to/output/IPX-535 [IdeaPocket] - Beautiful Woman (2021)/IPX-535-poster.jpg"
+                },
+                "screenshots": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "fanart1.jpg",
+                        "fanart2.jpg",
+                        "fanart3.jpg"
+                    ]
+                },
+                "source_path": {
+                    "description": "Original file path (for in-place modes)",
+                    "type": "string",
+                    "example": "/source/folder/ABC-123.mp4"
+                },
+                "subfolder_path": {
+                    "description": "Subfolder hierarchy relative to destination (e.g. \"Studio/Year\")",
+                    "type": "string",
+                    "example": "IdeaPocket/2025"
+                },
+                "trailer_path": {
+                    "type": "string",
+                    "example": "/path/to/output/IPX-535 [IdeaPocket] - Beautiful Woman (2021)/IPX-535-trailer.mp4"
+                },
+                "video_files": {
+                    "description": "For multi-part files: all video file paths",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.OrganizeRequest": {
+            "type": "object",
+            "properties": {
+                "copy_only": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "destination": {
+                    "description": "Required for organize mode; optional for in-place modes",
+                    "type": "string",
+                    "example": "/path/to/output"
+                },
+                "link_mode": {
+                    "description": "Validated at the API layer (HTTP 400 for invalid)",
+                    "type": "string",
+                    "example": "hard"
+                },
+                "operation_mode": {
+                    "description": "Validated at the API layer (HTTP 400 for invalid)",
+                    "type": "string",
+                    "example": "organize"
+                },
+                "resume": {
+                    "type": "boolean"
+                },
+                "skip_download": {
+                    "type": "boolean"
+                },
+                "skip_nfo": {
+                    "type": "boolean"
                 }
             }
         },
@@ -4828,6 +5815,45 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.PathAutocompleteRequest": {
+            "type": "object",
+            "required": [
+                "path"
+            ],
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "path": {
+                    "type": "string",
+                    "example": "/path/to/vid"
+                },
+                "scope": {
+                    "type": "string",
+                    "example": "configure"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.PathAutocompleteResponse": {
+            "type": "object",
+            "properties": {
+                "base_path": {
+                    "type": "string",
+                    "example": "/path/to"
+                },
+                "input_path": {
+                    "type": "string",
+                    "example": "/path/to/vid"
+                },
+                "suggestions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.PathAutocompleteSuggestion"
+                    }
+                }
+            }
+        },
         "github_com_javinizer_javinizer-go_internal_api_contracts.PathAutocompleteSuggestion": {
             "type": "object",
             "properties": {
@@ -4842,6 +5868,154 @@ const docTemplate = `{
                 "path": {
                     "type": "string",
                     "example": "/path/to/videos"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.PosterCropRequest": {
+            "type": "object",
+            "properties": {
+                "height": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "max_poster_height": {
+                    "description": "MaxPosterHeight optional override for the max poster height (px). 0 = no cap.\nWhen omitted, the configured output.max_poster_height is used.",
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "width": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "x": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "y": {
+                    "type": "integer",
+                    "minimum": 0
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.PosterCropResponse": {
+            "type": "object",
+            "properties": {
+                "cropped_poster_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.PosterFromURLRequest": {
+            "type": "object",
+            "required": [
+                "url"
+            ],
+            "properties": {
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.PosterFromURLResponse": {
+            "type": "object",
+            "properties": {
+                "cropped_poster_url": {
+                    "type": "string"
+                },
+                "poster_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.ProxyTestRequest": {
+            "type": "object",
+            "required": [
+                "mode"
+            ],
+            "properties": {
+                "flaresolverr": {
+                    "description": "FlareSolverr config (separate from ProxyConfig)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.FlareSolverrConfig"
+                        }
+                    ]
+                },
+                "mode": {
+                    "description": "direct or flaresolverr",
+                    "type": "string",
+                    "enum": [
+                        "direct",
+                        "flaresolverr"
+                    ]
+                },
+                "proxy": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.ProxyConfig"
+                },
+                "target_url": {
+                    "description": "Optional override target URL",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.ProxyTestResponse": {
+            "type": "object",
+            "properties": {
+                "duration_ms": {
+                    "type": "integer"
+                },
+                "flaresolverr_url": {
+                    "description": "FlareSolverr endpoint used",
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "proxy_url": {
+                    "description": "Redacted proxy URL",
+                    "type": "string"
+                },
+                "status_code": {
+                    "type": "integer"
+                },
+                "success": {
+                    "type": "boolean"
+                },
+                "target_url": {
+                    "type": "string"
+                },
+                "token_expires_at": {
+                    "description": "Unix timestamp when token expires",
+                    "type": "integer"
+                },
+                "verification_token": {
+                    "description": "Token for save authorization",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.RescrapeRequest": {
+            "type": "object",
+            "required": [
+                "selected_scrapers"
+            ],
+            "properties": {
+                "force": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "selected_scrapers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "r18dev",
+                        "dmm"
+                    ]
                 }
             }
         },
@@ -4884,12 +6058,149 @@ const docTemplate = `{
                     "example": "/source/ABC-123.mp4"
                 },
                 "outcome": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.RevertOutcomeEnum"
+                        }
+                    ],
                     "example": "skipped"
                 },
                 "reason": {
-                    "type": "string",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.RevertReasonEnum"
+                        }
+                    ],
                     "example": "anchor_missing"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.RevertResultResponse": {
+            "type": "object",
+            "properties": {
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.RevertFileError"
+                    }
+                },
+                "failed": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "job_id": {
+                    "type": "string",
+                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "skipped": {
+                    "type": "integer",
+                    "example": 1
+                },
+                "status": {
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.JobStatus"
+                        }
+                    ],
+                    "example": "reverted"
+                },
+                "succeeded": {
+                    "type": "integer",
+                    "example": 9
+                },
+                "total": {
+                    "type": "integer",
+                    "example": 10
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.ScanRequest": {
+            "type": "object",
+            "required": [
+                "path"
+            ],
+            "properties": {
+                "filter": {
+                    "description": "Filter folder/file names (case-insensitive substring match)",
+                    "type": "string",
+                    "example": "STSK"
+                },
+                "path": {
+                    "type": "string",
+                    "example": "/path/to/videos"
+                },
+                "recursive": {
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.ScanResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "example": 10
+                },
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.FileInfo"
+                    }
+                },
+                "skipped": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.ScrapeRequest": {
+            "type": "object",
+            "required": [
+                "id"
+            ],
+            "properties": {
+                "force": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "id": {
+                    "type": "string",
+                    "example": "IPX-535"
+                },
+                "selected_scrapers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "r18dev",
+                        "dmm"
+                    ]
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.ScrapeResponse": {
+            "type": "object",
+            "properties": {
+                "cached": {
+                    "type": "boolean",
+                    "example": false
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "movie": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieView"
+                },
+                "sources_used": {
+                    "type": "integer",
+                    "example": 2
                 }
             }
         },
@@ -4922,7 +6233,7 @@ const docTemplate = `{
                 "choices": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.ScraperChoice"
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.ScraperChoice"
                     }
                 },
                 "default": {},
@@ -4956,858 +6267,61 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_javinizer_javinizer-go_internal_worker.ActressSyncCreateRequest": {
+        "github_com_javinizer_javinizer-go_internal_api_contracts.SourceResultsResponse": {
             "type": "object",
             "properties": {
-                "actress_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "missing": {
-                    "type": "boolean"
-                },
-                "scope": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api_actress.Actress": {
-            "type": "object",
-            "properties": {
-                "aliases": {
-                    "description": "Pipe-separated",
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "dmm_id": {
-                    "description": "Real DMM actress ID when available (unique only for values \u003e 0)",
-                    "type": "integer"
-                },
-                "first_name": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "japanese_name": {
-                    "type": "string"
-                },
-                "last_name": {
-                    "type": "string"
-                },
-                "thumb_url": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api_actress.ActressMergePreviewRequest": {
-            "type": "object",
-            "required": [
-                "source_id",
-                "target_id"
-            ],
-            "properties": {
-                "source_id": {
-                    "type": "integer",
-                    "example": 34
-                },
-                "target_id": {
-                    "type": "integer",
-                    "example": 12
-                }
-            }
-        },
-        "internal_api_actress.ActressMergePreviewResponse": {
-            "type": "object",
-            "properties": {
-                "conflicts": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ActressMergeConflict"
-                    }
-                },
-                "default_resolutions": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "proposed_merged": {
-                    "$ref": "#/definitions/models.Actress"
-                },
-                "source": {
-                    "$ref": "#/definitions/models.Actress"
-                },
-                "target": {
-                    "$ref": "#/definitions/models.Actress"
-                }
-            }
-        },
-        "internal_api_actress.ActressMergeRequest": {
-            "type": "object",
-            "required": [
-                "source_id",
-                "target_id"
-            ],
-            "properties": {
-                "resolutions": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    },
-                    "example": {
-                        "dmm_id": "target",
-                        "japanese_name": "source"
-                    }
-                },
-                "source_id": {
-                    "type": "integer",
-                    "example": 34
-                },
-                "target_id": {
-                    "type": "integer",
-                    "example": 12
-                }
-            }
-        },
-        "internal_api_actress.ActressMergeResponse": {
-            "type": "object",
-            "properties": {
-                "aliases_added": {
-                    "type": "integer",
-                    "example": 5
-                },
-                "conflicts_resolved": {
-                    "type": "integer",
-                    "example": 3
-                },
-                "merged_actress": {
-                    "$ref": "#/definitions/models.Actress"
-                },
-                "merged_from_id": {
-                    "type": "integer",
-                    "example": 34
-                },
-                "updated_movies": {
-                    "type": "integer",
-                    "example": 27
-                }
-            }
-        },
-        "internal_api_actress.ErrorResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string",
-                    "example": "Movie not found"
-                },
-                "errors": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "internal_api_actress.actressMoviesResponse": {
-            "type": "object",
-            "properties": {
-                "count": {
-                    "type": "integer"
-                },
-                "limit": {
-                    "type": "integer"
-                },
-                "movies": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.Movie"
-                    }
-                },
-                "offset": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api_actress.actressRequest": {
-            "type": "object",
-            "properties": {
-                "aliases": {
-                    "type": "string"
-                },
-                "dmm_id": {
-                    "type": "integer"
-                },
-                "first_name": {
-                    "type": "string"
-                },
-                "japanese_name": {
-                    "type": "string"
-                },
-                "last_name": {
-                    "type": "string"
-                },
-                "thumb_url": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api_actress.actressSyncCandidatesResponse": {
-            "type": "object",
-            "properties": {
-                "actresses": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.Actress"
-                    }
-                },
-                "ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api_actress.actressSyncJobResponse": {
-            "type": "object",
-            "properties": {
-                "job": {
-                    "$ref": "#/definitions/models.ActressSyncJob"
-                }
-            }
-        },
-        "internal_api_actress.actressSyncJobsResponse": {
-            "type": "object",
-            "properties": {
-                "jobs": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.ActressSyncJob"
-                    }
-                }
-            }
-        },
-        "internal_api_actress.actressSyncTasksResponse": {
-            "type": "object",
-            "properties": {
-                "tasks": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.ActressSyncTask"
-                    }
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api_actress.actressesResponse": {
-            "type": "object",
-            "properties": {
-                "actresses": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.Actress"
-                    }
-                },
-                "count": {
-                    "type": "integer"
-                },
-                "limit": {
-                    "type": "integer"
-                },
-                "offset": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api_actress.bulkDeleteActressesRequest": {
-            "type": "object",
-            "properties": {
-                "ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                }
-            }
-        },
-        "internal_api_actress.deleteActressesResponse": {
-            "type": "object",
-            "properties": {
-                "deleted": {
-                    "type": "integer"
-                }
-            }
-        },
-        "internal_api_auth.AuthCredentialsRequest": {
-            "type": "object",
-            "required": [
-                "password",
-                "username"
-            ],
-            "properties": {
-                "password": {
-                    "type": "string",
-                    "example": "your-password"
-                },
-                "remember_me": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "username": {
-                    "type": "string",
-                    "example": "admin"
-                }
-            }
-        },
-        "internal_api_auth.AuthStatusResponse": {
-            "type": "object",
-            "properties": {
-                "authenticated": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "initialized": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "username": {
-                    "type": "string",
-                    "example": "admin"
-                }
-            }
-        },
-        "internal_api_auth.ErrorResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string",
-                    "example": "Movie not found"
-                },
-                "errors": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "internal_api_batch.BatchExcludeRequest": {
-            "type": "object",
-            "required": [
-                "result_ids"
-            ],
-            "properties": {
-                "result_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "uuid-1",
-                        "uuid-2"
-                    ]
-                }
-            }
-        },
-        "internal_api_batch.BatchExcludeResponse": {
-            "type": "object",
-            "properties": {
-                "excluded": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "failed": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchExcludeFailed"
-                    }
-                },
-                "job": {
-                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchJobResponse"
-                }
-            }
-        },
-        "internal_api_batch.BatchJobResponse": {
-            "type": "object",
-            "properties": {
-                "cancelled": {
-                    "type": "integer"
-                },
-                "completed": {
-                    "type": "integer"
-                },
-                "completed_at": {
-                    "type": "string"
-                },
-                "destination": {
-                    "type": "string"
-                },
-                "excluded": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "boolean"
-                    }
-                },
-                "failed": {
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "operation_count": {
-                    "type": "integer"
-                },
-                "operation_mode_override": {
-                    "type": "string"
-                },
-                "persist_error": {
-                    "type": "string"
-                },
-                "progress": {
-                    "type": "number"
-                },
                 "results": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchFileResult"
-                    }
-                },
-                "reverted_count": {
-                    "type": "integer"
-                },
-                "started_at": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "total_files": {
-                    "type": "integer"
-                },
-                "update": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "internal_api_batch.BatchRescrapeRequest": {
-            "type": "object",
-            "properties": {
-                "array_strategy": {
-                    "description": "For Update mode: merge, replace",
-                    "type": "string",
-                    "example": "merge"
-                },
-                "force": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "manual_search_input": {
-                    "type": "string",
-                    "example": "IPX-535"
-                },
-                "preset": {
-                    "description": "Merge strategy preset: conservative, gap-fill, aggressive (overrides scalar/array strategies)",
-                    "type": "string",
-                    "example": "conservative"
-                },
-                "scalar_strategy": {
-                    "description": "For Update mode: prefer-nfo, prefer-scraper, preserve-existing, fill-missing-only",
-                    "type": "string",
-                    "example": "prefer-nfo"
-                },
-                "sections": {
-                    "description": "Sections limits the rescrape to specific metadata sections; unselected sections\nkeep their current values. Empty/omitted means a full rescrape (all sections).\nValid keys: title, actresses, genres, credits, rating, release, images, media.",
                     "type": "array",
                     "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "actresses",
-                        "images"
-                    ]
-                },
-                "selected_scrapers": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "r18dev",
-                        "dmm"
-                    ]
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.ScraperResult"
+                    }
                 }
             }
         },
-        "internal_api_batch.BatchRescrapeResponse": {
-            "type": "object",
-            "properties": {
-                "actress_sources": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "field_sources": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "movie": {
-                    "$ref": "#/definitions/models.Movie"
-                }
-            }
-        },
-        "internal_api_batch.BatchScrapeRequest": {
+        "github_com_javinizer_javinizer-go_internal_api_contracts.TranslationModelsRequest": {
             "type": "object",
             "required": [
-                "files"
+                "base_url",
+                "provider"
             ],
             "properties": {
-                "array_strategy": {
-                    "description": "For Update mode: merge, replace",
-                    "type": "string",
-                    "example": "merge"
+                "api_key": {
+                    "description": "Provider API key",
+                    "type": "string"
                 },
-                "destination": {
-                    "type": "string",
-                    "example": "/path/to/output"
+                "base_url": {
+                    "description": "API base URL (e.g., https://api.openai.com/v1)",
+                    "type": "string"
                 },
-                "files": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "force": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "operation_mode": {
-                    "description": "Override config.output.operation_mode: organize, in-place, in-place-norenamefolder, metadata-artwork, preview",
-                    "type": "string",
-                    "example": "organize"
-                },
-                "preset": {
-                    "description": "Merge strategy preset: conservative, gap-fill, aggressive (overrides scalar/array strategies)",
-                    "type": "string",
-                    "example": "conservative"
-                },
-                "scalar_strategy": {
-                    "description": "For Update mode: prefer-nfo, prefer-scraper, preserve-existing, fill-missing-only",
-                    "type": "string",
-                    "example": "prefer-nfo"
-                },
-                "selected_scrapers": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "r18dev",
-                        "dmm"
-                    ]
-                },
-                "strict": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "update": {
-                    "description": "Update mode: only create/update metadata files without moving video files",
-                    "type": "boolean",
-                    "example": false
-                }
-            }
-        },
-        "internal_api_batch.BatchScrapeResponse": {
-            "type": "object",
-            "properties": {
-                "job_id": {
-                    "type": "string",
-                    "example": "550e8400-e29b-41d4-a716-446655440000"
-                }
-            }
-        },
-        "internal_api_batch.ErrorResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string",
-                    "example": "Movie not found"
-                },
-                "errors": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "internal_api_batch.MovieResponse": {
-            "type": "object",
-            "properties": {
-                "merge_stats": {
-                    "description": "Merge statistics when NFO merging occurred",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MergeStatistics"
-                        }
-                    ]
-                },
-                "movie": {
-                    "$ref": "#/definitions/models.Movie"
-                },
-                "provenance": {
-                    "description": "Field-level data source tracking",
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.DataSource"
-                    }
-                }
-            }
-        },
-        "internal_api_batch.OrganizePreviewRequest": {
-            "type": "object",
-            "required": [
-                "destination"
-            ],
-            "properties": {
-                "copy_only": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "destination": {
-                    "type": "string",
-                    "example": "/path/to/output"
-                },
-                "link_mode": {
-                    "type": "string",
-                    "enum": [
-                        "hard",
-                        "soft"
-                    ],
-                    "example": "hard"
-                },
-                "movie": {
-                    "description": "Optional movie override for previewing unsaved edits",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.Movie"
-                        }
-                    ]
-                },
-                "operation_mode": {
-                    "type": "string",
-                    "example": "organize"
-                },
-                "skip_download": {
-                    "type": "boolean"
-                },
-                "skip_nfo": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "internal_api_batch.OrganizePreviewResponse": {
-            "type": "object",
-            "properties": {
-                "extrafanart_path": {
-                    "type": "string",
-                    "example": "/path/to/output/IPX-535 [IdeaPocket] - Beautiful Woman (2021)/extrafanart"
-                },
-                "fanart_path": {
-                    "type": "string",
-                    "example": "/path/to/output/IPX-535 [IdeaPocket] - Beautiful Woman (2021)/IPX-535-fanart.jpg"
-                },
-                "file_name": {
-                    "type": "string",
-                    "example": "IPX-535"
-                },
-                "folder_name": {
-                    "type": "string",
-                    "example": "IPX-535 [IdeaPocket] - Beautiful Woman (2021)"
-                },
-                "full_path": {
-                    "type": "string",
-                    "example": "/path/to/output/IPX-535 [IdeaPocket] - Beautiful Woman (2021)/IPX-535.mp4"
-                },
-                "nfo_path": {
-                    "description": "Single NFO (backward compatibility)",
-                    "type": "string",
-                    "example": "/path/to/output/IPX-535 [IdeaPocket] - Beautiful Woman (2021)/IPX-535.nfo"
-                },
-                "nfo_paths": {
-                    "description": "For per_file=true multi-part: all NFO file paths",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "operation_mode": {
-                    "description": "Which mode was used for preview",
-                    "type": "string",
-                    "example": "organize"
-                },
-                "poster_path": {
-                    "type": "string",
-                    "example": "/path/to/output/IPX-535 [IdeaPocket] - Beautiful Woman (2021)/IPX-535-poster.jpg"
-                },
-                "screenshots": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "fanart1.jpg",
-                        "fanart2.jpg",
-                        "fanart3.jpg"
-                    ]
-                },
-                "source_path": {
-                    "description": "Original file path (for in-place modes)",
-                    "type": "string",
-                    "example": "/source/folder/ABC-123.mp4"
-                },
-                "subfolder_path": {
-                    "description": "Subfolder hierarchy relative to destination (e.g. \"Studio/Year\")",
-                    "type": "string",
-                    "example": "IdeaPocket/2025"
-                },
-                "trailer_path": {
-                    "description": "Empty if trailer download disabled or no trailer URL",
-                    "type": "string",
-                    "example": "/path/to/output/IPX-535 [IdeaPocket] - Beautiful Woman (2021)/IPX-535-trailer.mp4"
-                },
-                "video_files": {
-                    "description": "For multi-part files: all video file paths",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "internal_api_batch.OrganizeRequest": {
-            "type": "object",
-            "required": [
-                "destination"
-            ],
-            "properties": {
-                "copy_only": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "destination": {
-                    "type": "string",
-                    "example": "/path/to/output"
-                },
-                "link_mode": {
-                    "type": "string",
-                    "enum": [
-                        "hard",
-                        "soft"
-                    ],
-                    "example": "hard"
-                },
-                "operation_mode": {
-                    "type": "string",
-                    "example": "organize"
-                },
-                "resume": {
-                    "type": "boolean"
-                },
-                "skip_download": {
-                    "type": "boolean"
-                },
-                "skip_nfo": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "internal_api_batch.PosterCropRequest": {
-            "type": "object",
-            "properties": {
-                "height": {
-                    "type": "integer",
-                    "minimum": 1
-                },
-                "width": {
-                    "type": "integer",
-                    "minimum": 1
-                },
-                "x": {
-                    "type": "integer",
-                    "minimum": 0
-                },
-                "y": {
-                    "type": "integer",
-                    "minimum": 0
-                }
-            }
-        },
-        "internal_api_batch.PosterCropResponse": {
-            "type": "object",
-            "properties": {
-                "cropped_poster_url": {
+                "provider": {
+                    "description": "openai (OpenAI-compatible only for now)",
                     "type": "string"
                 }
             }
         },
-        "internal_api_batch.PosterFromURLRequest": {
+        "github_com_javinizer_javinizer-go_internal_api_contracts.TranslationModelsResponse": {
             "type": "object",
-            "required": [
-                "url"
-            ],
             "properties": {
-                "url": {
-                    "type": "string"
+                "models": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
-        "internal_api_batch.PosterFromURLResponse": {
-            "type": "object",
-            "properties": {
-                "cropped_poster_url": {
-                    "type": "string"
-                },
-                "poster_url": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api_batch.UpdateMovieRequest": {
+        "github_com_javinizer_javinizer-go_internal_api_contracts.UpdateMovieRequest": {
             "type": "object",
             "required": [
                 "movie"
             ],
             "properties": {
                 "movie": {
-                    "$ref": "#/definitions/models.Movie"
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieView"
                 }
             }
         },
-        "internal_api_batch.UpdateRequest": {
+        "github_com_javinizer_javinizer-go_internal_api_contracts.UpdateRequest": {
             "type": "object",
             "properties": {
                 "array_strategy": {
@@ -5848,7 +6362,2035 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api_events.ErrorResponse": {
+        "github_com_javinizer_javinizer-go_internal_config.APIConfig": {
+            "type": "object",
+            "properties": {
+                "security": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.SecurityConfig"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.ActressDatabaseConfig": {
+            "type": "object",
+            "properties": {
+                "auto_add": {
+                    "description": "Automatically add new actresses to database",
+                    "type": "boolean"
+                },
+                "convert_alias": {
+                    "description": "Convert actress names using alias database",
+                    "type": "boolean"
+                },
+                "enabled": {
+                    "description": "Enable actress image lookup from database",
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.AnthropicTranslationConfig": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "description": "Required",
+                    "type": "string"
+                },
+                "base_url": {
+                    "description": "e.g., https://api.anthropic.com",
+                    "type": "string"
+                },
+                "model": {
+                    "description": "e.g., claude-sonnet-4-20250514",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.BedrockTranslationConfig": {
+            "type": "object",
+            "properties": {
+                "access_key_id": {
+                    "description": "AWS access key ID",
+                    "type": "string"
+                },
+                "base_url": {
+                    "description": "Optional endpoint override",
+                    "type": "string"
+                },
+                "model": {
+                    "description": "Bedrock model ID, e.g., anthropic.claude-3-5-sonnet-20241022-v2:0",
+                    "type": "string"
+                },
+                "region": {
+                    "description": "AWS region, e.g., us-east-1",
+                    "type": "string"
+                },
+                "secret_access_key": {
+                    "description": "AWS secret access key",
+                    "type": "string"
+                },
+                "session_token": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.ConfigWarning": {
+            "type": "object",
+            "properties": {
+                "field": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "scrapers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.DatabaseConfig": {
+            "type": "object",
+            "properties": {
+                "dsn": {
+                    "description": "Data Source Name",
+                    "type": "string"
+                },
+                "log_level": {
+                    "description": "Database query logging: silent, error, warn, info (default: silent)",
+                    "type": "string"
+                },
+                "type": {
+                    "description": "sqlite (currently only supported backend)",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.DeepLTranslationConfig": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "description": "DeepL API key",
+                    "type": "string"
+                },
+                "base_url": {
+                    "description": "Optional override (defaults to mode-specific endpoint)",
+                    "type": "string"
+                },
+                "mode": {
+                    "description": "free or pro",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.DeepLMode"
+                        }
+                    ]
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.FavoritesConfig": {
+            "type": "object",
+            "properties": {
+                "genre": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.GenreReplacementConfig": {
+            "type": "object",
+            "properties": {
+                "auto_add": {
+                    "description": "Automatically add new genres to database (identity mapping)",
+                    "type": "boolean"
+                },
+                "enabled": {
+                    "description": "Enable genre replacement from database",
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.GoogleTranslationConfig": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "description": "Required for paid mode",
+                    "type": "string"
+                },
+                "base_url": {
+                    "description": "Optional override",
+                    "type": "string"
+                },
+                "mode": {
+                    "description": "free or paid",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.GoogleMode"
+                        }
+                    ]
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.LoggingConfig": {
+            "type": "object",
+            "properties": {
+                "compress": {
+                    "description": "Compress rotated files",
+                    "type": "boolean"
+                },
+                "format": {
+                    "description": "json, text",
+                    "type": "string"
+                },
+                "level": {
+                    "description": "debug, info, warn, error",
+                    "type": "string"
+                },
+                "max_age_days": {
+                    "description": "Max age in days to keep log files (0 = no limit)",
+                    "type": "integer"
+                },
+                "max_backups": {
+                    "description": "Max number of old log files to keep (0 = unlimited)",
+                    "type": "integer"
+                },
+                "max_size_mb": {
+                    "description": "Max size in MB before rotation (0 = no rotation)",
+                    "type": "integer"
+                },
+                "output": {
+                    "description": "stdout, file path",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.MatchingConfig": {
+            "type": "object",
+            "properties": {
+                "exclude_patterns": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "extensions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "min_size_mb": {
+                    "type": "integer"
+                },
+                "regex_enabled": {
+                    "type": "boolean"
+                },
+                "regex_pattern": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.MetadataConfig": {
+            "type": "object",
+            "properties": {
+                "actress_database": {
+                    "description": "Actress image database (SQLite-backed)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.ActressDatabaseConfig"
+                        }
+                    ]
+                },
+                "completeness": {
+                    "description": "Completeness scoring configuration",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.completenessConfig"
+                        }
+                    ]
+                },
+                "genre_replacement": {
+                    "description": "Genre replacement/normalization (SQLite-backed)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.GenreReplacementConfig"
+                        }
+                    ]
+                },
+                "ignore_genres": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "nfo": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.NFOConfig"
+                },
+                "priority": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.PriorityConfig"
+                },
+                "r18dev_dump": {
+                    "description": "Local r18.dev dump lookup (SQLite-backed)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.R18DevDumpConfig"
+                        }
+                    ]
+                },
+                "required_fields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tag_database": {
+                    "description": "Per-movie tag database (SQLite-backed)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.tagDatabaseConfig"
+                        }
+                    ]
+                },
+                "translation": {
+                    "description": "Metadata translation pipeline",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.TranslationConfig"
+                        }
+                    ]
+                },
+                "word_replacement": {
+                    "description": "Word uncensor/text replacement (SQLite-backed)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.WordReplacementConfig"
+                        }
+                    ]
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.NFOConfig": {
+            "type": "object",
+            "properties": {
+                "extra": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.NFOExtraConfig"
+                },
+                "feature": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.NFOFeatureConfig"
+                },
+                "format": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.NFOFormatConfig"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.NFOExtraConfig": {
+            "type": "object",
+            "properties": {
+                "credits": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "tag": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.NFOFeatureConfig": {
+            "type": "object",
+            "properties": {
+                "actress_as_tag": {
+                    "type": "boolean"
+                },
+                "add_generic_role": {
+                    "description": "Add generic \"Actress\" role to all actresses",
+                    "type": "boolean"
+                },
+                "alt_name_role": {
+                    "description": "Use alternate name (Japanese) in role field",
+                    "type": "boolean"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "include_fanart": {
+                    "type": "boolean"
+                },
+                "include_originalpath": {
+                    "description": "Include source filename in NFO",
+                    "type": "boolean"
+                },
+                "include_stream_details": {
+                    "type": "boolean"
+                },
+                "include_trailer": {
+                    "type": "boolean"
+                },
+                "per_file": {
+                    "description": "Create separate NFO for each multi-part file",
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.NFOFormatConfig": {
+            "type": "object",
+            "properties": {
+                "actress_language_ja": {
+                    "type": "boolean"
+                },
+                "display_title": {
+                    "type": "string"
+                },
+                "filename_template": {
+                    "type": "string"
+                },
+                "first_name_order": {
+                    "type": "boolean"
+                },
+                "rating_source": {
+                    "type": "string"
+                },
+                "tagline": {
+                    "type": "string"
+                },
+                "unknown_actress_mode": {
+                    "description": "skip (default) or fallback",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.UnknownActressMode"
+                        }
+                    ]
+                },
+                "unknown_actress_text": {
+                    "description": "Text for fallback mode",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.OpenAICompatibleTranslationConfig": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "description": "Optional for local endpoints",
+                    "type": "string"
+                },
+                "base_url": {
+                    "description": "e.g., http://localhost:11434/v1",
+                    "type": "string"
+                },
+                "enable_thinking": {
+                    "description": "Toggle reasoning/thinking when supported by the backend",
+                    "type": "boolean"
+                },
+                "model": {
+                    "description": "e.g., llama3.1",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.OpenAITranslationConfig": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "description": "API key for the provider",
+                    "type": "string"
+                },
+                "base_url": {
+                    "description": "OpenAI-compatible base URL (e.g., https://api.openai.com/v1)",
+                    "type": "string"
+                },
+                "model": {
+                    "description": "Model name (e.g., gpt-4o-mini)",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.OutputConfig": {
+            "type": "object",
+            "properties": {
+                "download": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.OutputDownloadConfig"
+                },
+                "mediaFormat": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.OutputMediaFormatConfig"
+                },
+                "operation": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.OutputOperationConfig"
+                },
+                "template": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.OutputTemplateConfig"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.OutputDownloadConfig": {
+            "type": "object",
+            "properties": {
+                "download_actress": {
+                    "type": "boolean"
+                },
+                "download_cover": {
+                    "type": "boolean"
+                },
+                "download_extrafanart": {
+                    "type": "boolean"
+                },
+                "download_poster": {
+                    "type": "boolean"
+                },
+                "download_proxy": {
+                    "description": "Separate proxy for downloads (optional)",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.ProxyConfig"
+                        }
+                    ]
+                },
+                "download_timeout": {
+                    "description": "Timeout in seconds for HTTP downloads (default: 60)",
+                    "type": "integer"
+                },
+                "download_trailer": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.OutputMediaFormatConfig": {
+            "type": "object",
+            "properties": {
+                "actress_folder": {
+                    "type": "string"
+                },
+                "actress_format": {
+                    "type": "string"
+                },
+                "fanart_format": {
+                    "type": "string"
+                },
+                "max_poster_height": {
+                    "description": "Max height in px for cropped posters; 0 = no cap (preserve source resolution). When the cropped poster exceeds this height it is downscaled preserving aspect ratio.",
+                    "type": "integer"
+                },
+                "poster_format": {
+                    "type": "string"
+                },
+                "screenshot_folder": {
+                    "type": "string"
+                },
+                "screenshot_format": {
+                    "type": "string"
+                },
+                "screenshot_padding": {
+                    "type": "integer"
+                },
+                "trailer_format": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.OutputOperationConfig": {
+            "type": "object",
+            "properties": {
+                "allow_revert": {
+                    "description": "Enable revert operations (default: false — opt-in for safety)",
+                    "type": "boolean"
+                },
+                "group_actress": {
+                    "description": "Replace multiple actresses with group name in templates (default: false)",
+                    "type": "boolean"
+                },
+                "group_actress_name": {
+                    "description": "Folder name when group_actress is enabled and multiple actresses (default: \"@Group\")",
+                    "type": "string"
+                },
+                "group_unknown_actress_name": {
+                    "description": "Folder name when group_actress is enabled and the actress list is empty or unknown (default: \"@Unknown\")",
+                    "type": "string"
+                },
+                "move_files": {
+                    "description": "Move files instead of copying (default: false / copy)",
+                    "type": "boolean"
+                },
+                "move_subtitles": {
+                    "type": "boolean"
+                },
+                "operation_mode": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_operationmode.OperationMode"
+                },
+                "rename_file": {
+                    "description": "Rename files using file_format template (default: true)",
+                    "type": "boolean"
+                },
+                "subtitle_extensions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.OutputTemplateConfig": {
+            "type": "object",
+            "properties": {
+                "actress_delimiter": {
+                    "description": "Delimiter between actress names when joining \u003cACTORS\u003e/\u003cACTRESSES\u003e with no in-tag DELIM= modifier (default: \", \")",
+                    "type": "string"
+                },
+                "actress_language_ja": {
+                    "description": "true = prefer JapaneseName over First/Last for \u003cACTORS\u003e/\u003cACTRESS\u003e in folder/file naming (default: false), mirrors nfo.actress_language_ja; tag-level \u003cACTORS:JA\u003e still takes precedence",
+                    "type": "boolean"
+                },
+                "file_format": {
+                    "type": "string"
+                },
+                "first_name_order": {
+                    "description": "true = FirstName LastName, false = LastName FirstName (default: false)",
+                    "type": "boolean"
+                },
+                "folder_format": {
+                    "type": "string"
+                },
+                "max_path_length": {
+                    "type": "integer"
+                },
+                "max_title_length": {
+                    "type": "integer"
+                },
+                "subfolder_format": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.PerformanceConfig": {
+            "type": "object",
+            "properties": {
+                "buffer_size": {
+                    "description": "Channel buffer size (default: 100)",
+                    "type": "integer"
+                },
+                "max_workers": {
+                    "description": "Maximum concurrent workers (default: 5)",
+                    "type": "integer"
+                },
+                "update_interval": {
+                    "description": "UI update interval in milliseconds (default: 100)",
+                    "type": "integer"
+                },
+                "worker_timeout": {
+                    "description": "Timeout per task in seconds (default: 300)",
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.PriorityConfig": {
+            "type": "object",
+            "properties": {
+                "priority": {
+                    "description": "Priority is the global scraper execution order.\nIf empty, derived from registered scraper priorities at initialization.\nIf set, used directly for all metadata fields that lack a Fields override.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.R18DevDumpConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "description": "Consult local dump before HTTP content_id resolution",
+                    "type": "boolean"
+                },
+                "path": {
+                    "description": "Sidecar SQLite path (empty = default data/r18dev/r18dev_dump.db)",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.RateLimitConfig": {
+            "type": "object",
+            "properties": {
+                "requests_per_minute": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.ScrapersConfig": {
+            "type": "object",
+            "properties": {
+                "browser": {
+                    "description": "Global Browser configuration block",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.BrowserConfig"
+                        }
+                    ]
+                },
+                "early_stop": {
+                    "description": "Stop after enough useful priority results have been collected",
+                    "type": "boolean"
+                },
+                "early_stop_min_results": {
+                    "description": "Successful results required before early stop (default: 2)",
+                    "type": "integer"
+                },
+                "flaresolverr": {
+                    "description": "Global FlareSolverr config for Cloudflare bypass",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.FlareSolverrConfig"
+                        }
+                    ]
+                },
+                "priority": {
+                    "description": "Global scraper priority order",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "proxy": {
+                    "description": "Default HTTP/SOCKS5 proxy for scraper requests",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.ProxyConfig"
+                        }
+                    ]
+                },
+                "referer": {
+                    "description": "Referer header for CDN compatibility (default: https://www.dmm.co.jp/)",
+                    "type": "string"
+                },
+                "request_timeout_seconds": {
+                    "description": "Overall request timeout in seconds (default: 60)",
+                    "type": "integer"
+                },
+                "scrape_actress": {
+                    "description": "Global scrape_actress default (opt-out, default: true)",
+                    "type": "boolean"
+                },
+                "timeout_seconds": {
+                    "description": "HTTP client timeout in seconds (default: 30)",
+                    "type": "integer"
+                },
+                "user_agent": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.SecurityConfig": {
+            "type": "object",
+            "properties": {
+                "allow_unc": {
+                    "type": "boolean"
+                },
+                "allowed_directories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "allowed_origins": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "allowed_unc_servers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "denied_directories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "force_secure_cookies": {
+                    "type": "boolean"
+                },
+                "max_files_per_scan": {
+                    "type": "integer"
+                },
+                "rate_limit": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.RateLimitConfig"
+                },
+                "scan_timeout_seconds": {
+                    "type": "integer"
+                },
+                "trusted_proxies": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.ServerConfig": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string"
+                },
+                "port": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.SystemConfig": {
+            "type": "object",
+            "properties": {
+                "temp_dir": {
+                    "description": "TempDir is the base directory for temporary files (default: \"data/temp\").\nCan be overridden with JAVINIZER_TEMP_DIR environment variable.\nSubdirectory \"posters/{jobID}\" is created for batch job temp posters.",
+                    "type": "string"
+                },
+                "umask": {
+                    "description": "Umask for file creation (e.g., \"002\" for rwxrwxr-x)\nCan be overridden with UMASK environment variable",
+                    "type": "string"
+                },
+                "version_check_enabled": {
+                    "description": "VersionCheckEnabled enables checking for new releases",
+                    "type": "boolean"
+                },
+                "version_check_interval_hours": {
+                    "description": "VersionCheckIntervalHours is the interval between version checks in hours",
+                    "type": "integer"
+                },
+                "version_check_stable_only": {
+                    "description": "VersionCheckStableOnly, when true, restricts update notifications to\nstable releases only (prereleases are still fetched and cached for\ntransparency but never reported as available). Defaults to false: with\nv1.0.0 stable as the latest release, suppressing prereleases by default\nstill surfaces stable updates, and users who want release candidates can\nopt in via --prerelease. Set to true to be notified only about stable\nreleases.\nModeled as an opt-in restriction (not an opt-out) so the zero value is\nthe correct default for existing configs — no migration needed.",
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.TranslationConfig": {
+            "type": "object",
+            "properties": {
+                "anthropic": {
+                    "description": "Anthropic (Claude) provider settings",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.AnthropicTranslationConfig"
+                        }
+                    ]
+                },
+                "apply_to_primary": {
+                    "description": "Replace primary movie metadata with translated text",
+                    "type": "boolean"
+                },
+                "bedrock": {
+                    "description": "AWS Bedrock provider settings",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.BedrockTranslationConfig"
+                        }
+                    ]
+                },
+                "deepl": {
+                    "description": "DeepL provider settings",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.DeepLTranslationConfig"
+                        }
+                    ]
+                },
+                "enabled": {
+                    "description": "Enable metadata translation after aggregation",
+                    "type": "boolean"
+                },
+                "fields": {
+                    "description": "Per-field translation controls",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.TranslationFieldsConfig"
+                        }
+                    ]
+                },
+                "google": {
+                    "description": "Google provider settings",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.GoogleTranslationConfig"
+                        }
+                    ]
+                },
+                "max_concurrency": {
+                    "description": "Maximum concurrent translation requests",
+                    "type": "integer"
+                },
+                "openai": {
+                    "description": "OpenAI/OpenAI-compatible provider settings",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.OpenAITranslationConfig"
+                        }
+                    ]
+                },
+                "openai_compatible": {
+                    "description": "OpenAI-compatible (Ollama, vLLM, etc.) provider settings",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.OpenAICompatibleTranslationConfig"
+                        }
+                    ]
+                },
+                "overwrite_existing_target": {
+                    "description": "Overwrite target-language translation if already present",
+                    "type": "boolean"
+                },
+                "provider": {
+                    "description": "openai, openai-compatible, anthropic, bedrock, deepl, google",
+                    "type": "string"
+                },
+                "source_language": {
+                    "description": "Source language code (e.g., en, ja, auto)",
+                    "type": "string"
+                },
+                "target_language": {
+                    "description": "Target language code (e.g., en, ja, zh)",
+                    "type": "string"
+                },
+                "target_languages": {
+                    "description": "Optional list of target language codes for multi-language output",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "timeout_seconds": {
+                    "description": "Request timeout in seconds",
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.TranslationFieldsConfig": {
+            "type": "object",
+            "properties": {
+                "actresses": {
+                    "type": "boolean"
+                },
+                "description": {
+                    "type": "boolean"
+                },
+                "director": {
+                    "type": "boolean"
+                },
+                "genres": {
+                    "type": "boolean"
+                },
+                "label": {
+                    "type": "boolean"
+                },
+                "maker": {
+                    "type": "boolean"
+                },
+                "original_title": {
+                    "type": "boolean"
+                },
+                "series": {
+                    "type": "boolean"
+                },
+                "title": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.WordReplacementConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "description": "Enable word replacement from database",
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.completenessConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "tiers": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.completenessTierConfig"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.completenessTierConfig": {
+            "type": "object",
+            "properties": {
+                "essential": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.completenessTierDefinition"
+                },
+                "important": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.completenessTierDefinition"
+                },
+                "nice_to_have": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.completenessTierDefinition"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.completenessTierDefinition": {
+            "type": "object",
+            "properties": {
+                "fields": {
+                    "description": "Movie field names assigned to this tier",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "weight": {
+                    "description": "Percentage weight (0-100, must sum to 100 across tiers)",
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.mediaInfoConfig": {
+            "type": "object",
+            "properties": {
+                "cli_enabled": {
+                    "description": "Enable MediaInfo CLI fallback (default: false)",
+                    "type": "boolean"
+                },
+                "cli_path": {
+                    "description": "Path to mediainfo binary (default: \"mediainfo\")",
+                    "type": "string"
+                },
+                "cli_timeout": {
+                    "description": "Timeout in seconds for CLI execution (default: 30)",
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.tagDatabaseConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "description": "Enable per-movie tag lookup from database",
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_config.webUIConfig": {
+            "type": "object",
+            "properties": {
+                "default_review_view": {
+                    "type": "string"
+                },
+                "favorites": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.FavoritesConfig"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_models.Actress": {
+            "type": "object",
+            "properties": {
+                "aliases": {
+                    "description": "Pipe-separated",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "dmm_id": {
+                    "description": "Real DMM actress ID when available (unique only for values \u003e 0)",
+                    "type": "integer"
+                },
+                "first_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "japanese_name": {
+                    "type": "string"
+                },
+                "last_name": {
+                    "type": "string"
+                },
+                "thumb_url": {
+                    "type": "string"
+                },
+                "translations": {
+                    "description": "Translations carries optional translation data for API response enrichment.\nNot persisted in database — gorm:\"-\" prevents auto-migration/association.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.ActressTranslation"
+                    }
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_models.ActressInfo": {
+            "type": "object",
+            "properties": {
+                "dmm_id": {
+                    "description": "DMM actress ID for unique identification",
+                    "type": "integer"
+                },
+                "first_name": {
+                    "type": "string"
+                },
+                "japanese_name": {
+                    "type": "string"
+                },
+                "last_name": {
+                    "type": "string"
+                },
+                "thumb_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_models.ActressSyncJob": {
+            "type": "object",
+            "properties": {
+                "cancel_requested": {
+                    "type": "boolean"
+                },
+                "cancelled": {
+                    "type": "integer"
+                },
+                "completed": {
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "conflicts": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "skipped": {
+                    "type": "integer"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "total_tasks": {
+                    "type": "integer"
+                },
+                "updated": {
+                    "type": "integer"
+                },
+                "warnings": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_models.ActressSyncTask": {
+            "type": "object",
+            "properties": {
+                "actress_id": {
+                    "type": "integer"
+                },
+                "attempts": {
+                    "type": "integer"
+                },
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "dedupe_key": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "heartbeat_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "job_id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "lease_expires_at": {
+                    "type": "string"
+                },
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "movie_content_id": {
+                    "type": "string"
+                },
+                "movie_id": {
+                    "type": "string"
+                },
+                "outcome": {
+                    "type": "string"
+                },
+                "stage": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_fields": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "warning": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_models.ActressTranslation": {
+            "type": "object",
+            "properties": {
+                "actress_id": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "first_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "japanese_name": {
+                    "type": "string"
+                },
+                "language": {
+                    "type": "string"
+                },
+                "last_name": {
+                    "type": "string"
+                },
+                "settings_hash": {
+                    "type": "string"
+                },
+                "source_name": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_models.BrowserConfig": {
+            "type": "object",
+            "properties": {
+                "binary_path": {
+                    "type": "string"
+                },
+                "block_css": {
+                    "type": "boolean"
+                },
+                "block_images": {
+                    "type": "boolean"
+                },
+                "debug_visible": {
+                    "type": "boolean"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "headless": {
+                    "type": "boolean"
+                },
+                "max_retries": {
+                    "type": "integer"
+                },
+                "slow_mo": {
+                    "type": "integer"
+                },
+                "stealth_mode": {
+                    "type": "boolean"
+                },
+                "timeout": {
+                    "type": "integer"
+                },
+                "user_agent": {
+                    "type": "string"
+                },
+                "window_height": {
+                    "type": "integer"
+                },
+                "window_width": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_models.DeepLMode": {
+            "type": "string",
+            "enum": [
+                "free",
+                "pro"
+            ],
+            "x-enum-varnames": [
+                "DeepLModeFree",
+                "DeepLModePro"
+            ]
+        },
+        "github_com_javinizer_javinizer-go_internal_models.Event": {
+            "type": "object",
+            "properties": {
+                "context": {
+                    "description": "JSON-encoded details",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "event_type": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.EventCategory"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "severity": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.EventSeverity"
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_models.EventCategory": {
+            "type": "string",
+            "enum": [
+                "scraper",
+                "organize",
+                "system"
+            ],
+            "x-enum-varnames": [
+                "EventCategoryScraper",
+                "EventCategoryOrganize",
+                "EventCategorySystem"
+            ]
+        },
+        "github_com_javinizer_javinizer-go_internal_models.EventSeverity": {
+            "type": "string",
+            "enum": [
+                "debug",
+                "info",
+                "warn",
+                "error"
+            ],
+            "x-enum-varnames": [
+                "SeverityDebug",
+                "SeverityInfo",
+                "SeverityWarn",
+                "SeverityError"
+            ]
+        },
+        "github_com_javinizer_javinizer-go_internal_models.FlareSolverrConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "max_retries": {
+                    "type": "integer"
+                },
+                "session_ttl": {
+                    "type": "integer"
+                },
+                "timeout": {
+                    "type": "integer"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_models.Genre": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "translations": {
+                    "description": "Translations carries optional translation data for API response enrichment.\nNot persisted in database — gorm:\"-\" prevents auto-migration/association.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.GenreTranslation"
+                    }
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_models.GenreReplacement": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "original": {
+                    "type": "string"
+                },
+                "replacement": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_models.GenreTranslation": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "genre_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "language": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "source_name": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_models.GoogleMode": {
+            "type": "string",
+            "enum": [
+                "free",
+                "paid"
+            ],
+            "x-enum-varnames": [
+                "GoogleModeFree",
+                "GoogleModePaid"
+            ]
+        },
+        "github_com_javinizer_javinizer-go_internal_models.HistoryOperation": {
+            "type": "string",
+            "enum": [
+                "scrape",
+                "organize",
+                "download",
+                "nfo"
+            ],
+            "x-enum-varnames": [
+                "HistoryOpScrape",
+                "HistoryOpOrganize",
+                "HistoryOpDownload",
+                "HistoryOpNFO"
+            ]
+        },
+        "github_com_javinizer_javinizer-go_internal_models.HistoryStatus": {
+            "type": "string",
+            "enum": [
+                "success",
+                "failed",
+                "reverted"
+            ],
+            "x-enum-varnames": [
+                "HistoryStatusSuccess",
+                "HistoryStatusFailed",
+                "HistoryStatusReverted"
+            ]
+        },
+        "github_com_javinizer_javinizer-go_internal_models.JobStatus": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "running",
+                "completed",
+                "failed",
+                "cancelled",
+                "organized",
+                "reverted"
+            ],
+            "x-enum-varnames": [
+                "JobStatusPending",
+                "JobStatusRunning",
+                "JobStatusCompleted",
+                "JobStatusFailed",
+                "JobStatusCancelled",
+                "JobStatusOrganized",
+                "JobStatusReverted"
+            ]
+        },
+        "github_com_javinizer_javinizer-go_internal_models.Movie": {
+            "type": "object",
+            "properties": {
+                "actresses": {
+                    "description": "Relationships",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.Actress"
+                    }
+                },
+                "content_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "director": {
+                    "type": "string"
+                },
+                "display_title": {
+                    "type": "string"
+                },
+                "genres": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.Genre"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "label": {
+                    "description": "Sub-label",
+                    "type": "string"
+                },
+                "maker": {
+                    "description": "Studio/maker",
+                    "type": "string"
+                },
+                "original_filename": {
+                    "type": "string"
+                },
+                "original_title": {
+                    "description": "Japanese/original language title",
+                    "type": "string"
+                },
+                "rating_score": {
+                    "type": "number"
+                },
+                "rating_votes": {
+                    "type": "integer"
+                },
+                "rating_warning": {
+                    "type": "string"
+                },
+                "release_date": {
+                    "type": "string"
+                },
+                "release_year": {
+                    "type": "integer"
+                },
+                "runtime": {
+                    "description": "in minutes",
+                    "type": "integer"
+                },
+                "screenshot_urls": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "series": {
+                    "description": "Series name",
+                    "type": "string"
+                },
+                "source_name": {
+                    "description": "Metadata",
+                    "type": "string"
+                },
+                "source_url": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "trailer_url": {
+                    "type": "string"
+                },
+                "translations": {
+                    "description": "Translations",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.MovieTranslation"
+                    }
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_models.MovieTranslation": {
+            "type": "object",
+            "properties": {
+                "actresses": {
+                    "description": "Translated actress names for template rendering",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "director": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "language": {
+                    "description": "ISO 639-1: en, ja, zh, etc.",
+                    "type": "string"
+                },
+                "maker": {
+                    "type": "string"
+                },
+                "movie_id": {
+                    "type": "string"
+                },
+                "original_title": {
+                    "description": "Japanese/original language title",
+                    "type": "string"
+                },
+                "series": {
+                    "type": "string"
+                },
+                "settings_hash": {
+                    "description": "Hash of translation settings used",
+                    "type": "string"
+                },
+                "source_name": {
+                    "description": "Which scraper provided this translation",
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_models.OperationTypeEnum": {
+            "type": "string",
+            "enum": [
+                "move",
+                "copy",
+                "hardlink",
+                "symlink",
+                "update"
+            ],
+            "x-enum-comments": {
+                "OperationTypeUpdate": "update-mode organize (NFO overwrite, no file move) per HIST-05"
+            },
+            "x-enum-descriptions": [
+                "",
+                "",
+                "",
+                "",
+                "update-mode organize (NFO overwrite, no file move) per HIST-05"
+            ],
+            "x-enum-varnames": [
+                "OperationTypeMove",
+                "OperationTypeCopy",
+                "OperationTypeHardlink",
+                "OperationTypeSymlink",
+                "OperationTypeUpdate"
+            ]
+        },
+        "github_com_javinizer_javinizer-go_internal_models.ProxyConfig": {
+            "type": "object",
+            "properties": {
+                "default_profile": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "profile": {
+                    "type": "string"
+                },
+                "profiles": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_scraperconfig.ProxyProfile"
+                    }
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_models.Rating": {
+            "type": "object",
+            "properties": {
+                "score": {
+                    "type": "number"
+                },
+                "votes": {
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_models.RevertOutcomeEnum": {
+            "type": "string",
+            "enum": [
+                "reverted",
+                "skipped",
+                "failed"
+            ],
+            "x-enum-comments": {
+                "RevertOutcomeFailed": "Failed to revert",
+                "RevertOutcomeReverted": "Successfully reverted",
+                "RevertOutcomeSkipped": "Skipped (e.g., anchor missing)"
+            },
+            "x-enum-descriptions": [
+                "Successfully reverted",
+                "Skipped (e.g., anchor missing)",
+                "Failed to revert"
+            ],
+            "x-enum-varnames": [
+                "RevertOutcomeReverted",
+                "RevertOutcomeSkipped",
+                "RevertOutcomeFailed"
+            ]
+        },
+        "github_com_javinizer_javinizer-go_internal_models.RevertReasonEnum": {
+            "type": "string",
+            "enum": [
+                "anchor_missing",
+                "destination_conflict",
+                "access_denied",
+                "unexpected_path_state",
+                "nfo_restore_failed",
+                "generated_cleanup_failed"
+            ],
+            "x-enum-comments": {
+                "RevertReasonAccessDenied": "Permission error during revert",
+                "RevertReasonAnchorMissing": "Video file missing at expected path",
+                "RevertReasonDestinationConflict": "Original path already occupied",
+                "RevertReasonGeneratedCleanupFailed": "Generated file cleanup failed",
+                "RevertReasonNFORestoreFailed": "NFO write failed",
+                "RevertReasonUnexpectedPathState": "File in unexpected state"
+            },
+            "x-enum-descriptions": [
+                "Video file missing at expected path",
+                "Original path already occupied",
+                "Permission error during revert",
+                "File in unexpected state",
+                "NFO write failed",
+                "Generated file cleanup failed"
+            ],
+            "x-enum-varnames": [
+                "RevertReasonAnchorMissing",
+                "RevertReasonDestinationConflict",
+                "RevertReasonAccessDenied",
+                "RevertReasonUnexpectedPathState",
+                "RevertReasonNFORestoreFailed",
+                "RevertReasonGeneratedCleanupFailed"
+            ]
+        },
+        "github_com_javinizer_javinizer-go_internal_models.RevertStatusEnum": {
+            "type": "string",
+            "enum": [
+                "applied",
+                "reverted",
+                "failed"
+            ],
+            "x-enum-comments": {
+                "RevertStatusApplied": "Renamed from \"pending\" — D-01"
+            },
+            "x-enum-descriptions": [
+                "Renamed from \"pending\" — D-01",
+                "",
+                ""
+            ],
+            "x-enum-varnames": [
+                "RevertStatusApplied",
+                "RevertStatusReverted",
+                "RevertStatusFailed"
+            ]
+        },
+        "github_com_javinizer_javinizer-go_internal_models.ScrapeCandidate": {
+            "type": "object",
+            "properties": {
+                "actress_count": {
+                    "type": "integer"
+                },
+                "movie_id": {
+                    "description": "MovieID is the scraper-reported id for this candidate.",
+                    "type": "string"
+                },
+                "original_title": {
+                    "type": "string"
+                },
+                "poster_url": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "title": {
+                    "description": "Title is the display title — translated when translation is enabled, otherwise\nthe scraper's original title. OriginalTitle always holds the untranslated title.",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_models.ScraperChoice": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string",
+                    "example": "English"
+                },
+                "value": {
+                    "type": "string",
+                    "example": "en"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_models.ScraperResult": {
+            "type": "object",
+            "properties": {
+                "actresses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.ActressInfo"
+                    }
+                },
+                "content_id": {
+                    "type": "string"
+                },
+                "cover_url": {
+                    "description": "Landscape/fanart image",
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "director": {
+                    "type": "string"
+                },
+                "genres": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "language": {
+                    "description": "ISO 639-1 code: en, ja, zh, etc.",
+                    "type": "string"
+                },
+                "maker": {
+                    "type": "string"
+                },
+                "original_title": {
+                    "description": "Japanese/original language title",
+                    "type": "string"
+                },
+                "poster_url": {
+                    "description": "Portrait/box art image",
+                    "type": "string"
+                },
+                "rating": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.Rating"
+                },
+                "release_date": {
+                    "type": "string"
+                },
+                "runtime": {
+                    "type": "integer"
+                },
+                "screenshot_urls": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "series": {
+                    "type": "string"
+                },
+                "should_crop_poster": {
+                    "description": "Whether poster needs cropping from cover",
+                    "type": "boolean"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "source_url": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "trailer_url": {
+                    "type": "string"
+                },
+                "translations": {
+                    "description": "Additional language translations (optional)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.MovieTranslation"
+                    }
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_models.UnknownActressMode": {
+            "type": "string",
+            "enum": [
+                "skip",
+                "fallback"
+            ],
+            "x-enum-varnames": [
+                "UnknownActressModeSkip",
+                "UnknownActressModeFallback"
+            ]
+        },
+        "github_com_javinizer_javinizer-go_internal_operationmode.OperationMode": {
+            "type": "string",
+            "enum": [
+                "organize",
+                "in-place",
+                "in-place-norenamefolder",
+                "metadata-artwork",
+                "preview"
+            ],
+            "x-enum-varnames": [
+                "OperationModeOrganize",
+                "OperationModeInPlace",
+                "OperationModeInPlaceNoRenameFolder",
+                "OperationModeMetadataArtwork",
+                "OperationModePreview"
+            ]
+        },
+        "github_com_javinizer_javinizer-go_internal_scraperconfig.ProxyProfile": {
+            "type": "object",
+            "properties": {
+                "password": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_updater.State": {
+            "type": "string",
+            "enum": [
+                "idle",
+                "downloading",
+                "verifying",
+                "staging",
+                "swapping",
+                "relaunching",
+                "failed"
+            ],
+            "x-enum-varnames": [
+                "StateIdle",
+                "StateDownloading",
+                "StateVerifying",
+                "StateStaging",
+                "StateSwapping",
+                "StateRelaunching",
+                "StateFailed"
+            ]
+        },
+        "github_com_javinizer_javinizer-go_internal_updater.Status": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "state": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_updater.State"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_worker.ActressSyncCreateRequest": {
+            "type": "object",
+            "properties": {
+                "actress_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "missing": {
+                    "type": "boolean"
+                },
+                "scope": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_actress.ErrorResponse": {
             "type": "object",
             "properties": {
                 "error": {
@@ -5860,6 +8402,221 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "internal_api_actress.actressMoviesResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "movies": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.Movie"
+                    }
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api_actress.actressRequest": {
+            "type": "object",
+            "properties": {
+                "aliases": {
+                    "type": "string"
+                },
+                "dmm_id": {
+                    "type": "integer"
+                },
+                "first_name": {
+                    "type": "string"
+                },
+                "japanese_name": {
+                    "type": "string"
+                },
+                "last_name": {
+                    "type": "string"
+                },
+                "thumb_url": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_actress.actressSearchResponse": {
+            "type": "object",
+            "properties": {
+                "aliases": {
+                    "description": "Pipe-separated",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "dmm_id": {
+                    "description": "Real DMM actress ID when available (unique only for values \u003e 0)",
+                    "type": "integer"
+                },
+                "first_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "japanese_name": {
+                    "type": "string"
+                },
+                "last_name": {
+                    "type": "string"
+                },
+                "thumb_url": {
+                    "type": "string"
+                },
+                "translations": {
+                    "description": "Translations carries optional translation data for API response enrichment.\nNot persisted in database — gorm:\"-\" prevents auto-migration/association.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.ActressTranslation"
+                    }
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api_actress.actressSyncCandidatesResponse": {
+            "type": "object",
+            "properties": {
+                "actresses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.Actress"
+                    }
+                },
+                "ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api_actress.actressSyncJobResponse": {
+            "type": "object",
+            "properties": {
+                "job": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.ActressSyncJob"
+                }
+            }
+        },
+        "internal_api_actress.actressSyncJobsResponse": {
+            "type": "object",
+            "properties": {
+                "jobs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.ActressSyncJob"
+                    }
+                }
+            }
+        },
+        "internal_api_actress.actressSyncTasksResponse": {
+            "type": "object",
+            "properties": {
+                "tasks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.ActressSyncTask"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api_actress.actressesResponse": {
+            "type": "object",
+            "properties": {
+                "actresses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.Actress"
+                    }
+                },
+                "count": {
+                    "type": "integer"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api_actress.aliasGroupResponse": {
+            "type": "object",
+            "properties": {
+                "canonical": {
+                    "type": "string"
+                },
+                "names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_api_actress.bulkDeleteActressesRequest": {
+            "type": "object",
+            "properties": {
+                "ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "internal_api_actress.deleteActressesResponse": {
+            "type": "object",
+            "properties": {
+                "deleted": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api_desktop.upgradeRequest": {
+            "type": "object",
+            "properties": {
+                "force": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_api_desktop.upgradeResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
                 }
             }
         },
@@ -5880,7 +8637,7 @@ const docTemplate = `{
                 "events": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.Event"
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.Event"
                     }
                 },
                 "total": {
@@ -5917,158 +8674,50 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api_file.BrowseRequest": {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "example": "/path/to/directory"
-                }
-            }
-        },
-        "internal_api_file.BrowseResponse": {
-            "type": "object",
-            "properties": {
-                "current_path": {
-                    "type": "string",
-                    "example": "/path/to/directory"
-                },
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.FileInfo"
-                    }
-                },
-                "parent_path": {
-                    "type": "string",
-                    "example": "/path/to"
-                }
-            }
-        },
-        "internal_api_file.ErrorResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string",
-                    "example": "Movie not found"
-                },
-                "errors": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "internal_api_file.PathAutocompleteRequest": {
-            "type": "object",
-            "required": [
-                "path"
-            ],
-            "properties": {
-                "limit": {
-                    "type": "integer",
-                    "example": 10
-                },
-                "path": {
-                    "type": "string",
-                    "example": "/path/to/vid"
-                }
-            }
-        },
-        "internal_api_file.PathAutocompleteResponse": {
-            "type": "object",
-            "properties": {
-                "base_path": {
-                    "type": "string",
-                    "example": "/path/to"
-                },
-                "input_path": {
-                    "type": "string",
-                    "example": "/path/to/vid"
-                },
-                "suggestions": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.PathAutocompleteSuggestion"
-                    }
-                }
-            }
-        },
-        "internal_api_file.ScanRequest": {
-            "type": "object",
-            "required": [
-                "path"
-            ],
-            "properties": {
-                "filter": {
-                    "description": "Filter folder/file names (case-insensitive substring match)",
-                    "type": "string",
-                    "example": "STSK"
-                },
-                "path": {
-                    "type": "string",
-                    "example": "/path/to/videos"
-                },
-                "recursive": {
-                    "type": "boolean",
-                    "example": true
-                }
-            }
-        },
-        "internal_api_file.ScanResponse": {
+        "internal_api_genre.favoriteGenresResponse": {
             "type": "object",
             "properties": {
                 "count": {
-                    "type": "integer",
-                    "example": 10
-                },
-                "files": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.FileInfo"
-                    }
-                },
-                "skipped": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "internal_api_genre.ErrorResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string",
-                    "example": "Movie not found"
-                },
-                "errors": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "internal_api_genre.GenreReplacement": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "id": {
                     "type": "integer"
                 },
-                "original": {
+                "favorites": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_api_genre.genreAddRequest": {
+            "type": "object",
+            "properties": {
+                "genre": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_api_genre.genreListResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
                 },
-                "replacement": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
+                "genres": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.Genre"
+                    }
+                }
+            }
+        },
+        "internal_api_genre.genreListUpdateRequest": {
+            "type": "object",
+            "properties": {
+                "genres": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -6098,11 +8747,25 @@ const docTemplate = `{
                 "replacements": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.GenreReplacement"
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.GenreReplacement"
                     }
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_api_genre.ignoredGenresResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "ignored_genres": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -6111,21 +8774,6 @@ const docTemplate = `{
             "properties": {
                 "deleted": {
                     "type": "integer"
-                }
-            }
-        },
-        "internal_api_history.ErrorResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string",
-                    "example": "Movie not found"
-                },
-                "errors": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 }
             }
         },
@@ -6174,13 +8822,13 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "operation": {
-                    "type": "string"
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.HistoryOperation"
                 },
                 "original_path": {
                     "type": "string"
                 },
                 "status": {
-                    "type": "string"
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.HistoryStatus"
                 }
             }
         },
@@ -6223,382 +8871,52 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api_jobs.ErrorResponse": {
+        "internal_api_r18devdump.dumpStatusResponse": {
             "type": "object",
             "properties": {
-                "error": {
-                    "type": "string",
-                    "example": "Movie not found"
+                "enabled": {
+                    "type": "boolean"
                 },
-                "errors": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
+                "imported_at": {
+                    "type": "string"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "present": {
+                    "type": "boolean"
+                },
+                "row_count": {
+                    "type": "integer"
+                },
+                "running": {
+                    "type": "boolean"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "source_date": {
+                    "type": "string"
+                },
+                "source_url": {
+                    "type": "string"
                 }
             }
         },
-        "internal_api_jobs.JobListItem": {
+        "internal_api_r18devdump.searchResponse": {
             "type": "object",
             "properties": {
-                "cancelled": {
-                    "type": "integer",
-                    "example": 0
+                "content_id": {
+                    "type": "string"
                 },
-                "completed": {
-                    "type": "integer",
-                    "example": 9
+                "dvd_id": {
+                    "type": "string"
                 },
-                "completed_at": {
-                    "type": "string",
-                    "example": "2026-04-12T10:05:00Z"
-                },
-                "destination": {
-                    "type": "string",
-                    "example": "/path/to/output"
-                },
-                "failed": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "id": {
-                    "type": "string",
-                    "example": "550e8400-e29b-41d4-a716-446655440000"
-                },
-                "operation_count": {
-                    "type": "integer",
-                    "example": 10
-                },
-                "organized_at": {
-                    "type": "string",
-                    "example": "2026-04-12T10:05:00Z"
-                },
-                "progress": {
-                    "type": "number",
-                    "example": 0.9
-                },
-                "reverted_at": {
-                    "type": "string",
-                    "example": "2026-04-12T11:00:00Z"
-                },
-                "reverted_count": {
-                    "type": "integer",
-                    "example": 7
-                },
-                "started_at": {
-                    "type": "string",
-                    "example": "2026-04-12T10:00:00Z"
-                },
-                "status": {
-                    "type": "string",
-                    "example": "organized"
-                },
-                "total_files": {
-                    "type": "integer",
-                    "example": 10
-                }
-            }
-        },
-        "internal_api_jobs.JobListResponse": {
-            "type": "object",
-            "properties": {
-                "jobs": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.JobListItem"
-                    }
-                }
-            }
-        },
-        "internal_api_jobs.OperationListResponse": {
-            "type": "object",
-            "properties": {
-                "job_id": {
-                    "type": "string",
-                    "example": "550e8400-e29b-41d4-a716-446655440000"
-                },
-                "job_status": {
-                    "type": "string",
-                    "example": "organized"
-                },
-                "operations": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.OperationItem"
-                    }
-                },
-                "total": {
-                    "type": "integer",
-                    "example": 10
-                }
-            }
-        },
-        "internal_api_jobs.RevertResultResponse": {
-            "type": "object",
-            "properties": {
-                "errors": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.RevertFileError"
-                    }
-                },
-                "failed": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "job_id": {
-                    "type": "string",
-                    "example": "550e8400-e29b-41d4-a716-446655440000"
-                },
-                "skipped": {
-                    "type": "integer",
-                    "example": 1
-                },
-                "status": {
-                    "type": "string",
-                    "example": "reverted"
-                },
-                "succeeded": {
-                    "type": "integer",
-                    "example": 9
-                },
-                "total": {
-                    "type": "integer",
-                    "example": 10
-                }
-            }
-        },
-        "internal_api_movie.ErrorResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string",
-                    "example": "Movie not found"
-                },
-                "errors": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "internal_api_movie.MovieResponse": {
-            "type": "object",
-            "properties": {
-                "merge_stats": {
-                    "description": "Merge statistics when NFO merging occurred",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MergeStatistics"
-                        }
-                    ]
-                },
-                "movie": {
-                    "$ref": "#/definitions/models.Movie"
-                },
-                "provenance": {
-                    "description": "Field-level data source tracking",
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.DataSource"
-                    }
-                }
-            }
-        },
-        "internal_api_movie.MoviesResponse": {
-            "type": "object",
-            "properties": {
-                "count": {
-                    "type": "integer",
-                    "example": 20
-                },
-                "movies": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.Movie"
-                    }
-                }
-            }
-        },
-        "internal_api_movie.NFOComparisonRequest": {
-            "type": "object",
-            "properties": {
-                "array_strategy": {
-                    "description": "Array field merge strategy: merge or replace",
-                    "type": "string",
-                    "example": "merge"
-                },
-                "nfo_path": {
-                    "description": "Optional: explicit NFO path",
-                    "type": "string",
-                    "example": "/path/to/movie.nfo"
-                },
-                "preset": {
-                    "description": "Merge strategy preset: conservative, gap-fill, or aggressive (overrides scalar/array strategies)",
-                    "type": "string",
-                    "example": "conservative"
-                },
-                "scalar_strategy": {
-                    "description": "Scalar field merge strategy: prefer-nfo, prefer-scraper, preserve-existing, or fill-missing-only",
-                    "type": "string",
-                    "example": "prefer-nfo"
-                },
-                "selected_scrapers": {
-                    "description": "Optional: custom scrapers for comparison",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "r18dev",
-                        "dmm"
-                    ]
-                }
-            }
-        },
-        "internal_api_movie.NFOComparisonResponse": {
-            "type": "object",
-            "properties": {
-                "differences": {
-                    "description": "List of fields that differ",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.FieldDifference"
-                    }
-                },
-                "merge_stats": {
-                    "description": "Merge statistics",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MergeStatistics"
-                        }
-                    ]
-                },
-                "merged_data": {
-                    "description": "Result of merging",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.Movie"
-                        }
-                    ]
-                },
-                "movie_id": {
-                    "type": "string",
-                    "example": "IPX-535"
-                },
-                "nfo_data": {
-                    "description": "Data from NFO file",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.Movie"
-                        }
-                    ]
-                },
-                "nfo_exists": {
-                    "type": "boolean",
-                    "example": true
-                },
-                "nfo_path": {
-                    "description": "Returns filename only for security",
-                    "type": "string",
-                    "example": "movie.nfo"
-                },
-                "provenance": {
-                    "description": "Field-level provenance",
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.DataSource"
-                    }
-                },
-                "scraped_data": {
-                    "description": "Fresh scraped data",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/models.Movie"
-                        }
-                    ]
-                }
-            }
-        },
-        "internal_api_movie.RescrapeRequest": {
-            "type": "object",
-            "required": [
-                "selected_scrapers"
-            ],
-            "properties": {
-                "force": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "selected_scrapers": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "r18dev",
-                        "dmm"
-                    ]
-                }
-            }
-        },
-        "internal_api_movie.ScrapeRequest": {
-            "type": "object",
-            "required": [
-                "id"
-            ],
-            "properties": {
-                "force": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "id": {
-                    "type": "string",
-                    "example": "IPX-535"
-                },
-                "selected_scrapers": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "r18dev",
-                        "dmm"
-                    ]
-                }
-            }
-        },
-        "internal_api_movie.ScrapeResponse": {
-            "type": "object",
-            "properties": {
-                "cached": {
-                    "type": "boolean",
-                    "example": false
-                },
-                "errors": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "movie": {
-                    "$ref": "#/definitions/models.Movie"
-                },
-                "sources_used": {
-                    "type": "integer",
-                    "example": 2
-                }
-            }
-        },
-        "internal_api_system.AvailableScrapersResponse": {
-            "type": "object",
-            "properties": {
-                "scrapers": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ScraperInfo"
-                    }
+                "query": {
+                    "type": "string"
                 }
             }
         },
@@ -6639,147 +8957,25 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_api_system.ErrorResponse": {
+        "internal_api_system.SecurityUpdateRequest": {
             "type": "object",
             "properties": {
-                "error": {
-                    "type": "string",
-                    "example": "Movie not found"
+                "allow_unc": {
+                    "type": "boolean"
                 },
-                "errors": {
+                "allowed_directories": {
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
-                }
-            }
-        },
-        "internal_api_system.HealthResponse": {
-            "type": "object",
-            "properties": {
-                "build_date": {
-                    "type": "string",
-                    "example": "2026-02-23T00:00:00Z"
                 },
-                "commit": {
-                    "type": "string",
-                    "example": "abc123def456"
-                },
-                "scrapers": {
+                "allowed_unc_servers": {
                     "type": "array",
                     "items": {
                         "type": "string"
-                    },
-                    "example": [
-                        "r18dev",
-                        "dmm"
-                    ]
+                    }
                 },
-                "status": {
-                    "type": "string",
-                    "example": "ok"
-                },
-                "version": {
-                    "type": "string",
-                    "example": "v1.2.3"
-                }
-            }
-        },
-        "internal_api_system.ProxyTestRequest": {
-            "type": "object",
-            "required": [
-                "mode"
-            ],
-            "properties": {
-                "flaresolverr": {
-                    "description": "FlareSolverr config (separate from ProxyConfig)",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/config.FlareSolverrConfig"
-                        }
-                    ]
-                },
-                "mode": {
-                    "description": "direct or flaresolverr",
-                    "type": "string",
-                    "enum": [
-                        "direct",
-                        "flaresolverr"
-                    ]
-                },
-                "proxy": {
-                    "$ref": "#/definitions/config.ProxyConfig"
-                },
-                "target_url": {
-                    "description": "Optional override target URL",
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api_system.ProxyTestResponse": {
-            "type": "object",
-            "properties": {
-                "duration_ms": {
-                    "type": "integer"
-                },
-                "flaresolverr_url": {
-                    "description": "FlareSolverr endpoint used",
-                    "type": "string"
-                },
-                "message": {
-                    "type": "string"
-                },
-                "mode": {
-                    "type": "string"
-                },
-                "proxy_url": {
-                    "description": "Redacted proxy URL",
-                    "type": "string"
-                },
-                "status_code": {
-                    "type": "integer"
-                },
-                "success": {
-                    "type": "boolean"
-                },
-                "target_url": {
-                    "type": "string"
-                },
-                "token_expires_at": {
-                    "description": "Unix timestamp when token expires",
-                    "type": "integer"
-                },
-                "verification_token": {
-                    "description": "Token for save authorization",
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api_system.TranslationModelsRequest": {
-            "type": "object",
-            "required": [
-                "base_url",
-                "provider"
-            ],
-            "properties": {
-                "api_key": {
-                    "description": "Provider API key",
-                    "type": "string"
-                },
-                "base_url": {
-                    "description": "API base URL (e.g., https://api.openai.com/v1)",
-                    "type": "string"
-                },
-                "provider": {
-                    "description": "openai (OpenAI-compatible only for now)",
-                    "type": "string"
-                }
-            }
-        },
-        "internal_api_system.TranslationModelsResponse": {
-            "type": "object",
-            "properties": {
-                "models": {
+                "denied_directories": {
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -6791,31 +8987,31 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "api": {
-                    "$ref": "#/definitions/config.APIConfig"
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.APIConfig"
                 },
                 "config_version": {
                     "type": "integer"
                 },
                 "database": {
-                    "$ref": "#/definitions/config.DatabaseConfig"
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.DatabaseConfig"
                 },
                 "file_matching": {
-                    "$ref": "#/definitions/config.MatchingConfig"
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.MatchingConfig"
                 },
                 "logging": {
-                    "$ref": "#/definitions/config.LoggingConfig"
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.LoggingConfig"
                 },
                 "mediainfo": {
-                    "$ref": "#/definitions/config.MediaInfoConfig"
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.mediaInfoConfig"
                 },
                 "metadata": {
-                    "$ref": "#/definitions/config.MetadataConfig"
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.MetadataConfig"
                 },
                 "output": {
-                    "$ref": "#/definitions/config.OutputConfig"
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.OutputConfig"
                 },
                 "performance": {
-                    "$ref": "#/definitions/config.PerformanceConfig"
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.PerformanceConfig"
                 },
                 "proxy_verification_tokens": {
                     "type": "object",
@@ -6824,46 +9020,30 @@ const docTemplate = `{
                     }
                 },
                 "scrapers": {
-                    "$ref": "#/definitions/config.ScrapersConfig"
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.ScrapersConfig"
                 },
                 "server": {
-                    "$ref": "#/definitions/config.ServerConfig"
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.ServerConfig"
                 },
                 "system": {
-                    "$ref": "#/definitions/config.SystemConfig"
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.SystemConfig"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.ConfigWarning"
+                    }
                 },
                 "webui": {
-                    "$ref": "#/definitions/config.WebUIConfig"
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.webUIConfig"
                 }
             }
         },
-        "internal_api_temp.ErrorResponse": {
+        "internal_api_system.securityResponse": {
             "type": "object",
             "properties": {
-                "error": {
-                    "type": "string",
-                    "example": "Movie not found"
-                },
-                "errors": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "internal_api_token.ErrorResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string",
-                    "example": "Movie not found"
-                },
-                "errors": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
+                "security": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_config.SecurityConfig"
                 }
             }
         },
@@ -6955,6 +9135,10 @@ const docTemplate = `{
                     "description": "Error message if any",
                     "type": "string"
                 },
+                "install_environment": {
+                    "description": "InstallEnvironment reports how javinizer is running (\"docker\", \"desktop\",\nor \"cli\") so the UI can render the right upgrade path: docker images can't\nself-swap (read-only image), desktop apps need a new bundle, only cli\nbuilds self-upgrade in place.",
+                    "type": "string"
+                },
                 "latest": {
                     "description": "Latest available version",
                     "type": "string"
@@ -6970,446 +9154,10 @@ const docTemplate = `{
                 "update_available": {
                     "description": "Whether an update is available",
                     "type": "boolean"
-                }
-            }
-        },
-        "models.Actress": {
-            "type": "object",
-            "properties": {
-                "aliases": {
-                    "description": "Pipe-separated",
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "dmm_id": {
-                    "description": "Real DMM actress ID when available (unique only for values \u003e 0)",
-                    "type": "integer"
-                },
-                "first_name": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "japanese_name": {
-                    "type": "string"
-                },
-                "last_name": {
-                    "type": "string"
-                },
-                "thumb_url": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
-        "models.ActressSyncJob": {
-            "type": "object",
-            "properties": {
-                "cancel_requested": {
-                    "type": "boolean"
-                },
-                "cancelled": {
-                    "type": "integer"
-                },
-                "completed": {
-                    "type": "integer"
-                },
-                "completed_at": {
-                    "type": "string"
-                },
-                "conflicts": {
-                    "type": "integer"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "failed": {
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "scope": {
-                    "type": "string"
-                },
-                "skipped": {
-                    "type": "integer"
-                },
-                "started_at": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "total_tasks": {
-                    "type": "integer"
-                },
-                "updated": {
-                    "type": "integer"
-                },
-                "warnings": {
-                    "type": "integer"
-                }
-            }
-        },
-        "models.ActressSyncTask": {
-            "type": "object",
-            "properties": {
-                "actress_id": {
-                    "type": "integer"
-                },
-                "attempts": {
-                    "type": "integer"
-                },
-                "completed_at": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "dedupe_key": {
-                    "type": "string"
-                },
-                "error_message": {
-                    "type": "string"
-                },
-                "heartbeat_at": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "job_id": {
-                    "type": "string"
-                },
-                "kind": {
-                    "type": "string"
-                },
-                "label": {
-                    "type": "string"
-                },
-                "lease_expires_at": {
-                    "type": "string"
-                },
-                "messages": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "movie_content_id": {
-                    "type": "string"
-                },
-                "movie_id": {
-                    "type": "string"
-                },
-                "outcome": {
-                    "type": "string"
-                },
-                "stage": {
-                    "type": "string"
-                },
-                "started_at": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "updated_fields": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "warning": {
-                    "type": "string"
-                }
-            }
-        },
-        "models.Event": {
-            "type": "object",
-            "properties": {
-                "context": {
-                    "description": "JSON-encoded details",
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "event_type": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "message": {
-                    "type": "string"
-                },
-                "severity": {
-                    "type": "string"
-                },
-                "source": {
-                    "type": "string"
-                }
-            }
-        },
-        "models.Genre": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "integer"
-                },
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "models.GenreReplacement": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "original": {
-                    "type": "string"
-                },
-                "replacement": {
-                    "type": "string"
                 },
-                "updated_at": {
+                "upgrade_instructions": {
+                    "description": "UpgradeInstructions carries environment-specific guidance verbatim (e.g.\nthe ` + "`" + `docker pull` + "`" + ` command for docker, the releases URL for desktop, the\n` + "`" + `javinizer upgrade` + "`" + ` command for cli) so the frontend doesn't have to\nhardcode the image ref or rebuild steps per environment.",
                     "type": "string"
-                }
-            }
-        },
-        "models.Movie": {
-            "type": "object",
-            "properties": {
-                "actresses": {
-                    "description": "Relationships",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.Actress"
-                    }
-                },
-                "content_id": {
-                    "type": "string"
-                },
-                "cover_url": {
-                    "description": "Landscape/fanart image",
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "cropped_poster_url": {
-                    "description": "URL to the cropped poster (persisted)",
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "director": {
-                    "type": "string"
-                },
-                "display_title": {
-                    "type": "string"
-                },
-                "genres": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.Genre"
-                    }
-                },
-                "id": {
-                    "type": "string"
-                },
-                "label": {
-                    "description": "Sub-label",
-                    "type": "string"
-                },
-                "maker": {
-                    "description": "Studio/maker",
-                    "type": "string"
-                },
-                "original_cropped_poster_url": {
-                    "type": "string"
-                },
-                "original_filename": {
-                    "type": "string"
-                },
-                "original_poster_url": {
-                    "type": "string"
-                },
-                "original_should_crop_poster": {
-                    "type": "boolean"
-                },
-                "original_title": {
-                    "description": "Japanese/original language title",
-                    "type": "string"
-                },
-                "poster_url": {
-                    "description": "Portrait/box art image",
-                    "type": "string"
-                },
-                "rating_score": {
-                    "type": "number"
-                },
-                "rating_votes": {
-                    "type": "integer"
-                },
-                "rating_warning": {
-                    "type": "string"
-                },
-                "release_date": {
-                    "type": "string"
-                },
-                "release_year": {
-                    "type": "integer"
-                },
-                "runtime": {
-                    "description": "in minutes",
-                    "type": "integer"
-                },
-                "screenshot_urls": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "series": {
-                    "description": "Series name",
-                    "type": "string"
-                },
-                "should_crop_poster": {
-                    "description": "Whether poster needs cropping from cover",
-                    "type": "boolean"
-                },
-                "source_name": {
-                    "description": "Metadata",
-                    "type": "string"
-                },
-                "source_url": {
-                    "type": "string"
-                },
-                "title": {
-                    "type": "string"
-                },
-                "trailer_url": {
-                    "type": "string"
-                },
-                "translations": {
-                    "description": "Translations",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/models.MovieTranslation"
-                    }
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
-        "models.MovieTranslation": {
-            "type": "object",
-            "properties": {
-                "actresses": {
-                    "description": "Translated actress names for template rendering",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "director": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "label": {
-                    "type": "string"
-                },
-                "language": {
-                    "description": "ISO 639-1: en, ja, zh, etc.",
-                    "type": "string"
-                },
-                "maker": {
-                    "type": "string"
-                },
-                "movie_id": {
-                    "type": "string"
-                },
-                "original_title": {
-                    "description": "Japanese/original language title",
-                    "type": "string"
-                },
-                "series": {
-                    "type": "string"
-                },
-                "settings_hash": {
-                    "description": "Hash of translation settings used",
-                    "type": "string"
-                },
-                "source_name": {
-                    "description": "Which scraper provided this translation",
-                    "type": "string"
-                },
-                "title": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                }
-            }
-        },
-        "models.ScrapeCandidate": {
-            "type": "object",
-            "properties": {
-                "actress_count": {
-                    "type": "integer"
-                },
-                "movie_id": {
-                    "description": "MovieID is the scraper-reported id for this candidate.",
-                    "type": "string"
-                },
-                "original_title": {
-                    "type": "string"
-                },
-                "poster_url": {
-                    "type": "string"
-                },
-                "source": {
-                    "type": "string"
-                },
-                "title": {
-                    "description": "Title is the display title — translated when translation is enabled, otherwise\nthe scraper's original title. OriginalTitle always holds the untranslated title.",
-                    "type": "string"
-                }
-            }
-        },
-        "models.ScraperChoice": {
-            "type": "object",
-            "properties": {
-                "label": {
-                    "type": "string",
-                    "example": "English"
-                },
-                "value": {
-                    "type": "string",
-                    "example": "en"
                 }
             }
         }
@@ -7419,7 +9167,7 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "localhost:8080",
+	Host:             "localhost:8765",
 	BasePath:         "/",
 	Schemes:          []string{"http", "https"},
 	Title:            "Javinizer API",

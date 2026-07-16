@@ -8,10 +8,12 @@
 	import MetadataPriority from '$lib/components/priority/MetadataPriority.svelte';
 	import SettingsSection from '$lib/components/settings/SettingsSection.svelte';
 	import ServerSettingsSection from '$lib/components/settings/sections/ServerSettingsSection.svelte';
+	import SecuritySettingsSection from '$lib/components/settings/sections/SecuritySettingsSection.svelte';
 	import ScraperSettingsSection from '$lib/components/settings/sections/ScraperSettingsSection.svelte';
 	import FileOperationsSettingsSection from '$lib/components/settings/sections/FileOperationsSettingsSection.svelte';
 	import OutputSettingsSection from '$lib/components/settings/sections/OutputSettingsSection.svelte';
 	import DatabaseSettingsSection from '$lib/components/settings/sections/DatabaseSettingsSection.svelte';
+	import R18DevDumpSection from '$lib/components/settings/sections/R18DevDumpSection.svelte';
 	import TranslationSettingsSection from '$lib/components/settings/sections/TranslationSettingsSection.svelte';
 	import NfoSettingsSection from '$lib/components/settings/sections/NfoSettingsSection.svelte';
 	import ProxySettingsSection from '$lib/components/settings/sections/ProxySettingsSection.svelte';
@@ -92,9 +94,9 @@
 				</div>
 			</div>
 			<div class="flex gap-2">
-				<Button variant="outline" onclick={settings.reloadConfig} disabled={settings.loading}>
+				<Button variant="outline" onclick={settings.reloadConfig} disabled={settings.loading || settings.reloading}>
 					{#snippet children()}
-						<RefreshCw class="h-4 w-4 mr-2" />
+						<RefreshCw class="h-4 w-4 mr-2 {settings.reloading ? 'animate-spin' : ''}" />
 						Reload
 					{/snippet}
 				</Button>
@@ -114,6 +116,23 @@
 			</div>
 		{/if}
 
+		{#if settings.settingsConfig?.warnings && settings.settingsConfig.warnings.length > 0}
+			<div class="bg-amber-500/10 border-2 border-amber-500/50 text-amber-600 dark:text-amber-400 px-4 py-3 rounded-lg">
+				<div class="flex items-start gap-2 mb-2">
+					<CircleAlert class="h-5 w-5 mt-0.5 shrink-0" />
+					<div>
+						<p class="font-semibold">Configuration Warning</p>
+						<p class="text-sm">The following metadata priority overrides point exclusively at disabled scrapers:</p>
+					</div>
+				</div>
+				<ul class="text-sm ml-7 space-y-1">
+					{#each settings.settingsConfig.warnings as warning}
+						<li>• {warning.message}</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
+
 		{#if settings.loading}
 			<Card class="p-8 text-center">
 				<RefreshCw class="h-8 w-8 animate-spin mx-auto mb-2" />
@@ -121,6 +140,8 @@
 			</Card>
 		{:else if settings.settingsConfig}
 			<ServerSettingsSection config={settings.settingsConfig} inputClass={settings.inputClass} />
+
+		<SecuritySettingsSection config={settings.settingsConfig} inputClass={settings.inputClass} />
 
 			<SettingsSection title="Scraper Defaults" description="Default settings applied to all scrapers unless overridden per-scraper" defaultExpanded={false}>
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -224,36 +245,74 @@
 			<FileOperationsSettingsSection config={settings.settingsConfig} />
 			<OutputSettingsSection config={settings.settingsConfig} inputClass={settings.inputClass} />
 			<DatabaseSettingsSection config={settings.settingsConfig} inputClass={settings.inputClass} />
+			<R18DevDumpSection onConfigChange={(enabled) => { if (settings.settingsConfig) { const meta = settings.settingsConfig.metadata || (settings.settingsConfig as any).metadata || {}; meta.r18dev_dump = { enabled, path: meta.r18dev_dump?.path ?? '' }; (settings.settingsConfig as any).metadata = meta; } }} />
 			<ApiTokensSection onTokenDisplay={handleTokenDisplay} />
 			<SettingsSection title="Genre Replacements" description="Manage genre name replacements applied during scraping" defaultExpanded={false}>
-				<div class="flex items-center justify-between">
-					<p class="text-sm text-muted-foreground">
-						Manage genre name replacements that are applied during scraping.
-					</p>
-					<a href="/genres">
-						<Button variant="outline" size="sm">
-							{#snippet children()}
-								<Tags class="h-4 w-4 mr-1" />
-								Manage Genres
-							{/snippet}
-						</Button>
-					</a>
+				<div class="space-y-4">
+					<FormToggle
+						label="Enable genre replacement"
+						description="Normalize genre names using exact-match mappings from the database"
+						checked={settings.settingsConfig.metadata.genre_replacement?.enabled ?? false}
+						onchange={(val) => {
+							const cfg = settings.settingsConfig;
+							if (!cfg) return;
+							if (!cfg.metadata.genre_replacement) cfg.metadata.genre_replacement = {};
+							cfg.metadata.genre_replacement.enabled = val;
+						}}
+					/>
+					<FormToggle
+						label="Auto-add genres"
+						description="Automatically add new genre replacements to the database with identity mapping"
+						checked={settings.settingsConfig.metadata.genre_replacement?.auto_add ?? false}
+						onchange={(val) => {
+							const cfg = settings.settingsConfig;
+							if (!cfg) return;
+							if (!cfg.metadata.genre_replacement) cfg.metadata.genre_replacement = {};
+							cfg.metadata.genre_replacement.auto_add = val;
+						}}
+					/>
+					<div class="flex items-center justify-between pt-2 border-t border-border">
+						<p class="text-sm text-muted-foreground">
+							Manage individual genre replacement rules.
+						</p>
+						<a href="/genres">
+							<Button variant="outline" size="sm">
+								{#snippet children()}
+									<Tags class="h-4 w-4 mr-1" />
+									Manage Genres
+								{/snippet}
+							</Button>
+						</a>
+					</div>
 				</div>
 			</SettingsSection>
 
 			<SettingsSection title="Word Replacements" description="Manage word uncensor rules applied during scraping" defaultExpanded={false}>
-				<div class="flex items-center justify-between">
-					<p class="text-sm text-muted-foreground">
-						Manage word replacements that uncensor asterisked text in scraped metadata.
-					</p>
-					<a href="/words">
-						<Button variant="outline" size="sm">
-							{#snippet children()}
-								<Type class="h-4 w-4 mr-1" />
-								Manage Words
-							{/snippet}
-						</Button>
-					</a>
+				<div class="space-y-4">
+					<FormToggle
+						label="Enable word replacement"
+						description="De-censor and replace words in all text fields (title, description, genres, etc.) using database mappings. Default censored-to-clean pairs (e.g. S******n -> Shotacon) are seeded on startup."
+						checked={settings.settingsConfig.metadata.word_replacement?.enabled ?? false}
+						onchange={(val) => {
+							const cfg = settings.settingsConfig;
+							if (!cfg) return;
+							if (!cfg.metadata.word_replacement) cfg.metadata.word_replacement = {};
+							cfg.metadata.word_replacement.enabled = val;
+						}}
+					/>
+					<div class="flex items-center justify-between pt-2 border-t border-border">
+						<p class="text-sm text-muted-foreground">
+							Manage individual word replacement rules.
+						</p>
+						<a href="/words">
+							<Button variant="outline" size="sm">
+								{#snippet children()}
+									<Type class="h-4 w-4 mr-1" />
+									Manage Words
+								{/snippet}
+							</Button>
+						</a>
+					</div>
 				</div>
 			</SettingsSection>
 

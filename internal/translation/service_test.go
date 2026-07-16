@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -16,31 +14,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/javinizer/javinizer-go/internal/config"
+	"github.com/javinizer/javinizer-go/internal/httpclient"
 	"github.com/javinizer/javinizer-go/internal/models"
 )
-
-// fieldNamesFor generates one generic marker label per text for tests.
-func fieldNamesFor(texts []string) []string {
-	names := make([]string, len(texts))
-	for i := range texts {
-		names[i] = fmt.Sprintf("field_%d", i)
-	}
-	return names
-}
-
-// markerContent builds a named-marker LLM response payload for tests.
-func markerContent(fieldNames, texts []string) string {
-	var b strings.Builder
-	for i, fn := range fieldNames {
-		b.WriteString("<<<" + fn + ">>>\n")
-		if i < len(texts) {
-			b.WriteString(texts[i])
-		}
-		b.WriteString("\n")
-	}
-	return b.String()
-}
 
 // =============================================================================
 // New tests
@@ -49,19 +25,19 @@ func markerContent(fieldNames, texts []string) string {
 func TestNew(t *testing.T) {
 	tests := []struct {
 		name string
-		cfg  config.TranslationConfig
+		cfg  Config
 	}{
 		{
 			name: "returns non-nil service",
-			cfg:  config.TranslationConfig{Enabled: true},
+			cfg:  Config{Enabled: true},
 		},
 		{
 			name: "service has http client",
-			cfg:  config.TranslationConfig{},
+			cfg:  Config{},
 		},
 		{
 			name: "service preserves config",
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Enabled:        true,
 				Provider:       "openai",
 				TargetLanguage: "en",
@@ -71,9 +47,15 @@ func TestNew(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := New(tt.cfg)
+			httpClient := &http.Client{}
+			s := New(tt.cfg,
+				NewOpenAIProvider(tt.cfg, httpClient),
+				NewOpenAICompatibleProvider(tt.cfg, httpClient),
+				NewDeepLProvider(tt.cfg, httpClient),
+				NewGoogleProvider(tt.cfg, httpClient),
+				NewAnthropicProvider(tt.cfg, httpClient),
+			)
 			assert.NotNil(t, s)
-			assert.NotNil(t, s.httpClient)
 			assert.Equal(t, tt.cfg.Enabled, s.cfg.Enabled)
 		})
 	}
@@ -84,6 +66,8 @@ func TestNew(t *testing.T) {
 // =============================================================================
 
 func TestTranslateMovie_EarlyReturns(t *testing.T) {
+	httpClient := &http.Client{}
+
 	tests := []struct {
 		name    string
 		service *Service
@@ -92,45 +76,134 @@ func TestTranslateMovie_EarlyReturns(t *testing.T) {
 		wantNil bool
 	}{
 		{
-			name:    "nil service returns nil",
+			name:    "nil service returns error",
 			service: nil,
 			movie:   &models.Movie{Title: "Test"},
-			wantNil: true,
+			wantErr: true,
 		},
 		{
 			name: "nil movie returns nil",
-			service: New(config.TranslationConfig{
+			service: New(Config{
 				Enabled: true,
-			}),
+			},
+				NewOpenAIProvider(Config{
+					Enabled: true,
+				}, httpClient),
+				NewOpenAICompatibleProvider(Config{
+					Enabled: true,
+				}, httpClient),
+				NewDeepLProvider(Config{
+					Enabled: true,
+				}, httpClient),
+				NewGoogleProvider(Config{
+					Enabled: true,
+				}, httpClient),
+				NewAnthropicProvider(Config{
+					Enabled: true,
+				}, httpClient),
+			),
 			movie:   nil,
 			wantNil: true,
 		},
 		{
 			name: "disabled service returns nil",
-			service: New(config.TranslationConfig{
+			service: New(Config{
 				Enabled: false,
-			}),
+			},
+				NewOpenAIProvider(Config{
+					Enabled: false,
+				}, httpClient),
+				NewOpenAICompatibleProvider(Config{
+					Enabled: false,
+				}, httpClient),
+				NewDeepLProvider(Config{
+					Enabled: false,
+				}, httpClient),
+				NewGoogleProvider(Config{
+					Enabled: false,
+				}, httpClient),
+				NewAnthropicProvider(Config{
+					Enabled: false,
+				}, httpClient),
+			),
 			movie:   &models.Movie{Title: "Test"},
 			wantNil: true,
 		},
 		{
 			name: "missing target language returns error",
-			service: New(config.TranslationConfig{
+			service: New(Config{
 				Enabled:        true,
 				Provider:       "openai",
 				TargetLanguage: "",
-			}),
+			},
+				NewOpenAIProvider(Config{
+					Enabled:        true,
+					Provider:       "openai",
+					TargetLanguage: "",
+				}, httpClient),
+				NewOpenAICompatibleProvider(Config{
+					Enabled:        true,
+					Provider:       "openai",
+					TargetLanguage: "",
+				}, httpClient),
+				NewDeepLProvider(Config{
+					Enabled:        true,
+					Provider:       "openai",
+					TargetLanguage: "",
+				}, httpClient),
+				NewGoogleProvider(Config{
+					Enabled:        true,
+					Provider:       "openai",
+					TargetLanguage: "",
+				}, httpClient),
+				NewAnthropicProvider(Config{
+					Enabled:        true,
+					Provider:       "openai",
+					TargetLanguage: "",
+				}, httpClient),
+			),
 			movie:   &models.Movie{Title: "Test"},
 			wantErr: true,
 		},
 		{
 			name: "same source and target language returns nil",
-			service: New(config.TranslationConfig{
+			service: New(Config{
 				Enabled:        true,
 				Provider:       "openai",
 				SourceLanguage: "en",
 				TargetLanguage: "en",
-			}),
+			},
+				NewOpenAIProvider(Config{
+					Enabled:        true,
+					Provider:       "openai",
+					SourceLanguage: "en",
+					TargetLanguage: "en",
+				}, httpClient),
+				NewOpenAICompatibleProvider(Config{
+					Enabled:        true,
+					Provider:       "openai",
+					SourceLanguage: "en",
+					TargetLanguage: "en",
+				}, httpClient),
+				NewDeepLProvider(Config{
+					Enabled:        true,
+					Provider:       "openai",
+					SourceLanguage: "en",
+					TargetLanguage: "en",
+				}, httpClient),
+				NewGoogleProvider(Config{
+					Enabled:        true,
+					Provider:       "openai",
+					SourceLanguage: "en",
+					TargetLanguage: "en",
+				}, httpClient),
+				NewAnthropicProvider(Config{
+					Enabled:        true,
+					Provider:       "openai",
+					SourceLanguage: "en",
+					TargetLanguage: "en",
+				}, httpClient),
+			),
 			movie:   &models.Movie{Title: "Test"},
 			wantNil: true,
 		},
@@ -138,13 +211,13 @@ func TestTranslateMovie_EarlyReturns(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, _, err := tt.service.TranslateMovie(context.Background(), tt.movie, "")
+			output, _, err := tt.service.TranslateMovie(context.Background(), tt.movie, "")
 			if tt.wantErr {
 				require.Error(t, err)
-				assert.Nil(t, result)
+				assert.Nil(t, output)
 			} else {
 				require.NoError(t, err)
-				assert.Nil(t, result)
+				assert.Nil(t, output)
 			}
 		})
 	}
@@ -161,7 +234,7 @@ func TestTranslateMovie_ApplyToPrimary(t *testing.T) {
 				"choices": []map[string]interface{}{
 					{
 						"message": map[string]string{
-							"content": "<<<title>>>\nTranslated Title",
+							"content": `["Translated Title"]`,
 						},
 					},
 				},
@@ -170,28 +243,36 @@ func TestTranslateMovie_ApplyToPrimary(t *testing.T) {
 		}))
 		defer server.Close()
 
-		cfg := config.TranslationConfig{
+		cfg := Config{
 			Enabled:        true,
 			Provider:       "openai",
 			TargetLanguage: "en",
 			SourceLanguage: "ja",
 			ApplyToPrimary: true,
-			Fields: config.TranslationFieldsConfig{
+			Fields: fieldsConfig{
 				Title: true,
 			},
-			OpenAI: config.OpenAITranslationConfig{
+			OpenAI: openAIConfig{
 				BaseURL: server.URL,
 				APIKey:  "test-key",
 			},
 		}
 
-		s := New(cfg)
+		httpClient := server.Client()
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 		movie := &models.Movie{Title: "テスト"}
-		result, _, err := s.TranslateMovie(context.Background(), movie, "")
+		output, _, err := s.TranslateMovie(context.Background(), movie, "")
 
 		require.NoError(t, err)
-		require.NotNil(t, result)
-		assert.Equal(t, "Translated Title", result[0].Title)
+		require.NotNil(t, output)
+		require.NotNil(t, output.Movie)
+		assert.Equal(t, "Translated Title", output.Movie.Title)
 		// Verify movie was mutated when ApplyToPrimary is enabled
 		assert.Equal(t, "Translated Title", movie.Title)
 	})
@@ -202,7 +283,7 @@ func TestTranslateMovie_ApplyToPrimary(t *testing.T) {
 				"choices": []map[string]interface{}{
 					{
 						"message": map[string]string{
-							"content": "<<<title>>>\nTranslated Title",
+							"content": `["Translated Title"]`,
 						},
 					},
 				},
@@ -211,1140 +292,39 @@ func TestTranslateMovie_ApplyToPrimary(t *testing.T) {
 		}))
 		defer server.Close()
 
-		cfg := config.TranslationConfig{
+		cfg := Config{
 			Enabled:        true,
 			Provider:       "openai",
 			TargetLanguage: "en",
 			SourceLanguage: "ja",
 			ApplyToPrimary: false,
-			Fields: config.TranslationFieldsConfig{
+			Fields: fieldsConfig{
 				Title: true,
 			},
-			OpenAI: config.OpenAITranslationConfig{
+			OpenAI: openAIConfig{
 				BaseURL: server.URL,
 				APIKey:  "test-key",
 			},
 		}
 
-		s := New(cfg)
+		httpClient := server.Client()
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 		movie := &models.Movie{Title: "テスト"}
 		originalTitle := movie.Title
-		result, _, err := s.TranslateMovie(context.Background(), movie, "")
+		output, _, err := s.TranslateMovie(context.Background(), movie, "")
 
 		require.NoError(t, err)
-		require.NotNil(t, result)
-		assert.Equal(t, "Translated Title", result[0].Title)
+		require.NotNil(t, output)
+		require.NotNil(t, output.Movie)
+		assert.Equal(t, "Translated Title", output.Movie.Title)
 		// Verify movie was NOT mutated when ApplyToPrimary is disabled
 		assert.Equal(t, originalTitle, movie.Title)
-	})
-}
-
-// =============================================================================
-// TranslateMovie tests - VR marker stripping from title
-// =============================================================================
-
-func TestTranslateMovie_StripsVRMarkerFromTitle(t *testing.T) {
-	t.Run("bracketed VR tag removed before sending to LLM", func(t *testing.T) {
-		// Inspect the user prompt (the actual title text), not the whole request:
-		// the system prompt legitimately names VR markers in its cleanup rule.
-		var capturedRequest struct {
-			Messages []struct {
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_ = json.NewDecoder(r.Body).Decode(&capturedRequest)
-			response := map[string]interface{}{
-				"choices": []map[string]interface{}{
-					{
-						"message": map[string]string{
-							"content": "<<<title>>>\nTranslated Title",
-						},
-					},
-				},
-			}
-			_ = json.NewEncoder(w).Encode(response)
-		}))
-		defer server.Close()
-
-		cfg := config.TranslationConfig{
-			Enabled:        true,
-			Provider:       "openai",
-			TargetLanguage: "en",
-			SourceLanguage: "ja",
-			ApplyToPrimary: true,
-			Fields: config.TranslationFieldsConfig{
-				Title: true,
-			},
-			OpenAI: config.OpenAITranslationConfig{
-				BaseURL: server.URL,
-				APIKey:  "test-key",
-			},
-		}
-
-		s := New(cfg)
-		movie := &models.Movie{Title: "【8K VR】素敵なタイトル"}
-		result, _, err := s.TranslateMovie(context.Background(), movie, "")
-
-		require.NoError(t, err)
-		require.NotNil(t, result)
-		require.Len(t, capturedRequest.Messages, 2)
-		userPrompt := capturedRequest.Messages[1].Content
-		assert.Contains(t, userPrompt, "素敵なタイトル")
-		assert.NotContains(t, userPrompt, "8K VR")
-		assert.Equal(t, "Translated Title", movie.Title)
-	})
-
-	t.Run("title that is only a VR tag skips translation", func(t *testing.T) {
-		llmCalled := false
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			llmCalled = true
-			w.WriteHeader(http.StatusOK)
-		}))
-		defer server.Close()
-
-		cfg := config.TranslationConfig{
-			Enabled:        true,
-			Provider:       "openai",
-			TargetLanguage: "en",
-			SourceLanguage: "ja",
-			Fields: config.TranslationFieldsConfig{
-				Title: true,
-			},
-			OpenAI: config.OpenAITranslationConfig{
-				BaseURL: server.URL,
-				APIKey:  "test-key",
-			},
-		}
-
-		s := New(cfg)
-		movie := &models.Movie{Title: "[VR]"}
-		_, _, err := s.TranslateMovie(context.Background(), movie, "")
-
-		require.NoError(t, err)
-		assert.False(t, llmCalled)
-		assert.Equal(t, "[VR]", movie.Title)
-	})
-
-	t.Run("full-width and VR-only bracket variants are removed before sending to LLM", func(t *testing.T) {
-		var capturedRequest struct {
-			Messages []struct {
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_ = json.NewDecoder(r.Body).Decode(&capturedRequest)
-			response := map[string]interface{}{
-				"choices": []map[string]interface{}{
-					{
-						"message": map[string]string{
-							"content": "<<<title>>>\nTranslated Title",
-						},
-					},
-				},
-			}
-			_ = json.NewEncoder(w).Encode(response)
-		}))
-		defer server.Close()
-
-		cfg := config.TranslationConfig{
-			Enabled:        true,
-			Provider:       "openai",
-			TargetLanguage: "en",
-			SourceLanguage: "ja",
-			Fields: config.TranslationFieldsConfig{
-				Title: true,
-			},
-			OpenAI: config.OpenAITranslationConfig{
-				BaseURL: server.URL,
-				APIKey:  "test-key",
-			},
-		}
-
-		s := New(cfg)
-		movie := &models.Movie{Title: "【ＶＲ専用】素敵なタイトル"}
-		result, _, err := s.TranslateMovie(context.Background(), movie, "")
-
-		require.NoError(t, err)
-		require.NotNil(t, result)
-		require.Len(t, capturedRequest.Messages, 2)
-		userPrompt := capturedRequest.Messages[1].Content
-		assert.Contains(t, userPrompt, "素敵なタイトル")
-		assert.NotContains(t, userPrompt, "ＶＲ専用")
-	})
-
-	t.Run("LLM-added VR tag is removed from translated title", func(t *testing.T) {
-		var capturedRequest struct {
-			Messages []struct {
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_ = json.NewDecoder(r.Body).Decode(&capturedRequest)
-			response := map[string]interface{}{
-				"choices": []map[string]interface{}{
-					{
-						"message": map[string]string{
-							"content": "<<<title>>>\n[VR] 모리 히나코",
-						},
-					},
-				},
-			}
-			_ = json.NewEncoder(w).Encode(response)
-		}))
-		defer server.Close()
-
-		cfg := config.TranslationConfig{
-			Enabled:        true,
-			Provider:       "openai",
-			TargetLanguage: "ko",
-			SourceLanguage: "ja",
-			ApplyToPrimary: true,
-			Fields: config.TranslationFieldsConfig{
-				Title: true,
-			},
-			OpenAI: config.OpenAITranslationConfig{
-				BaseURL: server.URL,
-				APIKey:  "test-key",
-			},
-		}
-
-		s := New(cfg)
-		movie := &models.Movie{Title: "【VR】森日向子"}
-		result, _, err := s.TranslateMovie(context.Background(), movie, "")
-
-		require.NoError(t, err)
-		require.NotNil(t, result)
-		require.Len(t, capturedRequest.Messages, 2)
-		userPrompt := capturedRequest.Messages[1].Content
-		assert.Contains(t, userPrompt, "森日向子")
-		assert.NotContains(t, userPrompt, "【VR】")
-		assert.Equal(t, "모리 히나코", result[0].Title)
-		assert.Equal(t, "모리 히나코", movie.Title)
-	})
-}
-
-func TestTranslateMovie_CleansPromotionalDescription(t *testing.T) {
-	promoBlock := "※この作品はバイノーラル録音されておりますが、視点移動により音声が連動するものではありません。 ※この商品は専用プレイヤーでの視聴に最適化されています。 ※VR専用作品は必ず下記リンクより動作環境・対応デバイスを確認いただきご購入ください。 「動作環境・対応デバイス」について ※ 配信方法によって収録内容が異なる場合があります。 特集 最新作やセール商品など、お得な情報満載의 『【VR】KMPストア』はこちら！"
-
-	t.Run("description is cleaned before LLM request", func(t *testing.T) {
-		var capturedRequest struct {
-			Messages []struct {
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_ = json.NewDecoder(r.Body).Decode(&capturedRequest)
-			response := map[string]interface{}{
-				"choices": []map[string]interface{}{
-					{
-						"message": map[string]string{
-							"content": "<<<description>>>\nTranslated Description",
-						},
-					},
-				},
-			}
-			_ = json.NewEncoder(w).Encode(response)
-		}))
-		defer server.Close()
-
-		cfg := config.TranslationConfig{
-			Enabled:        true,
-			Provider:       "openai",
-			TargetLanguage: "en",
-			SourceLanguage: "ja",
-			ApplyToPrimary: true,
-			Fields: config.TranslationFieldsConfig{
-				Description: true,
-			},
-			OpenAI: config.OpenAITranslationConfig{
-				BaseURL: server.URL,
-				APIKey:  "test-key",
-			},
-		}
-
-		s := New(cfg)
-		movie := &models.Movie{Description: "本編の説明です。 " + promoBlock}
-		result, _, err := s.TranslateMovie(context.Background(), movie, "")
-
-		require.NoError(t, err)
-		require.NotNil(t, result)
-		require.Len(t, capturedRequest.Messages, 2)
-		userPrompt := capturedRequest.Messages[1].Content
-		assert.Contains(t, userPrompt, "本編の説明です。")
-		assert.NotContains(t, userPrompt, "バイノーラル録音")
-		assert.NotContains(t, userPrompt, "KMPストア")
-		assert.Equal(t, "Translated Description", movie.Description)
-	})
-
-	t.Run("promo-only description is skipped and excluded from primary", func(t *testing.T) {
-		llmCalled := false
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			llmCalled = true
-			w.WriteHeader(http.StatusOK)
-		}))
-		defer server.Close()
-
-		cfg := config.TranslationConfig{
-			Enabled:        true,
-			Provider:       "openai",
-			TargetLanguage: "en",
-			SourceLanguage: "ja",
-			ApplyToPrimary: true,
-			Fields: config.TranslationFieldsConfig{
-				Description: true,
-			},
-			OpenAI: config.OpenAITranslationConfig{
-				BaseURL: server.URL,
-				APIKey:  "test-key",
-			},
-		}
-
-		s := New(cfg)
-		movie := &models.Movie{Description: promoBlock}
-		result, _, err := s.TranslateMovie(context.Background(), movie, "")
-
-		require.NoError(t, err)
-		assert.False(t, llmCalled)
-		assert.Nil(t, result)
-		assert.Empty(t, movie.Description)
-	})
-}
-
-// =============================================================================
-// TranslateMovie tests - title == actress name → title_as_name transliteration
-// =============================================================================
-
-func TestTranslateMovie_TitleIsActressName(t *testing.T) {
-	newTitleAsNameServer := func(t *testing.T, capture *string) *httptest.Server {
-		t.Helper()
-		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			body, _ := io.ReadAll(r.Body)
-			if capture != nil {
-				*capture = string(body)
-			}
-			response := map[string]interface{}{
-				"choices": []map[string]interface{}{
-					{"message": map[string]string{"content": "<<<title_as_name>>>\n마히루"}},
-				},
-			}
-			_ = json.NewEncoder(w).Encode(response)
-		}))
-	}
-
-	t.Run("title matches actress JapaneseName - table Hangul assigned without LLM", func(t *testing.T) {
-		var requestBody string
-		server := newTitleAsNameServer(t, &requestBody)
-		defer server.Close()
-
-		cfg := config.TranslationConfig{
-			Enabled:        true,
-			Provider:       "openai",
-			TargetLanguage: "ko",
-			ApplyToPrimary: true,
-			Fields: config.TranslationFieldsConfig{
-				Title: true,
-			},
-			OpenAI: config.OpenAITranslationConfig{
-				BaseURL: server.URL,
-				APIKey:  "key",
-			},
-		}
-
-		s := New(cfg)
-		movie := &models.Movie{
-			Title: "まひる",
-			Actresses: []models.Actress{
-				{
-					JapaneseName: "まひる",
-					FirstName:    "Mahiru", // provided by r18dev name_romaji
-				},
-			},
-		}
-
-		result, _, err := s.TranslateMovie(context.Background(), movie, "")
-		require.NoError(t, err)
-		require.NotNil(t, result)
-
-		// Romaji resolves via the transliteration table — no LLM round-trip
-		assert.Empty(t, requestBody, "no LLM request expected for a table-resolved title")
-
-		assert.Equal(t, "마히루", result[0].Title, "record title should be the transliterated result")
-		assert.Equal(t, "마히루", movie.Title, "primary title should be updated via ApplyToPrimary")
-	})
-
-	t.Run("title matches actress JapaneseName via ThumbURL - URL romaji resolved by table", func(t *testing.T) {
-		var requestBody string
-		server := newTitleAsNameServer(t, &requestBody)
-		defer server.Close()
-
-		cfg := config.TranslationConfig{
-			Enabled:        true,
-			Provider:       "openai",
-			TargetLanguage: "ko",
-			ApplyToPrimary: true,
-			Fields: config.TranslationFieldsConfig{
-				Title: true,
-			},
-			OpenAI: config.OpenAITranslationConfig{
-				BaseURL: server.URL,
-				APIKey:  "key",
-			},
-		}
-
-		s := New(cfg)
-		movie := &models.Movie{
-			Title: "双葉れぇな",
-			Actresses: []models.Actress{
-				{
-					JapaneseName: "双葉れぇな",
-					ThumbURL:     "https://pics.dmm.co.jp/mono/actjpgs/hutaba_reena.jpg",
-				},
-			},
-		}
-
-		result, _, err := s.TranslateMovie(context.Background(), movie, "")
-		require.NoError(t, err)
-		require.NotNil(t, result)
-
-		assert.Empty(t, requestBody, "no LLM request expected for a table-resolved title")
-		assert.Equal(t, "후타바 레나", result[0].Title)
-		assert.Equal(t, "후타바 레나", movie.Title)
-	})
-
-	t.Run("title matches actress without romaji - Japanese name sent as title_as_name", func(t *testing.T) {
-		var requestBody string
-		server := newTitleAsNameServer(t, &requestBody)
-		defer server.Close()
-
-		cfg := config.TranslationConfig{
-			Enabled:        true,
-			Provider:       "openai",
-			TargetLanguage: "ko",
-			ApplyToPrimary: true,
-			Fields: config.TranslationFieldsConfig{
-				Title: true,
-			},
-			OpenAI: config.OpenAITranslationConfig{
-				BaseURL: server.URL,
-				APIKey:  "key",
-			},
-		}
-
-		s := New(cfg)
-		movie := &models.Movie{
-			Title: "なつ",
-			Actresses: []models.Actress{
-				{JapaneseName: "なつ"}, // no romaji available anywhere
-			},
-		}
-
-		_, _, err := s.TranslateMovie(context.Background(), movie, "")
-		require.NoError(t, err)
-
-		assert.Contains(t, requestBody, "title_as_name")
-		assert.Contains(t, requestBody, "なつ")
-	})
-
-	t.Run("title does not match any actress - normal title label", func(t *testing.T) {
-		var capturedRequest struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_ = json.NewDecoder(r.Body).Decode(&capturedRequest)
-			response := map[string]interface{}{
-				"choices": []map[string]interface{}{
-					{"message": map[string]string{"content": "<<<title>>>\n번역된 제목"}},
-				},
-			}
-			_ = json.NewEncoder(w).Encode(response)
-		}))
-		defer server.Close()
-
-		cfg := config.TranslationConfig{
-			Enabled:        true,
-			Provider:       "openai",
-			TargetLanguage: "ko",
-			ApplyToPrimary: true,
-			Fields: config.TranslationFieldsConfig{
-				Title: true,
-			},
-			OpenAI: config.OpenAITranslationConfig{
-				BaseURL: server.URL,
-				APIKey:  "key",
-			},
-		}
-
-		s := New(cfg)
-		movie := &models.Movie{
-			Title: "素晴らしい夜",
-			Actresses: []models.Actress{
-				{JapaneseName: "田中香", FirstName: "Yui", LastName: "Tanaka"},
-			},
-		}
-
-		result, _, err := s.TranslateMovie(context.Background(), movie, "")
-		require.NoError(t, err)
-		require.NotNil(t, result)
-
-		require.Len(t, capturedRequest.Messages, 2)
-		userPrompt := capturedRequest.Messages[1].Content
-		assert.Contains(t, userPrompt, "<<<title>>>\n素晴らしい夜")
-		assert.NotContains(t, userPrompt, "<<<title_as_name>>>")
-		assert.Equal(t, "번역된 제목", result[0].Title, "non-name title should go through the normal title label")
-	})
-}
-
-func TestBuildLLMTranslationPrompts_Rules(t *testing.T) {
-	t.Run("prompt includes person-name transliteration rule", func(t *testing.T) {
-		systemPrompt, _, _, err := buildLLMTranslationPrompts("ja", "ko", []string{"なつ"}, []string{"title"})
-		require.NoError(t, err)
-
-		assert.Contains(t, systemPrompt, "Person-name rule")
-		assert.Contains(t, systemPrompt, "<<<actress[N]>>>")
-		assert.Contains(t, systemPrompt, "<<<title_as_name>>>")
-		assert.Contains(t, systemPrompt, "Transliterate it phonetically")
-		assert.Contains(t, systemPrompt, "never translate its meaning")
-		assert.Contains(t, systemPrompt, "なつ → 나츠")
-		assert.Contains(t, systemPrompt, "夏 → 나츠")
-		assert.Contains(t, systemPrompt, "NOT 여름")
-		assert.Contains(t, systemPrompt, "FamilyName GivenName")
-		assert.Contains(t, systemPrompt, "short personal-name-like Japanese string")
-		// Romaji is the authoritative reading — no "correcting" to a known reading
-		assert.Contains(t, systemPrompt, "AUTHORITATIVE reading")
-		assert.Contains(t, systemPrompt, "NEVER substitute a different reading")
-		assert.Contains(t, systemPrompt, "Rena → 레나 (NOT 레이나)")
-		// Output script rule: echoing the romaji input back is an error
-		assert.Contains(t, systemPrompt, "returning the romaji/Latin input unchanged is an ERROR")
-		assert.Contains(t, systemPrompt, "Miyashita Rena → 미야시타 레나")
-		// Embedded Hangul (pre-substituted actress names) must be preserved verbatim
-		assert.Contains(t, systemPrompt, "Embedded-Hangul rule")
-		// Name placeholders must be reproduced verbatim
-		assert.Contains(t, systemPrompt, "Placeholder rule")
-		assert.Contains(t, systemPrompt, "⟦N⟧")
-	})
-
-	t.Run("prompt includes adult-slang terminology and spelling rules", func(t *testing.T) {
-		systemPrompt, _, _, err := buildLLMTranslationPrompts("ja", "ko", []string{"説明"}, []string{"description"})
-		require.NoError(t, err)
-
-		assert.Contains(t, systemPrompt, "中出し → 질내 사정")
-		assert.Contains(t, systemPrompt, "騎乗位 → 기승위")
-		assert.Contains(t, systemPrompt, "デカ尻 → 큰 엉덩이")
-		assert.Contains(t, systemPrompt, "ぶっかけ → 부카케")
-		assert.Contains(t, systemPrompt, "NOT 버카케")
-		assert.Contains(t, systemPrompt, "엉덩이 (NOT 엉둥이)")
-	})
-
-	t.Run("prompt includes proper-noun rule for maker/label/director", func(t *testing.T) {
-		systemPrompt, _, _, err := buildLLMTranslationPrompts("ja", "ko", []string{"アタッカーズ"}, []string{"maker"})
-		require.NoError(t, err)
-
-		assert.Contains(t, systemPrompt, "Proper-noun rule")
-		assert.Contains(t, systemPrompt, "<<<maker>>>")
-		assert.Contains(t, systemPrompt, "<<<label>>>")
-		assert.Contains(t, systemPrompt, "<<<director>>>")
-		assert.Contains(t, systemPrompt, "do NOT embellish them into marketing copy")
-	})
-
-	t.Run("prompt includes title cleanup rule", func(t *testing.T) {
-		systemPrompt, _, _, err := buildLLMTranslationPrompts("ja", "ko", []string{"【VR】森日向子"}, []string{"title"})
-		require.NoError(t, err)
-
-		assert.Contains(t, systemPrompt, "Title cleanup rule")
-		assert.Contains(t, systemPrompt, "<<<title>>>")
-		assert.Contains(t, systemPrompt, "do NOT translate, keep, or add")
-		assert.Contains(t, systemPrompt, "【VR】")
-	})
-
-	t.Run("prompt includes description cleanup rule", func(t *testing.T) {
-		systemPrompt, _, _, err := buildLLMTranslationPrompts("ja", "ko", []string{"説明"}, []string{"description"})
-		require.NoError(t, err)
-
-		assert.Contains(t, systemPrompt, "Description cleanup rule")
-		assert.Contains(t, systemPrompt, "<<<description>>>")
-		assert.Contains(t, systemPrompt, "do NOT translate or keep")
-		assert.Contains(t, systemPrompt, "KMPストア")
-		assert.Contains(t, systemPrompt, "return an empty string")
-	})
-
-	t.Run("errors when field names are missing", func(t *testing.T) {
-		_, _, _, err := buildLLMTranslationPrompts("ja", "ko", []string{"夏"}, nil)
-		require.Error(t, err)
-	})
-
-	t.Run("errors when texts are empty", func(t *testing.T) {
-		_, _, _, err := buildLLMTranslationPrompts("ja", "ko", nil, nil)
-		require.Error(t, err)
-	})
-}
-
-// =============================================================================
-// TranslateMovie tests - actress names translated in the main batch
-// =============================================================================
-
-func TestTranslateMovie_ActressInMainBatch(t *testing.T) {
-	t.Run("URL-extracted romaji is resolved by the table without LLM", func(t *testing.T) {
-		var requestBody string
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			body, _ := io.ReadAll(r.Body)
-			requestBody = string(body)
-			response := map[string]interface{}{
-				"choices": []map[string]interface{}{
-					{
-						"message": map[string]string{
-							"content": "<<<actress[0]>>>\n후타바 레나",
-						},
-					},
-				},
-			}
-			_ = json.NewEncoder(w).Encode(response)
-		}))
-		defer server.Close()
-
-		cfg := config.TranslationConfig{
-			Enabled:        true,
-			Provider:       "openai",
-			TargetLanguage: "ko",
-			SourceLanguage: "ja",
-			ApplyToPrimary: true,
-			Fields: config.TranslationFieldsConfig{
-				Actresses: true,
-			},
-			OpenAI: config.OpenAITranslationConfig{
-				BaseURL: server.URL,
-				APIKey:  "key",
-			},
-		}
-
-		s := New(cfg)
-		movie := &models.Movie{
-			Actresses: []models.Actress{
-				{
-					JapaneseName: "双葉れぇな",
-					FirstName:    "Futabarena", // wrong single-word value from scraper
-					ThumbURL:     "https://pics.dmm.co.jp/mono/actjpgs/hutaba_reena.jpg",
-				},
-			},
-		}
-
-		result, _, err := s.TranslateMovie(context.Background(), movie, "")
-		require.NoError(t, err)
-		require.NotNil(t, result)
-
-		// URL romaji resolves deterministically — no LLM request is made
-		assert.Empty(t, requestBody)
-
-		// Table Hangul is applied to the primary actress
-		assert.Equal(t, "후타바", movie.Actresses[0].LastName)
-		assert.Equal(t, "레나", movie.Actresses[0].FirstName)
-		assert.Equal(t, "双葉れぇな", movie.Actresses[0].JapaneseName)
-
-		// Record carries the Hangul name under the metadata target language
-		require.Len(t, result[0].Actresses, 1)
-		assert.Equal(t, "ko", result[0].Language)
-		assert.Equal(t, "후타바 레나", result[0].Actresses[0])
-	})
-
-	t.Run("primary not modified when ApplyToPrimary is false", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			response := map[string]interface{}{
-				"choices": []map[string]interface{}{
-					{
-						"message": map[string]string{
-							"content": "<<<actress[0]>>>\n후타바 레나",
-						},
-					},
-				},
-			}
-			_ = json.NewEncoder(w).Encode(response)
-		}))
-		defer server.Close()
-
-		cfg := config.TranslationConfig{
-			Enabled:        true,
-			Provider:       "openai",
-			TargetLanguage: "ko",
-			SourceLanguage: "ja",
-			ApplyToPrimary: false,
-			Fields: config.TranslationFieldsConfig{
-				Actresses: true,
-			},
-			OpenAI: config.OpenAITranslationConfig{
-				BaseURL: server.URL,
-				APIKey:  "key",
-			},
-		}
-
-		s := New(cfg)
-		movie := &models.Movie{
-			Actresses: []models.Actress{
-				{
-					JapaneseName: "双葉れぇな",
-					FirstName:    "Futabarena",
-					ThumbURL:     "https://pics.dmm.co.jp/mono/actjpgs/hutaba_reena.jpg",
-				},
-			},
-		}
-
-		result, _, err := s.TranslateMovie(context.Background(), movie, "")
-		require.NoError(t, err)
-		require.NotNil(t, result)
-
-		// Primary must NOT be modified when ApplyToPrimary is false
-		assert.Equal(t, "Futabarena", movie.Actresses[0].FirstName)
-
-		// Record still carries the translated name
-		require.Len(t, result[0].Actresses, 1)
-		assert.Equal(t, "후타바 레나", result[0].Actresses[0])
-	})
-
-	t.Run("actress without any source name is skipped", func(t *testing.T) {
-		llmCalled := false
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			llmCalled = true
-			w.WriteHeader(http.StatusOK)
-		}))
-		defer server.Close()
-
-		cfg := config.TranslationConfig{
-			Enabled:        true,
-			Provider:       "openai",
-			TargetLanguage: "ko",
-			SourceLanguage: "ja",
-			Fields: config.TranslationFieldsConfig{
-				Actresses: true,
-			},
-			OpenAI: config.OpenAITranslationConfig{
-				BaseURL: server.URL,
-				APIKey:  "key",
-			},
-		}
-
-		s := New(cfg)
-		movie := &models.Movie{
-			Actresses: []models.Actress{
-				{FirstName: "Already", LastName: "Latin"}, // no JapaneseName, no usable ThumbURL
-			},
-		}
-
-		result, _, err := s.TranslateMovie(context.Background(), movie, "")
-		require.NoError(t, err)
-		assert.False(t, llmCalled)
-		assert.Nil(t, result)
-	})
-
-	t.Run("unknown actress placeholder is not sent to LLM", func(t *testing.T) {
-		llmCalled := false
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			llmCalled = true
-			w.WriteHeader(http.StatusOK)
-		}))
-		defer server.Close()
-
-		cfg := config.TranslationConfig{
-			Enabled:        true,
-			Provider:       "openai",
-			TargetLanguage: "ko",
-			SourceLanguage: "ja",
-			ApplyToPrimary: true,
-			Fields: config.TranslationFieldsConfig{
-				Actresses: true,
-			},
-			OpenAI: config.OpenAITranslationConfig{
-				BaseURL: server.URL,
-				APIKey:  "key",
-			},
-		}
-
-		s := New(cfg)
-		movie := &models.Movie{
-			Actresses: []models.Actress{
-				{FirstName: "Unknown", JapaneseName: "Unknown"},
-			},
-		}
-
-		result, _, err := s.TranslateMovie(context.Background(), movie, "")
-		require.NoError(t, err)
-		assert.False(t, llmCalled)
-		assert.Equal(t, "Unknown", movie.Actresses[0].FirstName)
-		assert.Empty(t, movie.Actresses[0].LastName)
-		assert.Equal(t, "Unknown", movie.Actresses[0].JapaneseName)
-		require.Len(t, result, 1)
-		require.Len(t, result[0].Actresses, 1)
-		assert.Equal(t, "Unknown", result[0].Actresses[0])
-	})
-
-	t.Run("translated unknown actress result is canonicalized", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			response := map[string]interface{}{
-				"choices": []map[string]interface{}{
-					{
-						"message": map[string]string{
-							"content": "<<<actress[0]>>>\n미상",
-						},
-					},
-				},
-			}
-			_ = json.NewEncoder(w).Encode(response)
-		}))
-		defer server.Close()
-
-		cfg := config.TranslationConfig{
-			Enabled:        true,
-			Provider:       "openai",
-			TargetLanguage: "ko",
-			SourceLanguage: "ja",
-			ApplyToPrimary: true,
-			Fields: config.TranslationFieldsConfig{
-				Actresses: true,
-			},
-			OpenAI: config.OpenAITranslationConfig{
-				BaseURL: server.URL,
-				APIKey:  "key",
-			},
-		}
-
-		s := New(cfg)
-		// No romaji source (kanji-only, no ThumbURL) so the name goes to the LLM
-		// instead of the transliteration table, exercising the unknown-result path.
-		movie := &models.Movie{
-			Actresses: []models.Actress{
-				{
-					JapaneseName: "双葉れぇな",
-				},
-			},
-		}
-
-		result, _, err := s.TranslateMovie(context.Background(), movie, "")
-		require.NoError(t, err)
-		assert.Equal(t, "Unknown", movie.Actresses[0].FirstName)
-		assert.Empty(t, movie.Actresses[0].LastName)
-		assert.Equal(t, "Unknown", movie.Actresses[0].JapaneseName)
-		require.Len(t, result, 1)
-		require.Len(t, result[0].Actresses, 1)
-		assert.Equal(t, "Unknown", result[0].Actresses[0])
-	})
-}
-
-// =============================================================================
-// TranslateMovie tests - Hangul validation of person-name slots (ko target)
-// =============================================================================
-
-func TestTranslateMovie_KoreanPersonNameHangulValidation(t *testing.T) {
-	markerRE := regexp.MustCompile(`<<<[\w\[\]]+>>>`)
-
-	// requestMarkers returns the unique markers of the request's user prompt, in order.
-	requestMarkers := func(r *http.Request) []string {
-		var req struct {
-			Messages []struct {
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
-		if len(req.Messages) == 0 {
-			return nil
-		}
-		seen := map[string]bool{}
-		var out []string
-		for _, m := range markerRE.FindAllString(req.Messages[len(req.Messages)-1].Content, -1) {
-			if !seen[m] {
-				seen[m] = true
-				out = append(out, m)
-			}
-		}
-		return out
-	}
-
-	respond := func(w http.ResponseWriter, content string) {
-		response := map[string]interface{}{
-			"choices": []map[string]interface{}{
-				{"message": map[string]string{"content": content}},
-			},
-		}
-		_ = json.NewEncoder(w).Encode(response)
-	}
-
-	newConfig := func(baseURL string) config.TranslationConfig {
-		return config.TranslationConfig{
-			Enabled:        true,
-			Provider:       "openai",
-			TargetLanguage: "ko",
-			SourceLanguage: "ja",
-			ApplyToPrimary: true,
-			Fields: config.TranslationFieldsConfig{
-				Title:     true,
-				Actresses: true,
-			},
-			OpenAI: config.OpenAITranslationConfig{
-				BaseURL: baseURL,
-				APIKey:  "key",
-			},
-		}
-	}
-
-	// A kanji-only actress (no romaji anywhere) exercises the LLM path; actresses
-	// with a romaji source are resolved by the transliteration table instead.
-	newMovie := func(title string) *models.Movie {
-		return &models.Movie{
-			Title: title,
-			Actresses: []models.Actress{
-				{JapaneseName: "響蓮"},
-			},
-		}
-	}
-
-	t.Run("latin echo is retried per slot and Hangul applied", func(t *testing.T) {
-		calls := 0
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			calls++
-			var b strings.Builder
-			for _, m := range requestMarkers(r) {
-				switch {
-				case m == "<<<title>>>":
-					b.WriteString(m + "\n멋진 작품\n")
-				case strings.HasPrefix(m, "<<<actress["):
-					if calls == 1 {
-						b.WriteString(m + "\nHibiki Ren\n") // batch answers in Latin
-					} else {
-						b.WriteString(m + "\n히비키 렌\n")
-					}
-				}
-			}
-			respond(w, b.String())
-		}))
-		defer server.Close()
-
-		s := New(newConfig(server.URL))
-		movie := newMovie("素敵な作品")
-
-		result, warning, err := s.TranslateMovie(context.Background(), movie, "")
-		require.NoError(t, err)
-		require.NotNil(t, result)
-		assert.Empty(t, warning)
-		assert.Equal(t, 2, calls) // batch + one per-slot retry
-
-		assert.Equal(t, "멋진 작품", movie.Title)
-		assert.Equal(t, "히비키", movie.Actresses[0].LastName)
-		assert.Equal(t, "렌", movie.Actresses[0].FirstName)
-		require.Len(t, result[0].Actresses, 1)
-		assert.Equal(t, "히비키 렌", result[0].Actresses[0])
-	})
-
-	t.Run("persistent latin echo keeps source name and warns", func(t *testing.T) {
-		calls := 0
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			calls++
-			var b strings.Builder
-			for _, m := range requestMarkers(r) {
-				switch {
-				case m == "<<<title>>>":
-					b.WriteString(m + "\n멋진 작품\n")
-				case strings.HasPrefix(m, "<<<actress["):
-					b.WriteString(m + "\nHibiki Ren\n") // always answers in Latin
-				}
-			}
-			respond(w, b.String())
-		}))
-		defer server.Close()
-
-		s := New(newConfig(server.URL))
-		movie := newMovie("素敵な作品")
-
-		result, warning, err := s.TranslateMovie(context.Background(), movie, "")
-		require.NoError(t, err)
-		require.NotNil(t, result)
-		assert.Equal(t, 2, calls) // batch + one per-slot retry
-		assert.Contains(t, warning, "actress[0]: LLM returned non-Hangul, kept source name")
-
-		// The title still translates; the actress keeps its source (Japanese) name —
-		// replaceActressName skips non-Latin/non-Hangul values, so primary is untouched.
-		assert.Equal(t, "멋진 작품", movie.Title)
-		assert.Equal(t, "", movie.Actresses[0].LastName)
-		assert.Equal(t, "", movie.Actresses[0].FirstName)
-		require.Len(t, result[0].Actresses, 1)
-		assert.Equal(t, "響蓮", result[0].Actresses[0])
-	})
-
-	t.Run("title_as_name slot is validated for Hangul too", func(t *testing.T) {
-		calls := 0
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			calls++
-			var b strings.Builder
-			for _, m := range requestMarkers(r) {
-				if m == "<<<title_as_name>>>" || strings.HasPrefix(m, "<<<actress[") {
-					if calls == 1 {
-						b.WriteString(m + "\nHibiki Ren\n")
-					} else {
-						b.WriteString(m + "\n히비키 렌\n")
-					}
-				}
-			}
-			respond(w, b.String())
-		}))
-		defer server.Close()
-
-		s := New(newConfig(server.URL))
-		movie := newMovie("響蓮") // title equals the actress JapaneseName
-
-		result, warning, err := s.TranslateMovie(context.Background(), movie, "")
-		require.NoError(t, err)
-		require.NotNil(t, result)
-		assert.Empty(t, warning)
-		assert.Equal(t, 3, calls) // batch + one retry per echoed slot
-
-		assert.Equal(t, "히비키 렌", movie.Title)
-		assert.Equal(t, "히비키", movie.Actresses[0].LastName)
-		assert.Equal(t, "렌", movie.Actresses[0].FirstName)
-	})
-
-	t.Run("actress name inside a long title is protected by a placeholder", func(t *testing.T) {
-		var requests []string
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var req struct {
-				Messages []struct {
-					Content string `json:"content"`
-				} `json:"messages"`
-			}
-			body, _ := io.ReadAll(r.Body)
-			_ = json.Unmarshal(body, &req)
-			if len(req.Messages) > 0 {
-				requests = append(requests, req.Messages[len(req.Messages)-1].Content)
-			}
-			// A well-behaved model preserves the ⟦0⟧ placeholder verbatim.
-			respond(w, "<<<title>>>\n관능적인 ⟦0⟧의 유혹\n")
-		}))
-		defer server.Close()
-
-		s := New(newConfig(server.URL))
-		movie := &models.Movie{
-			Title: "官能的な響蓮の誘惑",
-			Actresses: []models.Actress{
-				{
-					JapaneseName: "響蓮",
-					ThumbURL:     "https://pics.dmm.co.jp/mono/actjpgs/hibiki_ren.jpg",
-				},
-			},
-		}
-
-		result, warning, err := s.TranslateMovie(context.Background(), movie, "")
-		require.NoError(t, err)
-		require.NotNil(t, result)
-		assert.Empty(t, warning)
-
-		// The LLM sees an opaque placeholder, never the kanji name or the Hangul.
-		require.Len(t, requests, 1)
-		assert.Contains(t, requests[0], "⟦0⟧")
-		assert.NotContains(t, requests[0], "響蓮")
-		assert.NotContains(t, requests[0], "히비키")
-		assert.NotContains(t, requests[0], "actress[0]")
-
-		// Placeholder is restored to Hangul; actress and title agree exactly.
-		assert.Equal(t, "히비키", movie.Actresses[0].LastName)
-		assert.Equal(t, "렌", movie.Actresses[0].FirstName)
-		assert.Equal(t, "관능적인 히비키 렌의 유혹", movie.Title)
-		assert.Equal(t, "히비키 렌", result[0].Actresses[0])
-	})
-
-	t.Run("dropped placeholder falls back to direct Hangul title", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// A misbehaving model drops the placeholder entirely.
-			respond(w, "<<<title>>>\n관능적인 유혹\n")
-		}))
-		defer server.Close()
-
-		s := New(newConfig(server.URL))
-		movie := &models.Movie{
-			Title: "官能的な響蓮の誘惑",
-			Actresses: []models.Actress{
-				{
-					JapaneseName: "響蓮",
-					ThumbURL:     "https://pics.dmm.co.jp/mono/actjpgs/hibiki_ren.jpg",
-				},
-			},
-		}
-
-		result, _, err := s.TranslateMovie(context.Background(), movie, "")
-		require.NoError(t, err)
-		require.NotNil(t, result)
-
-		// Fallback keeps the correct name (surrounding text may stay untranslated).
-		assert.Equal(t, "官能的な히비키 렌の誘惑", movie.Title)
-		assert.Equal(t, "히비키 렌", result[0].Actresses[0])
-	})
-
-	t.Run("actress name in description is protected by a placeholder", func(t *testing.T) {
-		var requests []string
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var req struct {
-				Messages []struct {
-					Content string `json:"content"`
-				} `json:"messages"`
-			}
-			body, _ := io.ReadAll(r.Body)
-			_ = json.Unmarshal(body, &req)
-			if len(req.Messages) > 0 {
-				requests = append(requests, req.Messages[len(req.Messages)-1].Content)
-			}
-			// Model preserves ⟦0⟧ but picks the wrong subject particle 가 after the
-			// opaque token; restoration corrects it to 이 for the consonant-final 렌.
-			respond(w, "<<<title>>>\n⟦0⟧의 유혹\n<<<description>>>\n⟦0⟧가 등장하는 작품\n")
-		}))
-		defer server.Close()
-
-		cfg := newConfig(server.URL)
-		cfg.Fields.Description = true
-		s := New(cfg)
-		movie := &models.Movie{
-			Title:       "響蓮の誘惑",
-			Description: "本編に響蓮が登場する",
-			Actresses: []models.Actress{
-				{JapaneseName: "響蓮", ThumbURL: "https://pics.dmm.co.jp/mono/actjpgs/hibiki_ren.jpg"},
-			},
-		}
-
-		result, warning, err := s.TranslateMovie(context.Background(), movie, "")
-		require.NoError(t, err)
-		require.NotNil(t, result)
-		assert.Empty(t, warning)
-
-		// The description slot carried an opaque placeholder, never the kanji name.
-		require.Len(t, requests, 1)
-		assert.Contains(t, requests[0], "⟦0⟧")
-		assert.NotContains(t, requests[0], "響蓮")
-
-		// Both fields restore to the same Hangul reading as the actress, and the
-		// subject particle agrees with 렌 (가 → 이).
-		assert.Equal(t, "히비키 렌의 유혹", movie.Title)
-		assert.Equal(t, "히비키 렌이 등장하는 작품", movie.Description)
-		assert.Equal(t, "히비키 렌", result[0].Actresses[0])
-	})
-
-	t.Run("dropped description placeholder falls back to direct Hangul", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			respond(w, "<<<description>>>\n작품 설명\n")
-		}))
-		defer server.Close()
-
-		cfg := newConfig(server.URL)
-		cfg.Fields.Title = false
-		cfg.Fields.Description = true
-		s := New(cfg)
-		movie := &models.Movie{
-			Description: "本編に響蓮が登場する",
-			Actresses: []models.Actress{
-				{JapaneseName: "響蓮", ThumbURL: "https://pics.dmm.co.jp/mono/actjpgs/hibiki_ren.jpg"},
-			},
-		}
-
-		result, _, err := s.TranslateMovie(context.Background(), movie, "")
-		require.NoError(t, err)
-		require.NotNil(t, result)
-
-		assert.Equal(t, "本編に히비키 렌が登場する", movie.Description)
 	})
 }
 
@@ -1360,18 +340,25 @@ func TestTranslateTexts_ConnectionFailure(t *testing.T) {
 		}))
 		server.Close() // Close immediately to make connection fail
 
-		cfg := config.TranslationConfig{
+		cfg := Config{
 			Provider:       "openai",
 			TargetLanguage: "en",
 			SourceLanguage: "ja",
-			OpenAI: config.OpenAITranslationConfig{
+			OpenAI: openAIConfig{
 				BaseURL: server.URL,
 				APIKey:  "test-key",
 			},
 		}
 
-		s := New(cfg)
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+		httpClient := server.Client()
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 
 		require.Error(t, err)
 		// Verify it's a connection-related error (not HTTP status error)
@@ -1389,26 +376,36 @@ func TestTranslateTexts_ConnectionFailure(t *testing.T) {
 		}))
 		server.Close() // Close immediately to make connection fail
 
-		cfg := config.TranslationConfig{
+		cfg := Config{
 			Provider:       "deepl",
 			TargetLanguage: "en",
 			SourceLanguage: "ja",
-			DeepL: config.DeepLTranslationConfig{
+			DeepL: deepLConfig{
 				BaseURL: server.URL,
 				APIKey:  "test-key",
 			},
 		}
 
-		s := New(cfg)
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+		httpClient := server.Client()
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 
 		require.Error(t, err)
-		// Verify it's a connection-related error
+		// Verify it's a connection-related (provider) error. Raw transport errors are
+		// now wrapped as a typed translationError so request URLs/credentials are
+		// not leaked; the connection detail stays in debug logs only.
 		errMsg := err.Error()
 		assert.True(t, strings.Contains(errMsg, "connection refused") ||
 			strings.Contains(errMsg, "dial tcp") ||
-			strings.Contains(errMsg, "connection reset"),
-			"expected connection error, got: %v", errMsg)
+			strings.Contains(errMsg, "connection reset") ||
+			strings.Contains(errMsg, "translation request failed"),
+			"expected connection/provider error, got: %v", errMsg)
 	})
 }
 
@@ -1420,18 +417,18 @@ func TestTranslateTexts_Dispatch(t *testing.T) {
 	tests := []struct {
 		name        string
 		provider    string
-		cfg         config.TranslationConfig
+		cfg         Config
 		wantErr     bool
 		errContains string
 	}{
 		{
 			name:     "openai provider",
 			provider: "openai",
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "openai",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				OpenAI: config.OpenAITranslationConfig{
+				OpenAI: openAIConfig{
 					BaseURL: func() string {
 						// Create a test server that immediately closes to force connection refused
 						s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1449,11 +446,11 @@ func TestTranslateTexts_Dispatch(t *testing.T) {
 		{
 			name:     "deepl provider",
 			provider: "deepl",
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "deepl",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				DeepL: config.DeepLTranslationConfig{
+				DeepL: deepLConfig{
 					BaseURL: func() string {
 						// Create a test server that immediately closes to force connection refused
 						s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1471,11 +468,11 @@ func TestTranslateTexts_Dispatch(t *testing.T) {
 		{
 			name:     "google paid mode requires api key",
 			provider: "google",
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "google",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				Google: config.GoogleTranslationConfig{
+				Google: googleConfig{
 					Mode:   "paid",
 					APIKey: "",
 				},
@@ -1486,7 +483,7 @@ func TestTranslateTexts_Dispatch(t *testing.T) {
 		{
 			name:     "unsupported provider",
 			provider: "custom",
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "custom",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
@@ -1497,11 +494,11 @@ func TestTranslateTexts_Dispatch(t *testing.T) {
 		{
 			name:     "uppercase provider",
 			provider: "OPENAI",
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "OPENAI",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				OpenAI: config.OpenAITranslationConfig{
+				OpenAI: openAIConfig{
 					APIKey: "test-key",
 				},
 			},
@@ -1510,11 +507,11 @@ func TestTranslateTexts_Dispatch(t *testing.T) {
 		{
 			name:     "mixed case provider",
 			provider: "DeePl",
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "DeePl",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				DeepL: config.DeepLTranslationConfig{
+				DeepL: deepLConfig{
 					APIKey: "test-key",
 				},
 			},
@@ -1524,9 +521,16 @@ func TestTranslateTexts_Dispatch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := New(tt.cfg)
+			httpClient := &http.Client{}
+			s := New(tt.cfg,
+				NewOpenAIProvider(tt.cfg, httpClient),
+				NewOpenAICompatibleProvider(tt.cfg, httpClient),
+				NewDeepLProvider(tt.cfg, httpClient),
+				NewGoogleProvider(tt.cfg, httpClient),
+				NewAnthropicProvider(tt.cfg, httpClient),
+			)
 
-			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -1541,13 +545,13 @@ func TestTranslateTexts_Dispatch(t *testing.T) {
 }
 
 // =============================================================================
-// translateWithDeepL tests
+// DeepL provider tests
 // =============================================================================
 
 func TestTranslateWithDeepL(t *testing.T) {
 	tests := []struct {
 		name            string
-		mode            string // "free" or "pro"
+		mode            models.DeepLMode // "free" or "pro"
 		handler         func(http.ResponseWriter, *http.Request)
 		wantErr         bool
 		errContains     string
@@ -1653,25 +657,32 @@ func TestTranslateWithDeepL(t *testing.T) {
 
 			mode := tt.mode
 			if mode == "" {
-				mode = "free"
+				mode = models.DeepLModeFree
 			}
-			cfg := config.TranslationConfig{
+			cfg := Config{
 				Provider:       "deepl",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				DeepL: config.DeepLTranslationConfig{
+				DeepL: deepLConfig{
 					Mode:    mode,
 					BaseURL: server.URL,
 					APIKey:  "test-key",
 				},
 			}
 
-			s := New(cfg)
+			httpClient := server.Client()
+			s := New(cfg,
+				NewOpenAIProvider(cfg, httpClient),
+				NewOpenAICompatibleProvider(cfg, httpClient),
+				NewDeepLProvider(cfg, httpClient),
+				NewGoogleProvider(cfg, httpClient),
+				NewAnthropicProvider(cfg, httpClient),
+			)
 			inputTexts := []string{"test"}
 			if tt.name == "multiple texts translated" {
 				inputTexts = []string{"test1", "test2", "test3"}
 			}
-			result, err := s.translateTexts(context.Background(), "ja", "en", inputTexts, fieldNamesFor(inputTexts))
+			result, err := s.translateTexts(context.Background(), "ja", "en", inputTexts)
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -1694,18 +705,26 @@ func TestTranslateWithDeepL(t *testing.T) {
 }
 
 func TestTranslateWithDeepL_MissingAPIKey(t *testing.T) {
-	s := New(config.TranslationConfig{
+	httpClient := &http.Client{}
+	cfg := Config{
 		Provider:       "deepl",
 		TargetLanguage: "en",
 		SourceLanguage: "ja",
-		DeepL: config.DeepLTranslationConfig{
+		DeepL: deepLConfig{
 			Mode:    "free",
 			BaseURL: "http://example.com",
 			APIKey:  "",
 		},
-	})
+	}
+	s := New(cfg,
+		NewOpenAIProvider(cfg, httpClient),
+		NewOpenAICompatibleProvider(cfg, httpClient),
+		NewDeepLProvider(cfg, httpClient),
+		NewGoogleProvider(cfg, httpClient),
+		NewAnthropicProvider(cfg, httpClient),
+	)
 
-	_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+	_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "deepl api_key is required")
 }
@@ -1731,31 +750,39 @@ func TestTranslateWithDeepL_SourceLanguage(t *testing.T) {
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	s := New(config.TranslationConfig{
+	httpClient := server.Client()
+	cfg := Config{
 		Provider:       "deepl",
 		TargetLanguage: "en",
 		SourceLanguage: "ja",
-		DeepL: config.DeepLTranslationConfig{
+		DeepL: deepLConfig{
 			Mode:    "free",
 			BaseURL: server.URL,
 			APIKey:  "test-key",
 		},
-	})
+	}
+	s := New(cfg,
+		NewOpenAIProvider(cfg, httpClient),
+		NewOpenAICompatibleProvider(cfg, httpClient),
+		NewDeepLProvider(cfg, httpClient),
+		NewGoogleProvider(cfg, httpClient),
+		NewAnthropicProvider(cfg, httpClient),
+	)
 
-	result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+	result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 	require.NoError(t, err)
 	assert.Equal(t, "JA", capturedSourceLang)
 	assert.Len(t, result, 1)
 }
 
 // =============================================================================
-// translateWithGoogle tests
+// Google provider tests
 // =============================================================================
 
 func TestTranslateWithGoogle(t *testing.T) {
 	tests := []struct {
 		name        string
-		mode        string
+		mode        models.GoogleMode
 		handler     func(http.ResponseWriter, *http.Request)
 		wantErr     bool
 		errContains string
@@ -1805,7 +832,7 @@ func TestTranslateWithGoogle(t *testing.T) {
 			mux := http.NewServeMux()
 			if tt.handler != nil {
 				// Google free uses /translate_a/single, paid uses /language/translate/v2
-				if tt.mode == "free" {
+				if tt.mode == models.GoogleModeFree {
 					mux.HandleFunc("/translate_a/single", tt.handler)
 				} else {
 					mux.HandleFunc("/language/translate/v2", tt.handler)
@@ -1815,11 +842,11 @@ func TestTranslateWithGoogle(t *testing.T) {
 			server := httptest.NewServer(mux)
 			defer server.Close()
 
-			cfg := config.TranslationConfig{
+			cfg := Config{
 				Provider:       "google",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				Google: config.GoogleTranslationConfig{
+				Google: googleConfig{
 					Mode:    tt.mode,
 					BaseURL: server.URL,
 					APIKey: func() string {
@@ -1831,8 +858,15 @@ func TestTranslateWithGoogle(t *testing.T) {
 				},
 			}
 
-			s := New(cfg)
-			result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+			httpClient := server.Client()
+			s := New(cfg,
+				NewOpenAIProvider(cfg, httpClient),
+				NewOpenAICompatibleProvider(cfg, httpClient),
+				NewDeepLProvider(cfg, httpClient),
+				NewGoogleProvider(cfg, httpClient),
+				NewAnthropicProvider(cfg, httpClient),
+			)
+			result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -1849,7 +883,7 @@ func TestTranslateWithGoogle(t *testing.T) {
 }
 
 // =============================================================================
-// translateWithOpenAI tests
+// OpenAI provider tests
 // =============================================================================
 
 func TestTranslateWithOpenAI(t *testing.T) {
@@ -1866,7 +900,7 @@ func TestTranslateWithOpenAI(t *testing.T) {
 				"choices": []map[string]interface{}{
 					{
 						"message": map[string]string{
-							"content": "<<<title>>>\ntranslated text",
+							"content": `["translated text"]`,
 						},
 					},
 				},
@@ -1875,17 +909,25 @@ func TestTranslateWithOpenAI(t *testing.T) {
 		}))
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Provider:       "openai",
 			TargetLanguage: "en",
 			SourceLanguage: "ja",
-			OpenAI: config.OpenAITranslationConfig{
+			OpenAI: openAIConfig{
 				BaseURL: server.URL,
 				APIKey:  "test-key",
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
-		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
 		assert.Equal(t, "translated text", result[0])
@@ -1911,17 +953,25 @@ func TestTranslateWithOpenAI(t *testing.T) {
 		}))
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Provider:       "openai",
 			TargetLanguage: "en",
 			SourceLanguage: "ja",
-			OpenAI: config.OpenAITranslationConfig{
+			OpenAI: openAIConfig{
 				BaseURL: server.URL,
 				APIKey:  "test-key",
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "openai translation failed")
 		assert.Contains(t, err.Error(), "Invalid API key")
@@ -1935,17 +985,25 @@ func TestTranslateWithOpenAI(t *testing.T) {
 		}))
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Provider:       "openai",
 			TargetLanguage: "en",
 			SourceLanguage: "ja",
-			OpenAI: config.OpenAITranslationConfig{
+			OpenAI: openAIConfig{
 				BaseURL: server.URL,
 				APIKey:  "test-key",
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to decode openai response")
 	})
@@ -1959,17 +1017,25 @@ func TestTranslateWithOpenAI(t *testing.T) {
 		}))
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Provider:       "openai",
 			TargetLanguage: "en",
 			SourceLanguage: "ja",
-			OpenAI: config.OpenAITranslationConfig{
+			OpenAI: openAIConfig{
 				BaseURL: server.URL,
 				APIKey:  "test-key",
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "openai response contained no choices")
 	})
@@ -1989,17 +1055,25 @@ func TestTranslateWithOpenAI(t *testing.T) {
 		}))
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Provider:       "openai",
 			TargetLanguage: "en",
 			SourceLanguage: "ja",
-			OpenAI: config.OpenAITranslationConfig{
+			OpenAI: openAIConfig{
 				BaseURL: server.URL,
 				APIKey:  "test-key",
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to parse translated output payload")
 	})
@@ -2014,7 +1088,7 @@ func TestTranslateWithOpenAI_DefaultValues(t *testing.T) {
 				"choices": []map[string]interface{}{
 					{
 						"message": map[string]string{
-							"content": "<<<title>>>\ntranslated",
+							"content": `["translated"]`,
 						},
 					},
 				},
@@ -2023,18 +1097,26 @@ func TestTranslateWithOpenAI_DefaultValues(t *testing.T) {
 		}))
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Provider:       "openai",
 			TargetLanguage: "en",
 			SourceLanguage: "ja",
-			OpenAI: config.OpenAITranslationConfig{
+			OpenAI: openAIConfig{
 				BaseURL: server.URL,
 				APIKey:  "test-key",
 				Model:   "",
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
-		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
 		assert.Equal(t, "gpt-4o-mini", capturedBody["model"])
@@ -2127,18 +1209,26 @@ func TestTranslateWithGooglePaid(t *testing.T) {
 			server := httptest.NewServer(mux)
 			defer server.Close()
 
-			s := New(config.TranslationConfig{
+			httpClient := server.Client()
+			cfg := Config{
 				Provider:       "google",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				Google: config.GoogleTranslationConfig{
+				Google: googleConfig{
 					Mode:    "paid",
 					BaseURL: server.URL,
 					APIKey:  "test-key",
 				},
-			})
+			}
+			s := New(cfg,
+				NewOpenAIProvider(cfg, httpClient),
+				NewOpenAICompatibleProvider(cfg, httpClient),
+				NewDeepLProvider(cfg, httpClient),
+				NewGoogleProvider(cfg, httpClient),
+				NewAnthropicProvider(cfg, httpClient),
+			)
 
-			result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+			result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -2174,18 +1264,26 @@ func TestTranslateWithGooglePaid_EndpointAndAuth(t *testing.T) {
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	s := New(config.TranslationConfig{
+	httpClient := server.Client()
+	cfg := Config{
 		Provider:       "google",
 		TargetLanguage: "en",
 		SourceLanguage: "ja",
-		Google: config.GoogleTranslationConfig{
+		Google: googleConfig{
 			Mode:    "paid",
 			BaseURL: server.URL,
 			APIKey:  "test-key",
 		},
-	})
+	}
+	s := New(cfg,
+		NewOpenAIProvider(cfg, httpClient),
+		NewOpenAICompatibleProvider(cfg, httpClient),
+		NewDeepLProvider(cfg, httpClient),
+		NewGoogleProvider(cfg, httpClient),
+		NewAnthropicProvider(cfg, httpClient),
+	)
 
-	result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+	result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
 	assert.Equal(t, "translated text", result[0])
@@ -2213,17 +1311,25 @@ func TestTranslateWithGoogleFree(t *testing.T) {
 		server := httptest.NewServer(mux)
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Provider:       "google",
 			TargetLanguage: "en",
 			SourceLanguage: "ja",
-			Google: config.GoogleTranslationConfig{
+			Google: googleConfig{
 				Mode:    "free",
 				BaseURL: server.URL,
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
-		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
 		assert.Equal(t, "translated text", result[0])
@@ -2239,20 +1345,30 @@ func TestTranslateWithGoogleFree(t *testing.T) {
 		server := httptest.NewServer(mux)
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Provider:       "google",
 			TargetLanguage: "en",
 			SourceLanguage: "ja",
-			Google: config.GoogleTranslationConfig{
+			Google: googleConfig{
 				Mode:    "free",
 				BaseURL: server.URL,
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "google free translation failed")
-		assert.Contains(t, err.Error(), "Internal Server Error")
+		// Raw provider response body is no longer embedded in the error (redaction);
+		// only the status is conveyed.
+		assert.NotContains(t, err.Error(), "Internal Server Error")
 	})
 
 	t.Run("multiple texts translated sequentially", func(t *testing.T) {
@@ -2269,17 +1385,25 @@ func TestTranslateWithGoogleFree(t *testing.T) {
 		server := httptest.NewServer(mux)
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Provider:       "google",
 			TargetLanguage: "en",
 			SourceLanguage: "ja",
-			Google: config.GoogleTranslationConfig{
+			Google: googleConfig{
 				Mode:    "free",
 				BaseURL: server.URL,
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
-		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test1", "test2"}, []string{"title", "description"})
+		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test1", "test2"})
 		require.NoError(t, err)
 		assert.Len(t, result, 2)
 	})
@@ -2300,17 +1424,25 @@ func TestTranslateWithGoogleFree(t *testing.T) {
 		server := httptest.NewServer(mux)
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Provider:       "google",
 			TargetLanguage: "en",
 			SourceLanguage: "", // Empty should become "auto"
-			Google: config.GoogleTranslationConfig{
+			Google: googleConfig{
 				Mode:    "free",
 				BaseURL: server.URL,
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
-		_, err := s.translateTexts(context.Background(), "", "en", []string{"test"}, []string{"title"})
+		_, err := s.translateTexts(context.Background(), "", "en", []string{"test"})
 		require.NoError(t, err)
 		assert.Equal(t, "auto", capturedSL)
 	})
@@ -2325,17 +1457,25 @@ func TestTranslateWithGoogleFree(t *testing.T) {
 		server := httptest.NewServer(mux)
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Provider:       "google",
 			TargetLanguage: "en",
 			SourceLanguage: "ja",
-			Google: config.GoogleTranslationConfig{
+			Google: googleConfig{
 				Mode:    "free",
 				BaseURL: server.URL,
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "unexpected google free response shape")
 	})
@@ -2352,17 +1492,25 @@ func TestTranslateWithGoogleFree(t *testing.T) {
 		server := httptest.NewServer(mux)
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Provider:       "google",
 			TargetLanguage: "en",
 			SourceLanguage: "ja",
-			Google: config.GoogleTranslationConfig{
+			Google: googleConfig{
 				Mode:    "free",
 				BaseURL: server.URL,
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "google free translation returned empty text")
 	})
@@ -2381,17 +1529,25 @@ func TestTranslateWithGoogleFree(t *testing.T) {
 		server := httptest.NewServer(mux)
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Provider:       "google",
 			TargetLanguage: "en",
 			SourceLanguage: "ja",
-			Google: config.GoogleTranslationConfig{
+			Google: googleConfig{
 				Mode:    "free",
 				BaseURL: server.URL,
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "google free translation returned empty text")
 	})
@@ -2404,9 +1560,8 @@ func TestTranslateWithGoogleFree(t *testing.T) {
 func TestTranslateMovie_FullFlow(t *testing.T) {
 	tests := []struct {
 		name                string
-		cfg                 config.TranslationConfig
+		cfg                 Config
 		movie               *models.Movie
-		mockFieldNames      []string
 		mockResponse        []string
 		wantErr             bool
 		wantTitle           string
@@ -2415,23 +1570,22 @@ func TestTranslateMovie_FullFlow(t *testing.T) {
 	}{
 		{
 			name: "happy_path_translates_and_updates_fields",
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Enabled:        true,
 				Provider:       "openai",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
 				ApplyToPrimary: true,
-				Fields: config.TranslationFieldsConfig{
+				Fields: fieldsConfig{
 					Title: true,
 				},
-				OpenAI: config.OpenAITranslationConfig{
+				OpenAI: openAIConfig{
 					APIKey: "key",
 				},
 			},
 			movie: &models.Movie{
 				Title: "テスト",
 			},
-			mockFieldNames:      []string{"title"},
 			mockResponse:        []string{"Translated Title"},
 			wantErr:             false,
 			wantTitle:           "Translated Title",
@@ -2440,23 +1594,22 @@ func TestTranslateMovie_FullFlow(t *testing.T) {
 		},
 		{
 			name: "apply_to_primary_false_does_not_modify_movie",
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Enabled:        true,
 				Provider:       "openai",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
 				ApplyToPrimary: false,
-				Fields: config.TranslationFieldsConfig{
+				Fields: fieldsConfig{
 					Title: true,
 				},
-				OpenAI: config.OpenAITranslationConfig{
+				OpenAI: openAIConfig{
 					APIKey: "key",
 				},
 			},
 			movie: &models.Movie{
 				Title: "テスト",
 			},
-			mockFieldNames:      []string{"title"},
 			mockResponse:        []string{"Translated Title"},
 			wantErr:             false,
 			wantTitle:           "Translated Title",
@@ -2465,17 +1618,17 @@ func TestTranslateMovie_FullFlow(t *testing.T) {
 		},
 		{
 			name: "translates_multiple_fields",
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Enabled:        true,
 				Provider:       "openai",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
 				ApplyToPrimary: true,
-				Fields: config.TranslationFieldsConfig{
+				Fields: fieldsConfig{
 					Title:       true,
 					Description: true,
 				},
-				OpenAI: config.OpenAITranslationConfig{
+				OpenAI: openAIConfig{
 					APIKey: "key",
 				},
 			},
@@ -2483,7 +1636,6 @@ func TestTranslateMovie_FullFlow(t *testing.T) {
 				Title:       "テスト",
 				Description: "説明",
 			},
-			mockFieldNames:      []string{"title", "description"},
 			mockResponse:        []string{"Translated Title", "Translated Description"},
 			wantErr:             false,
 			wantTitle:           "Translated Title",
@@ -2492,16 +1644,16 @@ func TestTranslateMovie_FullFlow(t *testing.T) {
 		},
 		{
 			name: "translates_actresses",
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Enabled:        true,
 				Provider:       "openai",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
 				ApplyToPrimary: true,
-				Fields: config.TranslationFieldsConfig{
+				Fields: fieldsConfig{
 					Actresses: true,
 				},
-				OpenAI: config.OpenAITranslationConfig{
+				OpenAI: openAIConfig{
 					APIKey: "key",
 				},
 			},
@@ -2511,7 +1663,6 @@ func TestTranslateMovie_FullFlow(t *testing.T) {
 					{JapaneseName: "田中香", FirstName: "Yui", LastName: "Tanaka"},
 				},
 			},
-			mockFieldNames:      []string{"actress[0]"},
 			mockResponse:        []string{"Yui Tanaka"},
 			wantErr:             false,
 			wantPrimarySet:      true,
@@ -2519,16 +1670,16 @@ func TestTranslateMovie_FullFlow(t *testing.T) {
 		},
 		{
 			name: "translates_genres",
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Enabled:        true,
 				Provider:       "openai",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
 				ApplyToPrimary: true,
-				Fields: config.TranslationFieldsConfig{
+				Fields: fieldsConfig{
 					Genres: true,
 				},
-				OpenAI: config.OpenAITranslationConfig{
+				OpenAI: openAIConfig{
 					APIKey: "key",
 				},
 			},
@@ -2539,7 +1690,6 @@ func TestTranslateMovie_FullFlow(t *testing.T) {
 					{Name: "ジャンル 2"},
 				},
 			},
-			mockFieldNames:      []string{"genre[0]", "genre[1]"},
 			mockResponse:        []string{"Genre 1", "Genre 2"},
 			wantErr:             false,
 			wantPrimarySet:      true,
@@ -2547,16 +1697,16 @@ func TestTranslateMovie_FullFlow(t *testing.T) {
 		},
 		{
 			name: "empty_fields_are_skipped",
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Enabled:        true,
 				Provider:       "openai",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
 				ApplyToPrimary: true,
-				Fields: config.TranslationFieldsConfig{
+				Fields: fieldsConfig{
 					Title: true,
 				},
-				OpenAI: config.OpenAITranslationConfig{
+				OpenAI: openAIConfig{
 					APIKey: "key",
 				},
 			},
@@ -2568,16 +1718,16 @@ func TestTranslateMovie_FullFlow(t *testing.T) {
 		},
 		{
 			name: "provider_error_returns_error",
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Enabled:        true,
 				Provider:       "openai",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
 				ApplyToPrimary: true,
-				Fields: config.TranslationFieldsConfig{
+				Fields: fieldsConfig{
 					Title: true,
 				},
-				OpenAI: config.OpenAITranslationConfig{
+				OpenAI: openAIConfig{
 					APIKey: "key",
 				},
 			},
@@ -2607,7 +1757,7 @@ func TestTranslateMovie_FullFlow(t *testing.T) {
 						"choices": []map[string]interface{}{
 							{
 								"message": map[string]string{
-									"content": markerContent(tt.mockFieldNames, tt.mockResponse),
+									"content": mustMarshal(t, tt.mockResponse),
 								},
 							},
 						},
@@ -2618,7 +1768,14 @@ func TestTranslateMovie_FullFlow(t *testing.T) {
 			defer server.Close()
 
 			tt.cfg.OpenAI.BaseURL = server.URL
-			s := New(tt.cfg)
+			httpClient := server.Client()
+			s := New(tt.cfg,
+				NewOpenAIProvider(tt.cfg, httpClient),
+				NewOpenAICompatibleProvider(tt.cfg, httpClient),
+				NewDeepLProvider(tt.cfg, httpClient),
+				NewGoogleProvider(tt.cfg, httpClient),
+				NewAnthropicProvider(tt.cfg, httpClient),
+			)
 
 			movieCopy := &models.Movie{}
 			*movieCopy = *tt.movie
@@ -2647,7 +1804,9 @@ func TestTranslateMovie_FullFlow(t *testing.T) {
 			}
 
 			if tt.wantTitle != "" {
-				assert.Equal(t, tt.wantTitle, result[0].Title)
+				require.NotNil(t, result)
+				require.NotNil(t, result.Movie)
+				assert.Equal(t, tt.wantTitle, result.Movie.Title)
 			}
 
 			// Verify that the appropriate fields were translated based on config
@@ -2659,14 +1818,12 @@ func TestTranslateMovie_FullFlow(t *testing.T) {
 				}
 			}
 
-			// Verify actresses translation if configured.
-			// replaceActressName splits "FamilyName GivenName" into LastName + FirstName;
-			// JapaneseName is preserved.
-			if tt.cfg.Fields.Actresses && len(tt.movie.Actresses) > 0 && tt.wantPrimarySet {
-				a := movieCopy.Actresses[0]
-				assert.NotEmpty(t, a.FirstName, "translated actress given name should be in FirstName")
-				assert.NotEmpty(t, a.LastName, "translated actress family name should be in LastName")
-				assert.Equal(t, tt.movie.Actresses[0].JapaneseName, a.JapaneseName, "JapaneseName should be preserved after translation")
+			// Verify actresses translation if configured
+			if tt.cfg.Fields.Actresses && len(tt.movie.Actresses) > 0 {
+				assert.NotEqual(t,
+					tt.movie.Actresses[0].LastName+" "+tt.movie.Actresses[0].FirstName,
+					movieCopy.Actresses[0].LastName+" "+movieCopy.Actresses[0].FirstName,
+				)
 			}
 
 			// Verify genres translation if configured
@@ -2679,93 +1836,133 @@ func TestTranslateMovie_FullFlow(t *testing.T) {
 	}
 }
 
+func mustMarshal(t *testing.T, v interface{}) string {
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("failed to marshal %T: %v", v, err)
+	}
+	return string(data)
+}
+
 // =============================================================================
 // Translation count mismatch tests
 // =============================================================================
 
-func TestTranslateMovie_MissingMarkerFallback(t *testing.T) {
-	// The mock echoes back every marker requested in the user prompt, except the
-	// ones listed in omit. A missing marker causes a parse error on the batch,
-	// then the one-by-one fallback retries each field individually.
-	newEchoServer := func(omit map[string]bool) *httptest.Server {
-		markerRE := regexp.MustCompile(`<<<[\w\[\]]+>>>`)
-		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var req struct {
-				Messages []struct {
-					Content string `json:"content"`
-				} `json:"messages"`
-			}
-			_ = json.NewDecoder(r.Body).Decode(&req)
-			var b strings.Builder
-			seen := map[string]bool{}
-			if len(req.Messages) > 0 {
-				user := req.Messages[len(req.Messages)-1].Content
-				for _, m := range markerRE.FindAllString(user, -1) {
-					if seen[m] || omit[m] {
-						continue
-					}
-					seen[m] = true
-					b.WriteString(m + "\nTranslated\n")
+func TestTranslateMovie_TranslationCountMismatch(t *testing.T) {
+	tests := []struct {
+		name          string
+		inputCount    int
+		responseCount int
+		wantErr       bool
+		errContains   string
+	}{
+		{
+			name:          "returns_error_when_fewer_translations_than_inputs",
+			inputCount:    3,
+			responseCount: 2,
+			wantErr:       true,
+			errContains:   "returned 2 items for 3 inputs",
+		},
+		{
+			name:          "returns_error_when_more_translations_than_inputs",
+			inputCount:    2,
+			responseCount: 4,
+			wantErr:       true,
+			errContains:   "returned 4 items for 2 inputs",
+		},
+		{
+			name:          "exact_match_succeeds",
+			inputCount:    3,
+			responseCount: 3,
+			wantErr:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				translations := make([]string, tt.responseCount)
+				for i := 0; i < tt.responseCount; i++ {
+					translations[i] = fmt.Sprintf("Translation %d", i+1)
 				}
+				response := map[string]interface{}{
+					"choices": []map[string]interface{}{
+						{
+							"message": map[string]string{
+								"content": mustMarshal(t, translations),
+							},
+						},
+					},
+				}
+				_ = json.NewEncoder(w).Encode(response)
+			}))
+			defer server.Close()
+
+			// Configure fields based on inputCount
+			fields := fieldsConfig{}
+			if tt.inputCount >= 1 {
+				fields.Title = true
 			}
-			response := map[string]interface{}{
-				"choices": []map[string]interface{}{
-					{"message": map[string]string{"content": b.String()}},
+			if tt.inputCount >= 2 {
+				fields.Description = true
+			}
+			if tt.inputCount >= 3 {
+				fields.Director = true
+			}
+
+			httpClient := server.Client()
+			cfg := Config{
+				Enabled:        true,
+				Provider:       "openai",
+				TargetLanguage: "en",
+				SourceLanguage: "ja",
+				ApplyToPrimary: true,
+				Fields:         fields,
+				OpenAI: openAIConfig{
+					BaseURL: server.URL,
+					APIKey:  "test-key",
 				},
 			}
-			_ = json.NewEncoder(w).Encode(response)
-		}))
-	}
+			s := New(cfg,
+				NewOpenAIProvider(cfg, httpClient),
+				NewOpenAICompatibleProvider(cfg, httpClient),
+				NewDeepLProvider(cfg, httpClient),
+				NewGoogleProvider(cfg, httpClient),
+				NewAnthropicProvider(cfg, httpClient),
+			)
 
-	newService := func(baseURL string) *Service {
-		return New(config.TranslationConfig{
-			Enabled:        true,
-			Provider:       "openai",
-			TargetLanguage: "en",
-			SourceLanguage: "ja",
-			ApplyToPrimary: true,
-			Fields: config.TranslationFieldsConfig{
-				Title:       true,
-				Description: true,
-				Director:    true,
-			},
-			OpenAI: config.OpenAITranslationConfig{
-				BaseURL: baseURL,
-				APIKey:  "test-key",
-			},
+			// Create movie with multiple fields to match inputCount
+			movie := &models.Movie{
+				Title:       "Test Title",
+				Description: "Test Description",
+			}
+			if tt.inputCount >= 3 {
+				movie.Director = "Test Director"
+			}
+
+			_, _, err := s.TranslateMovie(context.Background(), movie, "")
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+				return
+			}
+
+			require.NoError(t, err)
 		})
 	}
-
-	t.Run("all markers present succeeds", func(t *testing.T) {
-		server := newEchoServer(nil)
-		defer server.Close()
-
-		movie := &models.Movie{Title: "Test Title", Description: "Test Description", Director: "Test Director"}
-		_, _, err := newService(server.URL).TranslateMovie(context.Background(), movie, "")
-		require.NoError(t, err)
-		assert.Equal(t, "Translated", movie.Title)
-		assert.Equal(t, "Translated", movie.Director)
-	})
-
-	t.Run("persistently missing marker returns parse error", func(t *testing.T) {
-		server := newEchoServer(map[string]bool{"<<<director>>>": true})
-		defer server.Close()
-
-		movie := &models.Movie{Title: "Test Title", Description: "Test Description", Director: "Test Director"}
-		_, _, err := newService(server.URL).TranslateMovie(context.Background(), movie, "")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to parse translated output payload")
-	})
 }
 
-func TestTranslateTexts_RetryOnLLMParseFailure(t *testing.T) {
-	t.Run("openai-compatible retries and succeeds after unparseable response", func(t *testing.T) {
+func TestTranslateTexts_RetryOnLLMCountMismatch(t *testing.T) {
+	t.Run("openai-compatible retries and succeeds after mismatch", func(t *testing.T) {
 		requestCount := 0
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestCount++
-			content := "no markers here"
+			content := `["too-many","items"]`
 			if requestCount == 2 {
-				content = "<<<title>>>\ntranslated"
+				content = `["translated"]`
 			}
 			response := map[string]interface{}{
 				"choices": []map[string]interface{}{
@@ -2780,15 +1977,23 @@ func TestTranslateTexts_RetryOnLLMParseFailure(t *testing.T) {
 		}))
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Provider: "openai-compatible",
-			OpenAICompatible: config.OpenAICompatibleTranslationConfig{
+			OpenAICompatible: openAICompatibleConfig{
 				BaseURL: server.URL,
 				Model:   "test-model",
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
-		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"translated"}, result)
 		assert.Equal(t, 2, requestCount)
@@ -2802,7 +2007,7 @@ func TestTranslateTexts_RetryOnLLMParseFailure(t *testing.T) {
 				"choices": []map[string]interface{}{
 					{
 						"message": map[string]string{
-							"content": "no markers here",
+							"content": `["too-many","items"]`,
 						},
 					},
 				},
@@ -2811,17 +2016,25 @@ func TestTranslateTexts_RetryOnLLMParseFailure(t *testing.T) {
 		}))
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Provider: "openai-compatible",
-			OpenAICompatible: config.OpenAICompatibleTranslationConfig{
+			OpenAICompatible: openAICompatibleConfig{
 				BaseURL: server.URL,
 				Model:   "test-model",
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
-		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to parse translated output payload")
+		assert.Contains(t, err.Error(), "translation provider returned 2 items for 1 inputs")
 		assert.Equal(t, maxTranslationRetries, requestCount)
 	})
 }
@@ -2896,17 +2109,25 @@ func TestTranslateWithOpenAI_MalformedResponses(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(tt.handler))
 			defer server.Close()
 
-			s := New(config.TranslationConfig{
+			httpClient := server.Client()
+			cfg := Config{
 				Provider:       "openai",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				OpenAI: config.OpenAITranslationConfig{
+				OpenAI: openAIConfig{
 					BaseURL: server.URL,
 					APIKey:  "test-key",
 				},
-			})
+			}
+			s := New(cfg,
+				NewOpenAIProvider(cfg, httpClient),
+				NewOpenAICompatibleProvider(cfg, httpClient),
+				NewDeepLProvider(cfg, httpClient),
+				NewGoogleProvider(cfg, httpClient),
+				NewAnthropicProvider(cfg, httpClient),
+			)
 
-			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -2975,17 +2196,25 @@ func TestTranslateWithOpenAI_HTTPErrorResponses(t *testing.T) {
 			}))
 			defer server.Close()
 
-			s := New(config.TranslationConfig{
+			httpClient := server.Client()
+			cfg := Config{
 				Provider:       "openai",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				OpenAI: config.OpenAITranslationConfig{
+				OpenAI: openAIConfig{
 					BaseURL: server.URL,
 					APIKey:  "test-key",
 				},
-			})
+			}
+			s := New(cfg,
+				NewOpenAIProvider(cfg, httpClient),
+				NewOpenAICompatibleProvider(cfg, httpClient),
+				NewDeepLProvider(cfg, httpClient),
+				NewGoogleProvider(cfg, httpClient),
+				NewAnthropicProvider(cfg, httpClient),
+			)
 
-			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 
 			require.Error(t, err)
 			if tt.errContains != "" {
@@ -3018,20 +2247,28 @@ func TestTranslateMovie_ContextCancellation(t *testing.T) {
 		}))
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Enabled:        true,
 			Provider:       "openai",
 			TargetLanguage: "en",
 			SourceLanguage: "ja",
 			ApplyToPrimary: true,
-			Fields: config.TranslationFieldsConfig{
+			Fields: fieldsConfig{
 				Title: true,
 			},
-			OpenAI: config.OpenAITranslationConfig{
+			OpenAI: openAIConfig{
 				BaseURL: server.URL,
 				APIKey:  "test-key",
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
 		ctx, cancel := context.WithCancel(context.Background())
 
@@ -3067,20 +2304,28 @@ func TestTranslateMovie_ContextCancellation(t *testing.T) {
 		}))
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Enabled:        true,
 			Provider:       "openai",
 			TargetLanguage: "en",
 			SourceLanguage: "ja",
 			ApplyToPrimary: true,
-			Fields: config.TranslationFieldsConfig{
+			Fields: fieldsConfig{
 				Title: true,
 			},
-			OpenAI: config.OpenAITranslationConfig{
+			OpenAI: openAIConfig{
 				BaseURL: server.URL,
 				APIKey:  "test-key",
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()
@@ -3132,18 +2377,26 @@ func TestTranslateWithDeepL_ErrorResponses(t *testing.T) {
 			}))
 			defer server.Close()
 
-			s := New(config.TranslationConfig{
+			httpClient := server.Client()
+			cfg := Config{
 				Provider:       "deepl",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				DeepL: config.DeepLTranslationConfig{
+				DeepL: deepLConfig{
 					Mode:    "free",
 					BaseURL: server.URL,
 					APIKey:  "test-key",
 				},
-			})
+			}
+			s := New(cfg,
+				NewOpenAIProvider(cfg, httpClient),
+				NewOpenAICompatibleProvider(cfg, httpClient),
+				NewDeepLProvider(cfg, httpClient),
+				NewGoogleProvider(cfg, httpClient),
+				NewAnthropicProvider(cfg, httpClient),
+			)
 
-			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 
 			require.Error(t, err)
 			if tt.errContains != "" {
@@ -3189,18 +2442,26 @@ func TestTranslateWithGooglePaid_ErrorResponses(t *testing.T) {
 			}))
 			defer server.Close()
 
-			s := New(config.TranslationConfig{
+			httpClient := server.Client()
+			cfg := Config{
 				Provider:       "google",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				Google: config.GoogleTranslationConfig{
+				Google: googleConfig{
 					Mode:    "paid",
 					BaseURL: server.URL,
 					APIKey:  "test-key",
 				},
-			})
+			}
+			s := New(cfg,
+				NewOpenAIProvider(cfg, httpClient),
+				NewOpenAICompatibleProvider(cfg, httpClient),
+				NewDeepLProvider(cfg, httpClient),
+				NewGoogleProvider(cfg, httpClient),
+				NewAnthropicProvider(cfg, httpClient),
+			)
 
-			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 
 			require.Error(t, err)
 			if tt.errContains != "" {
@@ -3211,50 +2472,84 @@ func TestTranslateWithGooglePaid_ErrorResponses(t *testing.T) {
 }
 
 // =============================================================================
-// parseCompactTranslationPayload embedded-marker stripping
+// parseStringArrayPayload additional edge case tests
 // =============================================================================
 
-func TestParseCompactTranslationPayload_EmbeddedMarkers(t *testing.T) {
-	t.Run("strips extra markers echoed by LLM from last slot", func(t *testing.T) {
-		// LLM outputs description swap + echoes extra markers after last slot
-		payload := "<<<JZ_0>>>\n[Korean description - very long]\n<<<JZ_1>>>\n메이\n<<<JZ_2>>>\n<<<JZ_3>>>\n<<<JZ_4>>>"
-		got, err := parseCompactTranslationPayload(payload, []string{"<<<JZ_0>>>", "<<<JZ_1>>>", "<<<JZ_2>>>"})
-		require.NoError(t, err)
-		require.Len(t, got, 3)
-		assert.Equal(t, "[Korean description - very long]", got[0])
-		assert.Equal(t, "메이", got[1])
-		// slot 2 (last) should be empty after stripping embedded markers
-		assert.Equal(t, "", got[2])
-	})
+func TestParseStringArrayPayload_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		{
+			name:    "whitespace only",
+			input:   "   ",
+			wantErr: true,
+		},
+		{
+			name:    "empty string",
+			input:   "",
+			wantErr: true,
+		},
+		{
+			name:    "invalid json",
+			input:   "not a json array",
+			wantErr: true,
+		},
+		{
+			name:    "json with markdown fences",
+			input:   "```json[\"hello\",\"world\"]```",
+			wantErr: false,
+		},
+		{
+			name:    "json with newlines",
+			input:   "```json\n[\"hello\",\"world\"]\n```",
+			wantErr: false,
+		},
+		{
+			name:    "text before array",
+			input:   "Here is the translation: [\"hello\"]",
+			wantErr: false,
+		},
+		{
+			name:    "unicode characters",
+			input:   `["こんにちは","世界"]`,
+			wantErr: false,
+		},
+		{
+			name:    "single element",
+			input:   `["single"]`,
+			wantErr: false,
+		},
+		{
+			name:    "escaped quotes in strings",
+			input:   `["hello \"world\"","test"]`,
+			wantErr: false,
+		},
+	}
 
-	t.Run("strips embedded marker inside slot content", func(t *testing.T) {
-		payload := "<<<JZ_0>>>\nhello <<<JZ_0>>> world\n<<<JZ_1>>>\nbye"
-		got, err := parseCompactTranslationPayload(payload, []string{"<<<JZ_0>>>", "<<<JZ_1>>>"})
-		require.NoError(t, err)
-		require.Len(t, got, 2)
-		assert.Equal(t, "hello  world", got[0])
-		assert.Equal(t, "bye", got[1])
-	})
-
-	t.Run("clean output is unchanged", func(t *testing.T) {
-		payload := "<<<JZ_0>>>\ntitle translation\n<<<JZ_1>>>\ndescription translation"
-		got, err := parseCompactTranslationPayload(payload, []string{"<<<JZ_0>>>", "<<<JZ_1>>>"})
-		require.NoError(t, err)
-		require.Len(t, got, 2)
-		assert.Equal(t, "title translation", got[0])
-		assert.Equal(t, "description translation", got[1])
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseStringArrayPayload(tt.input)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				assert.NotEmpty(t, got, "should extract some strings")
+			}
+		})
+	}
 }
 
 // =============================================================================
-// translateWithOpenAICompatible tests
+// OpenAI-compatible provider tests
 // =============================================================================
 
 func TestTranslateWithOpenAICompatible(t *testing.T) {
 	tests := []struct {
 		name        string
 		handler     func(http.ResponseWriter, *http.Request)
-		cfg         config.TranslationConfig
+		cfg         Config
 		wantErr     bool
 		errContains string
 	}{
@@ -3267,18 +2562,18 @@ func TestTranslateWithOpenAICompatible(t *testing.T) {
 					"choices": []map[string]interface{}{
 						{
 							"message": map[string]string{
-								"content": "<<<title>>>\ntranslated text",
+								"content": `["translated text"]`,
 							},
 						},
 					},
 				}
 				_ = json.NewEncoder(w).Encode(response)
 			},
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "openai-compatible",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				OpenAICompatible: config.OpenAICompatibleTranslationConfig{
+				OpenAICompatible: openAICompatibleConfig{
 					APIKey: "test-key",
 					Model:  "llama3",
 				},
@@ -3293,18 +2588,18 @@ func TestTranslateWithOpenAICompatible(t *testing.T) {
 					"choices": []map[string]interface{}{
 						{
 							"message": map[string]string{
-								"content": "<<<title>>>\ntranslated",
+								"content": `["translated"]`,
 							},
 						},
 					},
 				}
 				_ = json.NewEncoder(w).Encode(response)
 			},
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "openai-compatible",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				OpenAICompatible: config.OpenAICompatibleTranslationConfig{
+				OpenAICompatible: openAICompatibleConfig{
 					Model: "llama3",
 				},
 			},
@@ -3316,11 +2611,11 @@ func TestTranslateWithOpenAICompatible(t *testing.T) {
 				// Should not be called
 				t.Error("handler should not be called")
 			},
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "openai-compatible",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				OpenAICompatible: config.OpenAICompatibleTranslationConfig{
+				OpenAICompatible: openAICompatibleConfig{
 					APIKey: "test-key",
 				},
 			},
@@ -3333,11 +2628,11 @@ func TestTranslateWithOpenAICompatible(t *testing.T) {
 				w.WriteHeader(http.StatusUnauthorized)
 				_, _ = w.Write([]byte("Invalid key"))
 			},
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "openai-compatible",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				OpenAICompatible: config.OpenAICompatibleTranslationConfig{
+				OpenAICompatible: openAICompatibleConfig{
 					APIKey: "test-key",
 					Model:  "llama3",
 				},
@@ -3350,11 +2645,11 @@ func TestTranslateWithOpenAICompatible(t *testing.T) {
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				_, _ = w.Write([]byte("not valid json"))
 			},
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "openai-compatible",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				OpenAICompatible: config.OpenAICompatibleTranslationConfig{
+				OpenAICompatible: openAICompatibleConfig{
 					APIKey: "test-key",
 					Model:  "llama3",
 				},
@@ -3370,11 +2665,11 @@ func TestTranslateWithOpenAICompatible(t *testing.T) {
 				}
 				_ = json.NewEncoder(w).Encode(response)
 			},
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "openai-compatible",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				OpenAICompatible: config.OpenAICompatibleTranslationConfig{
+				OpenAICompatible: openAICompatibleConfig{
 					APIKey: "test-key",
 					Model:  "llama3",
 				},
@@ -3389,18 +2684,18 @@ func TestTranslateWithOpenAICompatible(t *testing.T) {
 					"choices": []map[string]interface{}{
 						{
 							"message": map[string]string{
-								"content": "<<<title>>>\ntranslated",
+								"content": `["translated"]`,
 							},
 						},
 					},
 				}
 				_ = json.NewEncoder(w).Encode(response)
 			},
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "openai-compatible",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				OpenAICompatible: config.OpenAICompatibleTranslationConfig{
+				OpenAICompatible: openAICompatibleConfig{
 					Model: "llama3",
 				},
 			},
@@ -3411,8 +2706,15 @@ func TestTranslateWithOpenAICompatible(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.wantErr && tt.errContains == "openai-compatible model is required" {
-				s := New(tt.cfg)
-				_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+				httpClient := &http.Client{}
+				s := New(tt.cfg,
+					NewOpenAIProvider(tt.cfg, httpClient),
+					NewOpenAICompatibleProvider(tt.cfg, httpClient),
+					NewDeepLProvider(tt.cfg, httpClient),
+					NewGoogleProvider(tt.cfg, httpClient),
+					NewAnthropicProvider(tt.cfg, httpClient),
+				)
+				_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errContains)
 				return
@@ -3422,9 +2724,16 @@ func TestTranslateWithOpenAICompatible(t *testing.T) {
 			defer server.Close()
 
 			tt.cfg.OpenAICompatible.BaseURL = server.URL
-			s := New(tt.cfg)
+			httpClient := server.Client()
+			s := New(tt.cfg,
+				NewOpenAIProvider(tt.cfg, httpClient),
+				NewOpenAICompatibleProvider(tt.cfg, httpClient),
+				NewDeepLProvider(tt.cfg, httpClient),
+				NewGoogleProvider(tt.cfg, httpClient),
+				NewAnthropicProvider(tt.cfg, httpClient),
+			)
 
-			result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+			result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -3448,9 +2757,9 @@ func TestTranslateWithOpenAICompatible_UsesCompactMarkerPromptAndResponse(t *tes
 			"choices": []map[string]interface{}{
 				{
 					"message": map[string]string{
-						"content": `<<<title>>>
+						"content": `<<<JZ_0>>>
 Karen
-<<<description>>>
+<<<JZ_1>>>
 She says "It's forceful..." but looks happy while being teased.
 `,
 					},
@@ -3461,17 +2770,25 @@ She says "It's forceful..." but looks happy while being teased.
 	}))
 	defer server.Close()
 
-	s := New(config.TranslationConfig{
+	httpClient := server.Client()
+	cfg := Config{
 		Provider:       "openai-compatible",
 		TargetLanguage: "en",
 		SourceLanguage: "ja",
-		OpenAICompatible: config.OpenAICompatibleTranslationConfig{
+		OpenAICompatible: openAICompatibleConfig{
 			BaseURL: server.URL,
 			Model:   "llama3",
 		},
-	})
+	}
+	s := New(cfg,
+		NewOpenAIProvider(cfg, httpClient),
+		NewOpenAICompatibleProvider(cfg, httpClient),
+		NewDeepLProvider(cfg, httpClient),
+		NewGoogleProvider(cfg, httpClient),
+		NewAnthropicProvider(cfg, httpClient),
+	)
 
-	result, err := s.translateTexts(context.Background(), "ja", "en", []string{"かれん", "強引って言いながら嬉しそう"}, []string{"title", "description"})
+	result, err := s.translateTexts(context.Background(), "ja", "en", []string{"かれん", "強引って言いながら嬉しそう"})
 	require.NoError(t, err)
 	assert.Equal(t, []string{
 		"Karen",
@@ -3484,11 +2801,12 @@ She says "It's forceful..." but looks happy while being teased.
 	systemPrompt := messages[0].(map[string]interface{})["content"].(string)
 	userPrompt := messages[1].(map[string]interface{})["content"].(string)
 
-	assert.Contains(t, systemPrompt, "Do not use JSON")
+	assert.Contains(t, systemPrompt, "no JSON or commentary")
+	assert.Contains(t, systemPrompt, "Japanese adult video (JAV) metadata")
 	assert.Contains(t, userPrompt, "Translate each labeled section below:")
-	assert.Contains(t, userPrompt, "<<<title>>>")
-	assert.Contains(t, userPrompt, "<<<description>>>")
-	assert.NotContains(t, userPrompt, "<<<JZ_0>>>")
+	assert.Contains(t, userPrompt, "<<<JZ_0>>>")
+	assert.Contains(t, userPrompt, "<<<JZ_1>>>")
+	assert.NotContains(t, userPrompt, "<<<JAVINIZER_INPUT_0>>>")
 }
 
 func TestTranslateWithOpenAICompatible_ThinkingControls(t *testing.T) {
@@ -3502,7 +2820,7 @@ func TestTranslateWithOpenAICompatible_ThinkingControls(t *testing.T) {
 				"choices": []map[string]interface{}{
 					{
 						"message": map[string]string{
-							"content": `<<<title>>>
+							"content": `<<<JZ_0>>>
 translated
 `,
 						},
@@ -3513,17 +2831,25 @@ translated
 		}))
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Provider: "openai-compatible",
-			OpenAICompatible: config.OpenAICompatibleTranslationConfig{
+			OpenAICompatible: openAICompatibleConfig{
 				BaseURL:        server.URL,
 				Model:          "test-model",
-				EnableThinking: &thinkingEnabled,
+				EnableThinking: thinkingEnabled,
 				BackendType:    "vllm",
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
-		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"translated"}, result)
 
@@ -3544,7 +2870,7 @@ translated
 				"choices": []map[string]interface{}{
 					{
 						"message": map[string]string{
-							"content": `<<<title>>>
+							"content": `<<<JZ_0>>>
 translated
 `,
 						},
@@ -3555,17 +2881,25 @@ translated
 		}))
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Provider: "openai-compatible",
-			OpenAICompatible: config.OpenAICompatibleTranslationConfig{
+			OpenAICompatible: openAICompatibleConfig{
 				BaseURL:        server.URL,
 				Model:          "test-model",
-				EnableThinking: &thinkingEnabled,
+				EnableThinking: thinkingEnabled,
 				BackendType:    "ollama",
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
-		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"translated"}, result)
 
@@ -3584,7 +2918,7 @@ translated
 				"choices": []map[string]interface{}{
 					{
 						"message": map[string]string{
-							"content": `<<<title>>>
+							"content": `<<<JZ_0>>>
 translated
 `,
 						},
@@ -3595,17 +2929,25 @@ translated
 		}))
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Provider: "openai-compatible",
-			OpenAICompatible: config.OpenAICompatibleTranslationConfig{
+			OpenAICompatible: openAICompatibleConfig{
 				BaseURL:        server.URL,
 				Model:          "test-model.gguf",
-				EnableThinking: &thinkingEnabled,
+				EnableThinking: thinkingEnabled,
 				BackendType:    "llama.cpp",
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
-		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"translated"}, result)
 
@@ -3633,7 +2975,7 @@ translated
 					"choices": []map[string]interface{}{
 						{
 							"message": map[string]string{
-								"content": `<<<title>>>
+								"content": `<<<JZ_0>>>
 translated
 `,
 							},
@@ -3647,16 +2989,24 @@ translated
 		}))
 		defer server.Close()
 
-		s := New(config.TranslationConfig{
+		httpClient := server.Client()
+		cfg := Config{
 			Provider: "openai-compatible",
-			OpenAICompatible: config.OpenAICompatibleTranslationConfig{
+			OpenAICompatible: openAICompatibleConfig{
 				BaseURL:        server.URL,
 				Model:          "test-model",
-				EnableThinking: &thinkingEnabled,
+				EnableThinking: thinkingEnabled,
 			},
-		})
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
 
-		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"translated"}, result)
 		assert.Equal(t, []string{"chat_template_kwargs", "reasoning_effort"}, requestKinds)
@@ -3664,14 +3014,14 @@ translated
 }
 
 // =============================================================================
-// translateWithAnthropic tests
+// Anthropic provider tests
 // =============================================================================
 
 func TestTranslateWithAnthropic(t *testing.T) {
 	tests := []struct {
 		name        string
 		handler     func(http.ResponseWriter, *http.Request)
-		cfg         config.TranslationConfig
+		cfg         Config
 		wantErr     bool
 		errContains string
 	}{
@@ -3683,16 +3033,16 @@ func TestTranslateWithAnthropic(t *testing.T) {
 				assert.Equal(t, "2023-06-01", r.Header.Get("anthropic-version"))
 				response := map[string]interface{}{
 					"content": []map[string]string{
-						{"type": "text", "text": "<<<title>>>\ntranslated text"},
+						{"type": "text", "text": `["translated text"]`},
 					},
 				}
 				_ = json.NewEncoder(w).Encode(response)
 			},
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "anthropic",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				Anthropic: config.AnthropicTranslationConfig{
+				Anthropic: anthropicConfig{
 					APIKey: "test-key",
 				},
 			},
@@ -3703,11 +3053,11 @@ func TestTranslateWithAnthropic(t *testing.T) {
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				t.Error("handler should not be called")
 			},
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "anthropic",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				Anthropic: config.AnthropicTranslationConfig{
+				Anthropic: anthropicConfig{
 					APIKey: "",
 				},
 			},
@@ -3720,11 +3070,11 @@ func TestTranslateWithAnthropic(t *testing.T) {
 				w.WriteHeader(http.StatusUnauthorized)
 				_, _ = w.Write([]byte("Invalid API key"))
 			},
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "anthropic",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				Anthropic: config.AnthropicTranslationConfig{
+				Anthropic: anthropicConfig{
 					APIKey: "test-key",
 				},
 			},
@@ -3736,11 +3086,11 @@ func TestTranslateWithAnthropic(t *testing.T) {
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				_, _ = w.Write([]byte("not valid json"))
 			},
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "anthropic",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				Anthropic: config.AnthropicTranslationConfig{
+				Anthropic: anthropicConfig{
 					APIKey: "test-key",
 				},
 			},
@@ -3755,11 +3105,11 @@ func TestTranslateWithAnthropic(t *testing.T) {
 				}
 				_ = json.NewEncoder(w).Encode(response)
 			},
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "anthropic",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				Anthropic: config.AnthropicTranslationConfig{
+				Anthropic: anthropicConfig{
 					APIKey: "test-key",
 				},
 			},
@@ -3774,16 +3124,16 @@ func TestTranslateWithAnthropic(t *testing.T) {
 				assert.Equal(t, "claude-sonnet-4-20250514", body["model"])
 				response := map[string]interface{}{
 					"content": []map[string]string{
-						{"type": "text", "text": "<<<title>>>\ntranslated"},
+						{"type": "text", "text": `["translated"]`},
 					},
 				}
 				_ = json.NewEncoder(w).Encode(response)
 			},
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "anthropic",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				Anthropic: config.AnthropicTranslationConfig{
+				Anthropic: anthropicConfig{
 					APIKey: "test-key",
 				},
 			},
@@ -3797,16 +3147,16 @@ func TestTranslateWithAnthropic(t *testing.T) {
 				assert.Equal(t, "claude-3-5-sonnet-20241022", body["model"])
 				response := map[string]interface{}{
 					"content": []map[string]string{
-						{"type": "text", "text": "<<<title>>>\ntranslated"},
+						{"type": "text", "text": `["translated"]`},
 					},
 				}
 				_ = json.NewEncoder(w).Encode(response)
 			},
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "anthropic",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				Anthropic: config.AnthropicTranslationConfig{
+				Anthropic: anthropicConfig{
 					APIKey: "test-key",
 					Model:  "claude-3-5-sonnet-20241022",
 				},
@@ -3818,8 +3168,15 @@ func TestTranslateWithAnthropic(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.wantErr && tt.errContains == "anthropic api_key is required" {
-				s := New(tt.cfg)
-				_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+				httpClient := &http.Client{}
+				s := New(tt.cfg,
+					NewOpenAIProvider(tt.cfg, httpClient),
+					NewOpenAICompatibleProvider(tt.cfg, httpClient),
+					NewDeepLProvider(tt.cfg, httpClient),
+					NewGoogleProvider(tt.cfg, httpClient),
+					NewAnthropicProvider(tt.cfg, httpClient),
+				)
+				_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.errContains)
 				return
@@ -3829,9 +3186,16 @@ func TestTranslateWithAnthropic(t *testing.T) {
 			defer server.Close()
 
 			tt.cfg.Anthropic.BaseURL = server.URL
-			s := New(tt.cfg)
+			httpClient := server.Client()
+			s := New(tt.cfg,
+				NewOpenAIProvider(tt.cfg, httpClient),
+				NewOpenAICompatibleProvider(tt.cfg, httpClient),
+				NewDeepLProvider(tt.cfg, httpClient),
+				NewGoogleProvider(tt.cfg, httpClient),
+				NewAnthropicProvider(tt.cfg, httpClient),
+			)
 
-			result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+			result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -3854,18 +3218,18 @@ func TestTranslateTexts_Dispatch_NewProviders(t *testing.T) {
 	tests := []struct {
 		name        string
 		provider    string
-		cfg         config.TranslationConfig
+		cfg         Config
 		wantErr     bool
 		errContains string
 	}{
 		{
 			name:     "openai-compatible provider dispatch",
 			provider: "openai-compatible",
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "openai-compatible",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				OpenAICompatible: config.OpenAICompatibleTranslationConfig{
+				OpenAICompatible: openAICompatibleConfig{
 					Model: "llama3",
 				},
 			},
@@ -3874,11 +3238,11 @@ func TestTranslateTexts_Dispatch_NewProviders(t *testing.T) {
 		{
 			name:     "anthropic provider dispatch",
 			provider: "anthropic",
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "anthropic",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				Anthropic: config.AnthropicTranslationConfig{
+				Anthropic: anthropicConfig{
 					APIKey: "test-key",
 				},
 			},
@@ -3887,11 +3251,11 @@ func TestTranslateTexts_Dispatch_NewProviders(t *testing.T) {
 		{
 			name:     "uppercase openai-compatible provider",
 			provider: "OPENAI-COMPATIBLE",
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "OPENAI-COMPATIBLE",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				OpenAICompatible: config.OpenAICompatibleTranslationConfig{
+				OpenAICompatible: openAICompatibleConfig{
 					Model: "llama3",
 				},
 			},
@@ -3900,11 +3264,11 @@ func TestTranslateTexts_Dispatch_NewProviders(t *testing.T) {
 		{
 			name:     "uppercase anthropic provider",
 			provider: "ANTHROPIC",
-			cfg: config.TranslationConfig{
+			cfg: Config{
 				Provider:       "ANTHROPIC",
 				TargetLanguage: "en",
 				SourceLanguage: "ja",
-				Anthropic: config.AnthropicTranslationConfig{
+				Anthropic: anthropicConfig{
 					APIKey: "test-key",
 				},
 			},
@@ -3914,9 +3278,16 @@ func TestTranslateTexts_Dispatch_NewProviders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := New(tt.cfg)
+			httpClient := &http.Client{}
+			s := New(tt.cfg,
+				NewOpenAIProvider(tt.cfg, httpClient),
+				NewOpenAICompatibleProvider(tt.cfg, httpClient),
+				NewDeepLProvider(tt.cfg, httpClient),
+				NewGoogleProvider(tt.cfg, httpClient),
+				NewAnthropicProvider(tt.cfg, httpClient),
+			)
 
-			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"}, []string{"title"})
+			_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 
 			if tt.wantErr {
 				require.Error(t, err)
@@ -3940,7 +3311,7 @@ func TestService_TranslateMovie_StoresHash(t *testing.T) {
 			"choices": []map[string]interface{}{
 				{
 					"message": map[string]string{
-						"content": "<<<title>>>\nTranslated Title",
+						"content": `["Translated Title"]`,
 					},
 				},
 			},
@@ -3949,15 +3320,15 @@ func TestService_TranslateMovie_StoresHash(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := &config.TranslationConfig{
+	cfg := &Config{
 		Enabled:        true,
 		Provider:       "openai",
 		SourceLanguage: "ja",
 		TargetLanguage: "en",
-		Fields: config.TranslationFieldsConfig{
+		Fields: fieldsConfig{
 			Title: true,
 		},
-		OpenAI: config.OpenAITranslationConfig{
+		OpenAI: openAIConfig{
 			BaseURL: server.URL,
 			Model:   "gpt-4",
 			APIKey:  "test-key",
@@ -3970,12 +3341,20 @@ func TestService_TranslateMovie_StoresHash(t *testing.T) {
 		Description: "テスト説明",
 	}
 
-	service := New(*cfg)
+	httpClient := server.Client()
+	service := New(*cfg,
+		NewOpenAIProvider(*cfg, httpClient),
+		NewOpenAICompatibleProvider(*cfg, httpClient),
+		NewDeepLProvider(*cfg, httpClient),
+		NewGoogleProvider(*cfg, httpClient),
+		NewAnthropicProvider(*cfg, httpClient),
+	)
 	translation, _, err := service.TranslateMovie(context.Background(), movie, "abc123def456")
 
 	require.NoError(t, err)
 	require.NotNil(t, translation)
-	assert.Equal(t, "abc123def456", translation[0].SettingsHash, "hash should be stored in translation")
+	require.NotNil(t, translation.Movie)
+	assert.Equal(t, "abc123def456", translation.Movie.SettingsHash, "hash should be stored in translation")
 }
 
 func TestSanitizeTranslationWarning(t *testing.T) {
@@ -3988,55 +3367,61 @@ func TestSanitizeTranslationWarning(t *testing.T) {
 		{
 			name:         "HTTP 429",
 			provider:     "google",
-			err:          &TranslationError{Kind: TranslationErrorHTTPStatus, StatusCode: 429, Message: "too many requests"},
+			err:          &translationError{Kind: TranslationErrorHTTPStatus, StatusCode: 429, Message: "too many requests"},
 			wantContains: "rate limited",
+		},
+		{
+			name:         "HTTP 401",
+			provider:     "deepl",
+			err:          &translationError{Kind: TranslationErrorHTTPStatus, StatusCode: 401, Message: "unauthorized"},
+			wantContains: "unauthorized",
 		},
 		{
 			name:         "HTTP 403",
 			provider:     "deepl",
-			err:          &TranslationError{Kind: TranslationErrorHTTPStatus, StatusCode: 403, Message: "forbidden"},
+			err:          &translationError{Kind: TranslationErrorHTTPStatus, StatusCode: 403, Message: "forbidden"},
 			wantContains: "access denied",
 		},
 		{
 			name:         "HTTP 500",
 			provider:     "google",
-			err:          &TranslationError{Kind: TranslationErrorHTTPStatus, StatusCode: 500, Message: "internal"},
+			err:          &translationError{Kind: TranslationErrorHTTPStatus, StatusCode: 500, Message: "internal"},
 			wantContains: "external service error",
 		},
 		{
 			name:         "HTTP 502",
 			provider:     "anthropic",
-			err:          &TranslationError{Kind: TranslationErrorHTTPStatus, StatusCode: 502, Message: "bad gateway"},
+			err:          &translationError{Kind: TranslationErrorHTTPStatus, StatusCode: 502, Message: "bad gateway"},
 			wantContains: "external service error",
 		},
 		{
 			name:         "HTTP 400",
 			provider:     "google",
-			err:          &TranslationError{Kind: TranslationErrorHTTPStatus, StatusCode: 400, Message: "bad request"},
+			err:          &translationError{Kind: TranslationErrorHTTPStatus, StatusCode: 400, Message: "bad request"},
 			wantContains: "request error",
 		},
 		{
 			name:         "HTTP 422",
 			provider:     "deepl",
-			err:          &TranslationError{Kind: TranslationErrorHTTPStatus, StatusCode: 422, Message: "unprocessable"},
+			err:          &translationError{Kind: TranslationErrorHTTPStatus, StatusCode: 422, Message: "unprocessable"},
 			wantContains: "request error",
 		},
 		{
 			name:         "parse error",
 			provider:     "google",
-			err:          &TranslationError{Kind: TranslationErrorParse, Message: "bad json"},
+			err:          &translationError{Kind: TranslationErrorParse, Message: "bad json"},
 			wantContains: "service unavailable",
 		},
 		{
 			name:         "count mismatch",
 			provider:     "google",
-			err:          &TranslationError{Kind: TranslationErrorCountMismatch, Message: "3 vs 5"},
+			err:          &translationError{Kind: TranslationErrorCountMismatch, Message: "3 vs 5"},
 			wantContains: "service unavailable",
 		},
 		{
 			name:         "provider error",
 			provider:     "google",
-			err:          &TranslationError{Kind: TranslationErrorProvider, Message: "failed after 3 attempts"},
+			err:          &translationError{Kind: TranslationErrorProvider, Message: "failed after 3 attempts"},
 			wantContains: "service unavailable",
 		},
 		{
@@ -4046,15 +3431,15 @@ func TestSanitizeTranslationWarning(t *testing.T) {
 			wantContains: "internal error",
 		},
 		{
-			name:         "wrapped TranslationError",
+			name:         "wrapped translationError",
 			provider:     "google",
-			err:          fmt.Errorf("wrapper: %w", &TranslationError{Kind: TranslationErrorHTTPStatus, StatusCode: 429, Message: "rate limited"}),
+			err:          fmt.Errorf("wrapper: %w", &translationError{Kind: TranslationErrorHTTPStatus, StatusCode: 429, Message: "rate limited"}),
 			wantContains: "rate limited",
 		},
 		{
 			name:         "HTTP status 0 falls through",
 			provider:     "google",
-			err:          &TranslationError{Kind: TranslationErrorHTTPStatus, StatusCode: 0, Message: "unknown"},
+			err:          &translationError{Kind: TranslationErrorHTTPStatus, StatusCode: 0, Message: "unknown"},
 			wantContains: "Translation failed",
 		},
 	}
@@ -4074,28 +3459,36 @@ func TestTranslateMovie_ReturnsWarningOnEmptyFields(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := config.TranslationConfig{
+	cfg := Config{
 		Enabled:        true,
 		Provider:       "google",
 		TargetLanguage: "en",
 		SourceLanguage: "ja",
 		ApplyToPrimary: true,
-		Fields: config.TranslationFieldsConfig{
+		Fields: fieldsConfig{
 			Title: true,
 		},
-		Google: config.GoogleTranslationConfig{
+		Google: googleConfig{
 			Mode:    "free",
 			BaseURL: server.URL,
 		},
 	}
 
-	s := New(cfg)
+	httpClient := server.Client()
+	s := New(cfg,
+		NewOpenAIProvider(cfg, httpClient),
+		NewOpenAICompatibleProvider(cfg, httpClient),
+		NewDeepLProvider(cfg, httpClient),
+		NewGoogleProvider(cfg, httpClient),
+		NewAnthropicProvider(cfg, httpClient),
+	)
 	movie := &models.Movie{
 		Title: "テストタイトル",
 	}
 	translation, warning, err := s.TranslateMovie(context.Background(), movie, "")
 	require.NoError(t, err)
 	require.NotNil(t, translation)
+	require.NotNil(t, translation.Movie)
 	assert.Empty(t, warning, "no warning when all translations succeed")
 	assert.Equal(t, "translated text", movie.Title)
 }
@@ -4107,21 +3500,28 @@ func TestTranslateMovie_ReturnsWarningOnProviderError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := config.TranslationConfig{
+	cfg := Config{
 		Enabled:        true,
 		Provider:       "google",
 		TargetLanguage: "en",
 		SourceLanguage: "ja",
-		Fields: config.TranslationFieldsConfig{
+		Fields: fieldsConfig{
 			Title: true,
 		},
-		Google: config.GoogleTranslationConfig{
+		Google: googleConfig{
 			Mode:    "free",
 			BaseURL: server.URL,
 		},
 	}
 
-	s := New(cfg)
+	httpClient := server.Client()
+	s := New(cfg,
+		NewOpenAIProvider(cfg, httpClient),
+		NewOpenAICompatibleProvider(cfg, httpClient),
+		NewDeepLProvider(cfg, httpClient),
+		NewGoogleProvider(cfg, httpClient),
+		NewAnthropicProvider(cfg, httpClient),
+	)
 	movie := &models.Movie{Title: "テスト"}
 	_, warning, err := s.TranslateMovie(context.Background(), movie, "")
 	require.Error(t, err)
@@ -4130,19 +3530,19 @@ func TestTranslateMovie_ReturnsWarningOnProviderError(t *testing.T) {
 
 func TestTranslationError_Error(t *testing.T) {
 	t.Run("with status code", func(t *testing.T) {
-		e := &TranslationError{Kind: TranslationErrorHTTPStatus, StatusCode: 429, Message: "too many requests"}
+		e := &translationError{Kind: TranslationErrorHTTPStatus, StatusCode: 429, Message: "too many requests"}
 		assert.Equal(t, "too many requests (status 429)", e.Error())
 	})
 	t.Run("without status code", func(t *testing.T) {
-		e := &TranslationError{Kind: TranslationErrorParse, Message: "bad json"}
+		e := &translationError{Kind: TranslationErrorParse, Message: "bad json"}
 		assert.Equal(t, "bad json", e.Error())
 	})
 	t.Run("nil message falls back to kind", func(t *testing.T) {
-		e := &TranslationError{Kind: TranslationErrorCountMismatch}
+		e := &translationError{Kind: TranslationErrorCountMismatch}
 		assert.Equal(t, "count_mismatch", e.Error())
 	})
 	t.Run("nil error", func(t *testing.T) {
-		var e *TranslationError
+		var e *translationError
 		assert.Equal(t, "", e.Error())
 	})
 }
@@ -4150,11 +3550,11 @@ func TestTranslationError_Error(t *testing.T) {
 func TestTranslationError_Unwrap(t *testing.T) {
 	t.Run("with cause", func(t *testing.T) {
 		cause := fmt.Errorf("root cause")
-		e := &TranslationError{Kind: TranslationErrorProvider, Cause: cause}
+		e := &translationError{Kind: TranslationErrorProvider, Cause: cause}
 		assert.Equal(t, cause, e.Unwrap())
 	})
 	t.Run("nil error", func(t *testing.T) {
-		var e *TranslationError
+		var e *translationError
 		assert.Nil(t, e.Unwrap())
 	})
 }
@@ -4166,74 +3566,480 @@ func TestTranslateMovie_EmptyTranslationWarning(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := config.TranslationConfig{
+	cfg := Config{
 		Enabled:        true,
 		Provider:       "google",
 		TargetLanguage: "en",
 		SourceLanguage: "ja",
 		ApplyToPrimary: true,
-		Fields: config.TranslationFieldsConfig{
+		Fields: fieldsConfig{
 			Title: true,
 		},
-		Google: config.GoogleTranslationConfig{
+		Google: googleConfig{
 			Mode:    "free",
 			BaseURL: server.URL,
 		},
 	}
 
-	s := New(cfg)
+	httpClient := server.Client()
+	s := New(cfg,
+		NewOpenAIProvider(cfg, httpClient),
+		NewOpenAICompatibleProvider(cfg, httpClient),
+		NewDeepLProvider(cfg, httpClient),
+		NewGoogleProvider(cfg, httpClient),
+		NewAnthropicProvider(cfg, httpClient),
+	)
 	movie := &models.Movie{Title: "テスト"}
 	translation, warning, err := s.TranslateMovie(context.Background(), movie, "")
 	require.NoError(t, err)
 	require.NotNil(t, translation)
+	require.NotNil(t, translation.Movie)
 	assert.Contains(t, warning, "title: empty translation, kept original")
 	assert.Equal(t, "テスト", movie.Title, "original text preserved on empty translation")
 }
 
 func TestTranslateMovie_CountMismatchWarning(t *testing.T) {
-	// Batch requests (title+description) get a response missing the description
-	// marker → parse error → one-by-one fallback, where each single request gets
-	// a valid response for its own marker.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Messages []struct {
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
-		content := "<<<title>>>\nonly_one"
-		if len(req.Messages) > 0 && !strings.Contains(req.Messages[len(req.Messages)-1].Content, "<<<title>>>") {
-			content = "<<<description>>>\nonly_one"
-		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{
-				{"message": map[string]interface{}{"content": content}},
+				{"message": map[string]interface{}{"content": `["only_one"]`}},
 			},
 		})
 	}))
 	defer server.Close()
 
-	cfg := config.TranslationConfig{
+	cfg := Config{
 		Enabled:        true,
 		Provider:       "openai",
 		TargetLanguage: "en",
 		SourceLanguage: "ja",
-		Fields: config.TranslationFieldsConfig{
+		Fields: fieldsConfig{
 			Title:       true,
 			Description: true,
 		},
-		OpenAI: config.OpenAITranslationConfig{
+		OpenAI: openAIConfig{
 			BaseURL: server.URL,
 			APIKey:  "test-key",
 		},
 	}
 
-	s := New(cfg)
+	httpClient := server.Client()
+	s := New(cfg,
+		NewOpenAIProvider(cfg, httpClient),
+		NewOpenAICompatibleProvider(cfg, httpClient),
+		NewDeepLProvider(cfg, httpClient),
+		NewGoogleProvider(cfg, httpClient),
+		NewAnthropicProvider(cfg, httpClient),
+	)
 	movie := &models.Movie{Title: "テスト", Description: "説明"}
-	results, _, err := s.TranslateMovie(context.Background(), movie, "")
-	// With one-by-one fallback, count mismatch on the batch succeeds per-item
-	// (mock returns 1 item for each single-item call → correct count).
+	_, warning, err := s.TranslateMovie(context.Background(), movie, "")
+	require.Error(t, err)
+	assert.NotEmpty(t, warning, "count mismatch produces a sanitized warning")
+}
+
+// =============================================================================
+// translationOutput genre/actress translation data tests
+// =============================================================================
+
+func TestTranslateMovie_GenreTranslationData(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{
+					"message": map[string]string{
+						"content": `["Action", "Drama"]`,
+					},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	cfg := Config{
+		Enabled:        true,
+		Provider:       "openai",
+		TargetLanguage: "en",
+		SourceLanguage: "ja",
+		ApplyToPrimary: false,
+		Fields: fieldsConfig{
+			Genres: true,
+		},
+		OpenAI: openAIConfig{
+			BaseURL: server.URL,
+			APIKey:  "test-key",
+		},
+	}
+
+	httpClient := server.Client()
+	s := New(cfg,
+		NewOpenAIProvider(cfg, httpClient),
+		NewOpenAICompatibleProvider(cfg, httpClient),
+		NewDeepLProvider(cfg, httpClient),
+		NewGoogleProvider(cfg, httpClient),
+		NewAnthropicProvider(cfg, httpClient),
+	)
+
+	movie := &models.Movie{
+		Genres: []models.Genre{
+			{Name: "アクション"},
+			{Name: "ドラマ"},
+		},
+	}
+
+	output, _, err := s.TranslateMovie(context.Background(), movie, "")
 	require.NoError(t, err)
-	require.NotEmpty(t, results)
+	require.NotNil(t, output)
+
+	// Verify genre translation data is captured regardless of ApplyToPrimary
+	require.Len(t, output.GenreTranslations, 2)
+	assert.Equal(t, 0, output.GenreTranslations[0].GenreIndex)
+	assert.Equal(t, "en", output.GenreTranslations[0].Language)
+	assert.Equal(t, "Action", output.GenreTranslations[0].Name)
+	assert.Equal(t, "translation:openai", output.GenreTranslations[0].SourceName)
+	assert.Equal(t, 1, output.GenreTranslations[1].GenreIndex)
+	assert.Equal(t, "Drama", output.GenreTranslations[1].Name)
+
+	// Verify primary fields NOT mutated (ApplyToPrimary=false)
+	assert.Equal(t, "アクション", movie.Genres[0].Name)
+	assert.Equal(t, "ドラマ", movie.Genres[1].Name)
+}
+
+func TestTranslateMovie_ActressTranslationData(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{
+					"message": map[string]string{
+						"content": `["Jane Smith"]`,
+					},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	cfg := Config{
+		Enabled:        true,
+		Provider:       "openai",
+		TargetLanguage: "en",
+		SourceLanguage: "ja",
+		ApplyToPrimary: false,
+		Fields: fieldsConfig{
+			Actresses: true,
+		},
+		OpenAI: openAIConfig{
+			BaseURL: server.URL,
+			APIKey:  "test-key",
+		},
+	}
+
+	httpClient := server.Client()
+	s := New(cfg,
+		NewOpenAIProvider(cfg, httpClient),
+		NewOpenAICompatibleProvider(cfg, httpClient),
+		NewDeepLProvider(cfg, httpClient),
+		NewGoogleProvider(cfg, httpClient),
+		NewAnthropicProvider(cfg, httpClient),
+	)
+
+	movie := &models.Movie{
+		Actresses: []models.Actress{
+			{FirstName: "花子", LastName: "山田"},
+		},
+	}
+
+	output, _, err := s.TranslateMovie(context.Background(), movie, "")
+	require.NoError(t, err)
+	require.NotNil(t, output)
+
+	// Verify actress translation data is captured regardless of ApplyToPrimary
+	require.Len(t, output.ActressTranslations, 1)
+	assert.Equal(t, 0, output.ActressTranslations[0].ActressIndex)
+	assert.Equal(t, "en", output.ActressTranslations[0].Language)
+	assert.Equal(t, "Jane", output.ActressTranslations[0].FirstName)
+	assert.Equal(t, "Smith", output.ActressTranslations[0].LastName)
+	assert.Equal(t, "Jane Smith", output.ActressTranslations[0].DisplayName)
+	assert.Equal(t, "translation:openai", output.ActressTranslations[0].SourceName)
+
+	// Verify primary fields NOT mutated (ApplyToPrimary=false)
+	assert.Equal(t, "花子", movie.Actresses[0].FirstName)
+	assert.Equal(t, "山田", movie.Actresses[0].LastName)
+}
+
+func TestTranslateMovie_ActressTranslationData_JapaneseName(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{
+					"message": map[string]string{
+						"content": `["ヤマダハナコ"]`,
+					},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	cfg := Config{
+		Enabled:        true,
+		Provider:       "openai",
+		TargetLanguage: "en",
+		SourceLanguage: "ja",
+		ApplyToPrimary: true,
+		Fields: fieldsConfig{
+			Actresses: true,
+		},
+		OpenAI: openAIConfig{
+			BaseURL: server.URL,
+			APIKey:  "test-key",
+		},
+	}
+
+	httpClient := server.Client()
+	s := New(cfg,
+		NewOpenAIProvider(cfg, httpClient),
+		NewOpenAICompatibleProvider(cfg, httpClient),
+		NewDeepLProvider(cfg, httpClient),
+		NewGoogleProvider(cfg, httpClient),
+		NewAnthropicProvider(cfg, httpClient),
+	)
+
+	// Actress with JapaneseName — translation should map to JapaneseName field
+	movie := &models.Movie{
+		Actresses: []models.Actress{
+			{JapaneseName: "山田花子"},
+		},
+	}
+
+	output, _, err := s.TranslateMovie(context.Background(), movie, "")
+	require.NoError(t, err)
+	require.NotNil(t, output)
+
+	require.Len(t, output.ActressTranslations, 1)
+	assert.Equal(t, "ヤマダハナコ", output.ActressTranslations[0].JapaneseName)
+	assert.Empty(t, output.ActressTranslations[0].FirstName)
+	assert.Empty(t, output.ActressTranslations[0].LastName)
+	assert.Equal(t, "ヤマダハナコ", output.ActressTranslations[0].DisplayName)
+
+	// The original Japanese identity is retained even when primary display-name
+	// translation cannot be represented as Latin/Hangul name parts.
+	assert.Equal(t, "山田花子", movie.Actresses[0].JapaneseName)
+}
+
+func TestSplitActressName(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantFirst string
+		wantLast  string
+	}{
+		{"empty", "", "", ""},
+		{"single word", "Hanako", "Hanako", ""},
+		{"two words", "Jane Smith", "Jane", "Smith"},
+		{"multiple spaces", "Mary Jane Watson", "Mary", "Jane Watson"},
+		{"whitespace only", "   ", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			first, last := models.SplitFullName(tt.input)
+			assert.Equal(t, tt.wantFirst, first)
+			assert.Equal(t, tt.wantLast, last)
+		})
+	}
+}
+
+func TestTranslateMovie_GenreAndActressTranslationData_ApplyToPrimary(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"choices": []map[string]interface{}{
+				{
+					"message": map[string]string{
+						"content": `["Action", "Jane Smith"]`,
+					},
+				},
+			},
+		}
+		_ = json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	cfg := Config{
+		Enabled:        true,
+		Provider:       "openai",
+		TargetLanguage: "en",
+		SourceLanguage: "ja",
+		ApplyToPrimary: true,
+		Fields: fieldsConfig{
+			Genres:    true,
+			Actresses: true,
+		},
+		OpenAI: openAIConfig{
+			BaseURL: server.URL,
+			APIKey:  "test-key",
+		},
+	}
+
+	httpClient := server.Client()
+	s := New(cfg,
+		NewOpenAIProvider(cfg, httpClient),
+		NewOpenAICompatibleProvider(cfg, httpClient),
+		NewDeepLProvider(cfg, httpClient),
+		NewGoogleProvider(cfg, httpClient),
+		NewAnthropicProvider(cfg, httpClient),
+	)
+
+	movie := &models.Movie{
+		Genres: []models.Genre{
+			{Name: "アクション"},
+		},
+		Actresses: []models.Actress{
+			{FirstName: "花子", LastName: "山田"},
+		},
+	}
+
+	output, _, err := s.TranslateMovie(context.Background(), movie, "")
+	require.NoError(t, err)
+	require.NotNil(t, output)
+
+	// Translation data captured
+	require.Len(t, output.GenreTranslations, 1)
+	require.Len(t, output.ActressTranslations, 1)
+
+	// Primary fields ARE mutated (ApplyToPrimary=true)
+	assert.Equal(t, "Action", movie.Genres[0].Name)
+	assert.Equal(t, "Smith", movie.Actresses[0].FirstName)
+	assert.Equal(t, "Jane", movie.Actresses[0].LastName)
+}
+
+// =============================================================================
+// HTTPClient interface mock injection test
+// =============================================================================
+
+// mockHTTPClient is a test double for httpclient.HTTPClient that records calls.
+type mockHTTPClient struct {
+	called bool
+	doFunc func(req *http.Request) (*http.Response, error)
+}
+
+func (m *mockHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	m.called = true
+	if m.doFunc != nil {
+		return m.doFunc(req)
+	}
+	return nil, fmt.Errorf("mockHTTPClient: no Do function configured")
+}
+
+// TestProviderAcceptsHTTPClientInterface proves that provider constructors
+// accept httpclient.HTTPClient instead of *http.Client, enabling mock injection.
+func TestProviderAcceptsHTTPClientInterface(t *testing.T) {
+	t.Run("OpenAIProvider accepts HTTPClient interface", func(t *testing.T) {
+		mock := &mockHTTPClient{
+			doFunc: func(req *http.Request) (*http.Response, error) {
+				return nil, fmt.Errorf("injected mock called")
+			},
+		}
+
+		cfg := Config{
+			OpenAI: openAIConfig{APIKey: "test-key"},
+		}
+
+		var client httpclient.HTTPClient = mock
+		provider := NewOpenAIProvider(cfg, client)
+
+		_, err := provider.Translate(context.Background(), "ja", "en", []string{"test"})
+		require.Error(t, err)
+		assert.True(t, mock.called, "mock HTTPClient should have been called")
+		assert.Contains(t, err.Error(), "injected mock called")
+	})
+
+	t.Run("DeepLProvider accepts HTTPClient interface", func(t *testing.T) {
+		mock := &mockHTTPClient{
+			doFunc: func(req *http.Request) (*http.Response, error) {
+				return nil, fmt.Errorf("injected mock called")
+			},
+		}
+
+		cfg := Config{
+			DeepL: deepLConfig{APIKey: "test-key"},
+		}
+
+		var client httpclient.HTTPClient = mock
+		provider := NewDeepLProvider(cfg, client)
+
+		_, err := provider.Translate(context.Background(), "ja", "en", []string{"test"})
+		require.Error(t, err)
+		assert.True(t, mock.called, "mock HTTPClient should have been called")
+		// Raw transport error is wrapped as a typed translationError (Kind=provider);
+		// the mock's message is kept in debug logs only, so assert the kind instead.
+		var te *translationError
+		assert.True(t, errors.As(err, &te) && te.Kind == TranslationErrorProvider,
+			"expected provider translationError, got: %v", err)
+	})
+
+	t.Run("GoogleProvider accepts HTTPClient interface", func(t *testing.T) {
+		mock := &mockHTTPClient{
+			doFunc: func(req *http.Request) (*http.Response, error) {
+				return nil, fmt.Errorf("injected mock called")
+			},
+		}
+
+		cfg := Config{
+			Google: googleConfig{APIKey: "test-key", Mode: "paid"},
+		}
+
+		var client httpclient.HTTPClient = mock
+		provider := NewGoogleProvider(cfg, client)
+
+		_, err := provider.Translate(context.Background(), "ja", "en", []string{"test"})
+		require.Error(t, err)
+		assert.True(t, mock.called, "mock HTTPClient should have been called")
+		var te2 *translationError
+		assert.True(t, errors.As(err, &te2) && te2.Kind == TranslationErrorProvider,
+			"expected provider translationError, got: %v", err)
+	})
+
+	t.Run("AnthropicProvider accepts HTTPClient interface", func(t *testing.T) {
+		mock := &mockHTTPClient{
+			doFunc: func(req *http.Request) (*http.Response, error) {
+				return nil, fmt.Errorf("injected mock called")
+			},
+		}
+
+		cfg := Config{
+			Anthropic: anthropicConfig{APIKey: "test-key"},
+		}
+
+		var client httpclient.HTTPClient = mock
+		provider := NewAnthropicProvider(cfg, client)
+
+		_, err := provider.Translate(context.Background(), "ja", "en", []string{"test"})
+		require.Error(t, err)
+		assert.True(t, mock.called, "mock HTTPClient should have been called")
+		assert.Contains(t, err.Error(), "injected mock called")
+	})
+
+	t.Run("OpenAICompatibleProvider accepts HTTPClient interface", func(t *testing.T) {
+		mock := &mockHTTPClient{
+			doFunc: func(req *http.Request) (*http.Response, error) {
+				return nil, fmt.Errorf("injected mock called")
+			},
+		}
+
+		cfg := Config{
+			OpenAICompatible: openAICompatibleConfig{Model: "test-model"},
+		}
+
+		var client httpclient.HTTPClient = mock
+		provider := NewOpenAICompatibleProvider(cfg, client)
+
+		_, err := provider.Translate(context.Background(), "ja", "en", []string{"test"})
+		require.Error(t, err)
+		assert.True(t, mock.called, "mock HTTPClient should have been called")
+		assert.Contains(t, err.Error(), "injected mock called")
+	})
 }

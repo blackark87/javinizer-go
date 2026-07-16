@@ -8,6 +8,8 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// IPRateLimiter tracks a rate limiter per client IP and enforces a shared
+// rate and burst for each.
 type IPRateLimiter struct {
 	mu       sync.Mutex
 	limiters map[string]*rate.Limiter
@@ -15,6 +17,8 @@ type IPRateLimiter struct {
 	burst    int
 }
 
+// NewIPRateLimiter constructs an IPRateLimiter with the given request rate
+// and burst size per client IP.
 func NewIPRateLimiter(r rate.Limit, burst int) *IPRateLimiter {
 	return &IPRateLimiter{
 		limiters: make(map[string]*rate.Limiter),
@@ -34,6 +38,8 @@ func (l *IPRateLimiter) getLimiter(ip string) *rate.Limiter {
 	return limiter
 }
 
+// RateLimitMiddleware returns a gin middleware that aborts with 429 when the
+// caller's IP exceeds its rate limit.
 func RateLimitMiddleware(limiter *IPRateLimiter) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if limiter == nil {

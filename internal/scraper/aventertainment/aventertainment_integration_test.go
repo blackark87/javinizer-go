@@ -4,16 +4,17 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
-	"github.com/javinizer/javinizer-go/internal/config"
+	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/stretchr/testify/assert"
 )
 
 // testSettings creates test scraper settings
-func testSettings(enabled bool) config.ScraperSettings {
-	return config.ScraperSettings{
+func testSettings(enabled bool) models.ScraperSettings {
+	return models.ScraperSettings{
 		Enabled:   enabled,
 		RateLimit: 0,
 		UserAgent: "Test Agent",
@@ -33,7 +34,7 @@ func TestScraper_IsEnabled(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			settings := testSettings(tt.enabled)
-			scraper := New(settings, nil, config.FlareSolverrConfig{})
+			scraper := newScraper(&settings, nil, models.FlareSolverrConfig{})
 			assert.Equal(t, tt.enabled, scraper.IsEnabled(), "IsEnabled should match config")
 		})
 	}
@@ -42,7 +43,7 @@ func TestScraper_IsEnabled(t *testing.T) {
 // TestScraper_GetURL tests URL generation for various scenarios
 func TestScraper_GetURL(t *testing.T) {
 	settings := testSettings(true)
-	scraper := New(settings, nil, config.FlareSolverrConfig{})
+	scraper := newScraper(&settings, nil, models.FlareSolverrConfig{})
 
 	tests := []struct {
 		name        string
@@ -58,7 +59,7 @@ func TestScraper_GetURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			url, err := scraper.GetURL(tt.id)
+			url, err := scraper.GetURL(context.Background(), tt.id)
 			if tt.expectedErr {
 				assert.Error(t, err, "GetURL should fail for empty ID")
 				assert.Empty(t, url)
@@ -73,7 +74,7 @@ func TestScraper_GetURL(t *testing.T) {
 // TestScraper_GetURL_IDValidation tests ID format validation without HTTP requests
 func TestScraper_GetURL_IDValidation(t *testing.T) {
 	settings := testSettings(true)
-	scraper := New(settings, nil, config.FlareSolverrConfig{})
+	scraper := newScraper(&settings, nil, models.FlareSolverrConfig{})
 
 	tests := []struct {
 		name        string
@@ -94,11 +95,16 @@ func TestScraper_GetURL_IDValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// These tests are marked as slow since they make real HTTP requests
+			// Live-network test: hits aventertainments.com. Skipped under -short
+			// and only runs when JAVINIZER_RUN_LIVE_API_TESTS=1 is set, so it never
+			// runs in CI or default `go test ./...`. Mirrors the r18dev convention.
 			if testing.Short() {
 				t.Skip("skipping HTTP-dependent test")
 			}
-			_, err := scraper.GetURL(tt.id)
+			if os.Getenv("JAVINIZER_RUN_LIVE_API_TESTS") != "1" {
+				t.Skip("set JAVINIZER_RUN_LIVE_API_TESTS=1 to run live-network aventertainment tests")
+			}
+			_, err := scraper.GetURL(context.Background(), tt.id)
 			if tt.expectedErr {
 				assert.Error(t, err)
 			} else {
@@ -167,11 +173,11 @@ func TestScraper_GetURL_HTTP(t *testing.T) {
 
 	settings := testSettings(true)
 	settings.BaseURL = server.URL
-	scraper := New(settings, nil, config.FlareSolverrConfig{})
+	scraper := newScraper(&settings, nil, models.FlareSolverrConfig{})
 
 	// Note: GetURL makes search requests, so we're testing the full flow
 	// Since we're mocking the server, this will exercise GetURL and fetchPage
-	_, err := scraper.GetURL("IPX-123")
+	_, err := scraper.GetURL(context.Background(), "IPX-123")
 
 	assert.NoError(t, err)
 }
@@ -231,7 +237,7 @@ func TestScraper_Search(t *testing.T) {
 
 	settings := testSettings(true)
 	settings.BaseURL = server.URL
-	scraper := New(settings, nil, config.FlareSolverrConfig{})
+	scraper := newScraper(&settings, nil, models.FlareSolverrConfig{})
 
 	// Search requires actual HTTP request, so we'll test with mock server
 	// Note: Since GetURL is called first, we need to ensure search returns candidates
@@ -262,7 +268,7 @@ func TestSearchWithParseError(t *testing.T) {
 
 	settings := testSettings(true)
 	settings.BaseURL = server.URL
-	scraper := New(settings, nil, config.FlareSolverrConfig{})
+	scraper := newScraper(&settings, nil, models.FlareSolverrConfig{})
 
 	// When no results are found, Search should return an error
 	_, err := scraper.Search(context.Background(), "IPX-123")
@@ -273,25 +279,25 @@ func TestSearchWithParseError(t *testing.T) {
 // TestIsEnabledIntegration tests config-based enabled state
 func TestIsEnabledIntegration(t *testing.T) {
 	enabledSettings := testSettings(true)
-	enabledScraper := New(enabledSettings, nil, config.FlareSolverrConfig{})
+	enabledScraper := newScraper(&enabledSettings, nil, models.FlareSolverrConfig{})
 	assert.True(t, enabledScraper.IsEnabled())
 
 	disabledSettings := testSettings(false)
-	disabledScraper := New(disabledSettings, nil, config.FlareSolverrConfig{})
+	disabledScraper := newScraper(&disabledSettings, nil, models.FlareSolverrConfig{})
 	assert.False(t, disabledScraper.IsEnabled())
 }
 
 // TestScraperName tests the Name method
 func TestScraperName(t *testing.T) {
 	settings := testSettings(true)
-	scraper := New(settings, nil, config.FlareSolverrConfig{})
+	scraper := newScraper(&settings, nil, models.FlareSolverrConfig{})
 	assert.Equal(t, "aventertainment", scraper.Name())
 }
 
 // TestResolveDownloadProxyForHost tests proxy resolution
 func TestResolveDownloadProxyForHost(t *testing.T) {
 	settings := testSettings(true)
-	scraper := New(settings, nil, config.FlareSolverrConfig{})
+	scraper := newScraper(&settings, nil, models.FlareSolverrConfig{})
 
 	// Test with AVEntertainment host - www prefix should not match suffix
 	_, _, ok := scraper.ResolveDownloadProxyForHost("www.aventertainments.com")

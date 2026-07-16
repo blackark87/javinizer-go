@@ -1,11 +1,18 @@
 import type { FileResult, Movie } from '$lib/api/types';
+import { BaseClient } from '$lib/api/clients/common';
+
+function sessionParam(): string {
+	const sid = BaseClient.getSessionID();
+	return sid ? `?session=${encodeURIComponent(sid)}` : '';
+}
+
 import {
 	clamp,
 	getDefaultPosterCropBox,
 	restoreCropBox,
 	type PosterCropBox,
 	type PosterCropMetrics,
-	type PosterCropState
+	type PosterCropState,
 } from '../review-utils';
 
 export interface PosterCropDragState {
@@ -31,10 +38,14 @@ interface PosterCropControllerDeps {
 	setCropMetrics: (metrics: PosterCropMetrics | null) => void;
 	getCropBox: () => PosterCropBox | null;
 	setCropBox: (box: PosterCropBox | null) => void;
+	getMaxPosterHeight: () => number | null;
+	setMaxPosterHeight: (height: number | null) => void;
 	getCropDragState: () => PosterCropDragState | null;
 	setCropDragState: (state: PosterCropDragState | null) => void;
 	getPosterCropStates: () => Map<string, PosterCropState>;
-	mutatePosterCrop: (jobId: string, resultId: string, crop: PosterCropBox) => void;
+	applyPosterFromUrlAsync: (resultId: string, url: string) => Promise<void>;
+	mutatePosterCropAsync: (jobId: string, resultId: string, crop: PosterCropBox, maxPosterHeight?: number) => Promise<void>;
+	setCropApplying: (applying: boolean) => void;
 	now?: () => number;
 }
 
@@ -55,7 +66,7 @@ export function createPosterCropController(deps: PosterCropControllerDeps) {
 			displayWidth,
 			displayHeight,
 			imageOffsetX: cropImageElement.offsetLeft,
-			imageOffsetY: cropImageElement.offsetTop
+			imageOffsetY: cropImageElement.offsetTop,
 		});
 	}
 
@@ -86,7 +97,7 @@ export function createPosterCropController(deps: PosterCropControllerDeps) {
 			displayWidth,
 			displayHeight,
 			imageOffsetX: imageElement.offsetLeft,
-			imageOffsetY: imageElement.offsetTop
+			imageOffsetY: imageElement.offsetTop,
 		});
 
 		const currentResult = deps.getCurrentResult();
@@ -97,7 +108,7 @@ export function createPosterCropController(deps: PosterCropControllerDeps) {
 		deps.setCropBox(
 			savedCrop
 				? restoreCropBox(savedCrop, sourceWidth, sourceHeight)
-				: getDefaultPosterCropBox(sourceWidth, sourceHeight)
+				: getDefaultPosterCropBox(sourceWidth, sourceHeight),
 		);
 
 		refreshPosterCropMetrics();
@@ -106,10 +117,9 @@ export function createPosterCropController(deps: PosterCropControllerDeps) {
 	function handlePosterCropImageError() {
 		const currentMovie = deps.getCurrentMovie();
 		if (currentMovie && deps.getCropSourceURL().includes('-full.jpg')) {
-			const currentResult = deps.getCurrentResult();
-			const posterMovieId = currentResult?.movie_id ?? currentMovie.id;
-			const fallbackURL = `/api/v1/temp/posters/${deps.getJobId()}/${posterMovieId}.jpg`;
-			deps.setCropSourceURL(`${fallbackURL}?v=${now()}`);
+			const posterMovieId = deps.getCurrentResult()?.movie_id ?? currentMovie.id;
+			const fallbackURL = `/api/v1/temp/posters/${deps.getJobId()}/${posterMovieId}.jpg${sessionParam()}`;
+			deps.setCropSourceURL(`${fallbackURL}${fallbackURL.includes('?') ? '&' : '?'}v=${now()}`);
 			return;
 		}
 
@@ -120,15 +130,26 @@ export function createPosterCropController(deps: PosterCropControllerDeps) {
 
 	function openPosterCropModal() {
 		const currentMovie = deps.getCurrentMovie();
-		const currentResult = deps.getCurrentResult();
 		if (!currentMovie) return;
 
-		const posterMovieId = currentResult?.movie_id ?? currentMovie.id;
-		const fullPosterURL = `/api/v1/temp/posters/${deps.getJobId()}/${posterMovieId}-full.jpg`;
-		deps.setCropSourceURL(`${fullPosterURL}?v=${now()}`);
+		const currentResult = deps.getCurrentResult();
+		let sourceURL: string;
+		if (
+			currentMovie.poster_url &&
+			currentResult?.movie &&
+			currentMovie.poster_url !== currentResult.movie.poster_url
+		) {
+			sourceURL = `/api/v1/temp/image?url=${encodeURIComponent(currentMovie.poster_url)}${sessionParam().replace('?', '&')}`;
+		} else {
+			const posterMovieId = currentResult?.movie_id ?? currentMovie.id;
+			const fullPosterURL = `/api/v1/temp/posters/${deps.getJobId()}/${posterMovieId}-full.jpg${sessionParam()}`;
+			sourceURL = fullPosterURL;
+		}
+		deps.setCropSourceURL(`${sourceURL}${sourceURL.includes('?') ? '&' : '?'}v=${now()}`);
 		deps.setPosterCropLoadError(null);
 		deps.setCropMetrics(null);
 		deps.setCropBox(null);
+		deps.setMaxPosterHeight(null);
 		deps.setCropImageElement(null);
 		deps.setCropDragState(null);
 		deps.setShowPosterCropModal(true);
@@ -156,7 +177,7 @@ export function createPosterCropController(deps: PosterCropControllerDeps) {
 		deps.setCropBox({
 			...cropBox,
 			x: clamp(Math.round(cropDragState.originX + deltaXSource), 0, maxX),
-			y: clamp(Math.round(cropDragState.originY + deltaYSource), 0, maxY)
+			y: clamp(Math.round(cropDragState.originY + deltaYSource), 0, maxY),
 		});
 	}
 
@@ -182,7 +203,7 @@ export function createPosterCropController(deps: PosterCropControllerDeps) {
 			startX: event.clientX,
 			startY: event.clientY,
 			originX: cropBox.x,
-			originY: cropBox.y
+			originY: cropBox.y,
 		});
 
 		window.addEventListener('mousemove', movePosterCropBox);
@@ -210,13 +231,32 @@ export function createPosterCropController(deps: PosterCropControllerDeps) {
 		return `left:${left}px;top:${top}px;width:${width}px;height:${height}px;box-shadow:0 0 0 9999px rgba(0,0,0,0.45);`;
 	}
 
-	function applyPosterCrop() {
+	async function applyPosterCrop() {
 		const currentMovie = deps.getCurrentMovie();
 		const currentResult = deps.getCurrentResult();
 		const cropBoxVal = deps.getCropBox();
 		if (!currentMovie || !currentResult || !cropBoxVal) return;
 
-		deps.mutatePosterCrop(deps.getJobId(), currentResult.result_id, cropBoxVal);
+		deps.setCropApplying(true);
+		try {
+			// If the poster URL was edited client-side (not yet persisted to the
+			// server), persist it first so the crop endpoint operates on the
+			// edited image ({movieId}-full.jpg) rather than the stale scraped
+			// poster that still lives server-side. Without this, the crop modal
+			// shows the edited URL (via the image proxy) but the backend would
+			// crop the original scraped image, reverting the preview.
+			const serverPosterUrl = currentResult.movie?.poster_url;
+			if (currentMovie.poster_url && serverPosterUrl && currentMovie.poster_url !== serverPosterUrl) {
+				await deps.applyPosterFromUrlAsync(currentResult.result_id, currentMovie.poster_url);
+			}
+
+			const maxPosterHeight = deps.getMaxPosterHeight();
+			await deps.mutatePosterCropAsync(deps.getJobId(), currentResult.result_id, cropBoxVal, maxPosterHeight ?? undefined);
+		} catch {
+			// Errors are surfaced via toasts in the mutation handlers; abort the flow.
+		} finally {
+			deps.setCropApplying(false);
+		}
 	}
 
 	function handleWindowResize() {
@@ -240,6 +280,6 @@ export function createPosterCropController(deps: PosterCropControllerDeps) {
 		getPosterCropOverlayStyle,
 		applyPosterCrop,
 		handleWindowResize,
-		cleanup
+		cleanup,
 	};
 }

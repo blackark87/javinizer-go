@@ -1,6 +1,7 @@
 package batch
 
 import (
+	"context"
 	"testing"
 
 	"github.com/javinizer/javinizer-go/internal/config"
@@ -14,13 +15,13 @@ func TestBackfillActressThumb(t *testing.T) {
 	cfg := &config.Config{
 		Database: config.DatabaseConfig{Type: "sqlite", DSN: "file::memory:?cache=shared"},
 	}
-	db, err := database.New(cfg)
+	db, err := database.New(&database.Config{Type: cfg.Database.Type, DSN: cfg.Database.DSN, LogLevel: cfg.Database.LogLevel})
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
-	require.NoError(t, db.AutoMigrate())
+	require.NoError(t, db.RunMigrationsOnStartup(context.Background()))
 
 	repo := database.NewActressRepository(db)
-	require.NoError(t, repo.Create(&models.Actress{
+	require.NoError(t, repo.Create(context.Background(), &models.Actress{
 		JapaneseName: "あいり",
 		ThumbURL:     "https://pics.dmm.co.jp/mono/actjpgs/airi.jpg",
 	}))

@@ -17,7 +17,7 @@ import (
 // - video_dmm.go: Specialized extractors for video.dmm.co.jp (*NewSite functions)
 //
 // All functions in this file:
-// 1. Are methods on *Scraper for consistency with the main scraper
+// 1. Are methods on *scraper for consistency with the main scraper
 // 2. Accept *goquery.Document as the primary parameter
 // 3. Use the *NewSite naming convention to indicate video.dmm.co.jp specificity
 // 4. Are called from dmm.go's main extraction functions when isNewSite is true
@@ -26,7 +26,7 @@ import (
 // contains "video.dmm.co.jp" versus "www.dmm.co.jp".
 
 // extractDescriptionNewSite extracts description from video.dmm.co.jp
-func (s *Scraper) extractDescriptionNewSite(doc *goquery.Document) string {
+func (s *scraper) extractDescriptionNewSite(doc *goquery.Document) string {
 	// Try og:description meta tag
 	desc, exists := doc.Find(`meta[property="og:description"]`).Attr("content")
 	if exists && desc != "" {
@@ -43,26 +43,31 @@ func (s *Scraper) extractDescriptionNewSite(doc *goquery.Document) string {
 }
 
 // extractCoverURLNewSite extracts cover image from video.dmm.co.jp
-func (s *Scraper) extractCoverURLNewSite(doc *goquery.Document, contentID string) string {
+func (s *scraper) extractCoverURLNewSite(doc *goquery.Document, contentID string) string {
+	// Try og:image meta tag
 	coverURL, exists := doc.Find(`meta[property="og:image"]`).Attr("content")
 	logging.Debugf("DMM Streaming: og:image exists=%v, value=%s", exists, coverURL)
 	if exists && coverURL != "" {
-		coverURL = imageutil.NormalizeDMMScreenshotURL(coverURL)
-		coverURL = imageutil.UpgradeCoverResolution(coverURL)
+		coverURL = imageutil.UpgradeDMMCoverCDN(imageutil.UpgradeCoverResolution(imageutil.NormalizeDMMScreenshotURL(coverURL)))
 		logging.Debugf("DMM Streaming: Final cover URL from og:image: %s", coverURL)
 		return coverURL
 	}
 
+	// Try to extract from CSS background-image style attributes
+	// Some amateur videos use: style="background-image: url(//pics.dmm.co.jp/digital/amateur/oreco183/oreco183jp.jpg);"
 	logging.Debug("DMM Streaming: og:image not found, trying CSS background-image")
 	var bgImageURL string
 	doc.Find("*[style*='background-image']").Each(func(i int, sel *goquery.Selection) {
 		if bgImageURL != "" {
-			return
+			return // Already found one
 		}
 		style, exists := sel.Attr("style")
 		if !exists {
 			return
 		}
+		// Extract URL from background-image: url(...)
+		// Handle both url(...) and url("...") and url('...')
+		// Also handle protocol-relative URLs starting with //
 		bgURL := extractBackgroundImageURL(style)
 		if bgURL != "" {
 			logging.Debugf("DMM Streaming: Found background-image URL: %s", bgURL)
@@ -71,37 +76,39 @@ func (s *Scraper) extractCoverURLNewSite(doc *goquery.Document, contentID string
 	})
 
 	if bgImageURL != "" {
-		coverURL = imageutil.NormalizeDMMScreenshotURL(bgImageURL)
-		coverURL = imageutil.UpgradeCoverResolution(coverURL)
+		coverURL = imageutil.UpgradeDMMCoverCDN(imageutil.UpgradeCoverResolution(imageutil.NormalizeDMMScreenshotURL(bgImageURL)))
 		logging.Debugf("DMM Streaming: Final cover URL from background-image: %s", coverURL)
 		return coverURL
 	}
 
+	// As fallback, try to extract from img tags
 	logging.Debug("DMM Streaming: background-image not found, trying img tag fallback")
 	coverURL, _ = doc.Find(`img[src*="pl.jpg"]`).First().Attr("src")
 	logging.Debugf("DMM Streaming: img[src*='pl.jpg'] found: %s", coverURL)
 	if coverURL != "" {
-		coverURL = imageutil.NormalizeDMMScreenshotURL(coverURL)
-		coverURL = imageutil.UpgradeCoverResolution(coverURL)
+		coverURL = imageutil.UpgradeDMMCoverCDN(imageutil.UpgradeCoverResolution(imageutil.NormalizeDMMScreenshotURL(coverURL)))
 		logging.Debugf("DMM Streaming: Final cover URL from img tag: %s", coverURL)
 		return coverURL
 	}
 
+	// Debug: List all img tags to see what's available
 	imgCount := 0
 	doc.Find("img").Each(func(i int, sel *goquery.Selection) {
 		src, _ := sel.Attr("src")
-		if imgCount < 5 {
+		if imgCount < 5 { // Only log first 5 to avoid spam
 			logging.Debugf("DMM Streaming: Found img[%d]: %s", i, src)
 		}
 		imgCount++
 	})
 	logging.Debugf("DMM Streaming: Total img tags found: %d", imgCount)
 
+	// Final fallback for amateur videos: construct URL from content ID
+	// Amateur videos use pattern: https://pics.dmm.co.jp/digital/amateur/{contentid}/{contentid}jp.jpg
+	// Note: Amateur videos use 'jp.jpg' suffix, not 'pl.jpg' (pl.jpg doesn't exist for amateur videos)
+	// DMM serves cover assets on lowercase paths, so normalize to lowercase
 	if contentID != "" {
 		normalizedID := strings.ToLower(contentID)
-		coverURL = "https://pics.dmm.co.jp/digital/amateur/" + normalizedID + "/" + normalizedID + "jp.jpg"
-		coverURL = imageutil.NormalizeDMMScreenshotURL(coverURL)
-		coverURL = imageutil.UpgradeCoverResolution(coverURL)
+		coverURL = imageutil.UpgradeDMMCoverCDN(imageutil.UpgradeCoverResolution("https://pics.dmm.co.jp/digital/amateur/" + normalizedID + "/" + normalizedID + "jp.jpg"))
 		logging.Debugf("DMM Streaming: Constructed amateur cover URL from content ID '%s': %s", contentID, coverURL)
 		return coverURL
 	}
@@ -111,29 +118,31 @@ func (s *Scraper) extractCoverURLNewSite(doc *goquery.Document, contentID string
 }
 
 // extractScreenshotsNewSite extracts screenshots from video.dmm.co.jp
-// JSON-LD screenshots are handled separately by extractMetadataFromJSONLD;
-// this function only handles the img-tag fallback path.
-func (s *Scraper) extractScreenshotsNewSite(doc *goquery.Document) []string {
+// JSON-LD screenshot extraction is handled by extractMetadataFromJSONLD (called from parseHTML).
+// This function only handles the img-tag fallback path.
+func (s *scraper) extractScreenshotsNewSite(doc *goquery.Document) []string {
 	screenshots := make([]string, 0)
 	seen := make(map[string]bool)
 
+	// Extract from img tags
 	doc.Find(`img[src*="awsimgsrc.dmm.co.jp"]`).Each(func(i int, sel *goquery.Selection) {
 		src, exists := sel.Attr("src")
 		if !exists {
 			return
 		}
 
-		cleanSrc := src
-		if idx := strings.Index(cleanSrc, "?"); idx != -1 {
-			cleanSrc = cleanSrc[:idx]
-		}
-
-		if !strings.Contains(cleanSrc, "-") || strings.HasSuffix(cleanSrc, "pl.jpg") || strings.HasSuffix(cleanSrc, "ps.jpg") {
+		// Only process screenshot images (those with -1.jpg, -2.jpg, etc.)
+		if !strings.Contains(src, "-") || strings.HasSuffix(src, "pl.jpg") {
 			return
 		}
 
-		src = imageutil.NormalizeDMMScreenshotURL(src)
+		// Convert awsimgsrc to pics.dmm.co.jp and remove query parameters
+		src = strings.Replace(src, "awsimgsrc.dmm.co.jp/pics_dig", "pics.dmm.co.jp", 1)
+		if idx := strings.Index(src, "?"); idx != -1 {
+			src = src[:idx]
+		}
 
+		// Deduplicate
 		if !seen[src] {
 			seen[src] = true
 			screenshots = append(screenshots, src)
@@ -150,7 +159,7 @@ func (s *Scraper) extractScreenshotsNewSite(doc *goquery.Document) []string {
 }
 
 // extractSeriesNewSite extracts series from video.dmm.co.jp
-func (s *Scraper) extractSeriesNewSite(doc *goquery.Document) string {
+func (s *scraper) extractSeriesNewSite(doc *goquery.Document) string {
 	// Look for table rows containing "シリーズ" (Series)
 	var series string
 	doc.Find("table tr").Each(func(i int, row *goquery.Selection) {
@@ -169,7 +178,7 @@ func (s *Scraper) extractSeriesNewSite(doc *goquery.Document) string {
 }
 
 // extractMakerNewSite extracts maker from video.dmm.co.jp
-func (s *Scraper) extractMakerNewSite(doc *goquery.Document) string {
+func (s *scraper) extractMakerNewSite(doc *goquery.Document) string {
 	// Look for table rows containing "メーカー" (Maker)
 	var maker string
 	doc.Find("table tr").Each(func(i int, row *goquery.Selection) {
@@ -187,7 +196,7 @@ func (s *Scraper) extractMakerNewSite(doc *goquery.Document) string {
 	return scraperutil.CleanString(maker)
 }
 
-func (s *Scraper) extractRatingNewSite(doc *goquery.Document) (float64, int) {
+func (s *scraper) extractRatingNewSite(doc *goquery.Document) (float64, int) {
 	var rating float64
 	var votes int
 
@@ -269,7 +278,7 @@ func extractBackgroundImageURL(style string) string {
 }
 
 // extractTrailerURLNewSite extracts trailer video URL from video.dmm.co.jp
-func (s *Scraper) extractTrailerURLNewSite(doc *goquery.Document) string {
+func (s *scraper) extractTrailerURLNewSite(doc *goquery.Document) string {
 	var trailerURL string
 
 	// Strategy 1: Look for video tags or source tags with sample/trailer URLs

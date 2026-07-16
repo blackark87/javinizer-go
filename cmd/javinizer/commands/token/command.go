@@ -1,6 +1,7 @@
 package token
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// NewCommand creates the token CLI command and its create, revoke, and list subcommands.
 func NewCommand() *cobra.Command {
 	tokenCmd := &cobra.Command{
 		Use:   "token",
@@ -71,6 +73,7 @@ func newListCommand() *cobra.Command {
 	return cmd
 }
 
+// RunCreate creates a new API token and returns the result with the full token value.
 func RunCreate(cmd *cobra.Command, args []string, configFile string) (*tokenCreateResult, error) {
 	name, _ := cmd.Flags().GetString("name")
 
@@ -93,7 +96,7 @@ func RunCreate(cmd *cobra.Command, args []string, configFile string) (*tokenCrea
 	repo := database.NewApiTokenRepository(deps.DB)
 	svc := token.NewTokenService(repo)
 
-	apiToken, fullToken, err := svc.Create(name)
+	apiToken, fullToken, err := svc.Create(context.Background(), name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create token: %w", err)
 	}
@@ -155,6 +158,7 @@ func runCreate(cmd *cobra.Command, configFile string) error {
 	return nil
 }
 
+// RunRevoke revokes an API token by its UUID or prefix and returns the result.
 func RunRevoke(cmd *cobra.Command, args []string, configFile string) (*tokenRevokeResult, error) {
 	idOrPrefix := args[0]
 
@@ -186,7 +190,7 @@ func RunRevoke(cmd *cobra.Command, args []string, configFile string) (*tokenRevo
 			return nil, fmt.Errorf("prefix too short: provide at least 8 characters after jv_")
 		}
 		prefix = prefix[:8]
-		existing, err := repo.FindByPrefix(prefix)
+		existing, err := repo.FindByPrefix(context.Background(), prefix)
 		if err != nil {
 			return nil, fmt.Errorf("no active token found with prefix jv_%s: %w", prefix, err)
 		}
@@ -194,12 +198,12 @@ func RunRevoke(cmd *cobra.Command, args []string, configFile string) (*tokenRevo
 		resolvedPrefix = existing.TokenPrefix
 	}
 
-	if err := svc.Revoke(resolvedID); err != nil {
+	if err := svc.Revoke(context.Background(), resolvedID); err != nil {
 		return nil, fmt.Errorf("failed to revoke token: %w", err)
 	}
 
 	if resolvedPrefix == "" {
-		existing, err := repo.FindByID(resolvedID)
+		existing, err := repo.FindByID(context.Background(), resolvedID)
 		if err == nil {
 			resolvedPrefix = existing.TokenPrefix
 		}
@@ -243,6 +247,7 @@ func runRevoke(cmd *cobra.Command, configFile string, idOrPrefix string) error {
 	return nil
 }
 
+// RunList returns all active (non-revoked) API tokens as list entries.
 func RunList(cmd *cobra.Command, args []string, configFile string) ([]tokenListEntry, error) {
 	cfg, err := config.LoadOrCreate(configFile)
 	if err != nil {
@@ -263,7 +268,7 @@ func RunList(cmd *cobra.Command, args []string, configFile string) ([]tokenListE
 	repo := database.NewApiTokenRepository(deps.DB)
 	svc := token.NewTokenService(repo)
 
-	tokens, err := svc.List()
+	tokens, err := svc.List(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tokens: %w", err)
 	}
@@ -331,7 +336,7 @@ func runList(cmd *cobra.Command, configFile string) error {
 	return w.Flush()
 }
 
-func printJSON(cmd *cobra.Command, v interface{}) error {
+func printJSON(cmd *cobra.Command, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON: %w", err)

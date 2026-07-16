@@ -2,67 +2,141 @@ import { writable } from 'svelte/store';
 import { browser } from '$app/environment';
 import type { ProgressMessage } from '$lib/api/types';
 import { toastStore } from '$lib/stores/toast';
+import { BaseClient } from '$lib/api/clients/common';
 
-// Build WebSocket URL dynamically from browser location
-// This works for both local dev (localhost:8080) and Docker (any host)
-// Converts http -> ws and https -> wss automatically
-function getWebSocketURL(): string {
-	if (!browser) {
-		// During SSR, return a placeholder (won't be used)
-		return 'ws://localhost:8080/ws/progress';
-	}
-	// Replace http/https with ws/wss and append the WebSocket path
+// Build WebSocket URL dynamically from browser location.
+// In the browser (dev server / Docker), the SPA and API are same-origin, so
+// the WS URL is derived from location.origin. In the desktop app the Wails
+// AssetServer returns 501 for WS upgrades, so the frontend cannot use a
+// same-origin WS URL through the reverse proxy; instead it fetches the direct
+// WS URL (ws://localhost:PORT/ws/progress) from GET /desktop/runtime, which
+// the desktop reverse proxy serves without forwarding.
+
+function isDesktopApp(): boolean {
+	if (!browser) return false;
+	if (location.protocol === 'wails:') return true;
+	return location.hostname === 'wails.localhost';
+}
+
+function sameOriginWebSocketURL(): string {
+	// Replace http/https with ws/wss and append the WebSocket path.
 	return location.origin.replace(/^http/, 'ws') + '/ws/progress';
+}
+
+// Append the session ID as a query parameter. The browser cannot set custom
+// headers (e.g. X-Session-ID) on a WebSocket, and in the desktop app the
+// session cookie is stored against the webview origin — not 127.0.0.1:PORT —
+// so it is not sent on a direct WS connection. The auth middleware falls back
+// to the ?session= query parameter, which is how the desktop app authenticates
+// the WS upgrade.
+function withSessionParam(base: string): string {
+	const sid = BaseClient.getSessionID();
+	if (!sid) return base;
+	const sep = base.includes('?') ? '&' : '?';
+	return `${base}${sep}session=${encodeURIComponent(sid)}`;
 }
 
 interface WebSocketState {
 	connected: boolean;
-	lastCloseCode?: number;
-	lastCloseReason?: string;
-	lastCloseWasClean?: boolean;
-	reconnectAttempts: number;
-	nextReconnectAt?: number;
-	lastConnectedAt?: number;
-	lastDisconnectedAt?: number;
+	skipped: boolean;
 	messages: ProgressMessage[];
 	messagesByFile: Record<string, Record<string, ProgressMessage>>; // Latest message per file per job (job_id -> file_path -> message)
 	error?: string;
 }
 
-const MAX_MESSAGES = 200;
-const INITIAL_RECONNECT_DELAY_MS = 1000;
-const MAX_RECONNECT_DELAY_MS = 30000;
-const ERROR_TOAST_RATE_LIMIT_MS = 10000;
-
-function getReconnectDelay(attempt: number): number {
-	const exponentialDelay = Math.min(
-		INITIAL_RECONNECT_DELAY_MS * 2 ** Math.max(attempt - 1, 0),
-		MAX_RECONNECT_DELAY_MS
-	);
-	const jitter = exponentialDelay * 0.2 * Math.random();
-	return Math.round(exponentialDelay + jitter);
-}
-
-function getCloseMessage(event: CloseEvent, reconnectDelay?: number): string {
-	const reason = event.reason ? `: ${event.reason}` : '';
-	const reconnectMessage = reconnectDelay
-		? ` Reconnecting in ${Math.ceil(reconnectDelay / 1000)}s.`
-		: '';
-	return `WebSocket disconnected (code ${event.code}${reason}).${reconnectMessage}`;
-}
-
 function createWebSocketStore() {
 	const { subscribe, set, update } = writable<WebSocketState>({
 		connected: false,
+		skipped: false,
 		messages: [],
 		messagesByFile: {},
-		reconnectAttempts: 0
 	});
 
 	let ws: WebSocket | null = null;
 	let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 	let shouldReconnect = false;
 	let lastErrorToastTime = 0;
+	// Cached direct WS URL for the desktop app. The port is fixed for the
+	// app's lifetime, so fetch once and reuse across reconnects.
+	let desktopWSUrl: string | null = null;
+
+	async function resolveDesktopWSUrl(): Promise<string | null> {
+		if (desktopWSUrl) return desktopWSUrl;
+		try {
+			const resp = await fetch('/desktop/runtime');
+			if (!resp.ok) return null;
+			const data = (await resp.json()) as { ws_url?: string };
+			if (typeof data.ws_url === 'string' && data.ws_url.length > 0) {
+				desktopWSUrl = data.ws_url;
+				return desktopWSUrl;
+			}
+		} catch {
+			// fall through to caller's error handling
+		}
+		return null;
+	}
+
+	function scheduleReconnect() {
+		if (!shouldReconnect || reconnectTimeout) return;
+		reconnectTimeout = setTimeout(() => {
+			reconnectTimeout = null;
+			connect();
+		}, 3000);
+	}
+
+	function openSocket(wsUrl: string) {
+		try {
+			ws = new WebSocket(wsUrl);
+
+			ws.onopen = () => {
+				update((state) => ({ ...state, connected: true, error: undefined }));
+			};
+
+			ws.onclose = () => {
+				update((state) => ({ ...state, connected: false }));
+				ws = null;
+				scheduleReconnect();
+			};
+
+			ws.onerror = () => {
+				const now = Date.now();
+				if (now - lastErrorToastTime > 10000) {
+					toastStore.error('WebSocket connection error');
+					lastErrorToastTime = now;
+				}
+				update((state) => ({ ...state, error: 'WebSocket connection error' }));
+			};
+
+			ws.onmessage = (event) => {
+				try {
+					const message: ProgressMessage = JSON.parse(event.data);
+					update((state) => {
+						const newMessagesByFile = { ...state.messagesByFile };
+						if (message.file_path && message.job_id) {
+							// Deduplicate by keeping only the latest message per file per job
+							if (!newMessagesByFile[message.job_id]) {
+								newMessagesByFile[message.job_id] = {};
+							}
+							newMessagesByFile[message.job_id][message.file_path] = message;
+						}
+						return {
+							...state,
+							messages: [...state.messages, message].slice(-999),
+							messagesByFile: newMessagesByFile,
+						};
+					});
+				} catch (error) {
+					console.error('Failed to parse WebSocket message:', error);
+					toastStore.error('Failed to process server message');
+				}
+			};
+		} catch (error) {
+			console.error('Failed to create WebSocket:', error);
+			toastStore.error('Failed to connect to server');
+			update((state) => ({ ...state, error: 'Failed to create WebSocket connection' }));
+			scheduleReconnect();
+		}
+	}
 
 	function connect() {
 		if (!browser) {
@@ -81,122 +155,32 @@ function createWebSocketStore() {
 			return;
 		}
 
-		const wsUrl = getWebSocketURL();
-
-		try {
-			ws = new WebSocket(wsUrl);
-
-			ws.onopen = () => {
-				update((state) => ({
-					...state,
-					connected: true,
-					error: undefined,
-					reconnectAttempts: 0,
-					nextReconnectAt: undefined,
-					lastConnectedAt: Date.now()
-				}));
-			};
-
-			ws.onclose = (event) => {
-				ws = null;
-				const disconnectedAt = Date.now();
-
-				if (!shouldReconnect) {
-					update((state) => ({
-						...state,
-						connected: false,
-						nextReconnectAt: undefined,
-						lastCloseCode: event.code,
-						lastCloseReason: event.reason,
-						lastCloseWasClean: event.wasClean,
-						lastDisconnectedAt: disconnectedAt
-					}));
-					return;
-				}
-
-				let reconnectDelay = 0;
-				let reconnectAttempt = 0;
-				let nextReconnectAt: number | undefined;
-
-				update((state) => {
-					reconnectAttempt = state.reconnectAttempts + 1;
-					reconnectDelay = getReconnectDelay(reconnectAttempt);
-					nextReconnectAt = disconnectedAt + reconnectDelay;
-					return {
-						...state,
-						connected: false,
-						reconnectAttempts: reconnectAttempt,
-						nextReconnectAt,
-						lastCloseCode: event.code,
-						lastCloseReason: event.reason,
-						lastCloseWasClean: event.wasClean,
-						lastDisconnectedAt: disconnectedAt,
-						error: getCloseMessage(event, reconnectDelay)
-					};
-				});
-
-				const now = Date.now();
-				if (now - lastErrorToastTime > ERROR_TOAST_RATE_LIMIT_MS) {
-					toastStore.error(getCloseMessage(event, reconnectDelay));
-					lastErrorToastTime = now;
-				}
-
-				reconnectTimeout = setTimeout(() => {
-					reconnectTimeout = null;
-					connect();
-				}, reconnectDelay);
-			};
-
-			ws.onerror = (error) => {
-				console.error('WebSocket error:', error);
-				const now = Date.now();
-				if (now - lastErrorToastTime > ERROR_TOAST_RATE_LIMIT_MS) {
-					toastStore.error('WebSocket connection error. Reconnecting if the server is available.');
-					lastErrorToastTime = now;
-				}
-				update((state) => ({ ...state, error: 'WebSocket connection error' }));
-			};
-
-			ws.onmessage = (event) => {
-				try {
-					const message: ProgressMessage = JSON.parse(event.data);
-
-					// System alert — show as toast, don't store in progress tracking
-					if (message.type === 'alert') {
-						if (message.status === 'warning') {
-							toastStore.warning(message.message);
-						} else if (message.status === 'error') {
-							toastStore.error(message.message);
-						} else {
-							toastStore.info(message.message);
-						}
+		if (isDesktopApp()) {
+			// The Wails AssetServer returns 501 for WS upgrades, so connect
+			// directly to the embedded API server's WS endpoint. The URL (with
+			// the random localhost port) is served by the desktop reverse proxy
+			// at /desktop/runtime.
+			resolveDesktopWSUrl()
+				.then((base) => {
+					// Re-check after the async gap: disconnect() may have run while
+					// the fetch was in flight (e.g. component unmount), in which
+					// case opening a socket now would leak a connection nothing
+					// can close. Also guards against overlapping connect() calls.
+					if (!shouldReconnect) return;
+					if (!base) {
+						update((state) => ({ ...state, error: 'WebSocket URL unavailable' }));
+						scheduleReconnect();
 						return;
 					}
-
-					update((state) => {
-						const newMessagesByFile = { ...state.messagesByFile };
-						if (message.file_path && message.job_id) {
-							newMessagesByFile[message.job_id] = {
-								...(newMessagesByFile[message.job_id] || {}),
-								[message.file_path]: message,
-							};
-						}
-						return {
-							...state,
-							messages: [...state.messages.slice(-(MAX_MESSAGES - 1)), message],
-							messagesByFile: newMessagesByFile
-						};
-					});
-				} catch (error) {
-					console.error('Failed to parse WebSocket message:', error);
-					toastStore.error('Failed to process server message');
-				}
-			};
-		} catch (error) {
-			console.error('Failed to create WebSocket:', error);
-			toastStore.error('Failed to connect to server');
-			update((state) => ({ ...state, error: 'Failed to create WebSocket connection' }));
+					openSocket(withSessionParam(base));
+				})
+				.catch(() => {
+					if (shouldReconnect) scheduleReconnect();
+				});
+			return;
 		}
+
+		openSocket(withSessionParam(sameOriginWebSocketURL()));
 	}
 
 	function disconnect() {
@@ -216,25 +200,21 @@ function createWebSocketStore() {
 			ws = null;
 		}
 
-		set({
-			connected: false,
-			messages: [],
-			messagesByFile: {},
-			reconnectAttempts: 0,
-			nextReconnectAt: undefined,
-			lastDisconnectedAt: Date.now()
-		});
+		set({ connected: false, skipped: false, messages: [], messagesByFile: {} });
 	}
 
-	function clearMessages() {
-		update((state) => ({ ...state, messages: [], messagesByFile: {} }));
-	}
-
-	function clearJobMessages(jobId: string) {
+	function clearMessages(jobID?: string) {
 		update((state) => {
-			const newMessagesByFile = { ...state.messagesByFile };
-			delete newMessagesByFile[jobId];
-			return { ...state, messagesByFile: newMessagesByFile };
+			if (!jobID) {
+				return { ...state, messages: [], messagesByFile: {} };
+			}
+			const messagesByFile = { ...state.messagesByFile };
+			delete messagesByFile[jobID];
+			return {
+				...state,
+				messages: state.messages.filter((message) => message.job_id !== jobID),
+				messagesByFile,
+			};
 		});
 	}
 
@@ -243,7 +223,6 @@ function createWebSocketStore() {
 		connect,
 		disconnect,
 		clearMessages,
-		clearJobMessages
 	};
 }
 

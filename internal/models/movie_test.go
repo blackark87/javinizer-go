@@ -41,7 +41,7 @@ func TestMovieCreation(t *testing.T) {
 					Title:       "Test Movie Full",
 					Description: "A comprehensive test movie with all fields populated",
 					ReleaseDate: &releaseDate,
-					CoverURL:    "https://example.com/cover.jpg",
+					Poster:      PosterState{CoverURL: "https://example.com/cover.jpg"},
 					Maker:       "Test Studio",
 					Actresses: []Actress{
 						{FirstName: "Test Actress 1"},
@@ -257,21 +257,23 @@ func TestMovieJSONMarshaling(t *testing.T) {
 		updatedAt := time.Date(2023, 1, 15, 10, 30, 0, 0, time.UTC)
 
 		movie := &Movie{
-			ContentID:        "ipx00123",
-			ID:               "IPX-123",
-			Title:            "Test Movie Full",
-			Description:      "A comprehensive test movie with all fields populated for testing JSON marshaling",
-			ReleaseDate:      &releaseDate,
-			ReleaseYear:      2023,
-			Runtime:          120,
-			Director:         "Test Director",
-			Maker:            "Test Studio",
-			Label:            "Test Label",
-			Series:           "Test Series",
-			RatingScore:      8.5,
-			RatingVotes:      100,
-			PosterURL:        "https://example.com/poster.jpg",
-			CoverURL:         "https://example.com/cover.jpg",
+			ContentID:   "ipx00123",
+			ID:          "IPX-123",
+			Title:       "Test Movie Full",
+			Description: "A comprehensive test movie with all fields populated for testing JSON marshaling",
+			ReleaseDate: &releaseDate,
+			ReleaseYear: 2023,
+			Runtime:     120,
+			Director:    "Test Director",
+			Maker:       "Test Studio",
+			Label:       "Test Label",
+			Series:      "Test Series",
+			RatingScore: 8.5,
+			RatingVotes: 100,
+			Poster: PosterState{
+				PosterURL: "https://example.com/poster.jpg",
+				CoverURL:  "https://example.com/cover.jpg",
+			},
 			TrailerURL:       "https://example.com/trailer.mp4",
 			OriginalFileName: "IPX-123.mp4",
 			Actresses: []Actress{
@@ -439,6 +441,32 @@ func TestMovieJSONMarshaling(t *testing.T) {
 		genres, ok := result["genres"].([]interface{})
 		assert.True(t, ok, "genres should be an array")
 		assert.Len(t, genres, 2)
+	})
+
+	t.Run("original_cover_url round-trips through JSON", func(t *testing.T) {
+		t.Parallel()
+		movie := &Movie{
+			ContentID: "ipx00123",
+			Title:     "Test Movie",
+			Poster: PosterState{
+				CoverURL:         "https://example.com/cover.jpg",
+				OriginalCoverURL: "https://example.com/scraped-cover.jpg",
+			},
+		}
+
+		jsonData, err := json.Marshal(movie)
+		require.NoError(t, err)
+
+		var raw map[string]interface{}
+		require.NoError(t, json.Unmarshal(jsonData, &raw))
+		assert.Equal(t, "https://example.com/cover.jpg", raw["cover_url"])
+		assert.Equal(t, "https://example.com/scraped-cover.jpg", raw["original_cover_url"],
+			"original_cover_url must be present in the flat wire format")
+
+		var unmarshaled Movie
+		require.NoError(t, json.Unmarshal(jsonData, &unmarshaled))
+		assert.Equal(t, "https://example.com/scraped-cover.jpg", unmarshaled.Poster.OriginalCoverURL,
+			"original_cover_url must survive a marshal/unmarshal round-trip")
 	})
 }
 

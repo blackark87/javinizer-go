@@ -6,17 +6,15 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/javinizer/javinizer-go/internal/models"
 	"gopkg.in/yaml.v3"
 )
 
-// FlareSolverrConfig holds FlareSolverr configuration for bypassing Cloudflare
-type FlareSolverrConfig struct {
-	Enabled    bool   `yaml:"enabled" json:"enabled"`         // Enable FlareSolverr for bypassing Cloudflare
-	URL        string `yaml:"url" json:"url"`                 // FlareSolverr endpoint (default: http://localhost:8191/v1)
-	Timeout    int    `yaml:"timeout" json:"timeout"`         // Request timeout in seconds (default: 30)
-	MaxRetries int    `yaml:"max_retries" json:"max_retries"` // Max retry attempts for FlareSolverr calls (default: 3)
-	SessionTTL int    `yaml:"session_ttl" json:"session_ttl"` // Session TTL in seconds (default: 300)
-}
+// translationProviderOpenAI is the canonical name of the OpenAI translation
+// provider, used as the default and in provider switches across the config
+// package. Centralized as a constant to satisfy goconst and keep the literal
+// in one place.
+const translationProviderOpenAI = "openai"
 
 // MetadataConfig holds metadata aggregation settings
 type MetadataConfig struct {
@@ -24,12 +22,13 @@ type MetadataConfig struct {
 	ActressDatabase  ActressDatabaseConfig  `yaml:"actress_database" json:"actress_database"`   // Actress image database (SQLite-backed)
 	GenreReplacement GenreReplacementConfig `yaml:"genre_replacement" json:"genre_replacement"` // Genre replacement/normalization (SQLite-backed)
 	WordReplacement  WordReplacementConfig  `yaml:"word_replacement" json:"word_replacement"`   // Word uncensor/text replacement (SQLite-backed)
-	TagDatabase      TagDatabaseConfig      `yaml:"tag_database" json:"tag_database"`           // Per-movie tag database (SQLite-backed)
+	TagDatabase      tagDatabaseConfig      `yaml:"tag_database" json:"tag_database"`           // Per-movie tag database (SQLite-backed)
+	R18DevDump       R18DevDumpConfig       `yaml:"r18dev_dump" json:"r18dev_dump"`             // Local r18.dev dump lookup (SQLite-backed)
 	Translation      TranslationConfig      `yaml:"translation" json:"translation"`             // Metadata translation pipeline
 	IgnoreGenres     []string               `yaml:"ignore_genres" json:"ignore_genres"`
 	RequiredFields   []string               `yaml:"required_fields" json:"required_fields"`
 	NFO              NFOConfig              `yaml:"nfo" json:"nfo"`
-	Completeness     CompletenessConfig     `yaml:"completeness" json:"completeness"` // Completeness scoring configuration
+	Completeness     completenessConfig     `yaml:"completeness" json:"completeness"` // Completeness scoring configuration
 }
 
 // TranslationConfig holds metadata translation settings.
@@ -74,16 +73,16 @@ type OpenAITranslationConfig struct {
 
 // DeepLTranslationConfig holds DeepL provider settings.
 type DeepLTranslationConfig struct {
-	Mode    string `yaml:"mode" json:"mode"`         // free or pro
-	BaseURL string `yaml:"base_url" json:"base_url"` // Optional override (defaults to mode-specific endpoint)
-	APIKey  string `yaml:"api_key" json:"api_key"`   // DeepL API key
+	Mode    models.DeepLMode `yaml:"mode" json:"mode"`         // free or pro
+	BaseURL string           `yaml:"base_url" json:"base_url"` // Optional override (defaults to mode-specific endpoint)
+	APIKey  string           `yaml:"api_key" json:"api_key"`   // DeepL API key
 }
 
 // GoogleTranslationConfig holds Google Translate provider settings.
 type GoogleTranslationConfig struct {
-	Mode    string `yaml:"mode" json:"mode"`         // free or paid
-	BaseURL string `yaml:"base_url" json:"base_url"` // Optional override
-	APIKey  string `yaml:"api_key" json:"api_key"`   // Required for paid mode
+	Mode    models.GoogleMode `yaml:"mode" json:"mode"`         // free or paid
+	BaseURL string            `yaml:"base_url" json:"base_url"` // Optional override
+	APIKey  string            `yaml:"api_key" json:"api_key"`   // Required for paid mode
 }
 
 // OpenAICompatibleTranslationConfig holds settings for self-hosted or third-party
@@ -129,22 +128,72 @@ type PriorityConfig struct {
 	Priority []string `yaml:"priority" json:"priority"`
 	// Fields holds per-metadata-field scraper priority overrides.
 	// Keys are snake_case field names matching the API (e.g. "title", "actress", "cover_url").
-	// An empty or nil slice for a field means "use global priority".
+	// A non-empty value [a,b] means "consult a then b exclusively". A PRESENT key
+	// whose value is an empty slice ([]string{} / []) inherits the global Priority
+	// list (commit 9f882f22's documented intent: "[] still means 'inherit global'"),
+	// so configs carrying [] (common from the pre-9f882f22 merge era) upgrade
+	// safely instead of wiping the field. An ABSENT key (or a nil slice) also
+	// inherits. Deliberate suppression uses the ["__skip__"] sentinel, which
+	// matches no real scraper so the field is left empty.
 	Fields map[string][]string `yaml:"-" json:"-"`
 }
 
-// GetFieldPriority returns the priority list for a specific metadata field.
-// If the field has no override (or the override is empty), it falls back to
-// the global Priority list. Returns nil if neither is set.
+// GetFieldPriority returns the EFFECTIVE priority list for a metadata field:
+// the per-field override when one is present AND non-empty, else the global
+// Priority list. Returns nil when neither is set.
+//
+// The three field states map cleanly:
+//
+//	key ABSENT / nil / [] (present-empty) → inherit the global Priority list
+//	key present = ["__skip__"]           → consult NO scrapers → field left empty
+//	key present = [a,b]                   → consult a then b exclusively, no global fallback
+//
+// A present-empty slice ([]string{} or []) is treated as "inherit global",
+// matching commit 9f882f22's documented intent ("[] ... still means 'inherit
+// global'") and the pre-9f882f22 behavior where [] was merged with global. This
+// keeps configs carrying [] (common from the merge era) upgrade-safe — they
+// inherit the global priority instead of wiping the field. Deliberate
+// suppression uses the ["__skip__"] sentinel, which matches no real scraper so
+// assignString leaves the field empty. Callers that need to distinguish
+// "present" from "absent" should use PerFieldOverride.
 func (p *PriorityConfig) GetFieldPriority(fieldKey string) []string {
 	if p == nil {
 		return nil
 	}
-	if override, ok := p.Fields[fieldKey]; ok && len(override) > 0 {
+	if override := p.PerFieldOverride(fieldKey); len(override) > 0 {
 		return override
 	}
 	if len(p.Priority) > 0 {
 		return p.Priority
+	}
+	return nil
+}
+
+// PerFieldOverride returns the raw per-field override stored under fieldKey,
+// WITHOUT falling back to the global Priority list. This is the raw
+// "is there an override key?" accessor: it returns the raw value for a PRESENT
+// key (including an explicit empty slice []string{}), and nil only for an
+// ABSENT key.
+//
+// NOTE: this is a RAW accessor — it does NOT decide resolution. A present-empty
+// [] is returned as a non-nil empty slice here, but resolution sites
+// (GetFieldPriority, aggregator.resolvePriorities/getFieldPriorityFromConfig,
+// AggregateWithPriority) guard with `len(fp) > 0`, so a present [] inherits the
+// global priority (commit 9f882f22's documented intent: "[] still means 'inherit
+// global'"); deliberate suppression uses the ["__skip__"] sentinel (matches no
+// real scraper). PerFieldOverride is kept as a raw accessor so callers can
+// distinguish "explicitly stored []" from "absent" (e.g. for diagnostics/UI)
+// even though both now resolve to inherit.
+//
+// A nil slice stored under a present key is returned as nil, matching the
+// null/undefined = inherit contract. Callers that want the EFFECTIVE priority
+// (with global fallback) should use GetFieldPriority, not this accessor.
+func (p *PriorityConfig) PerFieldOverride(fieldKey string) []string {
+	if p == nil {
+		return nil
+	}
+	if override, ok := p.Fields[fieldKey]; ok {
+		return override
 	}
 	return nil
 }
@@ -260,61 +309,87 @@ type WordReplacementConfig struct {
 	Enabled bool `yaml:"enabled" json:"enabled"` // Enable word replacement from database
 }
 
-// TagDatabaseConfig holds per-movie tag database configuration
-type TagDatabaseConfig struct {
+// tagDatabaseConfig holds per-movie tag database configuration
+type tagDatabaseConfig struct {
 	Enabled bool `yaml:"enabled" json:"enabled"` // Enable per-movie tag lookup from database
 }
 
-// CompletenessConfig holds completeness scoring configuration
-type CompletenessConfig struct {
+// R18DevDumpConfig holds configuration for the local r18.dev dump sidecar.
+// When enabled and the dump database is present, the r18.dev scraper consults
+// it for exact content_id resolution before falling back to live HTTP probing.
+type R18DevDumpConfig struct {
+	Enabled bool   `yaml:"enabled" json:"enabled"` // Consult local dump before HTTP content_id resolution
+	Path    string `yaml:"path" json:"path"`       // Sidecar SQLite path (empty = default data/r18dev/r18dev_dump.db)
+}
+
+// completenessConfig holds completeness scoring configuration
+type completenessConfig struct {
 	Enabled bool                   `yaml:"enabled" json:"enabled"`
-	Tiers   CompletenessTierConfig `yaml:"tiers" json:"tiers"`
+	Tiers   completenessTierConfig `yaml:"tiers" json:"tiers"`
 }
 
-// CompletenessTierConfig holds tier definitions for completeness scoring
-type CompletenessTierConfig struct {
-	Essential  CompletenessTierDefinition `yaml:"essential" json:"essential"`
-	Important  CompletenessTierDefinition `yaml:"important" json:"important"`
-	NiceToHave CompletenessTierDefinition `yaml:"nice_to_have" json:"nice_to_have"`
+// completenessTierConfig holds tier definitions for completeness scoring
+type completenessTierConfig struct {
+	Essential  completenessTierDefinition `yaml:"essential" json:"essential"`
+	Important  completenessTierDefinition `yaml:"important" json:"important"`
+	NiceToHave completenessTierDefinition `yaml:"nice_to_have" json:"nice_to_have"`
 }
 
-// CompletenessTierDefinition defines a single tier's weight and assigned fields
-type CompletenessTierDefinition struct {
+// completenessTierDefinition defines a single tier's weight and assigned fields
+type completenessTierDefinition struct {
 	Weight int      `yaml:"weight" json:"weight"` // Percentage weight (0-100, must sum to 100 across tiers)
 	Fields []string `yaml:"fields" json:"fields"` // Movie field names assigned to this tier
 }
 
-// MarshalJSON serializes CompletenessConfig with proper snake_case keys
-func (cc CompletenessConfig) MarshalJSON() ([]byte, error) {
-	type Alias CompletenessConfig
+// MarshalJSON serializes completenessConfig with proper snake_case keys
+func (cc completenessConfig) MarshalJSON() ([]byte, error) {
+	type Alias completenessConfig
 	return json.Marshal((*Alias)(&cc))
 }
 
-// NFOConfig holds NFO generation settings
-type NFOConfig struct {
-	Enabled              bool     `yaml:"enabled" json:"enabled"`
-	DisplayTitle         string   `yaml:"display_title" json:"display_title"`
-	FilenameTemplate     string   `yaml:"filename_template" json:"filename_template"`
-	FirstNameOrder       bool     `yaml:"first_name_order" json:"first_name_order"`
-	ActressLanguageJA    bool     `yaml:"actress_language_ja" json:"actress_language_ja"`
-	PerFile              bool     `yaml:"per_file" json:"per_file"`                         // Create separate NFO for each multi-part file
-	UnknownActressMode   string   `yaml:"unknown_actress_mode" json:"unknown_actress_mode"` // skip (default) or fallback
-	UnknownActressText   string   `yaml:"unknown_actress_text" json:"unknown_actress_text"` // Text for fallback mode
-	ActressAsTag         bool     `yaml:"actress_as_tag" json:"actress_as_tag"`
-	AddGenericRole       bool     `yaml:"add_generic_role" json:"add_generic_role"`         // Add generic "Actress" role to all actresses
-	AltNameRole          bool     `yaml:"alt_name_role" json:"alt_name_role"`               // Use alternate name (Japanese) in role field
-	IncludeOriginalPath  bool     `yaml:"include_originalpath" json:"include_originalpath"` // Include source filename in NFO
-	IncludeStreamDetails bool     `yaml:"include_stream_details" json:"include_stream_details"`
-	IncludeFanart        bool     `yaml:"include_fanart" json:"include_fanart"`
-	IncludeTrailer       bool     `yaml:"include_trailer" json:"include_trailer"`
-	RatingSource         string   `yaml:"rating_source" json:"rating_source"`
-	Tag                  []string `yaml:"tag" json:"tag"`
-	Tagline              string   `yaml:"tagline" json:"tagline"`
-	Credits              []string `yaml:"credits" json:"credits"`
+// NFOFeatureConfig controls which NFO features and inclusions are enabled.
+type NFOFeatureConfig struct {
+	Enabled              bool `yaml:"enabled" json:"enabled"`
+	PerFile              bool `yaml:"per_file" json:"per_file"` // Create separate NFO for each multi-part file
+	IncludeFanart        bool `yaml:"include_fanart" json:"include_fanart"`
+	IncludeTrailer       bool `yaml:"include_trailer" json:"include_trailer"`
+	IncludeStreamDetails bool `yaml:"include_stream_details" json:"include_stream_details"`
+	IncludeOriginalPath  bool `yaml:"include_originalpath" json:"include_originalpath"` // Include source filename in NFO
+	ActressAsTag         bool `yaml:"actress_as_tag" json:"actress_as_tag"`
+	AddGenericRole       bool `yaml:"add_generic_role" json:"add_generic_role"` // Add generic "Actress" role to all actresses
+	AltNameRole          bool `yaml:"alt_name_role" json:"alt_name_role"`       // Use alternate name (Japanese) in role field
 }
 
+// NFOFormatConfig controls NFO display and format settings.
+type NFOFormatConfig struct {
+	DisplayTitle       string                    `yaml:"display_title" json:"display_title"`
+	FilenameTemplate   string                    `yaml:"filename_template" json:"filename_template"`
+	FirstNameOrder     bool                      `yaml:"first_name_order" json:"first_name_order"`
+	ActressLanguageJA  bool                      `yaml:"actress_language_ja" json:"actress_language_ja"`
+	RatingSource       string                    `yaml:"rating_source" json:"rating_source"`
+	Tagline            string                    `yaml:"tagline" json:"tagline"`
+	UnknownActressMode models.UnknownActressMode `yaml:"unknown_actress_mode" json:"unknown_actress_mode"` // skip (default) or fallback
+	UnknownActressText string                    `yaml:"unknown_actress_text" json:"unknown_actress_text"` // Text for fallback mode
+}
+
+// NFOExtraConfig holds additional NFO metadata lists.
+type NFOExtraConfig struct {
+	Tag     []string `yaml:"tag" json:"tag"`
+	Credits []string `yaml:"credits" json:"credits"`
+}
+
+// NFOConfig holds NFO generation settings, composed of feature toggles,
+// format/display settings, and extra metadata lists.
+// The sub-structs use yaml:",inline" so the YAML layout remains flat under "nfo:".
+type NFOConfig struct {
+	Feature NFOFeatureConfig `yaml:",inline"`
+	Format  NFOFormatConfig  `yaml:",inline"`
+	Extra   NFOExtraConfig   `yaml:",inline"`
+}
+
+// IsUnknownActressFallback reports whether the NFO config uses the fallback unknown-actress mode.
 func (n *NFOConfig) IsUnknownActressFallback() bool {
-	return n.UnknownActressMode == "fallback"
+	return n.Format.UnknownActressMode == models.UnknownActressModeFallback
 }
 
 func normalizeLanguageList(languages []string) []string {
@@ -349,7 +424,7 @@ func (tc *TranslationConfig) SettingsHash() string {
 
 	// Add provider-specific model settings (these affect output)
 	switch tc.Provider {
-	case "openai":
+	case translationProviderOpenAI:
 		hashInput.OpenAIModel = tc.OpenAI.Model
 	case "openai_compatible", "openai-compatible":
 		hashInput.OpenAICompatibleModel = tc.OpenAICompatible.Model
@@ -359,9 +434,9 @@ func (tc *TranslationConfig) SettingsHash() string {
 	case "bedrock":
 		hashInput.BedrockModel = tc.Bedrock.Model
 	case "deepl":
-		hashInput.DeepLMode = tc.DeepL.Mode
+		hashInput.DeepLMode = string(tc.DeepL.Mode)
 	case "google":
-		hashInput.GoogleMode = tc.Google.Mode
+		hashInput.GoogleMode = string(tc.Google.Mode)
 	}
 
 	// Serialize to JSON with sorted keys for determinism
@@ -396,6 +471,7 @@ type settingsHashInput struct {
 	GoogleMode                     string                  `json:"google_mode,omitempty"`
 }
 
+// EffectiveEnableThinking returns the enable_thinking flag, treating a nil value as false.
 func (oc OpenAICompatibleTranslationConfig) EffectiveEnableThinking() bool {
 	if oc.EnableThinking == nil {
 		return false
@@ -403,6 +479,7 @@ func (oc OpenAICompatibleTranslationConfig) EffectiveEnableThinking() bool {
 	return *oc.EnableThinking
 }
 
+// NormalizedBackendType returns the canonical backend type, mapping aliases and "auto" to an empty string.
 func (oc OpenAICompatibleTranslationConfig) NormalizedBackendType() string {
 	switch strings.ToLower(strings.TrimSpace(oc.BackendType)) {
 	case "", "auto":

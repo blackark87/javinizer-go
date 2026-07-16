@@ -24,6 +24,7 @@ export interface ScanResponse {
 
 export interface BrowseRequest {
 	path: string;
+	scope?: 'operation' | 'configure';
 }
 
 export interface BrowseResponse {
@@ -35,6 +36,7 @@ export interface BrowseResponse {
 export interface PathAutocompleteRequest {
 	path: string;
 	limit?: number;
+	scope?: 'operation' | 'configure';
 }
 
 export interface PathAutocompleteSuggestion {
@@ -55,7 +57,12 @@ export interface ScrapeRequest {
 	selected_scrapers?: string[];
 }
 
-export type OperationMode = 'organize' | 'in-place' | 'in-place-norenamefolder' | 'metadata-artwork' | 'preview';
+export type OperationMode =
+	| 'organize'
+	| 'in-place'
+	| 'in-place-norenamefolder'
+	| 'metadata-artwork'
+	| 'preview';
 
 export interface BatchScrapeRequest {
 	files: string[];
@@ -65,9 +72,15 @@ export interface BatchScrapeRequest {
 	update?: boolean;
 	selected_scrapers?: string[];
 	preset?: 'conservative' | 'gap-fill' | 'aggressive'; // Merge strategy preset (overrides scalar/array)
-	scalar_strategy?: 'prefer-nfo' | 'prefer-scraper' | 'preserve-existing' | 'fill-missing-only';
+	scalar_strategy?:
+		| 'prefer-nfo'
+		| 'prefer-scraper'
+		| 'preserve-existing'
+		| 'fill-missing-only'
+		| 'merge-arrays';
 	array_strategy?: 'merge' | 'replace';
 	operation_mode?: OperationMode; // Per-request override of config operation_mode
+	manual_inputs?: Record<string, string>; // Per-file manual input override keyed by file path; an ID scrapes as that ID (bypasses matcher), a URL scrapes with URL-compatible scrapers
 }
 
 export interface RescrapeRequest {
@@ -80,6 +93,7 @@ export interface PosterCropRequest {
 	y: number;
 	width: number;
 	height: number;
+	max_poster_height?: number;
 }
 
 export interface PosterCropResponse {
@@ -95,15 +109,76 @@ export interface PosterFromURLResponse {
 	poster_url: string;
 }
 
+export interface ScraperRating {
+	score?: number;
+	votes?: number;
+}
+
+// ActressInfo is the scraper-side actress shape (raw, pre-aggregation). It is a
+// subset of the persisted Actress model — no DB id/aliases.
+export interface ActressInfo {
+	dmm_id?: number;
+	first_name?: string;
+	last_name?: string;
+	japanese_name?: string;
+	thumb_url?: string;
+}
+
+// ScraperResult is the raw per-source result retained in-memory for the review
+// source viewer. Mirrors backend models.ScraperResult JSON.
+export interface ScraperResult {
+	source?: string;
+	source_url?: string;
+	language?: string;
+	id?: string;
+	content_id?: string;
+	title?: string;
+	original_title?: string;
+	description?: string;
+	release_date?: string;
+	runtime?: number;
+	director?: string;
+	maker?: string;
+	label?: string;
+	series?: string;
+	rating?: ScraperRating;
+	actresses?: ActressInfo[];
+	genres?: string[];
+	poster_url?: string;
+	cover_url?: string;
+	should_crop_poster?: boolean;
+	screenshot_urls?: string[];
+	trailer_url?: string;
+	translations?: MovieTranslation[];
+}
+
+export interface SourceResultsResponse {
+	results: ScraperResult[];
+}
+
+export interface FieldOverrideRequest {
+	field: string;
+	source: string;
+}
+
+export interface FieldOverrideResponse {
+	movie?: Movie;
+	field_sources?: Record<string, string>;
+	actress_sources?: Record<string, string>;
+}
+
 export interface BatchRescrapeRequest {
 	force?: boolean;
 	selected_scrapers?: string[];
 	manual_search_input?: string;
 	preset?: 'conservative' | 'gap-fill' | 'aggressive'; // Merge strategy preset (overrides scalar/array)
-	scalar_strategy?: 'prefer-nfo' | 'prefer-scraper' | 'preserve-existing' | 'fill-missing-only';
+	scalar_strategy?:
+		| 'prefer-nfo'
+		| 'prefer-scraper'
+		| 'preserve-existing'
+		| 'fill-missing-only'
+		| 'merge-arrays';
 	array_strategy?: 'merge' | 'replace';
-	// Limit the rescrape to specific metadata sections; empty/omitted = full rescrape.
-	// Keys: title, actresses, genres, credits, rating, release, images, media.
 	sections?: string[];
 }
 
@@ -111,6 +186,8 @@ export interface BatchRescrapeResponse {
 	movie: Movie;
 	field_sources?: Record<string, string>;
 	actress_sources?: Record<string, string>;
+	candidates?: ScrapeCandidate[];
+	has_conflict?: boolean;
 }
 
 export interface BulkRescrapeRequest {
@@ -118,10 +195,13 @@ export interface BulkRescrapeRequest {
 	selected_scrapers?: string[];
 	force?: boolean;
 	preset?: 'conservative' | 'gap-fill' | 'aggressive';
-	scalar_strategy?: 'prefer-nfo' | 'prefer-scraper' | 'preserve-existing' | 'fill-missing-only';
+	scalar_strategy?:
+		| 'prefer-nfo'
+		| 'prefer-scraper'
+		| 'preserve-existing'
+		| 'fill-missing-only'
+		| 'merge-arrays';
 	array_strategy?: 'merge' | 'replace';
-	// Limit each bulk rescrape to specific metadata sections; empty/omitted = full rescrape.
-	// Keys: title, actresses, genres, credits, rating, release, images, media.
 	sections?: string[];
 }
 
@@ -165,7 +245,12 @@ export interface FieldDifference {
 export interface NFOComparisonRequest {
 	nfo_path?: string;
 	preset?: 'conservative' | 'gap-fill' | 'aggressive';
-	scalar_strategy?: 'prefer-nfo' | 'prefer-scraper' | 'preserve-existing' | 'fill-missing-only';
+	scalar_strategy?:
+		| 'prefer-nfo'
+		| 'prefer-scraper'
+		| 'preserve-existing'
+		| 'fill-missing-only'
+		| 'merge-arrays';
 	array_strategy?: 'merge' | 'replace';
 	selected_scrapers?: string[];
 }
@@ -201,18 +286,16 @@ export interface FileResult {
 	movie_id: string;
 	status: string;
 	error?: string;
-	poster_error?: string;
-	translation_warning?: string;
 	field_sources?: Record<string, string>;
 	actress_sources?: Record<string, string>;
 	candidates?: ScrapeCandidate[];
 	has_conflict?: boolean;
-	data?: Movie;
+	movie?: Movie;
 	started_at: string;
 	ended_at?: string;
-	is_multi_part?: boolean;
-	part_number?: number;
-	part_suffix?: string;
+	is_multi_part: boolean;
+	part_number: number;
+	part_suffix: string;
 }
 
 export interface BatchJobResponse {
@@ -221,7 +304,6 @@ export interface BatchJobResponse {
 	total_files: number;
 	completed: number;
 	failed: number;
-	cancelled: number;
 	operation_count: number;
 	reverted_count: number;
 	excluded: Record<string, boolean>;
@@ -233,10 +315,10 @@ export interface BatchJobResponse {
 	completed_at?: string;
 	operation_mode_override?: string;
 	update: boolean;
+	persist_error?: string;
 }
 
 export interface ProgressMessage {
-	type?: string;
 	job_id: string;
 	file_index: number;
 	file_path: string;
@@ -244,6 +326,14 @@ export interface ProgressMessage {
 	progress: number;
 	message: string;
 	error?: string;
+	// Authoritative job-level counts stamped by the backend (see
+	// batch.stampJobCounts) on every emitted message, so frontend consumers can
+	// compute monotonic progress WITHOUT inferring totals from message counts
+	// (the iter-6 MAJOR regression, revert 30e6e53f). Optional/omitted on the
+	// wire before the job snapshot is available; consumers fall back to REST.
+	total_files?: number;
+	completed?: number;
+	failed?: number;
 }
 
 export interface Genre {
@@ -277,6 +367,24 @@ export interface GenreReplacementUpdateRequest {
 	replacement: string;
 }
 
+export interface IgnoredGenresResponse {
+	ignored_genres: string[];
+	count: number;
+}
+
+export interface FavoriteGenresResponse {
+	favorites: string[];
+	count: number;
+}
+
+export interface GenreListUpdateRequest {
+	genres: string[];
+}
+
+export interface GenreAddRequest {
+	genre: string;
+}
+
 export interface WordReplacement {
 	id: number;
 	original: string;
@@ -306,6 +414,7 @@ export interface WordReplacementUpdateRequest {
 export interface Movie {
 	id: string;
 	content_id?: string;
+	code?: string;
 	title: string;
 	display_title?: string;
 	original_title?: string;
@@ -328,6 +437,7 @@ export interface Movie {
 	original_poster_url?: string;
 	original_cropped_poster_url?: string;
 	original_should_crop_poster?: boolean | null;
+	original_cover_url?: string;
 	screenshot_urls?: string[];
 	trailer_url?: string;
 	original_filename?: string;
@@ -395,7 +505,14 @@ export interface ActressSyncCandidatesResponse {
 }
 
 export type ActressSyncJobStatus = 'pending' | 'running' | 'completed' | 'cancelled';
-export type ActressSyncTaskStatus = 'pending' | 'running' | 'completed' | 'skipped' | 'conflict' | 'failed' | 'cancelled';
+export type ActressSyncTaskStatus =
+	| 'pending'
+	| 'running'
+	| 'completed'
+	| 'skipped'
+	| 'conflict'
+	| 'failed'
+	| 'cancelled';
 
 export interface ActressSyncJob {
 	id: string;
@@ -425,8 +542,23 @@ export interface ActressSyncTask {
 	label: string;
 	dedupe_key: string;
 	status: ActressSyncTaskStatus;
-	stage: 'queued' | 'resolving' | 'romanizing' | 'translating' | 'mapping' | 'nfo' | 'completed' | string;
-	outcome?: 'updated' | 'updated_with_warning' | 'skipped' | 'conflict' | 'failed' | 'cancelled' | string;
+	stage:
+		| 'queued'
+		| 'resolving'
+		| 'romanizing'
+		| 'translating'
+		| 'mapping'
+		| 'nfo'
+		| 'completed'
+		| string;
+	outcome?:
+		| 'updated'
+		| 'updated_with_warning'
+		| 'skipped'
+		| 'conflict'
+		| 'failed'
+		| 'cancelled'
+		| string;
 	messages: string[];
 	updated_fields: string[];
 	warning?: string;
@@ -439,10 +571,24 @@ export interface ActressSyncTask {
 	completed_at?: string;
 }
 
-export interface ActressSyncJobResponse { job: ActressSyncJob; }
-export interface ActressSyncJobsResponse { jobs: ActressSyncJob[]; }
-export interface ActressSyncTasksResponse { tasks: ActressSyncTask[]; total: number; }
-export interface ActressSyncJobCreateRequest { scope?: 'missing' | 'selected'; actress_ids?: number[]; missing?: boolean; }
+export interface ActressSyncJobResponse {
+	job: ActressSyncJob;
+}
+
+export interface ActressSyncJobsResponse {
+	jobs: ActressSyncJob[];
+}
+
+export interface ActressSyncTasksResponse {
+	tasks: ActressSyncTask[];
+	total: number;
+}
+
+export interface ActressSyncJobCreateRequest {
+	scope?: 'missing' | 'selected';
+	actress_ids?: number[];
+	missing?: boolean;
+}
 
 export interface ActressUpsertRequest {
 	dmm_id?: number;
@@ -454,6 +600,11 @@ export interface ActressUpsertRequest {
 }
 
 export type ActressMergeResolution = 'target' | 'source';
+
+export interface ActressAliasGroup {
+	canonical: string;
+	names: string[];
+}
 
 export interface ActressMergePreviewRequest {
 	target_id: number;
@@ -498,6 +649,7 @@ export interface AuthStatusResponse {
 	initialized: boolean;
 	authenticated: boolean;
 	username?: string;
+	session_id?: string;
 }
 
 export interface AuthCredentialsRequest {
@@ -518,7 +670,12 @@ export interface UpdateRequest {
 	force_overwrite?: boolean;
 	preserve_nfo?: boolean;
 	preset?: 'conservative' | 'gap-fill' | 'aggressive';
-	scalar_strategy?: 'prefer-scraper' | 'prefer-nfo' | 'preserve-existing' | 'fill-missing-only';
+	scalar_strategy?:
+		| 'prefer-nfo'
+		| 'prefer-scraper'
+		| 'preserve-existing'
+		| 'fill-missing-only'
+		| 'merge-arrays';
 	array_strategy?: 'merge' | 'replace';
 	skip_nfo?: boolean;
 	skip_download?: boolean;
@@ -616,7 +773,7 @@ export interface ProxyTestResponse {
 }
 
 export interface TranslationModelsRequest {
-	provider: 'openai' | 'openai-compatible' | 'anthropic' | 'bedrock';
+	provider: 'openai' | 'openai-compatible' | 'anthropic';
 	base_url: string;
 	api_key: string;
 }
@@ -707,6 +864,17 @@ export interface SecurityConfig {
 	rate_limit: RateLimitConfig;
 	trusted_proxies: string[];
 	force_secure_cookies: boolean;
+}
+
+export interface SecurityUpdateRequest {
+	allowed_directories: string[];
+	denied_directories: string[];
+	allow_unc: boolean;
+	allowed_unc_servers: string[];
+}
+
+export interface SecurityUpdateResponse {
+	security: SecurityConfig;
 }
 
 export interface APIConfig {
@@ -850,19 +1018,19 @@ export interface WordReplacementConfig {
 }
 
 export interface CompletenessTierDefinition {
-    weight: number;
-    fields: string[];
+	weight: number;
+	fields: string[];
 }
 
 export interface CompletenessTierConfig {
-    essential: CompletenessTierDefinition;
-    important: CompletenessTierDefinition;
-    nice_to_have: CompletenessTierDefinition;
+	essential: CompletenessTierDefinition;
+	important: CompletenessTierDefinition;
+	nice_to_have: CompletenessTierDefinition;
 }
 
 export interface CompletenessConfig {
-    enabled: boolean;
-    tiers: CompletenessTierConfig;
+	enabled: boolean;
+	tiers: CompletenessTierConfig;
 }
 
 export interface MetadataConfig {
@@ -876,6 +1044,12 @@ export interface MetadataConfig {
 	required_fields?: string[];
 	nfo?: NFOConfig;
 	completeness?: CompletenessConfig;
+	r18dev_dump?: R18DevDumpConfig;
+}
+
+export interface R18DevDumpConfig {
+	enabled: boolean;
+	path: string;
 }
 
 export interface MatchingConfig {
@@ -890,9 +1064,12 @@ export interface OutputConfig {
 	folder_format: string;
 	file_format: string;
 	subfolder_format: string[];
-	delimiter: string;
+	actress_delimiter: string;
 	max_title_length: number;
 	max_path_length: number;
+	first_name_order?: boolean;
+	actress_language_ja?: boolean;
+	max_poster_height: number;
 	move_subtitles: boolean;
 	subtitle_extensions: string[];
 	operation_mode: OperationMode;
@@ -929,8 +1106,13 @@ export interface MediaInfoConfig {
 	cli_timeout: number;
 }
 
+export interface FavoritesConfig {
+	genre?: string[];
+}
+
 export interface WebUIConfig {
 	default_review_view?: string;
+	favorites?: FavoritesConfig;
 }
 
 export interface ScrapersConfig {
@@ -945,7 +1127,17 @@ export interface ScrapersConfig {
 	early_stop_min_results?: number;
 	browser?: BrowserConfig;
 	proxy?: ProxyConfig;
-	[key: string]: ScraperSettings | string | number | boolean | null | string[] | FlareSolverrConfig | BrowserConfig | ProxyConfig | undefined;
+	[key: string]:
+		| ScraperSettings
+		| string
+		| number
+		| boolean
+		| null
+		| string[]
+		| FlareSolverrConfig
+		| BrowserConfig
+		| ProxyConfig
+		| undefined;
 }
 
 // Config types
@@ -966,6 +1158,12 @@ export interface LoggingConfig {
 	compress?: boolean;
 }
 
+export interface ConfigWarning {
+	field: string;
+	scrapers: string[];
+	message: string;
+}
+
 export interface Config {
 	config_version?: number;
 	server?: ServerConfig;
@@ -980,6 +1178,7 @@ export interface Config {
 	performance?: PerformanceConfig;
 	mediainfo?: MediaInfoConfig;
 	webui?: WebUIConfig;
+	warnings?: ConfigWarning[];
 }
 
 export interface SettingsConfig {
@@ -996,6 +1195,7 @@ export interface SettingsConfig {
 	performance: PerformanceConfig;
 	mediainfo: MediaInfoConfig;
 	webui: WebUIConfig;
+	warnings?: ConfigWarning[];
 }
 
 // History types
@@ -1023,16 +1223,8 @@ export interface HistoryStats {
 		organize: number;
 		download: number;
 		nfo: number;
-		[key: string]: number;
 	};
-	recent_window_days: number;
-	total_7d: number;
-	success_7d: number;
-	failed_7d: number;
-	success_rate_7d: number;
 }
-
-export type HistoryDashboardStats = HistoryStats;
 
 export interface HistoryListResponse {
 	records: HistoryRecord[];
@@ -1065,7 +1257,6 @@ export interface JobListItem {
 	total_files: number;
 	completed: number;
 	failed: number;
-	cancelled: number;
 	operation_count: number;
 	reverted_count: number;
 	progress: number;
@@ -1105,6 +1296,7 @@ export interface RevertResultResponse {
 	total: number;
 	succeeded: number;
 	failed: number;
+	skipped: number;
 	errors?: RevertFileError[];
 }
 
@@ -1114,6 +1306,8 @@ export interface RevertFileError {
 	original_path: string;
 	new_path: string;
 	error: string;
+	outcome?: string;
+	reason?: string;
 }
 
 // Event types (Logs page)
@@ -1165,6 +1359,36 @@ export interface VersionStatusResponse {
 	prerelease: boolean;
 	checked_at: string;
 	source: string;
+	install_environment: 'docker' | 'desktop' | 'cli';
+	upgrade_instructions?: string;
+	error?: string;
+}
+
+// Desktop self-upgrade (desktop builds only). POST /api/v1/desktop/upgrade
+// triggers a bundle download → verify → stage → relaunch cycle. On 200 the old
+// app window closes and a new one opens at a fresh server port (the redirector
+// self-heals the webview), so the client just holds its spinner — no polling.
+export interface DesktopUpgradeRequest {
+	force?: boolean;
+}
+
+export interface DesktopUpgradeResponse {
+	status: 'up-to-date' | 'relaunching';
+	version?: string;
+}
+
+export type DesktopUpgradeState =
+	| 'idle'
+	| 'downloading'
+	| 'verifying'
+	| 'staging'
+	| 'swapping'
+	| 'relaunching'
+	| 'failed';
+
+export interface DesktopUpgradeStatus {
+	state: DesktopUpgradeState;
+	version?: string;
 	error?: string;
 }
 
@@ -1201,4 +1425,23 @@ export interface BatchExcludeResponse {
 	excluded: string[];
 	failed: BatchExcludeFailed[];
 	job: BatchJobResponse;
+}
+
+export interface DumpStatus {
+	present: boolean;
+	running: boolean;
+	last_error?: string;
+	row_count?: number;
+	source_url?: string;
+	source_date?: string;
+	imported_at?: string;
+	path: string;
+	size_bytes?: number;
+	enabled: boolean;
+}
+
+export interface DumpSearchResult {
+	query: string;
+	content_id: string | null;
+	dvd_id: string | null;
 }

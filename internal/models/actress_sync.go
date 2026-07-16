@@ -2,6 +2,7 @@ package models
 
 import "time"
 
+// Durable actress-sync job, task, and task-kind values.
 const (
 	ActressSyncJobPending   = "pending"
 	ActressSyncJobRunning   = "running"
@@ -19,20 +20,6 @@ const (
 	ActressSyncTaskKindActress      = "actress"
 	ActressSyncTaskKindUnknownMovie = "unknown_movie"
 )
-
-// ActressTranslation stores a reusable per-language actress display name.
-type ActressTranslation struct {
-	ID           uint      `json:"id" gorm:"primaryKey"`
-	ActressID    uint      `json:"actress_id" gorm:"index:idx_actress_translation_language,unique"`
-	Language     string    `json:"language" gorm:"index:idx_actress_translation_language,unique;size:5"`
-	Name         string    `json:"name"`
-	SourceName   string    `json:"source_name"`
-	SettingsHash string    `json:"settings_hash" gorm:"type:varchar(16)"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-}
-
-func (ActressTranslation) TableName() string { return "actress_translations" }
 
 // ActressSyncJob is the durable aggregate for a background actress sync run.
 type ActressSyncJob struct {
@@ -53,6 +40,7 @@ type ActressSyncJob struct {
 	CompletedAt     *time.Time `json:"completed_at,omitempty"`
 }
 
+// TableName returns the durable actress-sync job table name.
 func (ActressSyncJob) TableName() string { return "actress_sync_jobs" }
 
 // ActressSyncTask is one independently retryable actress or Unknown/movie unit.
@@ -82,4 +70,5 @@ type ActressSyncTask struct {
 	CompletedAt    *time.Time `json:"completed_at,omitempty"`
 }
 
+// TableName returns the durable actress-sync task table name.
 func (ActressSyncTask) TableName() string { return "actress_sync_tasks" }

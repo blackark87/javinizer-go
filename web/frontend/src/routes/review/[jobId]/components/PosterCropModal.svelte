@@ -5,7 +5,7 @@
 	import { portalToBody } from '$lib/actions/portal';
 	import Button from '$lib/components/ui/Button.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
-	import type { PosterCropBox, PosterCropMetrics } from '../review-utils';
+	import { computeCropPreview, type PosterCropBox, type PosterCropMetrics } from '../review-utils';
 
 	interface Props {
 		show: boolean;
@@ -15,12 +15,15 @@
 		cropMetrics: PosterCropMetrics | null;
 		cropBox: PosterCropBox | null;
 		overlayStyle: string;
+		configMaxPosterHeight: number;
+		maxPosterHeight: number | null;
 		onClose: () => void;
 		onReset: () => void;
 		onApply: () => void;
 		onImageLoad: (event: Event) => void;
 		onImageError: () => void;
 		onCropMouseDown: (event: MouseEvent) => void;
+		onMaxPosterHeightChange: (value: number | null) => void;
 	}
 
 	let {
@@ -31,13 +34,38 @@
 		cropMetrics,
 		cropBox,
 		overlayStyle,
+		configMaxPosterHeight,
+		maxPosterHeight,
 		onClose,
 		onReset,
 		onApply,
 		onImageLoad,
 		onImageError,
-		onCropMouseDown
+		onCropMouseDown,
+		onMaxPosterHeightChange
 	}: Props = $props();
+
+	// Input field shows the config value when maxPosterHeight is null
+	// (meaning "use config default"). User-typed values override it.
+	let maxPosterHeightInput = $derived(maxPosterHeight ?? configMaxPosterHeight);
+
+	let preview = $derived(computeCropPreview(cropBox, maxPosterHeightInput));
+
+	function handleMaxHeightInput(event: Event) {
+		const target = event.target as HTMLInputElement;
+		const trimmed = target.value.trim();
+		if (trimmed === '') {
+			onMaxPosterHeightChange(null);
+			return;
+		}
+		const parsed = Number.parseInt(trimmed, 10);
+		if (Number.isNaN(parsed) || parsed < 0) return;
+		onMaxPosterHeightChange(parsed);
+	}
+
+	function resetToConfigDefault() {
+		onMaxPosterHeightChange(null);
+	}
 </script>
 
 {#if show}
@@ -97,24 +125,75 @@
 					</div>
 				</div>
 
-				<div class="p-4 border-t flex items-center justify-between gap-2">
-					<Button variant="outline" onclick={onReset} disabled={!cropMetrics || posterCropSaving}>
-						{#snippet children()}Reset Position{/snippet}
-					</Button>
-					<div class="flex items-center gap-2">
-						<Button variant="outline" onclick={onClose} disabled={posterCropSaving}>
-							{#snippet children()}Cancel{/snippet}
+				<div class="p-4 border-t flex flex-col gap-3">
+					<div class="flex items-center justify-between gap-4 text-xs">
+						<!-- Live output preview -->
+						<div class="flex items-center gap-3 text-muted-foreground">
+							<span>Output:</span>
+							<code class="px-1.5 py-0.5 rounded bg-muted text-foreground">
+								{preview.outputWidth}×{preview.outputHeight}px
+							</code>
+							{#if preview.ratioLabel}
+								<span class="text-muted-foreground">({preview.ratioLabel})</span>
+							{/if}
+							{#if preview.willResize}
+								<span class="text-amber-500 dark:text-amber-400 font-medium">
+									↓ downscaled from {cropBox?.width}×{cropBox?.height}
+								</span>
+							{:else if cropBox}
+								<span class="text-emerald-500 dark:text-emerald-400 font-medium">
+									✓ source resolution preserved
+								</span>
+							{/if}
+						</div>
+
+						<!-- Max poster height input -->
+						<div class="flex items-center gap-2">
+							<label for="max-poster-height" class="text-muted-foreground whitespace-nowrap">
+								Max poster height (px)
+							</label>
+							<input
+								id="max-poster-height"
+								type="number"
+								min="0"
+								class="w-24 px-2 py-1 text-xs rounded border border-input bg-background"
+								value={maxPosterHeightInput}
+								oninput={handleMaxHeightInput}
+							/>
+							<span class="text-muted-foreground">
+								(0 = no cap{configMaxPosterHeight !== 0 ? `, config: ${configMaxPosterHeight}` : ', config: no cap'})
+							</span>
+							{#if maxPosterHeight !== null}
+								<button
+									type="button"
+									class="text-xs text-primary hover:underline"
+									onclick={resetToConfigDefault}
+								>
+									Reset to config
+								</button>
+							{/if}
+						</div>
+					</div>
+
+					<div class="flex items-center justify-between gap-2">
+						<Button variant="outline" onclick={onReset} disabled={!cropMetrics || posterCropSaving}>
+							{#snippet children()}Reset Position{/snippet}
 						</Button>
-						<Button onclick={onApply} disabled={!cropBox || !!posterCropLoadError || posterCropSaving}>
-							{#snippet children()}
-								{#if posterCropSaving}
-									<LoaderCircle class="h-4 w-4 mr-2 animate-spin" />
-									Applying...
-								{:else}
-									Apply Crop
-								{/if}
-							{/snippet}
-						</Button>
+						<div class="flex items-center gap-2">
+							<Button variant="outline" onclick={onClose} disabled={posterCropSaving}>
+								{#snippet children()}Cancel{/snippet}
+							</Button>
+							<Button onclick={onApply} disabled={!cropBox || !!posterCropLoadError || posterCropSaving}>
+								{#snippet children()}
+									{#if posterCropSaving}
+										<LoaderCircle class="h-4 w-4 mr-2 animate-spin" />
+										Applying...
+									{:else}
+										Apply Crop
+									{/if}
+								{/snippet}
+							</Button>
+						</div>
 					</div>
 				</div>
 			</Card>

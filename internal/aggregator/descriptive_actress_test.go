@@ -1,6 +1,7 @@
 package aggregator
 
 import (
+	"context"
 	"testing"
 
 	"github.com/javinizer/javinizer-go/internal/config"
@@ -45,10 +46,10 @@ func TestGetActressesByPriority_MergesDecoratedName(t *testing.T) {
 		},
 		Scrapers: config.ScrapersConfig{Priority: []string{"libredmm", "javbus"}},
 	}
-	db, err := database.New(cfg)
+	db, err := database.New(&database.Config{Type: "sqlite", DSN: "file::memory:?cache=shared"})
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
-	require.NoError(t, db.AutoMigrate())
+	require.NoError(t, db.RunMigrationsOnStartup(context.Background()))
 
 	agg := NewWithDatabase(cfg, db)
 
@@ -57,7 +58,7 @@ func TestGetActressesByPriority_MergesDecoratedName(t *testing.T) {
 		"javbus":   {Actresses: []models.ActressInfo{{JapaneseName: "あいり"}}},
 	}
 
-	got := agg.getActressesByPriority(results, []string{"libredmm", "javbus"})
+	got := agg.getActressesByPriorityWithSource(results, []string{"libredmm", "javbus"}, nil)
 
 	require.Len(t, got, 1, "decorated and plain forms should merge into one actress")
 	assert.Equal(t, "あいり", got[0].JapaneseName)
@@ -74,10 +75,10 @@ func newDescriptiveTestAggregator(t *testing.T) *Aggregator {
 		},
 		Scrapers: config.ScrapersConfig{Priority: []string{"libredmm", "javbus"}},
 	}
-	db, err := database.New(cfg)
+	db, err := database.New(&database.Config{Type: "sqlite", DSN: "file::memory:?cache=shared"})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	require.NoError(t, db.AutoMigrate())
+	require.NoError(t, db.RunMigrationsOnStartup(context.Background()))
 	return NewWithDatabase(cfg, db)
 }
 
@@ -93,7 +94,7 @@ func TestGetActressesByPriority_HonorificAndDescription(t *testing.T) {
 		}},
 	}
 
-	got := agg.getActressesByPriority(results, []string{"libredmm", "javbus"})
+	got := agg.getActressesByPriorityWithSource(results, []string{"libredmm", "javbus"}, nil)
 
 	require.Len(t, got, 1, "honorific name kept, description dropped")
 	assert.Equal(t, "ありさ", got[0].JapaneseName)
@@ -108,7 +109,7 @@ func TestGetActressesByPriority_OccupationSuffixMerges(t *testing.T) {
 		"javbus":   {Actresses: []models.ActressInfo{{JapaneseName: "愛梨沙"}}},
 	}
 
-	got := agg.getActressesByPriority(results, []string{"libredmm", "javbus"})
+	got := agg.getActressesByPriorityWithSource(results, []string{"libredmm", "javbus"}, nil)
 
 	require.Len(t, got, 1, "occupation-decorated and plain forms should merge")
 	assert.Equal(t, "愛梨沙", got[0].JapaneseName)

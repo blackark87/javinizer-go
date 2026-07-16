@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import { browser } from '$app/environment';
 	import { cubicOut } from 'svelte/easing';
 	import { fly } from 'svelte/transition';
 	import { FolderOpen, Settings, Film, Users, LogOut, Activity, FileText, ChevronDown, Sun, Moon, Monitor, Tags, Type } from 'lucide-svelte';
 	import { getThemeStore } from '$lib/stores/theme.svelte';
 	import type { Theme } from '$lib/stores/theme.svelte';
+	import UpdateIndicator from '$lib/components/UpdateIndicator.svelte';
 
 	interface Props {
 		authenticated?: boolean;
@@ -37,7 +39,7 @@
 		subMenuItems.some((item) => currentPath === item.href || currentPath.startsWith(item.href + '/'))
 	);
 
-	const themeIcon = $derived(
+	const ThemeIcon = $derived(
 		themeStore.current === 'dark' ? Moon : themeStore.current === 'light' ? Sun : Monitor
 	);
 
@@ -95,6 +97,16 @@
 					</a>
 				{/each}
 
+				<!-- Update available indicator (hidden when up-to-date / disabled).
+				Browser-only: UpdateIndicator uses TanStack Query (useQueryClient),
+				which requires a QueryClientProvider. The SSR branch of +layout.svelte
+				renders Navigation without a provider, so mounting this during SSR
+				would throw. The indicator is an interactive, API-polling widget with
+				no SSR value, so gating on `browser` is the correct fix. -->
+				{#if browser}
+					<UpdateIndicator />
+				{/if}
+
 				<!-- Settings & Logs dropdown -->
 				<div class="relative" data-submenu>
 					<button
@@ -122,7 +134,7 @@
 								onclick={() => themeStore.cycleTheme()}
 								class="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-all duration-150 hover:bg-accent hover:translate-x-0.5 w-full"
 							>
-								<themeIcon class="h-4 w-4"></themeIcon>
+								<ThemeIcon class="h-4 w-4" />
 								<span>{themeLabel}</span>
 							</button>
 

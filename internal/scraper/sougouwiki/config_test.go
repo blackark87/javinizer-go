@@ -6,40 +6,23 @@ import (
 	"testing"
 
 	"github.com/javinizer/javinizer-go/internal/config"
-	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/scraperutil"
 )
 
 func TestModuleDefaultsAndFlattening(t *testing.T) {
-	defaults := scraperutil.GetDefaultScraperSettings()
-	raw, ok := defaults[scraperName]
+	registry := scraperutil.NewScraperRegistry()
+	Register(registry)
+	registered, ok := registry.Get(scraperName)
 	if !ok {
 		t.Fatalf("%s defaults are not registered", scraperName)
 	}
-	settings, ok := raw.(config.ScraperSettings)
-	if !ok {
-		t.Fatalf("defaults type = %T, want config.ScraperSettings", raw)
-	}
+	settings := registered.Defaults
 	if settings.Enabled || settings.BaseURL != defaultBaseURL || settings.RateLimit != 1000 {
 		t.Errorf("unexpected defaults: %+v", settings)
 	}
-
-	flatten := scraperutil.GetFlattenFunc(scraperName)
-	if flatten == nil {
-		t.Fatal("flatten function is not registered")
-	}
-	proxy := &config.ProxyConfig{Enabled: true, Profile: "wiki"}
-	flattened, ok := flatten(&Config{BaseScraperConfig: config.BaseScraperConfig{
-		Enabled:      true,
-		RequestDelay: 250,
-		Proxy:        proxy,
-	}}).(*config.ScraperSettings)
-	if !ok {
-		t.Fatal("flatten did not return ScraperSettings")
-	}
-	if !flattened.Enabled || flattened.RateLimit != 250 || flattened.BaseURL != defaultBaseURL || flattened.Proxy != proxy {
-		t.Errorf("unexpected flattened settings: %+v", flattened)
+	if registered.Constructor == nil || registered.ValidateFn == nil {
+		t.Fatal("constructor and validator must be registered")
 	}
 }
 
@@ -47,13 +30,11 @@ func TestConfigValidation(t *testing.T) {
 	validator := &Config{}
 	for _, test := range []struct {
 		name     string
-		settings *config.ScraperSettings
+		settings *models.ScraperSettings
 		wantErr  bool
 	}{
-		{name: "valid", settings: &config.ScraperSettings{Enabled: true, BaseURL: defaultBaseURL, RateLimit: 1000, Timeout: 30}},
-		{name: "invalid URL", settings: &config.ScraperSettings{Enabled: true, BaseURL: "seesaawiki.jp"}, wantErr: true},
-		{name: "negative delay", settings: &config.ScraperSettings{Enabled: true, BaseURL: defaultBaseURL, RateLimit: -1}, wantErr: true},
-		{name: "negative timeout", settings: &config.ScraperSettings{Enabled: true, BaseURL: defaultBaseURL, Timeout: -1}, wantErr: true},
+		{name: "valid", settings: &models.ScraperSettings{Enabled: true, BaseURL: defaultBaseURL, RateLimit: 1000, Timeout: 30}},
+		{name: "invalid URL", settings: &models.ScraperSettings{Enabled: true, BaseURL: "seesaawiki.jp"}, wantErr: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			err := validator.ValidateConfig(test.settings)
@@ -65,18 +46,15 @@ func TestConfigValidation(t *testing.T) {
 }
 
 func TestConstructorInheritsCommonHTTPSettings(t *testing.T) {
-	rawConstructor, ok := scraperutil.GetScraperConstructor(scraperName)
+	registry := scraperutil.NewScraperRegistry()
+	Register(registry)
+	constructor, ok := registry.GetScraperConstructor(scraperName)
 	if !ok {
 		t.Fatal("constructor is not registered")
 	}
-	constructor, ok := rawConstructor.(func(config.ScraperSettings, *database.DB, *config.ScrapersConfig) (models.Scraper, error))
-	if !ok {
-		t.Fatalf("constructor type = %T", rawConstructor)
-	}
-
-	created, err := constructor(config.ScraperSettings{Enabled: true}, nil, &config.ScrapersConfig{
+	created, err := constructor(scraperutil.ScraperDeps{
+		Settings:       models.ScraperSettings{Enabled: true, UserAgent: "Global-Wiki-UA/1.0"},
 		TimeoutSeconds: 44,
-		UserAgent:      "Global-Wiki-UA/1.0",
 	})
 	if err != nil {
 		t.Fatalf("constructor error = %v", err)

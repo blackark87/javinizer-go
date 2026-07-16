@@ -13,7 +13,7 @@ import (
 
 var coverPsRegex = regexp.MustCompile(`"(https://pics\.dmm\.co\.jp/[^"'\x60]+ps\.jpg)"`)
 
-func (s *Scraper) extractCoverURL(doc *goquery.Document, isNewSite bool, contentID string) string {
+func (s *scraper) extractCoverURL(doc *goquery.Document, isNewSite bool, contentID string) string {
 	if isNewSite {
 		return s.extractCoverURLNewSite(doc, contentID)
 	}
@@ -23,16 +23,17 @@ func (s *Scraper) extractCoverURL(doc *goquery.Document, isNewSite bool, content
 		html, _ := doc.Html()
 		matches := coverPsRegex.FindStringSubmatch(html)
 		if len(matches) > 1 {
-			return imageutil.UpgradeCoverResolution(imageutil.NormalizeDMMScreenshotURL(matches[1]))
+			return imageutil.UpgradeDMMCoverCDN(imageutil.UpgradeCoverResolution(imageutil.NormalizeDMMScreenshotURL(matches[1])))
 		}
 		return ""
 	}
 	coverURL = imageutil.NormalizeDMMScreenshotURL(coverURL)
 	coverURL = imageutil.UpgradeCoverResolution(coverURL)
+	coverURL = imageutil.UpgradeDMMCoverCDN(coverURL)
 	return coverURL
 }
 
-func (s *Scraper) extractScreenshots(doc *goquery.Document, isNewSite bool) []string {
+func (s *scraper) extractScreenshots(doc *goquery.Document, isNewSite bool) []string {
 	if isNewSite {
 		return s.extractScreenshotsNewSite(doc)
 	}
@@ -54,25 +55,7 @@ func (s *Scraper) extractScreenshots(doc *goquery.Document, isNewSite bool) []st
 	return screenshots
 }
 
-func (s *Scraper) filterPlaceholderImageURL(ctx context.Context, url string) string {
-	if url == "" {
-		return ""
-	}
-
-	cfg := placeholder.ConfigFromSettings(&s.settings, placeholder.DefaultDMMPlaceholderHashes)
-	isPlaceholder, err := placeholder.IsPlaceholder(ctx, s.client, url, cfg)
-	if err != nil {
-		logging.Warnf("DMM: Placeholder image filter error for %s: %v", url, err)
-		return url
-	}
-	if isPlaceholder {
-		logging.Debugf("DMM: Filtered placeholder image from results: %s", url)
-		return ""
-	}
-	return url
-}
-
-func (s *Scraper) filterPlaceholderScreenshots(ctx context.Context, urls []string) []string {
+func (s *scraper) filterPlaceholderScreenshots(ctx context.Context, urls []string) []string {
 	if len(urls) == 0 {
 		return urls
 	}
@@ -89,7 +72,7 @@ func (s *Scraper) filterPlaceholderScreenshots(ctx context.Context, urls []strin
 	return filtered
 }
 
-func (s *Scraper) extractTrailerURL(doc *goquery.Document, sourceURL string) string {
+func (s *scraper) extractTrailerURL(doc *goquery.Document, sourceURL string) string {
 	isNewSite := strings.Contains(sourceURL, "video.dmm.co.jp")
 
 	if isNewSite {

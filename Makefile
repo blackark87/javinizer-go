@@ -1,9 +1,10 @@
 .PHONY: help build run run-api run-api-dev test test-short test-race test-verbose bench clean clean-all deps install web-dev web-build web-preview web-install web-clean web-restore-placeholder web-test
-.PHONY: coverage coverage-fast coverage-html coverage-check coverage-func ci ci-full config-drift simulate-ci
-.PHONY: fmt lint vet vuln swagger docs mocks
+.PHONY: coverage coverage-fast coverage-html coverage-check coverage-pkg coverage-patch coverage-patch-check coverage-func ci ci-full config-drift config-sync check-import-guard check-mocks simulate-ci
+.PHONY: fmt lint vet vuln swagger docs mocks test-e2e-fullstack test-e2e-frontend test-e2e-field-drop test-e2e-cli test-e2e-live test-coverage
 .PHONY: build-cli-linux build-cli-darwin build-cli-windows build-cli-all
+.PHONY: build-app-darwin build-app-windows build-app-linux build-app-all
 .PHONY: act-list act-test act-build act-lint act-docker act-cli-release act-ci act-dry act-help
-.PHONY: docker-build docker-build-no-cache docker-run docker-stop docker-clean docker-push docker-test docker-logs docker-help
+.PHONY: docker-build docker-build-no-cache docker-run docker-stop docker-restart docker-clean docker-push docker-test docker-logs docker-help
 .PHONY: docker-compose-up docker-compose-down docker-compose-restart docker-compose-logs docker-compose-build
 
 # Default target - show help
@@ -32,6 +33,8 @@ help:
 	@echo "  make coverage-html      - Generate HTML coverage report (coverage.html)"
 	@echo "  make coverage-pkg       - Display per-package coverage breakdown"
 	@echo "  make coverage-check     - Enforce 75%% Codecov-compatible line coverage"
+	@echo "  make coverage-patch     - Show patch coverage (new/changed lines vs main)"
+	@echo "  make coverage-patch-check - Enforce 80%% patch coverage (mirrors codecov/patch)"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make fmt                - Format code with go fmt"
@@ -40,12 +43,15 @@ help:
 	@echo "  make vuln               - Run govulncheck vulnerability scan"
 	@echo "  make swagger            - Generate Swagger API documentation"
 	@echo "  make check-swagger      - Check if Swagger docs are up to date"
+	@echo "  make check-mocks        - Check if mockery mocks are up to date"
 	@echo "  make mocks              - Generate mocks from interfaces (mockery v3)"
 	@echo ""
 	@echo "CI/CD:"
 	@echo "  make ci                 - Run full CI suite (vet + lint + coverage + race + drift)"
 	@echo "  make ci-full            - Run full CI suite including frontend tests"
 	@echo "  make config-drift       - Validate config synchronization (no hardcoded values)"
+	@echo "  make config-sync        - Sync configs/config.yaml.example from the embedded master copy"
+	@echo "  make check-import-guard - Enforce models→config dependency direction"
 	@echo "  make simulate-ci        - Simulate GitHub Actions CI locally"
 	@echo ""
 	@echo "Web Frontend:"
@@ -66,6 +72,12 @@ help:
 	@echo "  make build-cli-darwin   - Build for macOS (universal binary)"
 	@echo "  make build-cli-windows  - Build for Windows (amd64)"
 	@echo "  make build-cli-all      - Build for all platforms"
+	@echo ""
+	@echo "Desktop App (clickable .app/.exe):"
+	@echo "  make build-app-darwin   - Build macOS .app bundle (universal)"
+	@echo "  make build-app-windows  - Build Windows .exe"
+	@echo "  make build-app-linux    - Build Linux AppImage (host arch; needs webkit2gtk-4.1 + gtk3)"
+	@echo "  make build-app-all      - Build desktop app for all platforms"
 	@echo ""
 	@echo "Docker:"
 	@echo "  make docker-help        - Show Docker-specific commands"
@@ -105,9 +117,9 @@ build: web-build
 run:
 	go run ./cmd/javinizer
 
-# Run the API server using subcommand
+# Run the web/API server using subcommand
 run-api:
-	go run ./cmd/javinizer api
+	go run ./cmd/javinizer web
 
 # Run API with hot reload (requires air, falls back to go run air)
 run-api-dev:
@@ -144,13 +156,13 @@ bench:
 
 # Generate coverage report using Go's built-in coverage
 # Uses -coverpkg to aggregate coverage across all packages in a single run
-# Excludes: mocks (generated), tui (interactive UI), docs (generated API docs), testutil (test helpers), coveragecheck (coverage utility), coverage (coverage utility), web (frontend)
+# Excludes: mocks (generated), tui (interactive UI), docs (generated API docs), testutil (test helpers), coveragecheck (coverage utility), coverage (coverage utility), javinizer-e2e (E2E test binary — boots a mock backend for Playwright; exercised by the fullstack-e2e suite, not unit tests), web (frontend)
 # Output: coverage.out (compatible with go tool cover and Codecov)
 # Shows: per-package test output, then displays clean line coverage summary
 coverage:
 	@echo "Running tests and generating coverage report..."
 	@rm -f coverage.out
-	@pkgs=$$(go list ./... | grep -Ev '(/cmd/coveragecheck$$)|(/internal/coverage$$)|(/(mocks|tui|docs|testutil|web)(/|$$))'); \
+	@pkgs=$$(go list ./... | grep -Ev '(/cmd/(coveragecheck|javinizer-e2e)$$)|(/internal/coverage$$)|(/(mocks|tui|docs|testutil|web)(/|$$))'); \
 	go test -covermode=atomic -coverprofile=coverage.out -coverpkg=$$(echo $$pkgs | tr ' ' ',') -count=1 $$pkgs 2>&1 | awk '/^(ok|github)/ { print; fflush() }'
 	@echo ""
 	@go run ./cmd/coveragecheck --metric line --profile coverage.out 2>/dev/null
@@ -170,12 +182,42 @@ coverage-pkg: coverage
 coverage-check: coverage
 	@./scripts/check_coverage.sh 75 coverage.out
 
+# Show patch coverage (new/changed lines vs main) — mirrors codecov/patch.
+# Reads codecov.yml's ignore list and go.mod's module path so the local result
+# matches what codecov reports on the PR. Requires a clean working tree with
+# the base ref (main) available locally (git fetch upstream main first if not).
+coverage-patch: coverage
+	@go run ./cmd/coveragecheck --patch --profile coverage.out --base main
+
+# Enforce 80%% patch coverage (matching codecov.yml's patch target). Fails the
+# build if any new/changed lines are uncovered. Use before pushing to catch
+# codecov/patch failures locally instead of after a CI round-trip.
+coverage-patch-check: coverage
+	@go run ./cmd/coveragecheck --patch --profile coverage.out --base main --min 80
+
+# Test coverage goal - enforces 90% line coverage
+test-coverage: coverage
+	@./scripts/check_coverage.sh 90 coverage.out
+
 # Validate config synchronization (defaults.go matches config.yaml.example, no hardcoded scraper values)
 config-drift:
 	@./scripts/validate-config-sync.sh
 
+# Sync configs/config.yaml.example from the embedded master copy
+# (internal/config/config.yaml.example). The embedded copy is the source of
+# truth — it is what the binary reads at runtime via //go:embed. Run this
+# after editing the embedded copy, then commit both files together.
+config-sync:
+	@echo "Syncing configs/config.yaml.example from internal/config/config.yaml.example..."
+	@cp internal/config/config.yaml.example configs/config.yaml.example
+	@echo "✓ Synced. Review and commit: git add configs/config.yaml.example internal/config/config.yaml.example"
+
+# Check that internal/models does not import internal/config (enforces dependency direction)
+check-import-guard:
+	@./scripts/check_import_guard.sh
+
 # Run full CI test suite
-ci: vet lint vuln coverage-check test-race config-drift
+ci: vet lint vuln coverage-check test-race config-drift check-import-guard check-mocks
 	@echo "All CI checks passed!"
 
 # Run full CI suite including frontend tests
@@ -249,23 +291,43 @@ check-swagger:
 # Alias for backward compatibility
 docs: swagger
 	@echo "✅ Documentation up-to-date"
-	@echo "View at: http://localhost:8080/docs"
+	@echo "View at: http://localhost:8765/docs"
 
 # Generate mocks from interfaces using mockery v3
-# Requires: mockery v3.5+ (install: go install github.com/vektra/mockery/v3@latest)
+# Pinned to v3.7.1 for reproducible output (regen drift otherwise).
+# Requires: mockery v3.7.1 (install: go install github.com/vektra/mockery/v3@v3.7.1)
 # Config: .mockery.yaml
 # Output: internal/mocks/
 mocks:
 	@echo "Generating mocks with mockery..."
-	@go run github.com/vektra/mockery/v3@latest --config .mockery.yaml
+	@go run github.com/vektra/mockery/v3@v3.7.1 --config .mockery.yaml
 	@echo "Post-processing: Unifying package names to 'mocks'..."
 	@for file in internal/mocks/*.go; do \
-		sed -i '' 's/^package models$$/package mocks/' "$$file"; \
-		sed -i '' 's/^package database$$/package mocks/' "$$file"; \
-		sed -i '' 's/^package httpclient$$/package mocks/' "$$file"; \
-		sed -i '' 's/^package aggregator$$/package mocks/' "$$file"; \
+		sed -i.bak 's/^package models$$/package mocks/' "$$file"; \
+		sed -i.bak 's/^package database$$/package mocks/' "$$file"; \
+		sed -i.bak 's/^package httpclient$$/package mocks/' "$$file"; \
+		sed -i.bak 's/^package aggregator$$/package mocks/' "$$file"; \
+		rm -f "$$file.bak"; \
 	done
 	@echo "Mock generation complete! Generated mocks in internal/mocks/"
+
+# Check if mocks are up to date (mirrors check-swagger)
+check-mocks:
+	@echo "Checking mocks are up to date..."
+	@go run github.com/vektra/mockery/v3@v3.7.1 --config .mockery.yaml >/dev/null
+	@for file in internal/mocks/*.go; do \
+		sed -i.bak 's/^package models$$/package mocks/' "$$file"; \
+		sed -i.bak 's/^package database$$/package mocks/' "$$file"; \
+		sed -i.bak 's/^package httpclient$$/package mocks/' "$$file"; \
+		sed -i.bak 's/^package aggregator$$/package mocks/' "$$file"; \
+		rm -f "$$file.bak"; \
+	done
+	@if ! git diff --quiet -- internal/mocks/; then \
+		echo "❌ Mocks are out of date"; \
+		echo "Run 'make mocks' and commit the changes"; \
+		exit 1; \
+	fi
+	@echo "✅ Mocks are up to date"
 
 # Web frontend targets
 web-dev:
@@ -286,6 +348,53 @@ web-install:
 
 web-test:
 	cd web/frontend && npm run test
+
+# Full-stack E2E test suite — real browser → real SvelteKit frontend → real HTTP
+# transport → real Go API server (cmd/javinizer-e2e with the `e2emock`
+# scraper substituted at the scraper seam) → real worker pipeline → real
+# :memory: SQLite → real e2emock scraper. NO page.route / API mocks.
+#
+# Playwright's webServer config spawns both the Go backend (on port
+# 18080) and the Vite dev server (on port 5175) automatically + kills
+# both on teardown. Spec layout lives under web/frontend/tests/fullstack/
+# — see playwright.fullstack.config.ts header for the directory map.
+test-e2e-fullstack:
+	cd web/frontend && npx playwright test --config=playwright.fullstack.config.ts
+
+# Frontend-only E2E suite — mocked API (page.route), NO backend. Spawns
+# only the Vite dev server (port 5176). Fast + deterministic: pins pure
+# frontend rendering + interaction logic + env-gated UI states (e.g.
+# install_environment=desktop) without a real Go server. Specs MUST mock
+# every /api endpoint they touch (including /api/v1/auth/status). Spec
+# layout lives under web/frontend/tests/frontend/ — see
+# playwright.frontend.config.ts header for the 3-suite distinction map.
+test-e2e-frontend:
+	cd web/frontend && npx playwright test --config=playwright.frontend.config.ts
+
+# Backward-compat alias — the field-drop regression suite runs as part
+# of the general fullstack suite now. Redirects to the new target.
+test-e2e-field-drop: test-e2e-fullstack
+
+# CLI E2E suite — builds the real `javinizer` binary and drives its
+# subcommands (sort, version, --help, --dry-run) end-to-end through os/exec.
+# Hermetic + deterministic: JAVINIZER_E2E_SCRAPERS=true substitutes the
+# offline e2emock scraper at the dependency-injection seam, so no real
+# network scraping happens. TestMain builds the binary once; tests run with
+# the `e2e` build tag so this stays out of `make test` / `make test-short`.
+test-e2e-cli:
+	go test -tags e2e -timeout 300s ./test/e2e/cli/
+
+# ⚠️  LOCAL ONLY — do NOT run in CI. Real-network scraper tests that hit
+# live JAV sites (r18dev, dmm, javlibrary, ...) over the public internet.
+# Requires the developer's real config (proxy/FlareSolverr/browser) and
+# the JAVINIZER_LIVE_E2E=true env var. The `live` build tag + env guard
+# keep this out of `make test` / `make test-short` / CI entirely.
+# Future: lift this onto a scheduled server to track scraping degradation.
+# Run a single scraper: -run 'TestLive_Scrapers/r18dev'
+# JSON output (for tracking): JAVINIZER_LIVE_E2E_JSON=true
+test-e2e-live:
+	@echo "⚠️  Running LIVE scraper tests against real sites (local only)"
+	JAVINIZER_LIVE_E2E=true go test -tags live -timeout 1800s ./test/e2e/live/
 
 web-clean:
 	rm -rf web/frontend/node_modules web/frontend/.svelte-kit web/frontend/build
@@ -311,6 +420,117 @@ build-cli-windows: web-build
 build-cli-all: build-cli-linux build-cli-darwin build-cli-windows
 	@echo "All CLI binaries built successfully!"
 	@ls -lh bin/
+
+# ============================================================================
+# Desktop App Build Targets (clickable .app / .exe via Wails)
+# ============================================================================
+#
+# These produce a single clickable application that opens a native desktop
+# window over the embedded API server + Web UI. CLI and TUI subcommands are
+# preserved inside the same binary.
+#
+# Build tags:
+#   desktop    - compiles internal/desktop/app.go (the Wails runner); without
+#                it, app_stub.go provides a no-op so normal CLI/test builds
+#                never pull in the Wails dependency or its webview headers.
+#   production - Wails requires this (or `dev`) to enable its real frontend;
+#                the default build returns "will not build without the correct
+#                build tags".
+#
+# -X internal/desktop.BuildDesktop=1 makes a no-arg launch open the GUI instead
+# of printing help (CLI release builds keep BuildDesktop=0 → help on no-args).
+
+DESKTOP_TAGS := desktop,production
+DESKTOP_LDFLAGS := -ldflags "\
+	-w -s \
+	-X github.com/javinizer/javinizer-go/internal/version.Version=$(VERSION) \
+	-X github.com/javinizer/javinizer-go/internal/version.Commit=$(COMMIT) \
+	-X github.com/javinizer/javinizer-go/internal/version.BuildDate=$(BUILD_DATE) \
+	-X github.com/javinizer/javinizer-go/internal/desktop.BuildDesktop=1"
+
+# Windows desktop builds need -H windowsgui (the GUI subsystem flag) so the
+# .exe doesn't open a console window on launch. The Wails CLI adds this
+# automatically, but these targets build via `go build` directly.
+DESKTOP_LDFLAGS_WINDOWS := -ldflags "\
+	-w -s -H windowsgui \
+	-X github.com/javinizer/javinizer-go/internal/version.Version=$(VERSION) \
+	-X github.com/javinizer/javinizer-go/internal/version.Commit=$(COMMIT) \
+	-X github.com/javinizer/javinizer-go/internal/version.BuildDate=$(BUILD_DATE) \
+	-X github.com/javinizer/javinizer-go/internal/desktop.BuildDesktop=1"
+
+build-app-darwin: web-build
+	@echo "Building desktop app for macOS - $(VERSION)..."
+	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 CGO_LDFLAGS="-framework UniformTypeIdentifiers" \
+		./scripts/with_embedded_web.sh go build -tags '$(DESKTOP_TAGS)' $(DESKTOP_LDFLAGS) \
+		-o bin/javinizer-app-darwin-amd64 ./cmd/javinizer
+	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 CGO_LDFLAGS="-framework UniformTypeIdentifiers" \
+		./scripts/with_embedded_web.sh go build -tags '$(DESKTOP_TAGS)' $(DESKTOP_LDFLAGS) \
+		-o bin/javinizer-app-darwin-arm64 ./cmd/javinizer
+	lipo -create bin/javinizer-app-darwin-amd64 bin/javinizer-app-darwin-arm64 \
+		-output bin/javinizer-app-darwin-universal
+	rm -f bin/javinizer-app-darwin-amd64 bin/javinizer-app-darwin-arm64
+	./scripts/package-app-darwin.sh bin/javinizer-app-darwin-universal \
+		bin/Javinizer.app $(VERSION) internal/desktop/icons/javinizer.icns
+	@echo "macOS desktop app built: bin/Javinizer.app"
+
+# NOTE: Wails v2 Windows builds require CGO (go-webview2). The release workflow
+# runs natively on windows-latest. This target also supports cross-compiling
+# from macOS/Linux when mingw-w64 is installed.
+#
+# When cross-compiling, Go must use the mingw C compiler; otherwise it falls
+# back to the host's clang/gcc, which targets the host OS/arch and fails with
+# "unsupported option '-mthreads'" / "gcc_amd64.S: unknown token". We detect
+# mingw on PATH and export CC for the build. On a native Windows runner no
+# mingw is present, so CC is left unset and the native cl/gcc is used.
+#
+# The icon is embedded via a .syso COFF resource generated by the genicon tool
+# (internal/desktop/icons/genicon) from internal/desktop/icons/javinizer.ico.
+# `go build` links .syso files found in the main package dir (cmd/javinizer)
+# automatically. The release workflow
+# (.github/workflows/cli-release.yml build-desktop-windows) uses the same tool.
+#
+# genicon embeds the icon as RT_GROUP_ICON at resource ID 3 — the ID Wails'
+# window manager loads (wails v2 .../windows/winc/app.go: AppIconID = 3). The
+# rsrc -ico CLI assigns ID 1, which renders the .exe/taskbar icon but leaves
+# the in-app window title-bar icon generic.
+WINDOWS_ICON_ICO := internal/desktop/icons/javinizer.ico
+WINDOWS_ICON_SYSO := cmd/javinizer/javinizer.syso
+MINGW_CC := $(shell command -v x86_64-w64-mingw32-gcc 2>/dev/null)
+
+build-app-windows: web-build $(WINDOWS_ICON_SYSO)
+	@echo "Building desktop app for Windows - $(VERSION)..."
+	$(if $(MINGW_CC),CC=$(MINGW_CC)) CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
+		./scripts/with_embedded_web.sh go build -tags '$(DESKTOP_TAGS)' $(DESKTOP_LDFLAGS_WINDOWS) \
+		-o bin/Javinizer.exe ./cmd/javinizer
+	@echo "Windows desktop app built: bin/Javinizer.exe"
+
+# Generate the Windows icon resource (.syso) from the .ico via genicon (pure
+# Go, runs anywhere). Embeds RT_GROUP_ICON at ID 3 so both the executable
+# icon and the Wails window title-bar icon resolve. Skipped when the .syso is
+# newer than the .ico (stamp file semantics).
+$(WINDOWS_ICON_SYSO): $(WINDOWS_ICON_ICO) internal/desktop/icons/genicon/main.go
+	@echo "Embedding Windows icon -> $(WINDOWS_ICON_SYSO)"
+	go run ./internal/desktop/icons/genicon -ico $(WINDOWS_ICON_ICO) -o $(WINDOWS_ICON_SYSO) -arch amd64
+
+# Linux desktop build: produces an AppImage that bundles libwebkit2gtk + gtk3
+# so it runs on any distro without preinstalling webkit. Build deps (Ubuntu):
+#   sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev
+# AppImage packaging (scripts/package-app-linux.sh) downloads linuxdeploy +
+# appimagetool at runtime and must run on Linux. The webkit2_41 tag selects
+# libwebkit2gtk-4.1 (Ubuntu 24.04's version).
+build-app-linux: web-build
+	@echo "Building desktop app for Linux - $(VERSION)..."
+	CGO_ENABLED=1 GOOS=linux GOARCH=$$(go env GOARCH) \
+		./scripts/with_embedded_web.sh go build -tags '$(DESKTOP_TAGS),webkit2_41' $(DESKTOP_LDFLAGS) \
+		-o bin/javinizer-app-linux-$$(go env GOARCH) ./cmd/javinizer
+	./scripts/package-app-linux.sh bin/javinizer-app-linux-$$(go env GOARCH) \
+		bin/Javinizer-linux-$$(uname -m).AppImage $(VERSION)
+	@echo "Linux desktop app built: bin/Javinizer-linux-$$(uname -m).AppImage"
+
+build-app-all: build-app-darwin build-app-windows
+	@echo "All cross-platform desktop apps built successfully!"
+	@echo "(Linux AppImage must be built on Linux: make build-app-linux)"
+	@ls -lh bin/Javinizer.app bin/Javinizer.exe
 
 # ============================================================================
 # Local GitHub Actions Testing with act
@@ -404,16 +624,44 @@ docker-build-no-cache:
 	@echo "Docker image built successfully!"
 	@docker images $(DOCKER_IMAGE)
 
+# Run Docker container (detached mode).
+# Mirrors docker-compose.yml's canonical env (host port, trusted CIDRs for
+# /auth/setup from the Docker bridge gateway, data + media mounts). Override via:
+#   make docker-run HOST_PORT=9090 MEDIA_DIR=./test-videos
+# The setup CIDR is needed because the container sees the host as the Docker
+# bridge gateway (172.x), not 127.0.0.1, so the /auth/setup localhost guard
+# would reject the first-run setup screen without it.
+# Port on the host to publish the container's 8765. 8765 is distinctive
+# (8080 is too common and collides with many dev tools).
+# Override: make docker-run HOST_PORT=9090
+# Matches docker-compose.yml's HOST_PORT env var so `make` and `compose` agree.
+HOST_PORT ?= 8765
+# Host directory mounted at /media (input files, writable so organize works).
+# Override: make docker-run MEDIA_DIR=./test-videos
+MEDIA_DIR ?= $(PWD)/media
+# Host directory for persistent app state (db, config, logs, temp). Defaults
+# to ./data, matching docker-compose.yml's ./data:/javinizer volume convention.
+# Already covered by .gitignore's /data/ entry. Does NOT collide with the
+# `javinizer` binary (the binary is a file at the repo root; data/ is a dir).
+# Override: make docker-run DATA_DIR=./my-data
+DATA_DIR ?= $(PWD)/data
+
 # Run Docker container (detached mode)
 docker-run:
-	@echo "Starting Docker container $(DOCKER_CONTAINER_NAME)..."
+	@echo "Starting Docker container $(DOCKER_CONTAINER_NAME) on port $(HOST_PORT)..."
+	-docker stop $(DOCKER_CONTAINER_NAME) 2>/dev/null || true
+	-docker rm $(DOCKER_CONTAINER_NAME) 2>/dev/null || true
+	@mkdir -p $(DATA_DIR)
+	$(eval ABS_MEDIA_DIR := $(abspath $(MEDIA_DIR)))
+	@if [ ! -d "$(ABS_MEDIA_DIR)" ]; then echo "warning: MEDIA_DIR '$(MEDIA_DIR)' does not exist or is not a directory — container will start but /media will be empty"; fi
 	docker run -d \
 		--name $(DOCKER_CONTAINER_NAME) \
-		-p 8080:8080 \
-		-v $(PWD)/javinizer:/javinizer \
-		-v $(PWD)/data:/data \
+		-p "$(HOST_PORT):8765" \
+		-e JAVINIZER_SETUP_TRUSTED_CIDRS=172.16.0.0/12 \
+		-v "$(DATA_DIR):/javinizer" \
+		-v "$(ABS_MEDIA_DIR):/media" \
 		$(DOCKER_FULL_IMAGE)
-	@echo "Container started! Access at http://localhost:8080"
+	@echo "Container started! Access at http://localhost:$(HOST_PORT)"
 	@echo "Logs: docker logs -f $(DOCKER_CONTAINER_NAME)"
 
 # Stop and remove Docker container
@@ -422,6 +670,9 @@ docker-stop:
 	-docker stop $(DOCKER_CONTAINER_NAME)
 	-docker rm $(DOCKER_CONTAINER_NAME)
 	@echo "Container stopped and removed"
+
+# Restart Docker container (stop + run)
+docker-restart: docker-stop docker-run
 
 # View container logs
 docker-logs:
@@ -458,7 +709,7 @@ docker-push:
 docker-compose-up:
 	@echo "Starting services with docker-compose..."
 	docker-compose up -d
-	@echo "Services started! Access at http://localhost:8080"
+	@echo "Services started! Access at http://localhost:$(HOST_PORT)"
 
 # Stop services
 docker-compose-down:
@@ -488,7 +739,8 @@ docker-help:
 	@echo "  make docker-build-no-cache     - Build without cache (clean build)"
 	@echo ""
 	@echo "Run:"
-	@echo "  make docker-run                - Run container (detached, port 8080)"
+	@echo "  make docker-run                - Run container (detached, host port 8765)"
+	@echo "  make docker-run HOST_PORT=9090 MEDIA_DIR=./test-videos  - Custom port + media mount"
 	@echo "  make docker-stop               - Stop and remove container"
 	@echo "  make docker-logs               - View container logs"
 	@echo "  make docker-test               - Validate Docker image version metadata"

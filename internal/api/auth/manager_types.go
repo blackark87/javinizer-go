@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -9,6 +10,9 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/javinizer/javinizer-go/internal/database"
+	"github.com/spf13/afero"
 )
 
 const (
@@ -31,9 +35,20 @@ const (
 	loginLockoutDuration   = 5 * time.Minute
 )
 
-// DefaultSessionTTL is the default authenticated session lifetime.
+// DefaultSessionTTL is the default authenticated session lifetime for an
+// ephemeral (non-remembered) session — one that lives only for the current
+// browser session and is not persisted across server restarts.
 const DefaultSessionTTL = 24 * time.Hour
 
+// DefaultPersistentSessionTTL is the session lifetime for a "Remember me"
+// session. It is deliberately longer than the ephemeral TTL so users who
+// select "Remember me" stay logged in across server restarts for weeks,
+// not hours. Before this constant existed, both paths shared the same 24h
+// TTL — so a restart after 24h expired the session and prompted the user
+// to log in again, despite "Remember me" being selected.
+const DefaultPersistentSessionTTL = 30 * 24 * time.Hour
+
+// Sentinel errors returned by the auth manager.
 var (
 	ErrAuthNotInitialized = errors.New("authentication is not initialized")
 	ErrAuthAlreadySet     = errors.New("authentication is already initialized")
@@ -89,19 +104,76 @@ type sessionFileItem struct {
 
 // AuthManager manages single-user credentials and in-memory sessions.
 type AuthManager struct {
-	mu             sync.RWMutex
-	credentialPath string
-	sessionPath    string
-	credentials    *storedCredentials
-	sessions       map[string]sessionRecord
-	sessionTTL     time.Duration
-	nowFn          func() time.Time
-	randReader     io.Reader
+	mu                   sync.RWMutex
+	credentialPath       string
+	sessionPath          string
+	credentials          *storedCredentials
+	sessions             map[string]sessionRecord
+	sessionTTL           time.Duration
+	persistentSessionTTL time.Duration
+	nowFn                func() time.Time
+	randReader           io.Reader
+	apiTokenRepo         database.ApiTokenRepositoryInterface
+	fs                   afero.Fs
+	envLookup            func(key string) (string, bool)
 
 	failedLoginCount       int
 	failedLoginWindowStart time.Time
 	loginBlockedUntil      time.Time
 	disableRateLimit       bool
+}
+
+// SetApiTokenRepo configures the API token repository used for token validation.
+func (m *AuthManager) SetApiTokenRepo(repo database.ApiTokenRepositoryInterface) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.apiTokenRepo = repo
+}
+
+// ValidateToken resolves an active API token by its hash and returns the token ID.
+func (m *AuthManager) ValidateToken(ctx context.Context, tokenHash string) (string, error) {
+	m.mu.RLock()
+	repo := m.apiTokenRepo
+	m.mu.RUnlock()
+
+	if repo == nil {
+		return "", fmt.Errorf("api token repository not configured")
+	}
+
+	apiToken, err := repo.FindByTokenHash(ctx, tokenHash)
+	if err != nil {
+		return "", err
+	}
+
+	if apiToken.RevokedAt != nil {
+		return "", fmt.Errorf("token revoked")
+	}
+
+	return apiToken.ID, nil
+}
+
+// UpdateTokenLastUsed stamps the last-used timestamp for the given API token.
+func (m *AuthManager) UpdateTokenLastUsed(ctx context.Context, tokenID string) error {
+	m.mu.RLock()
+	repo := m.apiTokenRepo
+	m.mu.RUnlock()
+
+	if repo == nil {
+		return fmt.Errorf("api token repository not configured")
+	}
+
+	return repo.UpdateLastUsed(ctx, tokenID)
+}
+
+// GetEnv returns the value of the environment variable identified by key,
+// using the injectable envLookup function. Falls back to os.Getenv when
+// no custom lookup was provided at construction time.
+func (m *AuthManager) GetEnv(key string) string {
+	if m.envLookup != nil {
+		v, _ := m.envLookup(key)
+		return v
+	}
+	return os.Getenv(key)
 }
 
 // SetDisableRateLimit enables or disables rate limiting on login attempts.
@@ -112,28 +184,41 @@ func (m *AuthManager) SetDisableRateLimit(disabled bool) {
 	m.disableRateLimit = disabled
 }
 
-// CredentialPathForConfig returns the auth credential file path next to config.
-func CredentialPathForConfig(configFile string) string {
+// credentialPathForConfig returns the auth credential file path next to config.
+func credentialPathForConfig(configFile string) string {
 	return filepath.Join(filepath.Dir(configFile), credentialFilename)
 }
 
-func SessionPathForConfig(configFile string) string {
+func sessionPathForConfig(configFile string) string {
 	return filepath.Join(filepath.Dir(configFile), sessionFilename)
 }
 
 // NewAuthManager creates an auth manager and loads credentials from disk if present.
-func NewAuthManager(configFile string, sessionTTL time.Duration) (*AuthManager, error) {
+// envLookup defaults to os.LookupEnv when nil, enabling test injection.
+func NewAuthManager(configFile string, sessionTTL time.Duration, envLookup ...func(key string) (string, bool)) (*AuthManager, error) {
+	lookup := os.LookupEnv
+	if len(envLookup) > 0 && envLookup[0] != nil {
+		lookup = envLookup[0]
+	}
+
 	if sessionTTL <= 0 {
 		sessionTTL = DefaultSessionTTL
 	}
+	persistentTTL := DefaultPersistentSessionTTL
+	if persistentTTL < sessionTTL {
+		persistentTTL = sessionTTL
+	}
 
 	manager := &AuthManager{
-		credentialPath: CredentialPathForConfig(configFile),
-		sessionPath:    SessionPathForConfig(configFile),
-		sessions:       make(map[string]sessionRecord),
-		sessionTTL:     sessionTTL,
-		nowFn:          time.Now,
-		randReader:     rand.Reader,
+		credentialPath:       credentialPathForConfig(configFile),
+		sessionPath:          sessionPathForConfig(configFile),
+		sessions:             make(map[string]sessionRecord),
+		sessionTTL:           sessionTTL,
+		persistentSessionTTL: persistentTTL,
+		nowFn:                time.Now,
+		randReader:           rand.Reader,
+		fs:                   afero.NewOsFs(),
+		envLookup:            lookup,
 	}
 
 	if err := manager.loadCredentialsFromDisk(); err != nil {
@@ -142,13 +227,13 @@ func NewAuthManager(configFile string, sessionTTL time.Duration) (*AuthManager, 
 
 	manager.loadSessionsFromDisk()
 
-	e2eAuth, e2eEnabled := os.LookupEnv("JAVINIZER_E2E_AUTH")
+	e2eAuth, e2eEnabled := lookup("JAVINIZER_E2E_AUTH")
 	if e2eEnabled && e2eAuth == "true" && manager.credentials == nil {
-		username := os.Getenv("JAVINIZER_E2E_USERNAME")
+		username, _ := lookup("JAVINIZER_E2E_USERNAME")
 		if username == "" {
 			username = "admin"
 		}
-		password := os.Getenv("JAVINIZER_E2E_PASSWORD")
+		password, _ := lookup("JAVINIZER_E2E_PASSWORD")
 		if password == "" {
 			password = "adminpassword123"
 		}
@@ -160,9 +245,16 @@ func NewAuthManager(configFile string, sessionTTL time.Duration) (*AuthManager, 
 	return manager, nil
 }
 
-// SessionTTL returns the configured session lifetime.
+// SessionTTL returns the configured ephemeral session lifetime.
 func (m *AuthManager) SessionTTL() time.Duration {
 	return m.sessionTTL
+}
+
+// PersistentSessionTTL returns the session lifetime for a "Remember me"
+// session. Used by the HTTP layer to set the cookie's MaxAge/Expires so the
+// cookie lifetime matches the server-side session lifetime.
+func (m *AuthManager) PersistentSessionTTL() time.Duration {
+	return m.persistentSessionTTL
 }
 
 // IsInitialized reports whether credentials exist.

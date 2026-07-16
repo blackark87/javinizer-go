@@ -42,7 +42,7 @@
 	let revertFileCount = $state(0);
 	let revertingMovieIds = $state<Set<string>>(new Set());
 
-	const pendingCount = $derived(operations.filter((o) => o.revert_status === 'pending' || o.revert_status === 'failed').length);
+	const revertEligibleCount = $derived(operations.filter((o) => o.revert_status === 'applied' || o.revert_status === 'failed').length);
 
 	const revertBatchMutation = createMutation(() => ({
 		mutationFn: () => apiClient.revertBatchJob(jobId),
@@ -94,7 +94,7 @@
 
 	function openBatchRevertModal() {
 		revertModalMode = 'batch';
-		revertFileCount = pendingCount;
+		revertFileCount = revertEligibleCount;
 		revertTargetMovieId = '';
 		revertTargetFileName = '';
 		revertModalOpen = true;
@@ -210,7 +210,7 @@
 					</div>
 
 					<!-- Batch revert button -->
-					{#if pendingCount > 0 && jobStatus.toLowerCase() === 'organized' && config?.output?.allow_revert}
+					{#if revertEligibleCount > 0 && jobStatus.toLowerCase() === 'organized' && config?.output?.allow_revert}
 						<div class="mt-4 pt-4 border-t flex justify-end">
 							<Button
 								variant="destructive"
@@ -218,7 +218,7 @@
 								onclick={openBatchRevertModal}
 							>
 								<Undo2 class="h-4 w-4 mr-1.5" />
-								Revert Batch ({pendingCount} file{pendingCount !== 1 ? 's' : ''})
+								Revert Batch ({revertEligibleCount} file{revertEligibleCount !== 1 ? 's' : ''})
 							</Button>
 						</div>
 					{/if}

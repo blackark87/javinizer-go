@@ -1,0 +1,193 @@
+package scrape
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/javinizer/javinizer-go/internal/database"
+	"github.com/javinizer/javinizer-go/internal/models"
+)
+
+const actressResolverScraperName = "sougouwiki"
+
+// resolveMissingActresses asks the dedicated actress resolver only when every
+// regular result lacks a verified DMM identity. Resolver failures are optional
+// when another scraper returned movie metadata, and fatal only when no result
+// remains at all.
+func (s *Scraper) resolveMissingActresses(ctx context.Context, movieID string, results []*models.ScraperResult) (*models.ScraperResult, *models.ScraperError) {
+	if hasVerifiedActressResult(results) || s.registry == nil {
+		return nil, nil
+	}
+	instance, ok := s.registry.GetInstance(actressResolverScraperName)
+	if !ok || instance == nil || !instance.IsEnabled() {
+		return nil, nil
+	}
+	resolver, ok := instance.(models.ActressResolver)
+	if !ok {
+		return nil, nil
+	}
+
+	resolved, err := callActressResolver(ctx, resolver, movieID)
+	if err != nil {
+		return nil, &models.ScraperError{Scraper: actressResolverScraperName, Cause: err}
+	}
+	if resolved == nil {
+		return nil, nil
+	}
+	if strings.TrimSpace(resolved.Source) == "" {
+		resolved.Source = actressResolverScraperName
+	}
+	if strings.TrimSpace(resolved.ID) == "" {
+		resolved.ID = movieID
+	}
+	s.enrichResolvedActressThumbnails(ctx, resolved)
+	return resolved, nil
+}
+
+func callActressResolver(ctx context.Context, resolver models.ActressResolver, movieID string) (result *models.ScraperResult, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			result = nil
+			err = fmt.Errorf("actress resolver panicked: %v", recovered)
+		}
+	}()
+	return resolver.ResolveActresses(ctx, movieID)
+}
+
+func hasVerifiedActressResult(results []*models.ScraperResult) bool {
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		for _, actress := range result.Actresses {
+			if actress.DMMID > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (s *Scraper) enrichResolvedActressThumbnails(ctx context.Context, result *models.ScraperResult) {
+	if result == nil || s.registry == nil {
+		return
+	}
+	var thumbnailResolver models.ActressThumbnailResolver
+	for _, instance := range s.registry.GetAllInstances() {
+		if resolver, ok := instance.(models.ActressThumbnailResolver); ok {
+			thumbnailResolver = resolver
+			break
+		}
+	}
+	if thumbnailResolver == nil {
+		return
+	}
+	for i := range result.Actresses {
+		if strings.TrimSpace(result.Actresses[i].ThumbURL) != "" {
+			continue
+		}
+		result.Actresses[i].ThumbURL = safeActressThumbnail(ctx, thumbnailResolver, result.Actresses[i])
+	}
+}
+
+func safeActressThumbnail(ctx context.Context, resolver models.ActressThumbnailResolver, actress models.ActressInfo) (thumbnail string) {
+	defer func() {
+		if recover() != nil {
+			thumbnail = ""
+		}
+	}()
+	return strings.TrimSpace(resolver.ResolveActressThumbnail(ctx, actress))
+}
+
+type verifiedActressIdentityResolver interface {
+	ResolveVerifiedIdentity(sourceID uint, verified models.Actress, allowCreate bool) (*database.VerifiedActressResolution, error)
+}
+
+func hasScraperSource(results []*models.ScraperResult, source string) bool {
+	for _, result := range results {
+		if result != nil && strings.EqualFold(strings.TrimSpace(result.Source), strings.TrimSpace(source)) {
+			return true
+		}
+	}
+	return false
+}
+
+func reconcileVerifiedActresses(movie *models.Movie, repo database.ActressRepositoryInterface) error {
+	resolver, ok := repo.(verifiedActressIdentityResolver)
+	if movie == nil || !ok {
+		return nil
+	}
+	canonical := make([]models.Actress, 0, len(movie.Actresses))
+	seen := make(map[uint]struct{}, len(movie.Actresses))
+	for _, actress := range movie.Actresses {
+		resolution, err := resolver.ResolveVerifiedIdentity(0, actress, true)
+		if err != nil {
+			return fmt.Errorf("reconcile verified actress %q (DMM ID %d): %w", actress.JapaneseName, actress.DMMID, err)
+		}
+		if resolution == nil {
+			continue
+		}
+		if _, exists := seen[resolution.Actress.ID]; exists {
+			continue
+		}
+		seen[resolution.Actress.ID] = struct{}{}
+		canonical = append(canonical, resolution.Actress)
+	}
+	movie.Actresses = canonical
+	return nil
+}
+
+// actressOverrideResults creates aggregation-only copies. Raw scraper results
+// remain untouched for the review source viewer. When ordinary movie metadata
+// exists, the resolver contributes only the cast; when it is the sole result,
+// its identifier is retained so resolver-only scraping still succeeds.
+func actressOverrideResults(results []*models.ScraperResult, resolverSource string) []*models.ScraperResult {
+	hasRegular := false
+	hasResolver := false
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		if result.Source == resolverSource {
+			hasResolver = true
+		} else {
+			hasRegular = true
+		}
+	}
+	if !hasRegular || !hasResolver {
+		return results
+	}
+
+	overrides := make([]*models.ScraperResult, 0, len(results))
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		copy := result.Clone()
+		if copy.Source == resolverSource {
+			copy.ID = ""
+			copy.ContentID = ""
+			copy.Title = ""
+			copy.OriginalTitle = ""
+			copy.Description = ""
+			copy.ReleaseDate = nil
+			copy.Runtime = 0
+			copy.Director = ""
+			copy.Maker = ""
+			copy.Label = ""
+			copy.Series = ""
+			copy.Rating = nil
+			copy.PosterURL = ""
+			copy.CoverURL = ""
+			copy.ShouldCropPoster = false
+			copy.ScreenshotURL = nil
+			copy.TrailerURL = ""
+			copy.Genres = nil
+		} else {
+			copy.Actresses = nil
+		}
+		overrides = append(overrides, copy)
+	}
+	return overrides
+}

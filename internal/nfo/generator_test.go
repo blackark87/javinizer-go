@@ -1,6 +1,7 @@
 package nfo
 
 import (
+	"context"
 	"encoding/xml"
 	"os"
 	"path/filepath"
@@ -15,7 +16,7 @@ import (
 )
 
 func TestMovieToNFO(t *testing.T) {
-	gen := NewGenerator(afero.NewOsFs(), DefaultConfig())
+	gen := NewGenerator(afero.NewOsFs(), defaultConfig())
 	releaseDate := time.Date(2020, 9, 13, 0, 0, 0, 0, time.UTC)
 
 	movie := &models.Movie{
@@ -30,7 +31,7 @@ func TestMovieToNFO(t *testing.T) {
 		Maker:         "Test Studio",
 		Label:         "Test Label",
 		Series:        "Test Series",
-		CoverURL:      "https://example.com/cover.jpg",
+		Poster:        models.PosterState{CoverURL: "https://example.com/cover.jpg"},
 		TrailerURL:    "https://example.com/trailer.mp4",
 		Screenshots: []string{
 			"https://example.com/screenshot1.jpg",
@@ -58,7 +59,7 @@ func TestMovieToNFO(t *testing.T) {
 		},
 	}
 
-	nfo := gen.MovieToNFO(movie, "")
+	nfo := gen.movieToNFO(context.Background(), movie, "", nil)
 
 	// Verify basic fields
 	if nfo.ID != "IPX-535" {
@@ -189,8 +190,7 @@ func TestActressNameFormatting(t *testing.T) {
 		{
 			name: "FirstName LastName order",
 			config: &Config{
-				ActorFirstNameOrder: true,
-				ActorJapaneseNames:  false,
+				FirstNameOrder: true,
 			},
 			actress: models.Actress{
 				FirstName: "Momo",
@@ -201,8 +201,7 @@ func TestActressNameFormatting(t *testing.T) {
 		{
 			name: "LastName FirstName order",
 			config: &Config{
-				ActorFirstNameOrder: false,
-				ActorJapaneseNames:  false,
+				FirstNameOrder: false,
 			},
 			actress: models.Actress{
 				FirstName: "Momo",
@@ -213,8 +212,8 @@ func TestActressNameFormatting(t *testing.T) {
 		{
 			name: "Japanese name preferred",
 			config: &Config{
-				ActorFirstNameOrder: true,
-				ActorJapaneseNames:  true,
+				FirstNameOrder:    true,
+				ActressLanguageJA: true,
 			},
 			actress: models.Actress{
 				FirstName:    "Momo",
@@ -226,10 +225,9 @@ func TestActressNameFormatting(t *testing.T) {
 		{
 			name: "Unknown actress",
 			config: &Config{
-				ActorFirstNameOrder: true,
-				ActorJapaneseNames:  false,
-				UnknownActress:      "Unknown",
-				UnknownActressMode:  "fallback",
+				FirstNameOrder:     true,
+				UnknownActressText: "Unknown",
+				UnknownActressMode: models.UnknownActressModeFallback,
 			},
 			actress: models.Actress{
 				FirstName: "",
@@ -240,8 +238,7 @@ func TestActressNameFormatting(t *testing.T) {
 		{
 			name: "Only first name",
 			config: &Config{
-				ActorFirstNameOrder: true,
-				ActorJapaneseNames:  false,
+				FirstNameOrder: true,
 			},
 			actress: models.Actress{
 				FirstName: "Momo",
@@ -252,8 +249,7 @@ func TestActressNameFormatting(t *testing.T) {
 		{
 			name: "Only last name",
 			config: &Config{
-				ActorFirstNameOrder: true,
-				ActorJapaneseNames:  false,
+				FirstNameOrder: true,
 			},
 			actress: models.Actress{
 				FirstName: "",
@@ -275,7 +271,7 @@ func TestActressNameFormatting(t *testing.T) {
 }
 
 func TestWriteNFO(t *testing.T) {
-	gen := NewGenerator(afero.NewOsFs(), DefaultConfig())
+	gen := NewGenerator(afero.NewOsFs(), defaultConfig())
 
 	// Create a test NFO structure
 	nfo := &Movie{
@@ -328,30 +324,30 @@ func TestWriteNFO(t *testing.T) {
 }
 
 func TestConfigDefaults(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := defaultConfig()
 
-	if !cfg.ActorFirstNameOrder {
-		t.Error("Expected ActorFirstNameOrder to be true by default")
+	if !cfg.FirstNameOrder {
+		t.Error("Expected NFO.FirstNameOrder to be true by default")
 	}
-	if cfg.ActorJapaneseNames {
-		t.Error("Expected ActorJapaneseNames to be false by default")
+	if cfg.ActressLanguageJA {
+		t.Error("Expected NFO.ActressLanguageJA to be false by default")
 	}
-	if cfg.UnknownActress != "Unknown" {
-		t.Errorf("Expected UnknownActress to be 'Unknown', got '%s'", cfg.UnknownActress)
+	if cfg.UnknownActressText != "Unknown" {
+		t.Errorf("Expected NFO.UnknownActressText to be 'Unknown', got '%s'", cfg.UnknownActressText)
 	}
-	if cfg.NFOFilenameTemplate != "<ID>.nfo" {
-		t.Errorf("Expected NFOFilenameTemplate to be '<ID>.nfo', got '%s'", cfg.NFOFilenameTemplate)
+	if cfg.FilenameTemplate != "<ID>.nfo" {
+		t.Errorf("Expected NFO.FilenameTemplate to be '<ID>.nfo', got '%s'", cfg.FilenameTemplate)
 	}
 	if !cfg.IncludeFanart {
-		t.Error("Expected IncludeFanart to be true by default")
+		t.Error("Expected NFO.IncludeFanart to be true by default")
 	}
 	if !cfg.IncludeTrailer {
-		t.Error("Expected IncludeTrailer to be true by default")
+		t.Error("Expected NFO.IncludeTrailer to be true by default")
 	}
 }
 
 func TestNFOWithoutOptionalFields(t *testing.T) {
-	gen := NewGenerator(afero.NewOsFs(), DefaultConfig())
+	gen := NewGenerator(afero.NewOsFs(), defaultConfig())
 
 	// Movie with minimal data
 	movie := &models.Movie{
@@ -359,7 +355,7 @@ func TestNFOWithoutOptionalFields(t *testing.T) {
 		Title: "Minimal Movie",
 	}
 
-	nfo := gen.MovieToNFO(movie, "")
+	nfo := gen.movieToNFO(context.Background(), movie, "", nil)
 
 	if nfo.ID != "TEST-001" {
 		t.Errorf("Expected ID 'TEST-001', got '%s'", nfo.ID)
@@ -384,8 +380,8 @@ func TestNFOWithoutOptionalFields(t *testing.T) {
 }
 
 func TestGenerateWithTemplate(t *testing.T) {
-	cfg := DefaultConfig()
-	cfg.NFOFilenameTemplate = "<ID> - <TITLE>.nfo"
+	cfg := defaultConfig()
+	cfg.FilenameTemplate = "<ID> - <TITLE>.nfo"
 	gen := NewGenerator(afero.NewOsFs(), cfg)
 
 	releaseDate := time.Date(2020, 9, 13, 0, 0, 0, 0, time.UTC)
@@ -399,7 +395,7 @@ func TestGenerateWithTemplate(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Generate NFO (no part suffix for single file)
-	err := gen.Generate(movie, tmpDir, "", "")
+	err := gen.Generate(context.Background(), movie, tmpDir, "", "", nil)
 	if err != nil {
 		t.Fatalf("Generate failed: %v", err)
 	}
@@ -469,15 +465,14 @@ func TestRenderDisplayTitlePreservesExistingWithoutVideoTags(t *testing.T) {
 func TestGenerator_GenerateMultiPart(t *testing.T) {
 	// Test NFO generation with part suffixes for multi-part files
 	cfg := &Config{
-		ActorFirstNameOrder:  true,
-		ActorJapaneseNames:   false,
-		UnknownActress:       "Unknown",
-		NFOFilenameTemplate:  "<ID>.nfo",
-		PerFile:              true, // Enable per-file NFO generation
-		IncludeStreamDetails: false,
-		IncludeFanart:        true,
-		IncludeTrailer:       true,
-		DefaultRatingSource:  "themoviedb",
+		FirstNameOrder:     true,
+		UnknownActressText: "Unknown",
+		UnknownActressMode: models.UnknownActressModeSkip,
+		FilenameTemplate:   "<ID>.nfo",
+		PerFile:            true,
+		IncludeFanart:      true,
+		IncludeTrailer:     true,
+		RatingSource:       "themoviedb",
 	}
 
 	gen := NewGenerator(afero.NewOsFs(), cfg)
@@ -492,13 +487,13 @@ func TestGenerator_GenerateMultiPart(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Generate NFO for part 1
-	err := gen.Generate(movie, tmpDir, "-pt1", "")
+	err := gen.Generate(context.Background(), movie, tmpDir, "-pt1", "", nil)
 	if err != nil {
 		t.Fatalf("Generate part 1 failed: %v", err)
 	}
 
 	// Generate NFO for part 2
-	err = gen.Generate(movie, tmpDir, "-pt2", "")
+	err = gen.Generate(context.Background(), movie, tmpDir, "-pt2", "", nil)
 	if err != nil {
 		t.Fatalf("Generate part 2 failed: %v", err)
 	}
@@ -566,15 +561,13 @@ func TestIncludeOriginalPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{
-				ActorFirstNameOrder:  true,
-				ActorJapaneseNames:   false,
-				UnknownActress:       "Unknown",
-				NFOFilenameTemplate:  "<ID>.nfo",
-				IncludeOriginalPath:  tt.includeOriginalPath,
-				IncludeStreamDetails: false,
-				IncludeFanart:        true,
-				IncludeTrailer:       true,
-				DefaultRatingSource:  "themoviedb",
+				FirstNameOrder:      true,
+				UnknownActressText:  "Unknown",
+				FilenameTemplate:    "<ID>.nfo",
+				IncludeOriginalPath: tt.includeOriginalPath,
+				IncludeFanart:       true,
+				IncludeTrailer:      true,
+				RatingSource:        "themoviedb",
 			}
 
 			gen := NewGenerator(afero.NewOsFs(), cfg)
@@ -585,7 +578,7 @@ func TestIncludeOriginalPath(t *testing.T) {
 				OriginalFileName: tt.originalFileName,
 			}
 
-			nfo := gen.MovieToNFO(movie, "")
+			nfo := gen.movieToNFO(context.Background(), movie, "", nil)
 
 			if nfo.OriginalPath != tt.expectedPath {
 				t.Errorf("Expected OriginalPath '%s', got '%s'", tt.expectedPath, nfo.OriginalPath)
@@ -597,15 +590,13 @@ func TestIncludeOriginalPath(t *testing.T) {
 func TestOriginalPathInXML(t *testing.T) {
 	// Test that originalpath is properly included in XML output
 	cfg := &Config{
-		ActorFirstNameOrder:  true,
-		ActorJapaneseNames:   false,
-		UnknownActress:       "Unknown",
-		NFOFilenameTemplate:  "<ID>.nfo",
-		IncludeOriginalPath:  true,
-		IncludeStreamDetails: false,
-		IncludeFanart:        true,
-		IncludeTrailer:       true,
-		DefaultRatingSource:  "themoviedb",
+		FirstNameOrder:      true,
+		UnknownActressText:  "Unknown",
+		FilenameTemplate:    "<ID>.nfo",
+		IncludeOriginalPath: true,
+		IncludeFanart:       true,
+		IncludeTrailer:      true,
+		RatingSource:        "themoviedb",
 	}
 
 	gen := NewGenerator(afero.NewOsFs(), cfg)
@@ -618,7 +609,7 @@ func TestOriginalPathInXML(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	err := gen.Generate(movie, tmpDir, "", "")
+	err := gen.Generate(context.Background(), movie, tmpDir, "", "", nil)
 	if err != nil {
 		t.Fatalf("Generate failed: %v", err)
 	}
@@ -717,15 +708,13 @@ func TestActressAsTag(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{
-				ActorFirstNameOrder:  tt.firstNameOrder,
-				ActorJapaneseNames:   false,
-				UnknownActress:       "Unknown",
-				NFOFilenameTemplate:  "<ID>.nfo",
-				ActressAsTag:         tt.actressAsTag,
-				IncludeStreamDetails: false,
-				IncludeFanart:        true,
-				IncludeTrailer:       true,
-				DefaultRatingSource:  "themoviedb",
+				FirstNameOrder:     tt.firstNameOrder,
+				UnknownActressText: "Unknown",
+				FilenameTemplate:   "<ID>.nfo",
+				ActressAsTag:       tt.actressAsTag,
+				IncludeFanart:      true,
+				IncludeTrailer:     true,
+				RatingSource:       "themoviedb",
 			}
 
 			gen := NewGenerator(afero.NewOsFs(), cfg)
@@ -736,7 +725,7 @@ func TestActressAsTag(t *testing.T) {
 				Actresses: tt.actresses,
 			}
 
-			nfo := gen.MovieToNFO(movie, "")
+			nfo := gen.movieToNFO(context.Background(), movie, "", nil)
 
 			if len(nfo.Tags) != len(tt.expectedTags) {
 				t.Errorf("Expected %d tags, got %d tags: %v", len(tt.expectedTags), len(nfo.Tags), nfo.Tags)
@@ -762,15 +751,13 @@ func TestActressAsTag(t *testing.T) {
 func TestActressAsTagInXML(t *testing.T) {
 	// Test that actress names are properly included in XML as tags
 	cfg := &Config{
-		ActorFirstNameOrder:  true,
-		ActorJapaneseNames:   false,
-		UnknownActress:       "Unknown",
-		NFOFilenameTemplate:  "<ID>.nfo",
-		ActressAsTag:         true,
-		IncludeStreamDetails: false,
-		IncludeFanart:        true,
-		IncludeTrailer:       true,
-		DefaultRatingSource:  "themoviedb",
+		FirstNameOrder:     true,
+		UnknownActressText: "Unknown",
+		FilenameTemplate:   "<ID>.nfo",
+		ActressAsTag:       true,
+		IncludeFanart:      true,
+		IncludeTrailer:     true,
+		RatingSource:       "themoviedb",
 	}
 
 	gen := NewGenerator(afero.NewOsFs(), cfg)
@@ -786,7 +773,7 @@ func TestActressAsTagInXML(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	err := gen.Generate(movie, tmpDir, "", "")
+	err := gen.Generate(context.Background(), movie, tmpDir, "", "", nil)
 	if err != nil {
 		t.Fatalf("Generate failed: %v", err)
 	}
@@ -826,11 +813,11 @@ func TestActressAsTagInXML(t *testing.T) {
 
 func TestStaticNFOFields(t *testing.T) {
 	cfg := &Config{
-		ActorFirstNameOrder: true,
-		DefaultRatingSource: "themoviedb",
-		StaticTags:          []string{"JAV", "Japanese"},
-		StaticTagline:       "Brought to you by Javinizer",
-		StaticCredits:       []string{"Scraped by Javinizer", "Organized automatically"},
+		FirstNameOrder: true,
+		RatingSource:   "themoviedb",
+		Tag:            []string{"JAV", "Japanese"},
+		Tagline:        "Brought to you by Javinizer",
+		Credits:        []string{"Scraped by Javinizer", "Organized automatically"},
 	}
 
 	gen := NewGenerator(afero.NewOsFs(), cfg)
@@ -840,7 +827,7 @@ func TestStaticNFOFields(t *testing.T) {
 		Title: "Test Movie",
 	}
 
-	nfo := gen.MovieToNFO(movie, "")
+	nfo := gen.movieToNFO(context.Background(), movie, "", nil)
 
 	// Verify static tags were added
 	assert.Contains(t, nfo.Tags, "JAV")
@@ -856,10 +843,10 @@ func TestStaticNFOFields(t *testing.T) {
 
 func TestStaticTagsWithActressAsTag(t *testing.T) {
 	cfg := &Config{
-		ActorFirstNameOrder: true,
-		DefaultRatingSource: "themoviedb",
-		ActressAsTag:        true,
-		StaticTags:          []string{"JAV", "Collection"},
+		FirstNameOrder: true,
+		RatingSource:   "themoviedb",
+		ActressAsTag:   true,
+		Tag:            []string{"JAV", "Collection"},
 	}
 
 	gen := NewGenerator(afero.NewOsFs(), cfg)
@@ -872,7 +859,7 @@ func TestStaticTagsWithActressAsTag(t *testing.T) {
 		},
 	}
 
-	nfo := gen.MovieToNFO(movie, "")
+	nfo := gen.movieToNFO(context.Background(), movie, "", nil)
 
 	// Verify both actress name and static tags are present
 	assert.Contains(t, nfo.Tags, "Yui Hatano")
@@ -883,9 +870,8 @@ func TestStaticTagsWithActressAsTag(t *testing.T) {
 
 func TestStaticFieldsEmpty(t *testing.T) {
 	cfg := &Config{
-		ActorFirstNameOrder: true,
-		DefaultRatingSource: "themoviedb",
-		// No static fields configured
+		FirstNameOrder: true,
+		RatingSource:   "themoviedb",
 	}
 
 	gen := NewGenerator(afero.NewOsFs(), cfg)
@@ -895,7 +881,7 @@ func TestStaticFieldsEmpty(t *testing.T) {
 		Title: "Test Movie",
 	}
 
-	nfo := gen.MovieToNFO(movie, "")
+	nfo := gen.movieToNFO(context.Background(), movie, "", nil)
 
 	// Verify no static fields were added
 	assert.Empty(t, nfo.Tags)
@@ -925,4 +911,14 @@ func TestNormalizeActressNameForDedup(t *testing.T) {
 			assert.Equal(t, tt.expected, result)
 		})
 	}
+}
+
+func TestExtractStreamDetails_CancelledContext(t *testing.T) {
+	gen := NewGenerator(afero.NewOsFs(), defaultConfig())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	result := gen.extractStreamDetails(ctx, "/nonexistent/video.mp4")
+	assert.Nil(t, result, "extractStreamDetails should return nil on cancelled context")
 }

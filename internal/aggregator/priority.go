@@ -1,29 +1,10 @@
 package aggregator
 
 import (
-	"regexp"
-
-	"github.com/javinizer/javinizer-go/internal/config"
-	"github.com/javinizer/javinizer-go/internal/scraperutil"
+	"unicode"
 )
 
-// compileGenreRegexes compiles regex patterns from ignore_genres config
-// Patterns that look like regex (contain special chars) are compiled
-// Plain strings are left for exact matching
-func (a *Aggregator) compileGenreRegexes() {
-	a.ignoreGenreRegexes = make([]*regexp.Regexp, 0)
-
-	for _, pattern := range a.config.Metadata.IgnoreGenres {
-		// Check if pattern looks like a regex (contains regex metacharacters)
-		if isRegexPattern(pattern) {
-			compiled, err := regexp.Compile(pattern)
-			if err == nil {
-				a.ignoreGenreRegexes = append(a.ignoreGenreRegexes, compiled)
-			}
-			// If compilation fails, silently skip (will fall through to exact match)
-		}
-	}
-}
+// compileGenreRegexes moved to GenreProcessor.compileRegexes in genre_processor.go
 
 // isRegexPattern checks if a string contains regex metacharacters
 // Only returns true for patterns with clear regex intent
@@ -64,18 +45,7 @@ func isRegexPattern(s string) bool {
 func (a *Aggregator) resolvePriorities() {
 	a.resolvedPriorities = make(map[string][]string)
 
-	var globalPriority []string
-
-	// If scrapers are injected, use their names in order as priority
-	if len(a.scrapers) > 0 {
-		globalPriority = make([]string, 0, len(a.scrapers))
-		for _, s := range a.scrapers {
-			globalPriority = append(globalPriority, s.Name())
-		}
-	} else {
-		// Fall back to scraperutil for backward compatibility
-		globalPriority = getFieldPriorityFromConfig(a.config, "")
-	}
+	globalPriority := getFieldPriorityFromConfig(a.cfg, "")
 
 	// List of all metadata fields that need priority resolution
 	fields := []string{
@@ -86,11 +56,33 @@ func (a *Aggregator) resolvePriorities() {
 	}
 
 	for _, field := range fields {
+		fieldSnake := toSnakeCase(field)
+
+		// Default: use the global priority list (unchanged behavior for fields
+		// without a per-field override).
 		fieldPriority := copySlice(globalPriority)
 
-		if a.config != nil {
-			if fp := a.config.Metadata.Priority.GetFieldPriority(toSnakeCase(field)); len(fp) > 0 {
-				fieldPriority = mergePriorityLists(fp, globalPriority)
+		// Guard a.cfg.Metadata == nil: MetadataConfigFromApp returns nil when the
+		// app config has no metadata block, and getFieldPriorityFromConfig (below)
+		// already treats cfg.Metadata as optional. Without this guard, dereferencing
+		// a.cfg.Metadata.Priority here would panic for configs that rely only on
+		// ScrapersPriority (CodeRabbit, PR #51).
+		if a.cfg != nil && a.cfg.Metadata != nil {
+			if fp := a.cfg.Metadata.Priority.PerFieldOverride(fieldSnake); len(fp) > 0 {
+				// A non-empty per-field override is EXCLUSIVE: only the scrapers
+				// listed in the override are consulted for that field — there is NO
+				// fallback to the global priority list. This restores v1 (PowerShell
+				// Javinizer) semantics (#50): `series: [tokyohot]` leaves Series empty
+				// when tokyohot has no Series, instead of filling it from r18dev/dmm
+				// via global fallback. Suppression is the emergent result of pointing
+				// a field at a scraper (or a never-registered name like "__skip__")
+				// that doesn't provide it. A present-empty slice (`series: []`) is
+				// NOT exclusive — it inherits the global priority (commit 9f882f22's
+				// documented intent: "[] still means 'inherit global'"), keeping
+				// configs from the merge era upgrade-safe. PerFieldOverride returns
+				// a non-nil empty slice for a present `[]`, so `len(fp) > 0` skips it
+				// here and falls through to the global default above.
+				fieldPriority = copySlice(fp)
 			}
 		}
 
@@ -99,51 +91,38 @@ func (a *Aggregator) resolvePriorities() {
 }
 
 // GetResolvedPriorities returns the cached field-level priority map (for debugging)
-// Implements AggregatorInterface
-func (a *Aggregator) GetResolvedPriorities() map[string][]string {
+//
+//nolint:unused // used by same-package tests
+func (a *Aggregator) getResolvedPriorities() map[string][]string {
 	return a.resolvedPriorities
-}
-
-// mergePriorityLists appends globalFallback to perFieldOverride, skipping duplicates.
-// Per-field entries keep their relative order; global entries fill in after.
-func mergePriorityLists(perFieldOverride, globalFallback []string) []string {
-	seen := make(map[string]struct{}, len(perFieldOverride)+len(globalFallback))
-	merged := make([]string, 0, len(perFieldOverride)+len(globalFallback))
-	for _, s := range perFieldOverride {
-		if _, ok := seen[s]; !ok {
-			seen[s] = struct{}{}
-			merged = append(merged, s)
-		}
-	}
-	for _, s := range globalFallback {
-		if _, ok := seen[s]; !ok {
-			seen[s] = struct{}{}
-			merged = append(merged, s)
-		}
-	}
-	return merged
 }
 
 // getFieldPriorityFromConfig returns the scraper priority list.
 // Checks per-field override first, then global metadata priority, then scrapers priority.
-func getFieldPriorityFromConfig(cfg *config.Config, fieldKey string) []string {
+// Returns nil when no config is available.
+//
+// A non-empty per-field override wins exclusively. A present-empty slice
+// (`series: []`) is treated as "inherit global" (commit 9f882f22's documented
+// intent: "[] still means 'inherit global'") — it does NOT yield an empty list.
+// An ABSENT key or nil slice also inherits. Deliberate suppression uses the
+// ["__skip__"] sentinel (matches no scraper). This matches the default
+// Aggregate path's resolvePriorities and keeps both scrape paths consistent.
+func getFieldPriorityFromConfig(cfg *Config, fieldKey string) []string {
 	if cfg == nil {
-		if priorities := scraperutil.GetPriorities(); len(priorities) > 0 {
-			return priorities
-		}
 		return nil
 	}
 
-	if fp := cfg.Metadata.Priority.GetFieldPriority(fieldKey); len(fp) > 0 {
-		return fp
+	if cfg.Metadata != nil {
+		if fp := cfg.Metadata.Priority.PerFieldOverride(fieldKey); len(fp) > 0 {
+			return fp
+		}
+		if len(cfg.Metadata.Priority.Priority) > 0 {
+			return cfg.Metadata.Priority.Priority
+		}
 	}
 
-	if len(cfg.Scrapers.Priority) > 0 {
-		return cfg.Scrapers.Priority
-	}
-
-	if priorities := scraperutil.GetPriorities(); len(priorities) > 0 {
-		return priorities
+	if len(cfg.ScrapersPriority) > 0 {
+		return cfg.ScrapersPriority
 	}
 
 	return nil
@@ -178,9 +157,9 @@ func toSnakeCase(s string) string {
 					result = append(result, '_')
 				}
 			}
-			result = append(result, byte(r+32))
+			result = append(result, []byte(string(unicode.ToLower(r)))...)
 		} else {
-			result = append(result, byte(r))
+			result = append(result, []byte(string(r))...)
 		}
 	}
 	return string(result)

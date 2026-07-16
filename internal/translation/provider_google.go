@@ -15,7 +15,9 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 
+	"github.com/javinizer/javinizer-go/internal/httpclient"
 	"github.com/javinizer/javinizer-go/internal/logging"
+	"github.com/javinizer/javinizer-go/internal/models"
 )
 
 type googlePaidTranslateRequest struct {
@@ -33,25 +35,50 @@ type googlePaidTranslateResponse struct {
 	} `json:"data"`
 }
 
-func (s *Service) translateWithGoogle(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
-	mode := strings.ToLower(strings.TrimSpace(s.cfg.Google.Mode))
-	if mode == "" {
-		mode = "free"
-	}
-
-	if mode == "paid" {
-		return s.translateWithGooglePaid(ctx, sourceLang, targetLang, texts)
-	}
-	return s.translateWithGoogleFree(ctx, sourceLang, targetLang, texts)
+// GoogleProvider translates text using the Google translation backend.
+type GoogleProvider struct {
+	cfg        Config
+	httpClient httpclient.HTTPClient
 }
 
-func (s *Service) translateWithGooglePaid(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
-	apiKey := strings.TrimSpace(s.cfg.Google.APIKey)
+// NewGoogleProvider returns a GoogleProvider using cfg and the given HTTP client.
+func NewGoogleProvider(cfg Config, httpClient httpclient.HTTPClient) *GoogleProvider {
+	return &GoogleProvider{cfg: cfg, httpClient: httpClient}
+}
+
+// Name returns the provider identifier "google".
+func (p *GoogleProvider) Name() string { return "google" }
+
+// Translate translates texts from sourceLang to targetLang using the configured Google mode.
+func (p *GoogleProvider) Translate(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
+	if p == nil {
+		return nil, fmt.Errorf("nil receiver: *GoogleProvider")
+	}
+	httpClient := p.httpClient
+	cfg := p.cfg
+
+	mode := models.GoogleMode(strings.ToLower(strings.TrimSpace(string(cfg.Google.Mode))))
+	if mode == "" {
+		mode = models.GoogleModeFree
+	}
+
+	if mode == models.GoogleModePaid {
+		return translateWithGooglePaid(ctx, httpClient, cfg, sourceLang, targetLang, texts)
+	}
+	return translateWithGoogleFree(ctx, httpClient, cfg, sourceLang, targetLang, texts)
+}
+
+func translateWithGooglePaid(ctx context.Context, httpClient httpclient.HTTPClient, cfg Config, sourceLang, targetLang string, texts []string) (*translationResult, error) {
+	apiKey := strings.TrimSpace(cfg.Google.APIKey)
 	if apiKey == "" {
 		return nil, fmt.Errorf("google api_key is required for paid mode")
 	}
 
-	baseURL := strings.TrimRight(strings.TrimSpace(s.cfg.Google.BaseURL), "/")
+	if len(texts) == 0 {
+		return &translationResult{}, nil
+	}
+
+	baseURL := strings.TrimRight(strings.TrimSpace(cfg.Google.BaseURL), "/")
 	if baseURL == "" {
 		baseURL = "https://translation.googleapis.com"
 	}
@@ -61,7 +88,7 @@ func (s *Service) translateWithGooglePaid(ctx context.Context, sourceLang, targe
 		Target: targetLang,
 		Format: "text",
 	}
-	if sourceLang != "" && sourceLang != sourceLangAuto {
+	if sourceLang != "" && sourceLang != "auto" {
 		requestBody.Source = sourceLang
 	}
 
@@ -77,21 +104,33 @@ func (s *Service) translateWithGooglePaid(ctx context.Context, sourceLang, targe
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		// Wrap raw transport errors as a typed provider error so the request URL
+		// (which carries the API key in paid mode) is not leaked through logs/errors.
+		logging.Debugf("google paid translation request failed: %v", err)
+		return nil, &translationError{
+			Kind:    TranslationErrorProvider,
+			Message: "google paid translation request failed",
+		}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxTranslationResponseSize))
 	if err != nil {
-		return nil, err
+		logging.Debugf("google paid translation response read failed: %v", err)
+		return nil, &translationError{
+			Kind:    TranslationErrorProvider,
+			Message: "google paid translation response read failed",
+		}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, &TranslationError{
+		// Status-only message: do not embed the provider response body, which can
+		// contain diagnostics or echo the translated text.
+		return nil, &translationError{
 			Kind:       TranslationErrorHTTPStatus,
 			StatusCode: resp.StatusCode,
-			Message:    fmt.Sprintf("google paid translation failed with status %d: %s", resp.StatusCode, string(respBody)),
+			Message:    fmt.Sprintf("google paid translation failed with status %d", resp.StatusCode),
 		}
 	}
 
@@ -105,7 +144,7 @@ func (s *Service) translateWithGooglePaid(ctx context.Context, sourceLang, targe
 		result = append(result, html.UnescapeString(item.TranslatedText))
 	}
 
-	return &translationResult{texts: result}, nil
+	return &translationResult{Texts: result}, nil
 }
 
 type googleFreeResult struct {
@@ -114,15 +153,19 @@ type googleFreeResult struct {
 	err   error
 }
 
-func (s *Service) translateWithGoogleFree(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
-	baseURL := strings.TrimRight(strings.TrimSpace(s.cfg.Google.BaseURL), "/")
+func translateWithGoogleFree(ctx context.Context, httpClient httpclient.HTTPClient, cfg Config, sourceLang, targetLang string, texts []string) (*translationResult, error) {
+	baseURL := strings.TrimRight(strings.TrimSpace(cfg.Google.BaseURL), "/")
 	if baseURL == "" {
 		baseURL = "https://translate.googleapis.com"
 	}
 
+	if len(texts) == 0 {
+		return &translationResult{}, nil
+	}
+
 	sl := sourceLang
 	if sl == "" {
-		sl = sourceLangAuto
+		sl = "auto"
 	}
 
 	maxWorkers := 5
@@ -156,7 +199,7 @@ func (s *Service) translateWithGoogleFree(ctx context.Context, sourceLang, targe
 
 		eg.Go(func() error {
 			defer sem.Release(1)
-			result := s.performGoogleFreeTranslation(egCtx, baseURL, sl, targetLang, text)
+			result := performGoogleFreeTranslation(egCtx, httpClient, baseURL, sl, targetLang, text)
 			results[i] = googleFreeResult{
 				index: i,
 				text:  result.text,
@@ -184,13 +227,13 @@ func (s *Service) translateWithGoogleFree(ctx context.Context, sourceLang, targe
 		result[i] = r.text
 	}
 
-	return &translationResult{texts: result}, nil
+	return &translationResult{Texts: result}, nil
 }
 
-func (s *Service) performGoogleFreeTranslation(ctx context.Context, baseURL, sourceLang, targetLang, text string) googleFreeResult {
+func performGoogleFreeTranslation(ctx context.Context, httpClient httpclient.HTTPClient, baseURL, sourceLang, targetLang, text string) googleFreeResult {
 	u, err := url.Parse(baseURL + "/translate_a/single")
 	if err != nil {
-		return googleFreeResult{err: err}
+		return googleFreeResult{err: &translationError{Kind: TranslationErrorProvider, Message: "google free translation: invalid base URL"}}
 	}
 	query := u.Query()
 	query.Set("client", "gtx")
@@ -202,35 +245,39 @@ func (s *Service) performGoogleFreeTranslation(ctx context.Context, baseURL, sou
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return googleFreeResult{err: err}
+		return googleFreeResult{err: &translationError{Kind: TranslationErrorProvider, Message: "google free translation: failed to build request"}}
 	}
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
-		return googleFreeResult{err: err}
+		// Wrap raw transport errors so the request URL (which carries the q= text)
+		// is not leaked through logs/errors.
+		logging.Debugf("google free translation request failed: %v", err)
+		return googleFreeResult{err: &translationError{Kind: TranslationErrorProvider, Message: "google free translation request failed"}}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, maxTranslationResponseSize))
 	if readErr != nil {
-		return googleFreeResult{err: readErr}
+		logging.Debugf("google free translation response read failed: %v", readErr)
+		return googleFreeResult{err: &translationError{Kind: TranslationErrorProvider, Message: "google free translation response read failed"}}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		logging.Debugf("Translation (google-free): HTTP %d for text=%q body=%s", resp.StatusCode, text[:min(100, len(text))], string(respBody[:min(200, len(respBody))]))
-		return googleFreeResult{err: &TranslationError{
+		logging.Debugf("Translation (google-free): HTTP %d (text length=%d, body length=%d)", resp.StatusCode, len(text), len(respBody))
+		return googleFreeResult{err: &translationError{
 			Kind:       TranslationErrorHTTPStatus,
 			StatusCode: resp.StatusCode,
-			Message:    fmt.Sprintf("google free translation failed with status %d: %s", resp.StatusCode, string(respBody)),
+			Message:    fmt.Sprintf("google free translation failed with status %d", resp.StatusCode),
 		}}
 	}
 
 	translated, err := parseGoogleFreeResponse(respBody)
 	if err != nil {
-		logging.Debugf("Translation (google-free): parse error for text=%q: %v (body=%s)", text[:min(100, len(text))], err, string(respBody[:min(200, len(respBody))]))
+		logging.Debugf("Translation (google-free): parse error: %v (text length=%d, body length=%d)", err, len(text), len(respBody))
 		return googleFreeResult{err: err}
 	}
 	if translated == "" {
-		logging.Debugf("Translation (google-free): empty result for text=%q (body=%s)", text[:min(100, len(text))], string(respBody[:min(200, len(respBody))]))
+		logging.Debugf("Translation (google-free): empty result (text length=%d, body length=%d)", len(text), len(respBody))
 	}
 	return googleFreeResult{text: translated}
 }

@@ -662,9 +662,10 @@ She says "It's forceful..." but looks happy while being teased.`
 		}, got)
 	})
 
-	t.Run("errors when first marker is missing", func(t *testing.T) {
-		_, err := parseLLMTranslationPayload(`["hello","world"]`, []string{"<<<JZ_0>>>", "<<<JZ_1>>>"})
-		require.Error(t, err)
+	t.Run("accepts legacy indexed JSON response", func(t *testing.T) {
+		got, err := parseLLMTranslationPayload(`["hello","world"]`, []string{"<<<JZ_0>>>", "<<<JZ_1>>>"})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"hello", "world"}, got)
 	})
 }
 

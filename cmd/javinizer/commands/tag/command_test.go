@@ -1,6 +1,7 @@
 package tag_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,16 +27,16 @@ func setupTagTestDB(t *testing.T) (configPath string, dbPath string) {
 	require.NoError(t, err)
 
 	// Create test config
-	testCfg := config.DefaultConfig()
+	testCfg := config.DefaultConfig(nil, nil)
 	testCfg.Database.DSN = dbPath
 	configPath = filepath.Join(tmpDir, "config.yaml")
 	err = config.Save(testCfg, configPath)
 	require.NoError(t, err)
 
 	// Initialize database with migrations to ensure it exists
-	db, err := database.New(testCfg)
+	db, err := database.New(&database.Config{Type: testCfg.Database.Type, DSN: testCfg.Database.DSN, LogLevel: testCfg.Database.LogLevel})
 	require.NoError(t, err)
-	err = db.AutoMigrate()
+	err = db.RunMigrationsOnStartup(context.Background())
 	require.NoError(t, err)
 	_ = db.Close()
 
@@ -268,7 +269,8 @@ func TestRunTagAllTags_Success(t *testing.T) {
 // TestRunTagAdd_InvalidConfig tests config loading error
 func TestRunTagAdd_InvalidConfig(t *testing.T) {
 	rootCmd := &cobra.Command{Use: "root"}
-	rootCmd.PersistentFlags().String("config", "/nonexistent/invalid/path/config.yaml", "config file")
+	configPath := testutil.UnreachableConfigPath(t)
+	rootCmd.PersistentFlags().String("config", configPath, "config file")
 
 	cmd := tag.NewCommand()
 	rootCmd.AddCommand(cmd)
@@ -285,7 +287,7 @@ func TestRunTagAdd_DependencyInitError(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create a config with invalid database path
-	testCfg := config.DefaultConfig()
+	testCfg := config.DefaultConfig(nil, nil)
 	// Use a file as if it were a directory - this will cause DB creation to fail
 	dbFilePath := filepath.Join(tmpDir, "blockfile")
 	// Create a regular file at this path
@@ -347,7 +349,8 @@ func TestRunTagAdd_DuplicateTags(t *testing.T) {
 // TestRunTagList_InvalidConfig tests config loading error
 func TestRunTagList_InvalidConfig(t *testing.T) {
 	rootCmd := &cobra.Command{Use: "root"}
-	rootCmd.PersistentFlags().String("config", "/nonexistent/invalid/path/config.yaml", "config file")
+	configPath := testutil.UnreachableConfigPath(t)
+	rootCmd.PersistentFlags().String("config", configPath, "config file")
 
 	cmd := tag.NewCommand()
 	rootCmd.AddCommand(cmd)
@@ -363,7 +366,7 @@ func TestRunTagList_InvalidConfig(t *testing.T) {
 func TestRunTagList_DependencyInitError(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	testCfg := config.DefaultConfig()
+	testCfg := config.DefaultConfig(nil, nil)
 	dbFilePath := filepath.Join(tmpDir, "blockfile")
 	err := os.WriteFile(dbFilePath, []byte("block"), 0444)
 	require.NoError(t, err)
@@ -426,7 +429,8 @@ func TestRunTagList_EmptyDatabase(t *testing.T) {
 // TestRunTagRemove_InvalidConfig tests config loading error
 func TestRunTagRemove_InvalidConfig(t *testing.T) {
 	rootCmd := &cobra.Command{Use: "root"}
-	rootCmd.PersistentFlags().String("config", "/nonexistent/invalid/path/config.yaml", "config file")
+	configPath := testutil.UnreachableConfigPath(t)
+	rootCmd.PersistentFlags().String("config", configPath, "config file")
 
 	cmd := tag.NewCommand()
 	rootCmd.AddCommand(cmd)
@@ -442,7 +446,7 @@ func TestRunTagRemove_InvalidConfig(t *testing.T) {
 func TestRunTagRemove_DependencyInitError(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	testCfg := config.DefaultConfig()
+	testCfg := config.DefaultConfig(nil, nil)
 	dbFilePath := filepath.Join(tmpDir, "blockfile")
 	err := os.WriteFile(dbFilePath, []byte("block"), 0444)
 	require.NoError(t, err)
@@ -514,7 +518,8 @@ func TestRunTagRemove_AllTags(t *testing.T) {
 // TestRunTagSearch_InvalidConfig tests config loading error
 func TestRunTagSearch_InvalidConfig(t *testing.T) {
 	rootCmd := &cobra.Command{Use: "root"}
-	rootCmd.PersistentFlags().String("config", "/nonexistent/invalid/path/config.yaml", "config file")
+	configPath := testutil.UnreachableConfigPath(t)
+	rootCmd.PersistentFlags().String("config", configPath, "config file")
 
 	cmd := tag.NewCommand()
 	rootCmd.AddCommand(cmd)
@@ -530,7 +535,7 @@ func TestRunTagSearch_InvalidConfig(t *testing.T) {
 func TestRunTagSearch_DependencyInitError(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	testCfg := config.DefaultConfig()
+	testCfg := config.DefaultConfig(nil, nil)
 	dbFilePath := filepath.Join(tmpDir, "blockfile")
 	err := os.WriteFile(dbFilePath, []byte("block"), 0444)
 	require.NoError(t, err)
@@ -575,7 +580,8 @@ func TestRunTagSearch_NoResults(t *testing.T) {
 // TestRunTagAllTags_InvalidConfig tests config loading error
 func TestRunTagAllTags_InvalidConfig(t *testing.T) {
 	rootCmd := &cobra.Command{Use: "root"}
-	rootCmd.PersistentFlags().String("config", "/nonexistent/invalid/path/config.yaml", "config file")
+	configPath := testutil.UnreachableConfigPath(t)
+	rootCmd.PersistentFlags().String("config", configPath, "config file")
 
 	cmd := tag.NewCommand()
 	rootCmd.AddCommand(cmd)
@@ -591,7 +597,7 @@ func TestRunTagAllTags_InvalidConfig(t *testing.T) {
 func TestRunTagAllTags_DependencyInitError(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	testCfg := config.DefaultConfig()
+	testCfg := config.DefaultConfig(nil, nil)
 	dbFilePath := filepath.Join(tmpDir, "blockfile")
 	err := os.WriteFile(dbFilePath, []byte("block"), 0444)
 	require.NoError(t, err)

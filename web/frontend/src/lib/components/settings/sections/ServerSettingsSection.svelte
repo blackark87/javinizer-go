@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { RefreshCw, ArrowUpCircle } from 'lucide-svelte';
 	import SettingsSection from '$lib/components/settings/SettingsSection.svelte';
+	import UpgradeAction from '$lib/components/UpgradeAction.svelte';
 	import { apiClient } from '$lib/api/client';
 	import { toastStore } from '$lib/stores/toast';
 	import type { VersionStatusResponse, SettingsConfig } from '$lib/api/types';
@@ -62,7 +63,7 @@
 <SettingsSection title="Server Settings" description="Configure API server host, port, and system paths" defaultExpanded={false}>
 	<div class="space-y-4">
 		<div class="p-3 bg-muted/30 rounded-lg border border-border">
-			<div class="flex items-center justify-between mb-3">
+			<div class="flex items-center justify-between gap-3 flex-wrap">
 				<div class="flex items-center gap-2">
 					<span class="text-sm font-medium">Version</span>
 					{#if versionStatus}
@@ -77,17 +78,25 @@
 						<span class="text-sm text-muted-foreground">—</span>
 					{/if}
 				</div>
-				<button
-					type="button"
-					onclick={checkVersion}
-					disabled={isCheckingVersion}
-					class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-input bg-background text-sm hover:bg-accent hover:text-accent-foreground disabled:opacity-50 transition-colors"
-				>
-					<RefreshCw class="h-3.5 w-3.5 {isCheckingVersion ? 'animate-spin' : ''}" />
-					{isCheckingVersion ? 'Checking...' : 'Check for Updates'}
-				</button>
+				<!-- Group the upgrade CTA with the secondary "Check for Updates" action
+				so the primary action occupies the terminal (rightmost) position and
+				isn't orphaned on its own row when an update is available. -->
+				<div class="flex items-center gap-2">
+					{#if versionStatus?.update_available}
+						<UpgradeAction status={versionStatus} size="md" />
+					{/if}
+					<button
+						type="button"
+						onclick={checkVersion}
+						disabled={isCheckingVersion}
+						class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-input bg-background text-sm hover:bg-accent hover:text-accent-foreground disabled:opacity-50 transition-colors"
+					>
+						<RefreshCw class="h-3.5 w-3.5 {isCheckingVersion ? 'animate-spin' : ''}" />
+						{isCheckingVersion ? 'Checking...' : 'Check for Updates'}
+					</button>
+				</div>
 			</div>
-			<div class="space-y-3">
+			<div class="space-y-3 mt-3">
 				<div class="flex items-center gap-2">
 					<input
 						id="version-check-enabled"
@@ -120,7 +129,7 @@
 			</div>
 			<div>
 				<label class="block text-sm font-medium mb-2" for="server-port">Port</label>
-				<input id="server-port" type="number" bind:value={config.server.port} class={inputClass} placeholder="8080" />
+				<input id="server-port" type="number" bind:value={config.server.port} class={inputClass} placeholder="8765" />
 			</div>
 		</div>
 		<div>

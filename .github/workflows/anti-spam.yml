@@ -1,0 +1,155 @@
+name: Anti-Spam Filter
+
+# Auto-removes comments that drop unauthorized attachments or patch/fix
+# links onto issues — targets the recent wave of bot accounts pasting
+# .zip / .patch / .exe / "fix uploaded here" links into issue threads.
+# Policy:
+#   - Clear bot signals (patch-drop phrasing, bare external download links)
+#     are blocked for everyone regardless of account age.
+#   - Any attachment from an account younger than 24h is blocked.
+#   - Attachments from established accounts are allowed inline.
+#   - "Run this npx/pnpm/npm command" suggestions from low-trust accounts
+#     (NONE association AND <90d old OR zero public repos) are blocked —
+#     targets sleeper accounts aged past the 24h window that drop supply-chain
+#     spam like `npx <arbitrary-pkg>` onto other people's issues.
+# Comments are deleted and a notice is posted; the issue itself stays open
+# so the reporter isn't penalized for a bot hijacking their thread.
+# Legitimate contributions should paste code/logs inline; if a file is
+# genuinely needed a maintainer will ask for it.
+
+on:
+  issue_comment:
+    types: [created, edited]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+permissions:
+  issues: write
+  contents: read
+
+concurrency:
+  group: antispam-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  check-spam:
+    name: Check for unauthorized attachments
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check for spam attachments / patch drops
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const payload = context.payload;
+
+            // Only police issue comments, never PR comments.
+            if (payload.issue && payload.issue.pull_request) {
+              core.info(`Skipping PR comment on #${payload.issue.number}; issues-only.`);
+              return;
+            }
+
+            const target = payload.comment;
+            const body = (target && target.body) || "";
+            const issueNumber = payload.issue.number;
+            const actor = payload.sender && payload.sender.login;
+            const author = (target && target.user && target.user.login) || actor;
+
+            const { owner, repo } = context.repo;
+
+            // Suspicious file payloads, either inline or inside markdown links.
+            const spamPattern =
+              /\.(zip|patch|tar\.gz|tgz|exe|msi|diff|7z|rar|bin|sh|bat|cmd|ps1)/i;
+
+            // "Fix uploaded" / "patch attached" phrasing common to spam bots,
+            // with or without an external link.
+            const fixUploadedPattern =
+              /(fix|patch|solve|resolve)d?\s+(uploaded|attached|here|below)|download\s+(the\s+)?(fix|patch|solution)|here'?s?\s+the\s+(fix|patch|solution)/i;
+
+            // Bare external download links (raw host or paste host) are also
+            // a strong spam signal — a real contributor attaches logs inline.
+            const externalLinkPattern =
+              /(https?:\/\/[^\s)]+\.(zip|patch|tar\.gz|tgz|exe|msi|diff|7z|rar|bin))/i;
+
+            // "Run this npx/pnpm/npm command" suggestions — a common supply-chain
+            // spam vector for sleeper accounts promoting arbitrary npm packages.
+            // Matches `npx <pkg>`, `pnpm dlx <pkg>`, `npm i <pkg>`, `npm install <pkg>`,
+            // `yarn add <pkg>`, `bunx <pkg>`, `bun add <pkg>`. A stopword negative
+            // lookahead avoids generic prose like "npx it" or "npm install to ...".
+            const packageRunPattern =
+              /\b(?:npx|pnpm(?:\s+dlx)?|npm\s+(?:i|install)|yarn\s+add|bunx|bun\s+add)\s+(?!to\b|it\b|run\b|the\b|a\b|an\b|and\b|then\b|in\b|on\b|of\b|or\b|as\b|at\b|is\b|be\b|do\b|if\b|so\b|up\b|install\b|add\b|this\b|that\b|your\b|you\b|we\b|they\b|for\b|with\b|from\b|by\b|but\b|not\b|no\b)[\w@./-]+/i;
+
+            // New-account restriction: accounts younger than 24h may not post
+            // any attachment at all. Fetch the author's creation timestamp.
+            const NEW_ACCOUNT_MS = 24 * 60 * 60 * 1000;
+            const LOW_TRUST_AGE_MS = 90 * 24 * 60 * 60 * 1000;
+            let accountAgeMs = Infinity;
+            let isNewAccount = false;
+            let isLowTrustAccount = false;
+            let userInfo = null;
+            try {
+              const resp = await github.rest.users.getByUsername({ username: author });
+              userInfo = resp.data;
+              if (userInfo && userInfo.created_at) {
+                accountAgeMs = Date.now() - new Date(userInfo.created_at).getTime();
+                isNewAccount = accountAgeMs < NEW_ACCOUNT_MS;
+                const association = (target && target.author_association) || "NONE";
+                isLowTrustAccount =
+                  association === "NONE" &&
+                  (accountAgeMs < LOW_TRUST_AGE_MS ||
+                    (typeof userInfo.public_repos === "number" && userInfo.public_repos === 0));
+              }
+            } catch (err) {
+              core.warning(`Could not fetch account info for @${author}: ${err.message}`);
+            }
+
+            const hasAttachment = spamPattern.test(body);
+
+            const reasons = [];
+            // Clear bot signals — block for everyone regardless of account age.
+            if (fixUploadedPattern.test(body)) reasons.push("patch-drop phrasing");
+            if (externalLinkPattern.test(body)) reasons.push("external download link");
+            // New accounts (<24h) may not post any attachment.
+            if (hasAttachment && isNewAccount) {
+              reasons.push(`new account (<24h old) posting attachments`);
+            }
+            // Low-trust accounts (NONE association AND <90d old or zero public
+            // repos) may not suggest running arbitrary npx/pnpm/npm packages.
+            if (packageRunPattern.test(body) && isLowTrustAccount) {
+              reasons.push("package-run suggestion (npx/pnpm/npm) from a low-trust account");
+            }
+
+            if (reasons.length === 0) {
+              core.info(
+                `No spam signals on issue #${issueNumber} comment ${target.id}` +
+                (hasAttachment ? ` (attachment from established account @${author}, allowed)` : "") +
+                `.`
+              );
+              return;
+            }
+
+            const reasonText = reasons.join(", ");
+
+            // Delete the spam comment; leave the issue open so the reporter
+            // isn't penalized for a bot hijacking their thread.
+            try {
+              await github.rest.issues.deleteComment({ owner, repo, comment_id: target.id });
+              core.info(`Deleted spam comment by @${author} on issue #${issueNumber}.`);
+            } catch (err) {
+              core.warning(`Could not delete comment ${target.id}: ${err.message}`);
+            }
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: issueNumber,
+              body:
+                `🚫 A comment by @${author} was removed automatically by the anti-spam ` +
+                `filter (${reasonText}). ` +
+                `Please paste logs and code directly into the issue body, and avoid suggesting ` +
+                `unverified \`npx\`/\`npm\` commands from accounts without a contribution history. ` +
+                `If this was a legitimate contribution, a maintainer will reinstate it.`
+            });
+
+            core.info(`Reported spam comment on issue #${issueNumber}: ${reasonText}`);

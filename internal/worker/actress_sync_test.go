@@ -9,6 +9,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/models"
+	"github.com/javinizer/javinizer-go/internal/scraperutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,10 +34,10 @@ func (s *actressSyncTestScraper) Name() string { return s.name }
 func (s *actressSyncTestScraper) Search(context.Context, string) (*models.ScraperResult, error) {
 	return nil, nil
 }
-func (s *actressSyncTestScraper) GetURL(string) (string, error) { return "", nil }
-func (s *actressSyncTestScraper) IsEnabled() bool               { return s.enabled }
-func (s *actressSyncTestScraper) Config() *config.ScraperSettings {
-	return &config.ScraperSettings{Enabled: s.enabled}
+func (s *actressSyncTestScraper) GetURL(context.Context, string) (string, error) { return "", nil }
+func (s *actressSyncTestScraper) IsEnabled() bool                                { return s.enabled }
+func (s *actressSyncTestScraper) Config() *models.ScraperSettings {
+	return &models.ScraperSettings{Enabled: s.enabled}
 }
 func (s *actressSyncTestScraper) Close() error { return nil }
 func (s *actressSyncTestScraper) ResolveActressIdentity(ctx context.Context, query models.ActressIdentityQuery) (*models.ScraperResult, error) {
@@ -73,20 +74,20 @@ func newActressSyncTestRepo(t *testing.T) *database.ActressRepository {
 		Database: config.DatabaseConfig{Type: "sqlite", DSN: filepath.Join(t.TempDir(), "actress-sync.db")},
 		Logging:  config.LoggingConfig{Level: "error"},
 	}
-	db, err := database.New(cfg)
+	db, err := database.New(&database.Config{Type: cfg.Database.Type, DSN: cfg.Database.DSN, LogLevel: cfg.Database.LogLevel})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	require.NoError(t, db.AutoMigrate())
+	require.NoError(t, db.RunMigrationsOnStartup(context.Background()))
 	return database.NewActressRepository(db)
 }
 
 func TestSyncActressMetadataThumbnailOnlyDoesNotLookupIdentityOrOverwriteNames(t *testing.T) {
 	actressRepo := newActressSyncTestRepo(t)
 	actress := &models.Actress{DMMID: 321, FirstName: "Existing", LastName: "Name", JapaneseName: "既存"}
-	require.NoError(t, actressRepo.Create(actress))
+	require.NoError(t, actressRepo.Create(context.Background(), actress))
 	thumbnail := &actressSyncTestScraper{name: "dmm", enabled: false, thumbnailURL: "thumb.jpg"}
-	registry := models.NewScraperRegistry()
-	registry.Register(thumbnail)
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(thumbnail)
 
 	result, err := SyncActressMetadata(context.Background(), actress.ID, actressRepo, registry, nil)
 	require.NoError(t, err)
@@ -101,10 +102,10 @@ func TestSyncActressMetadataThumbnailOnlyDoesNotLookupIdentityOrOverwriteNames(t
 func TestSyncActressMetadataRequiresDurableMovieJobForMissingDMMID(t *testing.T) {
 	actressRepo := newActressSyncTestRepo(t)
 	actress := &models.Actress{JapaneseName: "미검증 가명"}
-	require.NoError(t, actressRepo.Create(actress))
+	require.NoError(t, actressRepo.Create(context.Background(), actress))
 	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true}
-	registry := models.NewScraperRegistry()
-	registry.Register(resolver)
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
 
 	result, err := SyncActressMetadata(context.Background(), actress.ID, actressRepo, registry, []string{"sougouwiki"})
 	require.NoError(t, err)

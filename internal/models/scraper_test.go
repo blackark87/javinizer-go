@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -607,16 +606,17 @@ func TestScraperInterfaceCompliance(t *testing.T) {
 
 // mockScraperForTest is a minimal test implementation to verify interface compliance
 // This demonstrates that any struct with Name(), Search(), GetURL(), IsEnabled() satisfies the interface
-type mockScraperForTest struct{}
+type mockScraperForTest struct {
+}
 
 func (m *mockScraperForTest) Name() string { return "mock" }
 func (m *mockScraperForTest) Search(_ context.Context, _ string) (*ScraperResult, error) {
 	return nil, nil
 }
-func (m *mockScraperForTest) GetURL(id string) (string, error) { return "", nil }
-func (m *mockScraperForTest) IsEnabled() bool                  { return true }
-func (m *mockScraperForTest) Config() *config.ScraperSettings  { return &config.ScraperSettings{} }
-func (m *mockScraperForTest) Close() error                     { return nil }
+func (m *mockScraperForTest) GetURL(_ context.Context, id string) (string, error) { return "", nil }
+func (m *mockScraperForTest) IsEnabled() bool                                     { return true }
+func (m *mockScraperForTest) Config() *ScraperSettings                            { return &ScraperSettings{} }
+func (m *mockScraperForTest) Close() error                                        { return nil }
 
 // TestActressInfoValidation tests ActressInfo struct validation (AC-2.5.5)
 func TestActressInfoValidation(t *testing.T) {
@@ -949,39 +949,46 @@ func TestScraperResultNormalizeMediaURLs(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name   string
-		input  string
-		expect string
+		name       string
+		input      string
+		wantPoster string // PosterURL is left unchanged: ps.jpg is the portrait poster
+		wantCover  string // CoverURL is upgraded to pl.jpg (the landscape jacket)
 	}{
 		{
-			name:   "pics dmm ps to pl",
-			input:  "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560ps.jpg",
-			expect: "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560pl.jpg",
+			name:       "pics dmm ps stays as poster, cover upgraded",
+			input:      "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560ps.jpg",
+			wantPoster: "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560ps.jpg",
+			wantCover:  "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560pl.jpg",
 		},
 		{
-			name:   "awsimgsrc co jp ps to pl",
-			input:  "https://awsimgsrc.dmm.co.jp/pics_dig/video/ipx00535/ipx00535ps.jpg",
-			expect: "https://awsimgsrc.dmm.co.jp/pics_dig/video/ipx00535/ipx00535pl.jpg",
+			name:       "awsimgsrc co jp ps stays as poster, cover upgraded",
+			input:      "https://awsimgsrc.dmm.co.jp/pics_dig/video/ipx00535/ipx00535ps.jpg",
+			wantPoster: "https://awsimgsrc.dmm.co.jp/pics_dig/video/ipx00535/ipx00535ps.jpg",
+			wantCover:  "https://awsimgsrc.dmm.co.jp/pics_dig/video/ipx00535/ipx00535pl.jpg",
 		},
 		{
-			name:   "awsimgsrc com ps to pl",
-			input:  "https://awsimgsrc.dmm.com/dig/video/ipx00535/ipx00535ps.jpg",
-			expect: "https://awsimgsrc.dmm.com/dig/video/ipx00535/ipx00535pl.jpg",
+			name:       "awsimgsrc com ps stays as poster, cover upgraded",
+			input:      "https://awsimgsrc.dmm.com/dig/video/ipx00535/ipx00535ps.jpg",
+			wantPoster: "https://awsimgsrc.dmm.com/dig/video/ipx00535/ipx00535ps.jpg",
+			wantCover:  "https://awsimgsrc.dmm.com/dig/video/ipx00535/ipx00535pl.jpg",
 		},
 		{
-			name:   "keeps query string",
-			input:  "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560ps.jpg?foo=bar",
-			expect: "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560pl.jpg?foo=bar",
+			name:       "keeps query string on cover",
+			input:      "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560ps.jpg?foo=bar",
+			wantPoster: "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560ps.jpg?foo=bar",
+			wantCover:  "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560pl.jpg?foo=bar",
 		},
 		{
-			name:   "non dmm url unchanged",
-			input:  "https://images.example.com/aldn560ps.jpg",
-			expect: "https://images.example.com/aldn560ps.jpg",
+			name:       "non dmm url unchanged",
+			input:      "https://images.example.com/aldn560ps.jpg",
+			wantPoster: "https://images.example.com/aldn560ps.jpg",
+			wantCover:  "https://images.example.com/aldn560ps.jpg",
 		},
 		{
-			name:   "already pl unchanged",
-			input:  "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560pl.jpg",
-			expect: "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560pl.jpg",
+			name:       "already pl unchanged",
+			input:      "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560pl.jpg",
+			wantPoster: "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560pl.jpg",
+			wantCover:  "https://pics.dmm.co.jp/mono/movie/adult/aldn560/aldn560pl.jpg",
 		},
 	}
 
@@ -993,8 +1000,8 @@ func TestScraperResultNormalizeMediaURLs(t *testing.T) {
 				CoverURL:  tt.input,
 			}
 			result.NormalizeMediaURLs()
-			assert.Equal(t, tt.expect, result.PosterURL)
-			assert.Equal(t, tt.expect, result.CoverURL)
+			assert.Equal(t, tt.wantPoster, result.PosterURL)
+			assert.Equal(t, tt.wantCover, result.CoverURL)
 		})
 	}
 }
@@ -1006,17 +1013,6 @@ func TestScraperResultNormalizeMediaURLs_NilReceiver(t *testing.T) {
 	assert.NotPanics(t, func() {
 		result.NormalizeMediaURLs()
 	})
-}
-
-func TestScraperRegistry_Reset(t *testing.T) {
-	reg := NewScraperRegistry()
-	reg.Register(&mockScraperForTest{})
-	_, exists := reg.Get("mock")
-	assert.True(t, exists)
-
-	reg.Reset()
-	_, exists = reg.Get("mock")
-	assert.False(t, exists)
 }
 
 func TestReplacePathSuffixIgnoreCase(t *testing.T) {
@@ -1058,4 +1054,63 @@ func TestNormalizeDMMPosterURL_EdgeCases(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+func TestNilReceiverNoPanic(t *testing.T) {
+	t.Run("NormalizeMediaURLs does not panic on nil receiver", func(t *testing.T) {
+		var sr *ScraperResult
+		assert.NotPanics(t, func() {
+			sr.NormalizeMediaURLs()
+		}, "ScraperResult.NormalizeMediaURLs() should not panic on nil receiver")
+	})
+}
+
+func TestScraperResult_Clone(t *testing.T) {
+	t.Run("nil receiver returns nil", func(t *testing.T) {
+		var sr *ScraperResult
+		assert.Nil(t, sr.Clone())
+	})
+
+	t.Run("deep copies slices and pointers", func(t *testing.T) {
+		date := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
+		orig := &ScraperResult{
+			Source:        "dmm",
+			ID:            "IPX-1",
+			ReleaseDate:   &date,
+			Rating:        &Rating{Score: 9.5, Votes: 100},
+			Actresses:     []ActressInfo{{FirstName: "A"}},
+			Genres:        []string{"Drama"},
+			ScreenshotURL: []string{"s1.jpg"},
+			Translations:  []MovieTranslation{{Language: "en", Title: "Eng"}},
+		}
+
+		clone := orig.Clone()
+		require.NotNil(t, clone)
+		assert.Equal(t, orig, clone)
+
+		clone.Actresses[0].FirstName = "B"
+		clone.Genres[0] = "Comedy"
+		clone.ScreenshotURL[0] = "s2.jpg"
+		clone.Translations[0].Title = "Changed"
+		*clone.ReleaseDate = time.Time{}
+		clone.Rating.Score = 0
+
+		assert.Equal(t, "A", orig.Actresses[0].FirstName, "Actresses slice must be deep-copied")
+		assert.Equal(t, "Drama", orig.Genres[0], "Genres slice must be deep-copied")
+		assert.Equal(t, "s1.jpg", orig.ScreenshotURL[0], "ScreenshotURL slice must be deep-copied")
+		assert.Equal(t, "Eng", orig.Translations[0].Title, "Translations slice must be deep-copied")
+		assert.Equal(t, date, *orig.ReleaseDate, "ReleaseDate pointer must be deep-copied")
+		assert.Equal(t, 9.5, orig.Rating.Score, "Rating pointer must be deep-copied")
+	})
+
+	t.Run("nil slices and pointers stay nil", func(t *testing.T) {
+		clone := (&ScraperResult{Source: "x"}).Clone()
+		require.NotNil(t, clone)
+		assert.Nil(t, clone.ReleaseDate)
+		assert.Nil(t, clone.Rating)
+		assert.Nil(t, clone.Actresses)
+		assert.Nil(t, clone.Genres)
+		assert.Nil(t, clone.ScreenshotURL)
+		assert.Nil(t, clone.Translations)
+	})
 }

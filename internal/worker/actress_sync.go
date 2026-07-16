@@ -2,14 +2,19 @@ package worker
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/models"
+	"github.com/javinizer/javinizer-go/internal/scraperutil"
 )
 
+// ActressSyncStatus describes the outcome of an actress metadata sync.
 type ActressSyncStatus string
 
+// Actress metadata sync outcomes.
 const (
 	ActressSyncUpdated  ActressSyncStatus = "updated"
 	ActressSyncSkipped  ActressSyncStatus = "skipped"
@@ -35,7 +40,7 @@ func SyncActressMetadata(
 	ctx context.Context,
 	actressID uint,
 	actressRepo *database.ActressRepository,
-	registry *models.ScraperRegistry,
+	registry scraperutil.ScraperInstancesInterface,
 	scraperPriority []string,
 	movieRepos ...*database.MovieRepository,
 ) (*ActressSyncResult, error) {
@@ -44,7 +49,7 @@ func SyncActressMetadata(
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	actress, err := actressRepo.FindByID(actressID)
+	actress, err := actressRepo.FindByID(ctx, actressID)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +79,7 @@ func SyncActressMetadata(
 		}
 		if thumbnail != "" {
 			actress.ThumbURL = thumbnail
-			if err := actressRepo.Update(actress); err != nil {
+			if err := actressRepo.Update(ctx, actress); err != nil {
 				return nil, err
 			}
 			result.UpdatedFields = append(result.UpdatedFields, "thumb_url")
@@ -91,6 +96,43 @@ func SyncActressMetadata(
 	}
 	result.Actress = *actress
 	return result, nil
+}
+
+func findActressThumbnailResolver(registry scraperutil.ScraperInstancesInterface) models.ActressThumbnailResolver {
+	if registry == nil {
+		return nil
+	}
+	for _, instance := range registry.GetAllInstances() {
+		if resolver, ok := instance.(models.ActressThumbnailResolver); ok {
+			return resolver
+		}
+	}
+	return nil
+}
+
+func safeResolveActressThumbnail(ctx context.Context, resolver models.ActressThumbnailResolver, actress models.ActressInfo) (result string) {
+	if resolver == nil {
+		return ""
+	}
+	defer func() {
+		if recover() != nil {
+			result = ""
+		}
+	}()
+	return resolver.ResolveActressThumbnail(ctx, actress)
+}
+
+func safeResolveActresses(ctx context.Context, resolver models.ActressResolver, id string) (result *models.ScraperResult, err error) {
+	if resolver == nil {
+		return nil, errors.New("actress resolver is unavailable")
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			result = nil
+			err = fmt.Errorf("actress resolver panicked: %v", recovered)
+		}
+	}()
+	return resolver.ResolveActresses(ctx, id)
 }
 
 func actressModelFromInfo(info models.ActressInfo) models.Actress {

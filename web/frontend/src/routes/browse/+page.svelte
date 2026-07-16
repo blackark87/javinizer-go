@@ -13,7 +13,15 @@
 	import { apiClient } from '$lib/api/client';
 	import { toastStore } from '$lib/stores/toast';
 	import { startJob } from '$lib/stores/background-job.svelte';
+	import { goto } from '$app/navigation';
+	import {
+		setPendingScrape,
+		clearPendingScrape,
+		buildPendingScrapeSnapshot
+	} from '$lib/stores/pending-scrape.svelte';
+	import { clearManualInputs } from '$lib/stores/manual-inputs-session';
 	import { createConfigQuery, createScrapersQuery } from '$lib/query/queries';
+	import { isTerminalStatus } from '$lib/utils/job-progress';
 	import { Play, FolderOutput, FolderOpen, FileEdit, FileText, RotateCcw, LoaderCircle, RefreshCw, Settings, ChevronUp, ChevronDown, X, Scan } from 'lucide-svelte';
 	import type { Scraper, FileInfo, Config } from '$lib/api/types';
 	import type { OperationMode } from '$lib/api/types';
@@ -82,6 +90,176 @@
 	let showOptionsPanel = $state(false);  // Expandable options panel in sticky bar
 	let operationModeOverride: OperationMode = $state('organize');
 	let operationModeOverrideTouched: boolean = $state(false);
+	let manualScrapeMode: boolean = $state(false);
+
+	// D4: persist /browse scrape state to sessionStorage + hydrate on mount so a
+	// Back round-trip from /manual preserves selection + globals. When hydrated
+	// selectedScrapers is non-empty, scrapersInitialized is locked so the
+	// all-enabled re-init on remount is skipped.
+	const STORAGE_KEY_SCRAPE_STATE = 'javinizer_browse_scrape_state';
+
+	interface BrowseScrapeState {
+		selectedFiles: string[];
+		operationMode: BrowseMode;
+		operationModeOverride: OperationMode;
+		operationModeOverrideTouched: boolean;
+		forceRefresh: boolean;
+		showScraperSelector: boolean;
+		selectedScrapers: string[];
+		selectedPreset: string | undefined;
+		scalarStrategy: ScalarStrategy;
+		arrayStrategy: ArrayStrategy;
+		manualScrapeMode: boolean;
+	}
+
+	let scrapeStateHydrated = $state(false);
+
+	$effect(() => {
+		if (scrapeStateHydrated) return;
+		scrapeStateHydrated = true;
+		if (typeof sessionStorage === 'undefined') return;
+		try {
+			const raw = sessionStorage.getItem(STORAGE_KEY_SCRAPE_STATE);
+			if (!raw) return;
+			const saved = JSON.parse(raw) as Partial<BrowseScrapeState>;
+			if (Array.isArray(saved.selectedFiles)) selectedFiles = saved.selectedFiles;
+			if (saved.operationMode === 'scrape' || saved.operationMode === 'update') operationMode = saved.operationMode;
+			if (saved.operationModeOverride) operationModeOverride = saved.operationModeOverride;
+			if (typeof saved.operationModeOverrideTouched === 'boolean') operationModeOverrideTouched = saved.operationModeOverrideTouched;
+			if (typeof saved.forceRefresh === 'boolean') forceRefresh = saved.forceRefresh;
+			if (typeof saved.showScraperSelector === 'boolean') showScraperSelector = saved.showScraperSelector;
+			if (
+				Array.isArray(saved.selectedScrapers) &&
+				saved.selectedScrapers.every((s) => typeof s === 'string')
+			) {
+				selectedScrapers = saved.selectedScrapers;
+				// A saved empty array is a deliberate user choice (no scrapers);
+				// only re-run the default “all enabled” initializer when the
+				// saved value is truly absent.
+				if (saved.showScraperSelector || saved.selectedScrapers.length > 0) {
+					scrapersInitialized = true;
+				}
+			}
+			if (saved.selectedPreset !== undefined) selectedPreset = saved.selectedPreset;
+			if (saved.scalarStrategy) scalarStrategy = saved.scalarStrategy;
+			if (saved.arrayStrategy) arrayStrategy = saved.arrayStrategy;
+			if (typeof saved.manualScrapeMode === 'boolean') manualScrapeMode = saved.manualScrapeMode;
+		} catch {}
+	});
+
+	$effect(() => {
+		if (!scrapeStateHydrated) return;
+		if (typeof sessionStorage === 'undefined') return;
+		const state: BrowseScrapeState = {
+			selectedFiles,
+			operationMode,
+			operationModeOverride,
+			operationModeOverrideTouched,
+			forceRefresh,
+			showScraperSelector,
+			selectedScrapers,
+			selectedPreset,
+			scalarStrategy,
+			arrayStrategy,
+			manualScrapeMode
+		};
+		try {
+			sessionStorage.setItem(STORAGE_KEY_SCRAPE_STATE, JSON.stringify(state));
+		} catch {}
+	});
+
+	function clearSelection() {
+		selectedFiles = [];
+		clearPendingScrape();
+		clearManualInputs();
+	}
+
+	// Track the batch job started from this browse page so we can clear the
+	// file selection once the job reaches a terminal SUCCESS state. Persisted to
+	// sessionStorage so a remount (e.g. user navigated away before completion)
+	// can re-check the job and clear stale selection.
+	const STORAGE_KEY_PENDING_JOB = 'javinizer_browse_pending_job';
+	const JOB_SUCCESS_STATUSES = new Set(['completed', 'organized', 'reverted']);
+	let pendingJobId: string | null = $state(null);
+	let launchedFiles: string[] | null = $state(null);
+	let completionPoll: ReturnType<typeof setInterval> | null = null;
+
+	function stopCompletionPoll() {
+		if (completionPoll) {
+			clearInterval(completionPoll);
+			completionPoll = null;
+		}
+	}
+
+	function sameSelection(a: string[], b: string[]): boolean {
+		if (a.length !== b.length) return false;
+		const setB = new Set(b);
+		return a.every((f) => setB.has(f));
+	}
+
+	function clearPendingJob() {
+		pendingJobId = null;
+		launchedFiles = null;
+		try {
+			sessionStorage.removeItem(STORAGE_KEY_PENDING_JOB);
+		} catch {}
+	}
+
+	async function pollJobCompletion(jobId: string) {
+		stopCompletionPoll();
+		const tick = async () => {
+			try {
+				const job = await apiClient.getBatchJob(jobId);
+				const status = job.status?.toLowerCase();
+				if (status && JOB_SUCCESS_STATUSES.has(status)) {
+					stopCompletionPoll();
+					if ((job.failed ?? 0) === 0 && launchedFiles && sameSelection(launchedFiles, selectedFiles)) {
+						clearSelection();
+					}
+					clearPendingJob();
+				} else if (isTerminalStatus(status)) {
+					// failed / cancelled — keep selection so the user can retry
+					stopCompletionPoll();
+					clearPendingJob();
+				}
+			} catch {
+				// transient network error — keep polling
+			}
+		};
+		void tick();
+		completionPoll = setInterval(() => { void tick(); }, 2000);
+	}
+
+	// On mount, if a pending job was recorded (e.g. user navigated away before
+	// completion), resume polling so a since-completed job clears the selection.
+	$effect(() => {
+		if (typeof sessionStorage === 'undefined') return;
+		let saved: string | null = null;
+		try {
+			saved = sessionStorage.getItem(STORAGE_KEY_PENDING_JOB);
+		} catch {}
+		if (saved && !pendingJobId) {
+			try {
+				const parsed = JSON.parse(saved) as { jobId: string; launchedFiles?: string[] };
+				pendingJobId = parsed.jobId;
+				if (Array.isArray(parsed.launchedFiles)) {
+					launchedFiles = parsed.launchedFiles;
+				}
+			} catch {
+				// Legacy format — just a job ID string
+				pendingJobId = saved;
+			}
+			if (pendingJobId) {
+				pollJobCompletion(pendingJobId);
+			}
+		}
+	});
+
+	// Stop polling when the component unmounts (sessionStorage marker is kept so
+	// a remount can finish the check).
+	$effect(() => {
+		return () => stopCompletionPoll();
+	});
 
 	function getSettingsOperationMode(): OperationMode {
 		if (config) {
@@ -249,6 +427,26 @@
 		}
 	}
 
+	function continueToManual() {
+		if (selectedFiles.length === 0) return;
+		setPendingScrape(
+			buildPendingScrapeSnapshot({
+				files: selectedFiles,
+				browseMode: operationMode,
+				effectiveOperationMode: effectiveOperationMode,
+				isInPlaceImplied: isInPlaceImplied,
+				showScraperSelector: showScraperSelector,
+				destination: operationMode === 'update' ? '' : destinationPath,
+				selectedScrapers: showScraperSelector ? selectedScrapers : [],
+				force: forceRefresh,
+				preset: operationMode === 'update' ? (selectedPreset as 'conservative' | 'gap-fill' | 'aggressive' | undefined) : undefined,
+				scalarStrategy: operationMode === 'update' ? scalarStrategy : undefined,
+				arrayStrategy: operationMode === 'update' ? arrayStrategy : undefined
+			})
+		);
+		void goto('/manual');
+	}
+
 	async function startBatchScrape() {
 		if (selectedFiles.length === 0) return;
 
@@ -268,6 +466,15 @@
 				operation_mode: effectiveOperationMode,
 			});
 			startJob(response.job_id);
+			launchedFiles = [...selectedFiles];
+			pendingJobId = response.job_id;
+			try {
+				sessionStorage.setItem(
+				STORAGE_KEY_PENDING_JOB,
+				JSON.stringify({ jobId: response.job_id, launchedFiles }),
+			);
+			} catch {}
+			pollJobCompletion(response.job_id);
 			void queryClient.invalidateQueries({ queryKey: ['batch-jobs'] });
 
 			const modeText = isUpdateMode ? 'Updating metadata' : 'Batch scraping';
@@ -584,9 +791,7 @@
 						<Button
 							variant="ghost"
 							size="sm"
-							onclick={() => {
-								selectedFiles = [];
-							}}
+								onclick={clearSelection}
 						>
 							{#snippet children()}
 								Clear All
@@ -703,6 +908,20 @@
 						</div>
 					</label>
 
+					<label
+						class="flex items-center gap-3 p-3 rounded-lg border border-border bg-background hover:bg-accent/50 cursor-pointer transition-colors"
+					>
+						<input
+							type="checkbox"
+							bind:checked={manualScrapeMode}
+							class="h-4 w-4 rounded border-input text-primary focus:ring-2 focus:ring-primary"
+						/>
+						<div class="flex-1">
+							<span class="text-sm font-medium">Manual Scrape</span>
+							<p class="text-xs text-muted-foreground">Review &amp; override IDs/URLs per file before scraping</p>
+						</div>
+					</label>
+
 				</div>
 
 				<!-- Scraper Selector (if enabled) -->
@@ -727,7 +946,7 @@
 							{selectedFiles.length} file{selectedFiles.length !== 1 ? 's' : ''} selected
 						</span>
 						<button
-							onclick={() => selectedFiles = []}
+									onclick={clearSelection}
 							class="text-xs text-muted-foreground hover:text-destructive transition-colors"
 						>
 							(clear)
@@ -789,8 +1008,11 @@
 				</Button>
 
 				<!-- Active options indicators -->
-				{#if forceRefresh || showScraperSelector}
+				{#if manualScrapeMode || forceRefresh || showScraperSelector}
 					<div class="hidden sm:flex items-center gap-1 text-xs">
+						{#if manualScrapeMode}
+							<span class="px-2 py-0.5 bg-primary/10 text-primary rounded">Manual</span>
+						{/if}
 						{#if forceRefresh}
 							<span class="px-2 py-0.5 bg-primary/10 text-primary rounded">Force</span>
 						{/if}
@@ -801,16 +1023,20 @@
 				{/if}
 
 				<!-- Action button -->
-				<Button onclick={startBatchScrape} disabled={selectedFiles.length === 0 || scraping}>
+				<Button onclick={manualScrapeMode ? continueToManual : startBatchScrape} disabled={selectedFiles.length === 0 || scraping}>
 					{#snippet children()}
-						{#if scraping}
+						{#if manualScrapeMode && !scraping}
+							<FileEdit class="h-4 w-4 mr-2" />
+						{:else if scraping}
 							<LoaderCircle class="h-4 w-4 mr-2 animate-spin" />
 						{:else if operationMode === 'update'}
 							<RefreshCw class="h-4 w-4 mr-2" />
 						{:else}
 							<Play class="h-4 w-4 mr-2" />
 						{/if}
-						{#if scraping}
+						{#if manualScrapeMode && !scraping}
+							Continue to manual review
+						{:else if scraping}
 							Starting...
 						{:else if operationMode === 'update'}
 							Update {selectedFiles.length} File{selectedFiles.length !== 1 ? 's' : ''}

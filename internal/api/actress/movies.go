@@ -37,7 +37,7 @@ func listActressMovies(actressRepo *database.ActressRepository, movieRepo *datab
 			return
 		}
 
-		if _, err := actressRepo.FindByID(id); err != nil {
+		if _, err := actressRepo.FindByID(c.Request.Context(), id); err != nil {
 			if database.IsNotFound(err) {
 				c.JSON(http.StatusNotFound, ErrorResponse{Error: "actress not found"})
 				return
@@ -47,13 +47,13 @@ func listActressMovies(actressRepo *database.ActressRepository, movieRepo *datab
 		}
 
 		limit, offset := core.ParsePagination(c, 20, 500)
-		total, err := movieRepo.CountByActressID(id)
+		total, err := movieRepo.CountByActressID(c.Request.Context(), id)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 			return
 		}
 
-		movies, err := movieRepo.ListByActressID(id, limit, offset)
+		movies, err := movieRepo.ListByActressID(c.Request.Context(), id, limit, offset)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 			return

@@ -1,13 +1,15 @@
 package history
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/javinizer/javinizer-go/internal/api/core"
 	"github.com/javinizer/javinizer-go/internal/database"
-	"github.com/javinizer/javinizer-go/internal/logging"
 	"github.com/javinizer/javinizer-go/internal/models"
+
+	contracts "github.com/javinizer/javinizer-go/internal/api/contracts"
 )
 
 // toHistoryRecord converts a models.History to a HistoryRecord for API responses.
@@ -37,10 +39,10 @@ func toHistoryRecord(h models.History) HistoryRecord {
 // @Param status query string false "Filter by status (success, failed, reverted)"
 // @Param movie_id query string false "Filter by movie ID"
 // @Success 200 {object} HistoryListResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Failure 400 {object} contracts.ErrorResponse
+// @Failure 500 {object} contracts.ErrorResponse
 // @Router /api/v1/history [get]
-func getHistory(historyRepo *database.HistoryRepository) gin.HandlerFunc {
+func getHistory(repo database.HistoryRepositoryInterface) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		limit, offset := core.ParsePagination(c, 50, 500)
 
@@ -48,32 +50,84 @@ func getHistory(historyRepo *database.HistoryRepository) gin.HandlerFunc {
 		status := c.Query("status")
 		movieID := c.Query("movie_id")
 
-		filter := database.HistoryFilter{
-			Operation: operation,
-			Status:    status,
-			MovieID:   movieID,
+		var records []HistoryRecord
+		var total int64
+
+		if movieID != "" {
+			var err error
+			total, err = repo.CountByMovieID(c.Request.Context(), movieID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: "Failed to count history"})
+				return
+			}
+
+			history, findErr := repo.ListByMovieID(c.Request.Context(), movieID, limit, offset)
+			if findErr != nil {
+				c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: "Failed to retrieve history"})
+				return
+			}
+
+			records = make([]HistoryRecord, 0, len(history))
+			for _, h := range history {
+				records = append(records, toHistoryRecord(h))
+			}
+		} else if operation != "" {
+			var err error
+			total, err = repo.CountByOperation(c.Request.Context(), models.HistoryOperation(operation))
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: "Failed to count history"})
+				return
+			}
+
+			history, findErr := repo.ListByOperation(c.Request.Context(), models.HistoryOperation(operation), limit, offset)
+			if findErr != nil {
+				c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: "Failed to retrieve history"})
+				return
+			}
+
+			records = make([]HistoryRecord, 0, len(history))
+			for _, h := range history {
+				records = append(records, toHistoryRecord(h))
+			}
+		} else if status != "" {
+			var err error
+			total, err = repo.CountByStatus(c.Request.Context(), models.HistoryStatus(status))
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: "Failed to count history"})
+				return
+			}
+
+			history, findErr := repo.ListByStatus(c.Request.Context(), models.HistoryStatus(status), limit, offset)
+			if findErr != nil {
+				c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: "Failed to retrieve history"})
+				return
+			}
+
+			records = make([]HistoryRecord, 0, len(history))
+			for _, h := range history {
+				records = append(records, toHistoryRecord(h))
+			}
+		} else {
+			var err error
+			total, err = repo.Count(c.Request.Context())
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: "Failed to count history"})
+				return
+			}
+
+			history, findErr := repo.List(c.Request.Context(), limit, offset)
+			if findErr != nil {
+				c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: "Failed to retrieve history"})
+				return
+			}
+
+			records = make([]HistoryRecord, 0, len(history))
+			for _, h := range history {
+				records = append(records, toHistoryRecord(h))
+			}
 		}
 
-		total, err := historyRepo.CountFiltered(filter)
-		if err != nil {
-			logging.Errorf("Failed to count history: %v", err)
-			c.JSON(500, ErrorResponse{Error: "Failed to count history"})
-			return
-		}
-
-		history, findErr := historyRepo.ListFiltered(filter, limit, offset)
-		if findErr != nil {
-			logging.Errorf("Failed to list history: %v", findErr)
-			c.JSON(500, ErrorResponse{Error: "Failed to retrieve history"})
-			return
-		}
-
-		records := make([]HistoryRecord, 0, len(history))
-		for _, h := range history {
-			records = append(records, toHistoryRecord(h))
-		}
-
-		c.JSON(200, HistoryListResponse{
+		c.JSON(http.StatusOK, HistoryListResponse{
 			Records: records,
 			Total:   total,
 			Limit:   limit,

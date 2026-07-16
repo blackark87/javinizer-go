@@ -5,6 +5,334 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.2.3] - 2026-07-15
+
+### Fixed
+
+- Preserve matcher MovieID when scraped ID differs, preventing wrong grouping (#146)
+- Check for duplicate DMM ID before actress update
+- Reuse configured port across desktop restarts instead of random
+
+### Changed
+
+- Remove tracked unused.yaml fixture, use temp dirs in tests
+- Ignore node_modules at repo root, not just web/frontend
+
+## [v1.2.2] - 2026-07-13
+
+### Added
+
+- Expose r18.dev dump management via API + WebUI (#136)
+- Validate disabled-scraper priority overrides (#138)
+
+### Fixed
+
+- Manual inputs override multi-part grouping key so files with different manual IDs split into separate movies (#143, closes #142)
+- Seamless progress bar with monotonic phase transitions + clear file selection after batch scrape completion (#141)
+- Retry lock release on Windows to handle AV/sharing violations (#137, #140)
+- Resolve ABF-030 misresolution via content-id variations (#135)
+- Use high-res cover as poster in r18dev dump path (#134)
+- Use javinizer icon for favicon instead of generic J logo (#130)
+- Lower MinPoster threshold to accept real DMM posters (#132)
+
+### Changed
+
+- Codex label sync tracks latest review, not unresolved threads (#139)
+- Block npx/npm drive-by suggestions from sleeper accounts
+- Disable auto-triggering @codex review from label sync
+- Grant pull-requests: write for codex label sync
+- Use PowerShell syntax for APPDATA in migration snippets (#133)
+- Cover missing readFileWithRetry not-exist path
+
+## [v1.2.1] - 2026-07-11
+
+### Added
+
+- Display actress names in first-name order when config enabled (#127)
+
+### Fixed
+
+- Respect actress_language_ja preference in name display (#129)
+- Run organize step for in-place rename modes (#125)
+- Upgrade DMM covers/posters to high-res awsimgsrc CDN (#124)
+
+### Changed
+
+- Add Codex review label sync workflow (#126)
+
+## [v1.2.0] - 2026-07-10
+
+### Added
+
+- Single-line progress bar to r18dev dump download
+- First-run setup as a 3-step wizard
+- Ignore-list and favorites UI to genre management
+
+### Fixed
+
+- Recover orphaned running/pending jobs on startup
+- Deny root-resolving allowed_directories entries
+- Pin actions/github-script to v7 tag
+- Make TestAcquireConfigFileLock_Contention deterministic
+- CORS preflight, default port, `<img>` auth in dev environment
+- Browse box focus ring + allowed_directories persistence
+- Windows CI flake: SQLite file handle race in batch test teardown
+- Boundary-aware word replacement for censored tokens
+- Ship metadata.priority.* as inherited by default
+
+### Changed
+
+- Add CLI-to-Desktop migration guide with Windows paths
+- Harden path picker: autocomplete stays alive + browse respects allowed_directories
+- Bump Go to 1.26.5 to clear govulncheck GO-2026-5856
+- Clarify desktop/CLI relationship, document r18.dev dump
+- Add anti-spam filter for unauthorized patch/attachment drops on issue comments
+
+## [v1.1.1] - 2026-07-07
+
+### Added
+
+- Desktop app one-liner installers
+
+### Fixed
+
+- Poster preview rendering across desktop, r18dev, and web subcommand
+- Group Update & restart with Check for Updates action
+- Docker `make docker-run` now works end-to-end (CMD api→web, writable media, trusted CIDRs, quoted paths)
+- WebSocket hub goroutine shut down before DB close in CreateTestDeps (Windows/Linux temp-dir cleanup flake)
+- Docker entrypoint chown non-fatal on read-only mounts
+- Update popover redesign: version flow, copy-to-clipboard command block, docker instructions hidden
+- Discord release notification embed enriched (thumbnail, author, fields, truncated release notes)
+- Docker Quick Start admin setup unblocked, migrated to docker compose v2
+
+### Changed
+
+- Docker host port default 8080 → 8765 (less collision-prone)
+- Bump quic-go v0.57.0 → v0.59.1 (GO-2026-5676)
+- Lead README Quick Start with desktop one-liner, demote CLI to alternative
+- Fix cli-release.yml YAML syntax error in Discord notify job
+
+## [v1.1.0] - 2026-07-07
+
+### Added
+
+- Package as clickable desktop app for macOS, Windows, and Linux (#84)
+- Add desktop bundle self-upgrade (#89)
+- Add environment-aware upgrade UX (docker/desktop/cli)
+- Add UI and API for managing allowed_directories (#93)
+- Add allowed_directories to first-run setup (#94)
+- Embed Windows app icon via genicon .syso resource
+- Extract UpgradeAction and force same-origin API in desktop webview
+- Add per-field source override with source-merge modal (#80)
+- Add local dump lookup with zero-HTTP fast path for r18dev (#76)
+
+### Fixed
+
+- Fix desktop Windows launch, WebSocket progress, and browse security model (#99)
+- Redesign allowed directories editor and fix PathInput Enter behavior (#98)
+- Reverse-proxy through Wails asset server instead of redirecting (#96)
+- Add desktop app icon and fix web favicon (#95)
+- Resolve NTFS volume mount points in canonicalizePath (#92)
+- Make hot_reload atomic across registry/config/factories (#82)
+- Fail-closed on nil auth manager (#81)
+- Give "Remember me" sessions a longer TTL than ephemeral ones
+- Detect podman/nerdctl containers and document cgroup v2 limit
+- Persist window geometry across launches
+- Point JAVINIZER_DATA_DIR at the portable data dir
+- Use OS-correct separator in organize preview folder names
+- Use 'web' subcommand in CLI flag e2e test
+- Skip window-state perm test on Windows
+
+### Changed
+
+- Rename 'api' subcommand to 'web'
+- Introduce DTOs for MovieView nested collections (#83)
+- Add make config-sync to mirror the embedded config master
+- Move Discord notify into cli-release workflow
+- Add brew trust step for Homebrew 6.0+ tap-trust requirement
+- Document environment-aware upgrade behavior
+- Post-v1.0.0 housekeeping
+- Split e2e suites into frontend/fullstack/live and add upgrade-CTA coverage
+- Expand fullstack e2e coverage to scrape pipeline and APIs
+- Cover PersistentSessionTTL getter, NoOpAuth mock, and clamp guard
+- Cover container-detected branch in fetchWithBrowser
+- Rename pendingCount to revertEligibleCount to match semantics
+
+## [v1.0.0] - 2026-07-03
+
+### Added
+
+- Add per-scraper output invariants and update-checker live e2e tests
+- Add PR template with issue auto-close reminder
+- Add stale issues workflow
+- Add real-live scraper e2e suite (local only, not CI)
+- Add live CLI end-to-end suite driving the real javinizer binary
+
+### Fixed
+
+- Respect download_extrafanart config when --extrafanart is omitted (#79)
+
+### Changed
+
+- Notify Discord webhook on release publish
+- Rewrite README future-tense framing to present tense for v1.0.0 stable
+- Ignore build-tagged e2e and generated/vendored paths in codecov
+- Pin all CLI flags and flag-supersedes-config behavior in e2e
+- Drop issue #72 refs, SignPath-pending note, and broken code-signing link in README
+
+## [v1.0.0-rc4] - 2026-07-02
+
+### Added
+
+- Add self-upgrade (`javinizer upgrade`), Homebrew/Scoop taps, and one-shot installers for v1.0.0 (#78)
+- Add alias-aware actress dedup and per-movie NFO name choice (#74)
+
+### Fixed
+
+- Harden actress rename path and guard review save-flow (rc3 regressions) (#73)
+- Address CodeRabbit review: collapse redundant Homebrew darwin branches and restore BackgroundCheck error logging
+
+### Changed
+
+- Close codecov patch gaps and enforce the 80% patch gate over informational hide
+- Cover defensive branches in the update/version commands via DI seams rather than filesystem tricks
+
+## [v1.0.0-rc3] - 2026-06-30
+
+### Fixed
+
+- Persist actress name edits from review page to DB and NFO (#71)
+- Restore movie.OriginalFileName so `<FILENAME>` NFO tag resolves
+
+### Changed
+
+- Drop version from release asset names + link to releases page
+- Add doc comments to exported identifiers + enable exported lint (#47)
+- Remove 146 stale ADR citations referencing deleted ADRs (#46)
+
+## [v1.0.0-rc2] - 2026-06-30
+
+### Added
+
+- Manual scrape: per-file ID/URL override + /manual review route (#68)
+
+### Fixed
+
+- WebUI Output/NFO settings broken by nested JSON (#70) — OutputConfig and NFOConfig serialized as nested objects while the frontend read a flat shape, leaving download checkboxes unchecked and dropping saves; also fixed the delimiter ↔ actress_delimiter mismatch and guarded array .join() against undefined. Closes #69.
+- Rescrape: refresh images and reset baseline on content-id change (#67)
+- Poster: preserve original cover URL across resets
+
+### Changed
+
+- Docs: fix accuracy across all docs per audit (18 files)
+- CI(docker): bump login-action to v4.2.0 (Node 24 runtime)
+- Test: reach 100% coverage on Output/NFO UnmarshalJSON probe branch
+
+## [v1.0.0-rc1] - 2026-06-28
+
+### Changed
+
+- **Workflow seam**: replaced ad-hoc task types (ScrapeTask/DownloadTask/OrganizeTask/NFOTask) with a unified `Workflow` abstraction. Jobs execute via phase-based `BatchJobInterface` (scrape / apply / rescrape), consolidating the worker pool onto a single seam.
+- **API projection layer**: movie/actress/genre views lifted into `internal/api/contracts`, decoupling the wire format from persistence models (content_id → code rename, PosterState fields lifted to top-level).
+- **Scraper registry**: replaced the `init()`-based plugin system with a centralized registry (`internal/scraper/registry.go` + `scraperutil` registration catalog).
+- **Job reconstruction**: `SetReconstructionDeps` re-hydrates infrastructure dependencies on jobs loaded from the database at startup, so post-restart apply/rescrape and movie-edit persistence work.
+
+### Removed
+
+- **Dead code**: ~138 intentional deletions consolidated during the refactor — `version.txt` → `version.go` (VCS-embedded via `debug.ReadBuildInfo`), `internal/api/*/aliases.go` re-exports folded in, worker pool refactored onto the Workflow seam. 5 empty/comment-only files removed (zero declarations, zero references).
+
+### Added
+
+- **Word replacement toggle + opt-in default**: added `metadata.word_replacement` (opt-in, `enabled: false`) to the example configs and `defaultMetadataConfig()`, and moved the genre/word replacement enable toggles into the dedicated `/settings` sections with null-safe handlers.
+- **Update-available UI**: surface update availability in the web UI and harden the checker against GitHub rate limits.
+- **JavDB actress avatars**: construct actress thumbnail URLs from the actor ID in the movie-page link (`https://c0.jdbstatic.com/avatars/<pp>/<ID>.jpg`), populating `ActressInfo.ThumbURL` without extra HTTP fetches.
+- **CI release hardening**: explicit `make_latest` on the GitHub release step so stable releases deterministically become "Latest" and prereleases never steal it.
+- **Docker CI**: build arm64 natively via a per-arch matrix (free `ubuntu-24.04-arm` runner) + `merge-manifest` job instead of QEMU emulation, cutting the docker job from ~15min to ~5min.
+- **Web frontend (SvelteKit SPA)**: review flow with jobId-scoped state and monotonic WebSocket-driven progress bars; fullstack E2E suite + vitest unit tests.
+- **Mockery freshness gate**: pinned mockery v3.7.1; added a `make check-mocks` target + `test.yml` step that fails CI if mocks drift from their interfaces (caught a real portability bug — `sed -i` macOS-only — on its first run).
+- **`.gitignore` hardening**: `tmp/`, `web/frontend/playwright-report/`, `blob-report/`, `playwright/.cache/`, `*.db-shm`, `*.db-wal`, `*.log`.
+
+### Fixed
+
+- **Per-field metadata.priority exclusivity (consistency + `--scrapers`)**: `AggregateWithPriority` (the selected-scrapers / `--scrapers` path) now honors a per-field override exclusively, matching `resolvePriorities` (the default path). Previously it applied `cmd.SelectedScrapers` as a flat priority for every field, ignoring per-field overrides — so `series: [tokyohot]` (skip Series via exclusivity) still populated Series from DMM when scraping with `--scrapers dmm` (BMD-284). Both paths now use pure v1 exclusivity consistently: a per-field list means "only these scrapers, no global fallback." No skip sentinel — a field is left empty by pointing it at a scraper that didn't run or lacks it (e.g. `series: [tokyohot]`). **Backward-incompatible (config semantics):** an empty list `metadata.priority.<field>: []` previously meant "inherit global"; it now means "consult no scrapers — the field is left empty" (key *absent* is the inherit-global state). If you hand-wrote `<field>: []` in `config.yaml` expecting the field to inherit the global priority, **delete the key** so it inherits; otherwise the field will now be left empty after upgrading. "Remove all" + Save in the priority editor intentionally produces this empty-list state.
+- **Rescrape merge strategies**: the API previously accepted + validated `preset` / `scalar_strategy` / `array_strategy` then silently dropped them; `RescrapeCmd` now carries `MergeOptions` and `CompleteRescrape` applies the merge (reusing the apply-path logic).
+- **Theme toggle**: rendered as a component, fixing an unknown-element regression in the web UI.
+- **Test coverage** raised to meet the 75% CI threshold; race-clean.
+- **DMM director + rating extraction** restored after the upstream DMM markup migration.
+- **Image previews** refetch on URL change via a reactive error state, eliminating stale thumbnails.
+- **Per-field metadata.priority (consolidated)**: `[]` now inherits global; the `["__skip__"]` skip sentinel is honored, with YAML persistence fixed across the priority editor.
+- **Aggregator per-field priority exclusivity**: per-field `metadata.priority` is now exclusive (not merged with global) consistently across both the default and `--scrapers` paths.
+- **Update checker**: background update checker + startup check wired up.
+- **History pagination**: filtered history API endpoints now paginate correctly.
+- **Poster crop**: preserve `ShouldCropPoster` through `GeneratePoster` so the apply-phase crop runs after rescrape.
+- **Web rescrape modal**: removed stray `}` in the title; pass `movie_id` (not `result_id`) to `openRescrapeModal`; show feedback when "Reload Config" is pressed.
+- **Filename template**: strip the extension from the `<FILENAME>` token and add `<FILENAME_EXT>`.
+- **Vulnerability scan**: bump `x/image` + Go toolchain to clear 10 govulncheck findings; gate the Vulnerability Scan job on token presence. Codecov upload now supplies a token and fails loud on upload error.
+
+### Tooling
+
+- **`.coderabbit.yaml`** rewritten as a durable repo-level review policy (dropped the transient review-history header and invalid `review_status` sub-keys; added `auto_review`, `high_level_summary`, `poem`, `review_status: true`).
+
+## [v0.3.15-alpha] - 2026-06-23
+
+### Fixed
+
+- Persist edited poster URL before manual crop so the crop endpoint operates on the edited image, not the stale server-side poster (issue #37)
+- Persist Move Files setting across restarts via a real Output.MoveFiles config field; --move flag remains a session-only override (issue #36)
+- Prevent config leakage and harden move-files persistence: saveConfig reloads from disk so session-only CLI/env overrides are not written to config.yaml
+- Use atomic config.Update (read-modify-write under the file lock) for move-files persistence, eliminating a TOCTOU race and lost updates
+- Strip stdout/stderr from the TUI logger so logs don't leak into the terminal (the default dual-output "stdout,file" config was leaking)
+- Harden the TUI log-leak fix: InitLogger errors on zero valid outputs instead of silently falling back to stdout; fix the pre-alt-screen startup leak via isTUICommand; extract a pure configureTUILogging helper
+- Resolve JAVINIZER_CONFIG in the TUI so LoadOrCreate and SetConfigPath use the same path (config persistence broke when the env var was set)
+- Guard the runtime move-files toggle against the move+link combo rejected at startup (ValidateMoveLinkMode)
+- Honor JAVINIZER_LOG_DIR in the TUI fallback log path and report the actual relocated log path
+- Nil-guard config.Update against a nil mutate callback
+
+### Changed
+
+- Add end-to-end stdout-leak tests (os.Pipe capture) plus a non-vacuous contrast test
+- Add tests for resolveConfigPath, canEnableMoveMode/runtime guard, JAVINIZER_LOG_DIR fallback, and config.Update nil-guard
+- Prove config.Update atomicity with a 100-writer concurrency test (no lost updates)
+- Cover persist-before-crop in the poster crop controller
+- Use the real TUI command in the isTUICommand detection test; use io.ReadAll for stdout pipe capture consistency
+
+## [v0.3.14-alpha] - 2026-06-22
+
+### Fixed
+
+- Resolve poster/cover reactivity and edit persistence bugs
+- Add id DESC tiebreaker to job-list ordering
+
+## [v0.3.13-alpha] - 2026-06-21
+
+### Added
+
+- Configurable max_poster_height with frontend override
+
+## [v0.3.12-alpha] - 2026-06-20
+
+### Added
+
+- Implement User-Agent priority chain for scrapers
+- Support actress Japanese name in folder/file templates
+- Add @Unknown substitution for grouped unknown actresses
+- Support tag-level first-name-order modifier on actress tags
+- Rename output.delimiter -> actress_delimiter; DELIM= modifier; hard break
+
+### Fixed
+
+- Disable proxy by default since r18.dev doesn't need it
+- Capture PPV underscore prefixes in content_id lookup
+- Apply word replacement to genres
+- Stop upgrading poster URL ps.jpg -> pl.jpg
+- Set shouldCrop=true when falling back to cover poster
+- Address sub-agent code review findings
+
+### Changed
+
+- Regenerate swagger docs
+- Update template system docs for new actress tag features
+
 ## [v0.3.11-alpha] - 2026-06-07
 
 ### Fixed

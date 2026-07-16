@@ -7,6 +7,7 @@
 	import Button from './ui/Button.svelte';
 	import Card from './ui/Card.svelte';
 	import ImageViewer from './ImageViewer.svelte';
+import { tooltip } from '$lib/actions/tooltip';
 	import VideoModal from './VideoModal.svelte';
 	import { Plus, Trash2, Image as ImageIcon, ImagePlus, Play, RotateCcw, Info, ChevronDown } from 'lucide-svelte';
 
@@ -15,17 +16,29 @@
 		displayPosterUrl?: string;
 		onUpdate: (movie: Movie) => void;
 		onUseScreenshotAsPoster?: (url: string) => void;
+		onUseScreenshotAsCover?: (url: string) => void;
 		fieldSources?: Record<string, string>;
 		showFieldSources?: boolean;
 	}
 
-	let { movie, displayPosterUrl, onUpdate, onUseScreenshotAsPoster, fieldSources, showFieldSources = false }: Props = $props();
+	let { movie, displayPosterUrl, onUpdate, onUseScreenshotAsPoster, onUseScreenshotAsCover, fieldSources, showFieldSources = false }: Props = $props();
 
 	let screenshots = $state<string[]>([]);
 	let posterUrl = $state('');
 	let coverUrl = $state('');
 	let trailerUrl = $state('');
 	let newScreenshotUrl = $state('');
+
+	// Reactive preview-error state — reset when the bound URL changes so a
+	// corrected URL re-fetches instead of staying hidden by a stale onerror
+	// (display:none) from a prior failed URL.
+	let posterPreviewError = $state(false);
+	let coverPreviewError = $state(false);
+	let screenshotErrors = $state<Set<string>>(new Set());
+	// The imgs below hide via the HTML `hidden` attribute (Tailwind preflight
+	// [hidden]{display:none}). Do NOT add `block`/`flex` or other display utility
+	// classes to those imgs — a display utility overrides [hidden] and breaks
+	// error-hiding (the prior inline style.display='none' survived this).
 
 	// Screenshot viewer modal state
 	let showViewer = $state(false);
@@ -48,18 +61,39 @@
 		trailerUrl = movie.trailer_url || '';
 	});
 
+	// Reset preview-error state when the bound URL/list changes, so a corrected
+	// URL re-fetches instead of staying hidden by a stale onerror display:none.
+	$effect(() => { posterUrl; displayPosterUrl; posterPreviewError = false; });
+	$effect(() => { coverUrl; coverPreviewError = false; });
+	// Track a derived signature of the screenshot URLs — not the array ref — so
+	// the reset fires only on actual content change. An identical-content
+	// reassignment (e.g. movie-sync handing back a new array with the same URLs)
+	// leaves the signature unchanged, so this effect does not re-run and a
+	// previously-errored img stays hidden (the browser does not re-fetch an
+	// unchanged src, so un-hiding would flash a stale broken-image icon).
+	let screenshotsSignature = $derived(screenshots.join('\u0000'));
+	$effect(() => { screenshotsSignature; screenshotErrors = new Set(); });
+
 	let clearCropState = $state(false);
 
-	function notifyParent() {
+	function notifyParent(clearCrop = false) {
 		onUpdate({
 			...movie,
 			screenshot_urls: screenshots,
 			poster_url: posterUrl,
 			cover_url: coverUrl,
 			trailer_url: trailerUrl,
-			...(clearCropState ? { should_crop_poster: false, cropped_poster_url: '' } : {})
+			...((clearCrop || clearCropState) ? { should_crop_poster: false, cropped_poster_url: '' } : {})
 		});
 		clearCropState = false;
+	}
+
+	function onPosterUrlChange() {
+		notifyParent(true);
+	}
+
+	function onFieldChange() {
+		notifyParent();
 	}
 
 	function addScreenshot() {
@@ -100,6 +134,18 @@
 
 		clearCropState = true;
 		posterUrl = url;
+		notifyParent();
+	}
+
+	async function useScreenshotAsCover(url: string) {
+		if (onUseScreenshotAsCover) {
+			onUseScreenshotAsCover(url);
+			return;
+		}
+
+		if (!(await confirmDialog('Use as Cover/Fanart', 'Use this screenshot as the cover/fanart? This will replace the current cover image.', { confirmLabel: 'Use as Cover/Fanart' }))) return;
+
+		coverUrl = url;
 		notifyParent();
 	}
 
@@ -161,7 +207,7 @@
 					id="poster-url"
 					type="url"
 					bind:value={posterUrl}
-					onchange={notifyParent}
+					onchange={onPosterUrlChange}
 					placeholder="https://..."
 					class="w-full px-3 py-2 border rounded-md bg-background focus:ring-2 focus:ring-primary focus:border-primary transition-all font-mono text-sm"
 				/>
@@ -179,20 +225,16 @@
 								src={previewImageUrl(posterUrl)}
 								alt="Poster"
 								class="absolute h-full"
-								style="right: 0; width: auto; min-width: 211.8%; object-fit: cover; object-position: right center;"
-								onerror={(e) => {
-									const target = e.currentTarget as HTMLImageElement; target.style.display = 'none';
-								}}
+								style="right: 0; width: auto; min-width: 211.8%; object-fit: cover; object-position: right center;" hidden={posterPreviewError}
+								onerror={() => { posterPreviewError = true; }}
 							/>
 						{:else}
 							<!-- Use displayPosterUrl (temp_poster_url if available) or posterUrl directly without cropping -->
 							<img
 								src={previewImageUrl(displayPosterUrl || posterUrl)}
 								alt="Poster"
-								class="w-full h-full object-contain"
-								onerror={(e) => {
-									const target = e.currentTarget as HTMLImageElement; target.style.display = 'none';
-								}}
+								class="w-full h-full object-contain" hidden={posterPreviewError}
+								onerror={() => { posterPreviewError = true; }}
 							/>
 						{/if}
 					</div>
@@ -230,7 +272,7 @@
 					id="cover-url"
 					type="url"
 					bind:value={coverUrl}
-					onchange={notifyParent}
+					onchange={onFieldChange}
 					placeholder="https://..."
 					class="w-full px-3 py-2 border rounded-md bg-background focus:ring-2 focus:ring-primary focus:border-primary transition-all font-mono text-sm"
 				/>
@@ -245,10 +287,8 @@
 							<img
 								src={previewImageUrl(coverUrl)}
 								alt="Cover"
-								class="w-full"
-							onerror={(e) => {
-								const target = e.currentTarget as HTMLImageElement; target.style.display = 'none';
-							}}
+								class="w-full" hidden={coverPreviewError}
+							onerror={() => { coverPreviewError = true; }}
 						/>
 					</button>
 				{:else}
@@ -285,7 +325,7 @@
 					id="trailer-url"
 					type="url"
 					bind:value={trailerUrl}
-					onchange={notifyParent}
+					onchange={onFieldChange}
 					placeholder="https://..."
 					class="w-full px-3 py-2 border rounded-md bg-background focus:ring-2 focus:ring-primary focus:border-primary transition-all font-mono text-sm"
 				/>
@@ -394,27 +434,38 @@
 							<img
 								src={previewImageUrl(url)}
 								alt="Screenshot {index + 1}"
-								class="w-full aspect-video object-cover rounded"
-								onerror={(e) => {
-									const target = e.currentTarget as HTMLImageElement; target.style.display = 'none';
-								}}
+								class="w-full aspect-video object-cover rounded" hidden={screenshotErrors.has(url)}
+								onerror={() => { screenshotErrors = new Set([...screenshotErrors, url]); }}
 							/>
 						</button>
 						<div class="mt-2 flex items-center gap-1">
 							<p class="text-xs text-muted-foreground truncate flex-1" title={url}>
 								Screenshot {index + 1}
 							</p>
-							<Button
-								variant="ghost"
-								size="sm"
-								onclick={() => useScreenshotAsPoster(url)}
-								title="Use as Poster"
-								class="p-1 h-auto"
-							>
-								{#snippet children()}
-									<ImagePlus class="h-3 w-3" />
-								{/snippet}
-							</Button>
+							<span class="inline-flex" use:tooltip={"Use as Poster"}>
+								<Button
+										variant="ghost"
+										size="sm"
+										onclick={() => useScreenshotAsPoster(url)}
+										class="p-1 h-auto"
+								>
+										{#snippet children()}
+												<ImagePlus class="h-3 w-3" />
+										{/snippet}
+								</Button>
+							</span>
+							<span class="inline-flex" use:tooltip={"Use as Cover/Fanart"}>
+								<Button
+										variant="ghost"
+										size="sm"
+										onclick={() => useScreenshotAsCover(url)}
+										class="p-1 h-auto"
+								>
+										{#snippet children()}
+												<ImageIcon class="h-3 w-3" />
+										{/snippet}
+								</Button>
+							</span>
 							<Button
 								variant="ghost"
 								size="sm"

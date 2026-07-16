@@ -4,7 +4,7 @@ tmp_dir = "tmp/air"
 [build]
   cmd = "go build -o ./tmp/air/javinizer-dev ./cmd/javinizer"
   bin = "./tmp/air/javinizer-dev"
-  full_bin = "./tmp/air/javinizer-dev api"
+  full_bin = "./tmp/air/javinizer-dev web"
   include_dir = ["cmd", "internal"]
   include_file = ["go.mod", "go.sum", ".air.toml"]
   include_ext = ["go", "yaml", "yml", "json", "toml"]

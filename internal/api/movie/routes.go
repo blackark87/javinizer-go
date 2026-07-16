@@ -1,8 +1,11 @@
 package movie
 
-import "github.com/gin-gonic/gin"
+import (
+	"github.com/gin-gonic/gin"
+)
 
-func RegisterRoutes(protected *gin.RouterGroup, deps *ServerDependencies) {
+// RegisterRoutes registers the movie API endpoints on the given protected router group.
+func RegisterRoutes(protected *gin.RouterGroup, deps MovieDeps) {
 	protected.POST("/scrape", scrapeMovie(deps))
 	protected.GET("/movies/:id", getMovie(deps))
 	protected.GET("/movies", listMovies(deps))

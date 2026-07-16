@@ -1,0 +1,144 @@
+import type {
+	ActressListParams,
+	ActressListResponse,
+	ActressUpsertRequest,
+	Actress,
+	ActressMergePreviewRequest,
+	ActressMergePreviewResponse,
+	ActressMergeRequest,
+	ActressMergeResponse,
+	ActressesImportRequest,
+	ImportResponse,
+	ActressAliasGroup,
+	ActressMoviesResponse,
+	ActressSyncCandidatesResponse,
+	ActressSyncJobCreateRequest,
+	ActressSyncJobResponse,
+	ActressSyncJobsResponse,
+	ActressSyncTasksResponse,
+} from '../types';
+import { BaseClient } from './common';
+
+// ActressClient handles actress CRUD, merge, search, import, and export.
+export class ActressClient extends BaseClient {
+	async listActresses(params?: ActressListParams): Promise<ActressListResponse> {
+		const queryParams = new URLSearchParams();
+		if (params?.limit) queryParams.set('limit', params.limit.toString());
+		if (params?.offset) queryParams.set('offset', params.offset.toString());
+		if (params?.q) queryParams.set('q', params.q);
+		if (params?.sort_by) queryParams.set('sort_by', params.sort_by);
+		if (params?.sort_order) queryParams.set('sort_order', params.sort_order);
+		const query = queryParams.toString() ? `?${queryParams}` : '';
+		return this.request<ActressListResponse>(`/api/v1/actresses${query}`);
+	}
+
+	async getActress(id: number): Promise<Actress> {
+		return this.request<Actress>(`/api/v1/actresses/${id}`);
+	}
+
+	async listActressMovies(
+		id: number,
+		limit?: number,
+		offset?: number,
+	): Promise<ActressMoviesResponse> {
+		const params = new URLSearchParams();
+		if (limit) params.set('limit', limit.toString());
+		if (offset) params.set('offset', offset.toString());
+		const query = params.toString() ? `?${params}` : '';
+		return this.request<ActressMoviesResponse>(`/api/v1/actresses/${id}/movies${query}`);
+	}
+
+	async listActressSyncCandidates(): Promise<ActressSyncCandidatesResponse> {
+		return this.request<ActressSyncCandidatesResponse>('/api/v1/actresses/sync-candidates');
+	}
+
+	async createActressSyncJob(
+		request: ActressSyncJobCreateRequest,
+	): Promise<ActressSyncJobResponse> {
+		return this.request<ActressSyncJobResponse>('/api/v1/actresses/sync-jobs', {
+			method: 'POST',
+			body: JSON.stringify(request),
+		});
+	}
+
+	async listActiveActressSyncJobs(): Promise<ActressSyncJobsResponse> {
+		return this.request<ActressSyncJobsResponse>('/api/v1/actresses/sync-jobs/active');
+	}
+
+	async getActressSyncJob(jobID: string): Promise<ActressSyncJobResponse> {
+		return this.request<ActressSyncJobResponse>(`/api/v1/actresses/sync-jobs/${jobID}`);
+	}
+
+	async listActressSyncJobTasks(jobID: string): Promise<ActressSyncTasksResponse> {
+		return this.request<ActressSyncTasksResponse>(`/api/v1/actresses/sync-jobs/${jobID}/tasks`);
+	}
+
+	async cancelActressSyncJob(jobID: string): Promise<ActressSyncJobResponse> {
+		return this.request<ActressSyncJobResponse>(`/api/v1/actresses/sync-jobs/${jobID}/cancel`, {
+			method: 'POST',
+		});
+	}
+
+	async createActress(request: ActressUpsertRequest): Promise<Actress> {
+		return this.request<Actress>('/api/v1/actresses', {
+			method: 'POST',
+			body: JSON.stringify(request),
+		});
+	}
+
+	async updateActress(id: number, request: ActressUpsertRequest): Promise<Actress> {
+		return this.request<Actress>(`/api/v1/actresses/${id}`, {
+			method: 'PUT',
+			body: JSON.stringify(request),
+		});
+	}
+
+	async deleteActress(id: number): Promise<void> {
+		await this.request(`/api/v1/actresses/${id}`, { method: 'DELETE' });
+	}
+
+	async bulkDeleteActresses(ids: number[]): Promise<{ deleted: number }> {
+		return this.request<{ deleted: number }>('/api/v1/actresses/bulk-delete', {
+			method: 'POST',
+			body: JSON.stringify({ ids }),
+		});
+	}
+
+	async deleteAllActresses(): Promise<{ deleted: number }> {
+		return this.request<{ deleted: number }>('/api/v1/actresses/delete-all', {
+			method: 'POST',
+		});
+	}
+
+	async previewActressMerge(
+		request: ActressMergePreviewRequest,
+	): Promise<ActressMergePreviewResponse> {
+		return this.request<ActressMergePreviewResponse>('/api/v1/actresses/merge/preview', {
+			method: 'POST',
+			body: JSON.stringify(request),
+		});
+	}
+
+	async mergeActresses(request: ActressMergeRequest): Promise<ActressMergeResponse> {
+		return this.request<ActressMergeResponse>('/api/v1/actresses/merge', {
+			method: 'POST',
+			body: JSON.stringify(request),
+		});
+	}
+
+	async exportActresses(): Promise<Actress[]> {
+		return this.request<Actress[]>('/api/v1/actresses/export', { method: 'GET' });
+	}
+
+	async importActresses(request: ActressesImportRequest): Promise<ImportResponse> {
+		return this.request<ImportResponse>('/api/v1/actresses/import', {
+			method: 'POST',
+			body: JSON.stringify(request),
+		});
+	}
+
+	async getAliasGroup(name: string): Promise<ActressAliasGroup> {
+		const query = new URLSearchParams({ name });
+		return this.request<ActressAliasGroup>(`/api/v1/actresses/alias-group?${query}`);
+	}
+}

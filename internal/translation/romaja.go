@@ -2,6 +2,18 @@ package translation
 
 import "strings"
 
+var longVowelReplacer = strings.NewReplacer(
+	"ā", "a", "Ā", "A",
+	"ū", "u", "Ū", "U",
+	"ō", "o", "Ō", "O",
+	"ē", "e", "Ē", "E",
+	"ī", "i", "Ī", "I",
+)
+
+func normalizeRomanizationToASCII(s string) string {
+	return longVowelReplacer.Replace(s)
+}
+
 // romajiSyllables maps Hepburn romaji syllables to precomposed Hangul without a
 // final consonant (batchim). Longest-match parsing tries 3-, then 2-, then
 // 1-character keys. Nihon-shiki digraph spellings (sya, tya, zya) are included

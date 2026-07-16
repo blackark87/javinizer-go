@@ -1,67 +1,76 @@
 package database
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
+// ApiTokenRepository persists and queries API tokens via GORM.
 type ApiTokenRepository struct {
 	db *DB
 }
 
+// NewApiTokenRepository constructs an ApiTokenRepository backed by the given DB.
 func NewApiTokenRepository(db *DB) *ApiTokenRepository {
 	return &ApiTokenRepository{db: db}
 }
 
 var _ ApiTokenRepositoryInterface = (*ApiTokenRepository)(nil)
 
-func (r *ApiTokenRepository) Create(token *models.ApiToken) error {
-	if err := r.db.Create(token).Error; err != nil {
+// Create inserts a new API token row.
+func (r *ApiTokenRepository) Create(ctx context.Context, token *models.ApiToken) error {
+	if err := r.db.WithContext(ctx).Create(token).Error; err != nil {
 		return wrapDBErr("create", fmt.Sprintf("api token %s", token.ID), err)
 	}
 	return nil
 }
 
-func (r *ApiTokenRepository) FindByID(id string) (*models.ApiToken, error) {
+// FindByID loads an API token by its primary key.
+func (r *ApiTokenRepository) FindByID(ctx context.Context, id string) (*models.ApiToken, error) {
 	var token models.ApiToken
-	err := r.db.First(&token, "id = ?", id).Error
+	err := r.db.WithContext(ctx).First(&token, "id = ?", id).Error
 	if err != nil {
 		return nil, wrapDBErr("find", fmt.Sprintf("api token %s", id), err)
 	}
 	return &token, nil
 }
 
-func (r *ApiTokenRepository) FindByTokenHash(hash string) (*models.ApiToken, error) {
+// FindByTokenHash loads a non-revoked API token by its hash.
+func (r *ApiTokenRepository) FindByTokenHash(ctx context.Context, hash string) (*models.ApiToken, error) {
 	var token models.ApiToken
-	err := r.db.Where("token_hash = ? AND revoked_at IS NULL", hash).First(&token).Error
+	err := r.db.WithContext(ctx).Where("token_hash = ? AND revoked_at IS NULL", hash).First(&token).Error
 	if err != nil {
 		return nil, wrapDBErr("find", "api token by hash", err)
 	}
 	return &token, nil
 }
 
-func (r *ApiTokenRepository) FindByPrefix(prefix string) (*models.ApiToken, error) {
+// FindByPrefix loads a non-revoked API token by its public prefix.
+func (r *ApiTokenRepository) FindByPrefix(ctx context.Context, prefix string) (*models.ApiToken, error) {
 	var token models.ApiToken
-	err := r.db.Where("token_prefix = ? AND revoked_at IS NULL", prefix).First(&token).Error
+	err := r.db.WithContext(ctx).Where("token_prefix = ? AND revoked_at IS NULL", prefix).First(&token).Error
 	if err != nil {
 		return nil, wrapDBErr("find", fmt.Sprintf("api token by prefix %s", prefix), err)
 	}
 	return &token, nil
 }
 
-func (r *ApiTokenRepository) ListActive() ([]models.ApiToken, error) {
+// ListActive returns all non-revoked API tokens ordered newest first.
+func (r *ApiTokenRepository) ListActive(ctx context.Context) ([]models.ApiToken, error) {
 	var tokens []models.ApiToken
-	err := r.db.Where("revoked_at IS NULL").Order("created_at DESC").Find(&tokens).Error
+	err := r.db.WithContext(ctx).Where("revoked_at IS NULL").Order("created_at DESC").Find(&tokens).Error
 	if err != nil {
 		return nil, wrapDBErr("list", "active api tokens", err)
 	}
 	return tokens, nil
 }
 
-func (r *ApiTokenRepository) Revoke(id string) error {
-	result := r.db.Model(&models.ApiToken{}).Where("id = ?", id).Update("revoked_at", time.Now().UTC())
+// Revoke marks the given API token as revoked by setting revoked_at; returns ErrNotFound if no row matched.
+func (r *ApiTokenRepository) Revoke(ctx context.Context, id string) error {
+	result := r.db.WithContext(ctx).Model(&models.ApiToken{}).Where("id = ?", id).Update("revoked_at", time.Now().UTC())
 	if result.Error != nil {
 		return wrapDBErr("revoke", fmt.Sprintf("api token %s", id), result.Error)
 	}
@@ -71,17 +80,19 @@ func (r *ApiTokenRepository) Revoke(id string) error {
 	return nil
 }
 
-func (r *ApiTokenRepository) UpdateLastUsed(id string) error {
-	result := r.db.Model(&models.ApiToken{}).Where("id = ?", id).Update("last_used_at", time.Now().UTC())
+// UpdateLastUsed stamps the token's last_used_at to the current time.
+func (r *ApiTokenRepository) UpdateLastUsed(ctx context.Context, id string) error {
+	result := r.db.WithContext(ctx).Model(&models.ApiToken{}).Where("id = ?", id).Update("last_used_at", time.Now().UTC())
 	if result.Error != nil {
 		return wrapDBErr("update_last_used", fmt.Sprintf("api token %s", id), result.Error)
 	}
 	return nil
 }
 
-func (r *ApiTokenRepository) Regenerate(id string, newHash string, newPrefix string) (*models.ApiToken, error) {
+// Regenerate replaces the token hash and prefix for an existing, non-revoked API token.
+func (r *ApiTokenRepository) Regenerate(ctx context.Context, id string, newHash string, newPrefix string) (*models.ApiToken, error) {
 	var token models.ApiToken
-	if err := r.db.First(&token, "id = ?", id).Error; err != nil {
+	if err := r.db.WithContext(ctx).First(&token, "id = ?", id).Error; err != nil {
 		return nil, wrapDBErr("find", fmt.Sprintf("api token %s", id), err)
 	}
 
@@ -89,7 +100,7 @@ func (r *ApiTokenRepository) Regenerate(id string, newHash string, newPrefix str
 		return nil, fmt.Errorf("cannot regenerate revoked api token %s: %w", id, ErrNotFound)
 	}
 
-	if err := r.db.Model(&token).Updates(map[string]interface{}{
+	if err := r.db.WithContext(ctx).Model(&token).Updates(map[string]any{
 		"token_hash":   newHash,
 		"token_prefix": newPrefix,
 	}).Error; err != nil {

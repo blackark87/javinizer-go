@@ -1,6 +1,7 @@
 package history
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// NewCommand creates the history CLI command and its subcommands.
 func NewCommand() *cobra.Command {
 	historyCmd := &cobra.Command{
 		Use:   "history",
@@ -86,7 +88,7 @@ func runHistoryList(cmd *cobra.Command, args []string, configFile string) error 
 	}
 	defer func() { _ = deps.Close() }()
 
-	logger := history.NewLogger(deps.DB)
+	logger := history.NewLogger(database.NewHistoryRepository(deps.DB))
 
 	// Get flags
 	limit, _ := cmd.Flags().GetInt("limit")
@@ -95,13 +97,18 @@ func runHistoryList(cmd *cobra.Command, args []string, configFile string) error 
 
 	var records []models.History
 
-	// Apply filters
+	// Apply filters. Derive ctx from the command so cancellation propagates.
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	if operation != "" {
-		records, err = logger.GetByOperation(operation, limit)
+		records, err = logger.GetByOperation(ctx, models.HistoryOperation(operation), limit)
 	} else if status != "" {
-		records, err = logger.GetByStatus(status, limit)
+		records, err = logger.GetByStatus(ctx, models.HistoryStatus(status), limit)
 	} else {
-		records, err = logger.GetRecent(limit)
+		records, err = logger.GetRecent(ctx, limit)
 	}
 
 	if err != nil {
@@ -136,9 +143,9 @@ func runHistoryList(cmd *cobra.Command, args []string, configFile string) error 
 
 		statusIcon := "✅"
 		switch record.Status {
-		case "failed":
+		case models.HistoryStatusFailed:
 			statusIcon = "❌"
-		case "reverted":
+		case models.HistoryStatusReverted:
 			statusIcon = "↩️"
 		}
 
@@ -164,6 +171,10 @@ func runHistoryList(cmd *cobra.Command, args []string, configFile string) error 
 }
 
 func runHistoryStats(cmd *cobra.Command, args []string, configFile string) error {
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	cfg, err := config.LoadOrCreate(configFile)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
@@ -175,9 +186,9 @@ func runHistoryStats(cmd *cobra.Command, args []string, configFile string) error
 	}
 	defer func() { _ = deps.Close() }()
 
-	logger := history.NewLogger(deps.DB)
+	logger := history.NewLogger(database.NewHistoryRepository(deps.DB))
 
-	stats, err := logger.GetStats()
+	stats, err := logger.GetStats(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve stats: %w", err)
 	}
@@ -200,6 +211,10 @@ func runHistoryStats(cmd *cobra.Command, args []string, configFile string) error
 }
 
 func runHistoryMovie(cmd *cobra.Command, args []string, configFile string) error {
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	movieID := args[0]
 
 	cfg, err := config.LoadOrCreate(configFile)
@@ -213,9 +228,9 @@ func runHistoryMovie(cmd *cobra.Command, args []string, configFile string) error
 	}
 	defer func() { _ = deps.Close() }()
 
-	logger := history.NewLogger(deps.DB)
+	logger := history.NewLogger(database.NewHistoryRepository(deps.DB))
 
-	records, err := logger.GetByMovieID(movieID)
+	records, err := logger.GetByMovieID(ctx, movieID)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve history: %w", err)
 	}
@@ -230,9 +245,9 @@ func runHistoryMovie(cmd *cobra.Command, args []string, configFile string) error
 	for _, record := range records {
 		statusIcon := "✅"
 		switch record.Status {
-		case "failed":
+		case models.HistoryStatusFailed:
 			statusIcon = "❌"
-		case "reverted":
+		case models.HistoryStatusReverted:
 			statusIcon = "↩️"
 		}
 
@@ -267,6 +282,10 @@ func runHistoryMovie(cmd *cobra.Command, args []string, configFile string) error
 }
 
 func runHistoryClean(cmd *cobra.Command, args []string, configFile string) error {
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	cfg, err := config.LoadOrCreate(configFile)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
@@ -278,34 +297,34 @@ func runHistoryClean(cmd *cobra.Command, args []string, configFile string) error
 	}
 	defer func() { _ = deps.Close() }()
 
-	logger := history.NewLogger(deps.DB)
+	logger := history.NewLogger(database.NewHistoryRepository(deps.DB))
 
 	days, _ := cmd.Flags().GetInt("days")
 
 	// Get count before deletion
-	totalBefore, err := logger.GetRecent(0) // Get all
+	countBefore, err := logger.Count(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to count records: %w", err)
 	}
 
 	// Perform cleanup
-	if err := logger.CleanupOldRecords(time.Duration(days) * 24 * time.Hour); err != nil {
+	if err := logger.CleanupOldRecords(ctx, time.Duration(days)*24*time.Hour); err != nil {
 		return fmt.Errorf("failed to clean up history: %w", err)
 	}
 
 	// Get count after deletion
-	totalAfter, err := logger.GetRecent(0)
+	countAfter, err := logger.Count(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to count records: %w", err)
 	}
 
-	deleted := len(totalBefore) - len(totalAfter)
+	deleted := int(countBefore - countAfter)
 
 	if deleted == 0 {
 		fmt.Printf("No records older than %d days found\n", days)
 	} else {
 		fmt.Printf("✅ Cleaned up %d record(s) older than %d days\n", deleted, days)
-		fmt.Printf("Remaining: %d record(s)\n", len(totalAfter))
+		fmt.Printf("Remaining: %d record(s)\n", countAfter)
 	}
 
 	return nil
@@ -313,6 +332,10 @@ func runHistoryClean(cmd *cobra.Command, args []string, configFile string) error
 
 // runHistoryListBatch shows batch-centric view when --batch flag is provided (D-06, HIST-01, HIST-02).
 func runHistoryListBatch(cmd *cobra.Command, batchID string, configFile string) error {
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	cfg, err := config.LoadOrCreate(configFile)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
@@ -328,32 +351,39 @@ func runHistoryListBatch(cmd *cobra.Command, batchID string, configFile string) 
 	batchFileOpRepo := database.NewBatchFileOperationRepository(deps.DB)
 
 	// Load job
-	job, err := jobRepo.FindByID(batchID)
+	job, err := jobRepo.FindByID(ctx, batchID)
 	if err != nil {
 		return fmt.Errorf("batch job not found: %s", batchID)
 	}
 
 	// Load operations
-	ops, err := batchFileOpRepo.FindByBatchJobID(batchID)
+	ops, err := batchFileOpRepo.FindByBatchJobID(ctx, batchID)
 	if err != nil {
 		return fmt.Errorf("failed to load operations: %w", err)
 	}
 
-	// Compute counts
+	// Compute counts. Count failures must not be silently discarded — otherwise
+	// the CLI prints stale/zero revert stats for a batch whose counts failed to load.
 	opCount := int64(len(ops))
-	revertedCount, _ := batchFileOpRepo.CountByBatchJobIDAndRevertStatus(batchID, models.RevertStatusReverted)
-	pendingCount, _ := batchFileOpRepo.CountByBatchJobIDAndRevertStatus(batchID, models.RevertStatusApplied)
+	revertedCount, err := batchFileOpRepo.CountByBatchJobIDAndRevertStatus(ctx, batchID, models.RevertStatusReverted)
+	if err != nil {
+		return fmt.Errorf("failed to count reverted operations: %w", err)
+	}
+	pendingCount, err := batchFileOpRepo.CountByBatchJobIDAndRevertStatus(ctx, batchID, models.RevertStatusApplied)
+	if err != nil {
+		return fmt.Errorf("failed to count pending operations: %w", err)
+	}
 
 	// Print batch header
 	fmt.Printf("=== Batch Job: %s ===\n", batchID)
 
 	statusIcon := "✅"
 	switch job.Status {
-	case "reverted":
+	case models.JobStatusReverted:
 		statusIcon = "↩️"
-	case "failed":
+	case models.JobStatusFailed:
 		statusIcon = "❌"
-	case "pending", "running":
+	case models.JobStatusPending, models.JobStatusRunning:
 		statusIcon = "⏳"
 	}
 	fmt.Printf("Status:      %s %s\n", statusIcon, job.Status)

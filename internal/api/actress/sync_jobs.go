@@ -35,7 +35,7 @@ type actressSyncTasksResponse struct {
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/actresses/sync-jobs [post]
-func createActressSyncJob(deps *core.ServerDependencies) gin.HandlerFunc {
+func createActressSyncJob(rt *core.APIRuntime) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req worker.ActressSyncCreateRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -46,7 +46,7 @@ func createActressSyncJob(deps *core.ServerDependencies) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "actress_ids is required when missing is false"})
 			return
 		}
-		manager := deps.EnsureActressSyncManager()
+		manager := rt.EnsureActressSyncManager()
 		if manager == nil {
 			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "actress sync manager is unavailable"})
 			return
@@ -71,9 +71,9 @@ func createActressSyncJob(deps *core.ServerDependencies) gin.HandlerFunc {
 // @Success 200 {object} actressSyncJobsResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/actresses/sync-jobs/active [get]
-func listActiveActressSyncJobs(deps *core.ServerDependencies) gin.HandlerFunc {
+func listActiveActressSyncJobs(rt *core.APIRuntime) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		manager := deps.EnsureActressSyncManager()
+		manager := rt.EnsureActressSyncManager()
 		if manager == nil {
 			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "actress sync manager is unavailable"})
 			return
@@ -96,9 +96,9 @@ func listActiveActressSyncJobs(deps *core.ServerDependencies) gin.HandlerFunc {
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/actresses/sync-jobs/{jobID} [get]
-func getActressSyncJob(deps *core.ServerDependencies) gin.HandlerFunc {
+func getActressSyncJob(rt *core.APIRuntime) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		manager := deps.EnsureActressSyncManager()
+		manager := rt.EnsureActressSyncManager()
 		if manager == nil {
 			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "actress sync manager is unavailable"})
 			return
@@ -121,9 +121,9 @@ func getActressSyncJob(deps *core.ServerDependencies) gin.HandlerFunc {
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/actresses/sync-jobs/{jobID}/tasks [get]
-func listActressSyncJobTasks(deps *core.ServerDependencies) gin.HandlerFunc {
+func listActressSyncJobTasks(rt *core.APIRuntime) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		manager := deps.EnsureActressSyncManager()
+		manager := rt.EnsureActressSyncManager()
 		if manager == nil {
 			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "actress sync manager is unavailable"})
 			return
@@ -146,9 +146,9 @@ func listActressSyncJobTasks(deps *core.ServerDependencies) gin.HandlerFunc {
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/actresses/sync-jobs/{jobID}/cancel [post]
-func cancelActressSyncJob(deps *core.ServerDependencies) gin.HandlerFunc {
+func cancelActressSyncJob(rt *core.APIRuntime) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		manager := deps.EnsureActressSyncManager()
+		manager := rt.EnsureActressSyncManager()
 		if manager == nil {
 			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "actress sync manager is unavailable"})
 			return

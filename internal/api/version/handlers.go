@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/javinizer/javinizer-go/internal/commandutil"
+	"github.com/javinizer/javinizer-go/internal/system"
 	"github.com/javinizer/javinizer-go/internal/update"
 	"github.com/javinizer/javinizer-go/internal/version"
 )
@@ -20,7 +22,27 @@ type VersionStatusResponse struct {
 	Prerelease      bool   `json:"prerelease"`       // Whether latest is a prerelease
 	CheckedAt       string `json:"checked_at"`       // When the check was performed
 	Source          string `json:"source"`           // "cached" or "fresh"
-	Error           string `json:"error,omitempty"`  // Error message if any
+	// InstallEnvironment reports how javinizer is running ("docker", "desktop",
+	// or "cli") so the UI can render the right upgrade path: docker images can't
+	// self-swap (read-only image), desktop apps need a new bundle, only cli
+	// builds self-upgrade in place.
+	InstallEnvironment string `json:"install_environment"`
+	// UpgradeInstructions carries environment-specific guidance verbatim (e.g.
+	// the `docker pull` command for docker, the releases URL for desktop, the
+	// `javinizer upgrade` command for cli) so the frontend doesn't have to
+	// hardcode the image ref or rebuild steps per environment.
+	UpgradeInstructions string `json:"upgrade_instructions,omitempty"`
+	Error               string `json:"error,omitempty"` // Error message if any
+}
+
+// applyEnvironment stamps the response with the detected install environment
+// and its upgrade instructions. Called on every response path so the UI always
+// knows whether to offer `docker pull`, a releases link, or `javinizer upgrade`.
+// The environment is computed once at bootstrap (where desktop.IsDesktopBuild()
+// is reachable without an import cycle) and injected via CoreDeps.
+func applyEnvironment(response *VersionStatusResponse, env system.Environment) {
+	response.InstallEnvironment = string(env)
+	response.UpgradeInstructions = system.UpgradeInstructions(env)
 }
 
 // versionStatus godoc
@@ -30,11 +52,15 @@ type VersionStatusResponse struct {
 // @Produce json
 // @Success 200 {object} VersionStatusResponse
 // @Router /api/v1/version [get]
-func versionStatus(deps *ServerDependencies) gin.HandlerFunc {
+func versionStatus(deps commandutil.CoreDepsReader) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Create update service
+		// Create update service from narrow config.
 		cfg := deps.GetConfig()
-		service := update.NewService(cfg)
+		service := update.NewService(update.UpdateConfig{
+			Enabled:                   cfg.System.VersionCheckEnabled,
+			VersionCheckIntervalHours: cfg.System.VersionCheckIntervalHours,
+			StableOnly:                cfg.System.VersionCheckStableOnly,
+		})
 
 		// Get current version info
 		currentVer := version.Short()
@@ -48,8 +74,9 @@ func versionStatus(deps *ServerDependencies) gin.HandlerFunc {
 			Current:   currentVer,
 			Commit:    commit,
 			BuildDate: buildDate,
-			Source:    "cached",
+			Source:    string(update.UpdateSourceCached),
 		}
+		applyEnvironment(response, deps.InstallEnvironment())
 
 		if err != nil {
 			response.Error = err.Error()
@@ -58,21 +85,21 @@ func versionStatus(deps *ServerDependencies) gin.HandlerFunc {
 		}
 
 		// Handle disabled state
-		if state.Source == "disabled" {
+		if state.Source == update.UpdateSourceDisabled {
 			response.Latest = ""
 			response.UpdateAvailable = false
 			response.CheckedAt = ""
-			response.Source = "disabled"
+			response.Source = string(update.UpdateSourceDisabled)
 			c.JSON(http.StatusOK, response)
 			return
 		}
 
 		// Handle none/empty state
-		if state.Source == "none" || state.CheckedAt == "" {
+		if state.Source == update.UpdateSourceNone || state.CheckedAt == "" {
 			response.Latest = ""
 			response.UpdateAvailable = false
 			response.CheckedAt = ""
-			response.Source = "none"
+			response.Source = string(update.UpdateSourceNone)
 			c.JSON(http.StatusOK, response)
 			return
 		}
@@ -82,7 +109,7 @@ func versionStatus(deps *ServerDependencies) gin.HandlerFunc {
 		response.UpdateAvailable = state.Available
 		response.Prerelease = state.Prerelease
 		response.CheckedAt = state.CheckedAt
-		response.Source = state.Source
+		response.Source = string(state.Source)
 
 		if state.Error != "" {
 			response.Error = state.Error
@@ -99,11 +126,15 @@ func versionStatus(deps *ServerDependencies) gin.HandlerFunc {
 // @Produce json
 // @Success 200 {object} VersionStatusResponse
 // @Router /api/v1/version/check [post]
-func versionCheck(deps *ServerDependencies) gin.HandlerFunc {
+func versionCheck(deps commandutil.CoreDepsReader) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Create update service
+		// Create update service from narrow config.
 		cfg := deps.GetConfig()
-		service := update.NewService(cfg)
+		service := update.NewService(update.UpdateConfig{
+			Enabled:                   cfg.System.VersionCheckEnabled,
+			VersionCheckIntervalHours: cfg.System.VersionCheckIntervalHours,
+			StableOnly:                cfg.System.VersionCheckStableOnly,
+		})
 
 		// Perform the check (sync)
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
@@ -118,9 +149,10 @@ func versionCheck(deps *ServerDependencies) gin.HandlerFunc {
 			Latest:     "",
 			Prerelease: false,
 		}
+		applyEnvironment(response, deps.InstallEnvironment())
 
 		if err != nil {
-			response.Source = "error"
+			response.Source = string(update.UpdateSourceError)
 			response.Error = err.Error()
 			response.Latest = ""
 			response.UpdateAvailable = false
@@ -129,7 +161,7 @@ func versionCheck(deps *ServerDependencies) gin.HandlerFunc {
 		}
 
 		if state == nil {
-			response.Source = "error"
+			response.Source = string(update.UpdateSourceError)
 			response.Error = "update check returned no state"
 			response.Latest = ""
 			response.UpdateAvailable = false
@@ -137,7 +169,7 @@ func versionCheck(deps *ServerDependencies) gin.HandlerFunc {
 			return
 		}
 
-		response.Source = state.Source
+		response.Source = string(state.Source)
 		response.Error = state.Error
 		response.Latest = state.Version
 		response.Prerelease = state.Prerelease

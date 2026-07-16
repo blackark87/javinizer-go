@@ -1,16 +1,23 @@
 package file
 
 import (
-	"context"
+	"net/http"
 	"os"
-	"time"
+	"path/filepath"
 
 	"github.com/gin-gonic/gin"
 	"github.com/javinizer/javinizer-go/internal/api/apperrors"
 	"github.com/javinizer/javinizer-go/internal/api/core"
-	"github.com/javinizer/javinizer-go/internal/matcher"
-	"github.com/javinizer/javinizer-go/internal/scanner"
-	"github.com/spf13/afero"
+	"github.com/javinizer/javinizer-go/internal/workflow"
+
+	contracts "github.com/javinizer/javinizer-go/internal/api/contracts"
+)
+
+// osGetwd is a seam over os.Getwd so the root-CWD branch in defaultPath can
+// be exercised without actually chdir-ing the test process into "/".
+var (
+	osGetwd       = os.Getwd
+	osUserHomeDir = os.UserHomeDir
 )
 
 // scanDirectory godoc
@@ -19,131 +26,156 @@ import (
 // @Tags web
 // @Accept json
 // @Produce json
-// @Param request body ScanRequest true "Scan parameters"
-// @Success 200 {object} ScanResponse
-// @Failure 400 {object} ErrorResponse
-// @Failure 500 {object} ErrorResponse
+// @Param request body contracts.ScanRequest true "Scan parameters"
+// @Success 200 {object} contracts.ScanResponse
+// @Failure 400 {object} contracts.ErrorResponse
+// @Failure 500 {object} contracts.ErrorResponse
 // @Router /api/v1/scan [post]
-func scanDirectory(deps *ServerDependencies) gin.HandlerFunc {
+func scanDirectory(rt *core.APIRuntime) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var req ScanRequest
+		var req contracts.ScanRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(400, ErrorResponse{Error: err.Error()})
+			c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: err.Error()})
 			return
 		}
 
-		// Read current config (respects config reloads)
-		cfg := deps.GetConfig()
+		// Take one consistent snapshot so the APIConfig (security/scanner settings)
+		// and the scan-only workflow come from the same reload epoch. Reading them
+		// via separate accessors could mix old/new state if a config reload lands
+		// between the calls (issue #44).
+		snap := rt.Snapshot()
+		apiCfg := snap.APIConfig()
+		scanCfg := apiCfg.ScannerConfig()
 
-		// Use TOCTOU-safe validation that opens the directory.
-		// The open file handle prevents the directory from being replaced with a symlink.
-		// Non-recursive scans use the handle directly (full TOCTOU protection).
-		// Recursive scans have a residual TOCTOU window (filepath.WalkDir reopens by path).
-		dirFile, validPath, err := core.ValidateAndOpenPath(req.Path, &cfg.API.Security)
+		dirFile, validPath, err := core.ValidateAndOpenPath(req.Path, apiCfg.SecurityConfig())
 		if err != nil {
 			apperrors.WriteAPIError(c, err)
 			return
 		}
 		defer func() { _ = dirFile.Close() }()
 
-		// Create context with timeout from config
-		timeout := time.Duration(cfg.API.Security.ScanTimeoutSeconds) * time.Second
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		defer cancel()
-
-		// Scan directory - recursive or non-recursive based on request
-		scan := scanner.NewScanner(afero.NewOsFs(), &cfg.Matching)
-		var result *scanner.ScanResult
-
-		if req.Recursive {
-			// Recursive scan with resource limits and optional filter.
-			// NOTE: Has a residual TOCTOU window because filepath.WalkDir reopens
-			// directories by path. Full protection would require fd-based traversal.
-			result, err = scan.ScanWithFilter(ctx, validPath, cfg.API.Security.MaxFilesPerScan, req.Filter)
-		} else {
-			// Non-recursive scan (immediate children only) - TOCTOU-safe
-			// Uses the open file handle to read directory entries directly.
-			result, err = scan.ScanSingleFromHandle(dirFile, validPath)
+		wf, wfErr := snap.ScanOnlyWorkflow()
+		if wfErr != nil {
+			c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: wfErr.Error()})
+			return
 		}
 
+		// Execute scan + match via the seam
+		scanResult, err := wf.ScanAndMatch(c.Request.Context(), workflow.ScanAndMatchCmd{
+			Directory:      validPath,
+			Recursive:      req.Recursive,
+			TimeoutSeconds: scanCfg.ScanTimeoutSeconds,
+			MaxFiles:       scanCfg.MaxFilesPerScan,
+			Filter:         req.Filter,
+		})
 		if err != nil {
-			c.JSON(500, ErrorResponse{Error: err.Error()})
+			c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: err.Error()})
 			return
 		}
 
-		// Check if scan was limited or timed out (only applicable to recursive scan)
-		if result.TimedOut {
-			c.JSON(503, ErrorResponse{Error: "scan operation timed out"})
+		// Check if scan was limited or timed out
+		if scanResult.TimedOut {
+			c.JSON(http.StatusServiceUnavailable, contracts.ErrorResponse{Error: "scan operation timed out"})
 			return
 		}
 
-		// Match IDs - use getter for thread-safe access
-		matchResults := deps.GetMatcher().Match(result.Files)
-
-		// Validate letter-based multipart patterns using directory context
-		// This prevents false positives like ABW-121-C.mp4 (Chinese subtitles) being marked as multipart
-		matchResults = matcher.ValidateMultipartInDirectory(matchResults)
-
-		// Build response
-		files := make([]FileInfo, 0, len(result.Files))
-		matchMap := make(map[string]*matcher.MatchResult)
-		for i, match := range matchResults {
-			matchMap[match.File.Path] = &matchResults[i]
-		}
-
-		for _, fileInfo := range result.Files {
-			match, found := matchMap[fileInfo.Path]
-
-			apiFileInfo := FileInfo{
-				Name:    fileInfo.Name,
-				Path:    fileInfo.Path,
+		// Build response from seam result
+		files := make([]contracts.FileInfo, 0, len(scanResult.Files))
+		for _, fmi := range scanResult.Files {
+			apiFileInfo := contracts.FileInfo{
+				Name:    fmi.Name,
+				Path:    fmi.Path,
 				IsDir:   false,
-				Size:    fileInfo.Size,
-				ModTime: fileInfo.ModTime.Format("2006-01-02T15:04:05Z07:00"),
-				Matched: found,
+				Size:    fmi.Size,
+				ModTime: fmi.ModTime.Format("2006-01-02T15:04:05Z07:00"),
+				Matched: fmi.MovieID != "",
 			}
-			if found {
-				apiFileInfo.MovieID = match.ID
-				apiFileInfo.IsMultiPart = match.IsMultiPart
-				apiFileInfo.PartNumber = match.PartNumber
-				apiFileInfo.PartSuffix = match.PartSuffix
+			// Multipart metadata describes the file itself, not whether it matched
+			// a movie — preserve IsMultiPart/PartNumber/PartSuffix for unmatched
+			// files too, so scan-result metadata stays accurate. MovieID is gated
+			// since it only applies when a match exists.
+			apiFileInfo.IsMultiPart = fmi.IsMultiPart
+			apiFileInfo.PartNumber = fmi.PartNumber
+			apiFileInfo.PartSuffix = fmi.PartSuffix
+			if fmi.MovieID != "" {
+				apiFileInfo.MovieID = fmi.MovieID
 			}
 			files = append(files, apiFileInfo)
 		}
 
-		c.JSON(200, ScanResponse{
+		c.JSON(http.StatusOK, contracts.ScanResponse{
 			Files:   files,
 			Count:   len(files),
-			Skipped: result.Skipped,
+			Skipped: scanResult.SkippedPaths,
 		})
 	}
 }
 
-// getCurrentWorkingDirectory godoc
-// @Summary Get current working directory
-// @Description Returns the server's default browse directory. For Docker deployments, returns the first allowed directory (typically /media). For manual deployments, returns current working directory if no allowed directories configured.
-// @Tags web
-// @Produce json
-// @Success 200 {object} map[string]string
-// @Failure 500 {object} ErrorResponse
-// @Router /api/v1/cwd [get]
-func getCurrentWorkingDirectory(deps *ServerDependencies) gin.HandlerFunc {
+func getCurrentWorkingDirectory(rt *core.APIRuntime) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var defaultPath string
-
-		cfg := deps.GetConfig()
-
-		if len(cfg.API.Security.AllowedDirectories) > 0 {
-			defaultPath = cfg.API.Security.AllowedDirectories[0]
-		} else {
-			cwd, err := os.Getwd()
-			if err != nil {
-				c.JSON(500, ErrorResponse{Error: err.Error()})
-				return
-			}
-			defaultPath = cwd
+		path, err := defaultPath(rt)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: err.Error()})
+			return
 		}
-
-		c.JSON(200, gin.H{"path": defaultPath})
+		c.JSON(http.StatusOK, gin.H{"path": path})
 	}
+}
+
+// defaultPath resolves a sensible absolute default path for the UI to
+// pre-fill browse/scan inputs with. It prefers the first configured allowed
+// directory; otherwise it uses the process working directory. When the CWD
+// is root-like ("/" or a Windows drive root) — as it is for the desktop app
+// launched from Finder/Explorer — it returns an empty string so the UI does
+// not pre-fill a useless "/".
+func defaultPath(rt *core.APIRuntime) (string, error) {
+	apiCfg := rt.GetAPIConfig()
+	scanCfg := apiCfg.ScannerConfig()
+
+	if len(scanCfg.AllowedDirectories) > 0 {
+		return scanCfg.AllowedDirectories[0], nil
+	}
+
+	cwd, err := osGetwd()
+	if err != nil {
+		return "", err
+	}
+	if isRootPath(cwd) {
+		return "", nil
+	}
+	if isHomeDirectory(cwd) {
+		return "", nil
+	}
+	return cwd, nil
+}
+
+// isRootPath reports whether path is a filesystem root ("/" on Unix, "C:\"
+// style drive roots on Windows). Such paths are useless as a library default.
+func isRootPath(path string) bool {
+	if path == "/" || path == string(filepath.Separator) {
+		return true
+	}
+	if len(path) == 3 && path[1] == ':' && (path[2] == '\\' || path[2] == '/') {
+		return true
+	}
+	return false
+}
+
+// isHomeDirectory reports whether path equals the user's home directory.
+// Prefilling the home directory grants file-operation scope over the entire
+// profile, so it is treated as unusable (same fail-closed behavior as root).
+func isHomeDirectory(path string) bool {
+	home, err := osUserHomeDir()
+	if err != nil || home == "" {
+		return true
+	}
+	resolvedHome, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		resolvedHome = home
+	}
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		resolvedPath = path
+	}
+	return resolvedPath == resolvedHome
 }

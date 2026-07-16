@@ -4,33 +4,29 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"math/rand"
 	"net/http"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/javinizer/javinizer-go/internal/config"
+	appconfig "github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/logging"
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
-const (
-	providerOpenAI           = "openai"
-	providerOpenAICompatible = "openai-compatible"
-	providerDeepL            = "deepl"
-	providerGoogle           = "google"
-	providerAnthropic        = "anthropic"
-	providerBedrock          = "bedrock"
+const maxTranslationResponseSize = 10 * 1024 * 1024
 
-	maxTranslationResponseSize = 10 * 1024 * 1024
-)
-
+// Service translates movie metadata fields via configured translator
+// providers, retrying transient failures with exponential backoff.
 type Service struct {
-	cfg                 config.TranslationConfig
-	httpClient          *http.Client
+	cfg                 Config
+	providers           map[string]TranslatorProvider
 	acquireProviderCall func(context.Context) error
 	releaseProviderCall func()
+	randMu              sync.Mutex
+	rand                *rand.Rand // per-instance random source for retry jitter; protected by randMu
 }
 
 var sharedProviderCalls struct {
@@ -38,12 +34,42 @@ var sharedProviderCalls struct {
 	active int
 }
 
-func New(cfg config.TranslationConfig) *Service {
+// New constructs a translation Service from the given config and providers,
+// keyed by provider name.
+
+// New accepts either the translation package's narrow Config or the
+// application TranslationConfig.  The latter compatibility path keeps the
+// actress-sync workflow independent from scrape's adapter while still using
+// the same provider abstraction.
+func New(rawConfig any, providers ...TranslatorProvider) *Service {
+	var cfg Config
+	switch value := rawConfig.(type) {
+	case Config:
+		cfg = value
+	case appconfig.TranslationConfig:
+		cfg = ConfigFromApp(value)
+	default:
+		cfg = Config{}
+	}
+	if len(providers) == 0 {
+		client := http.DefaultClient
+		providers = []TranslatorProvider{
+			NewOpenAIProvider(cfg, client),
+			NewOpenAICompatibleProvider(cfg, client),
+			NewDeepLProvider(cfg, client),
+			NewGoogleProvider(cfg, client),
+			NewAnthropicProvider(cfg, client),
+			NewBedrockProvider(cfg, client),
+		}
+	}
+	m := make(map[string]TranslatorProvider, len(providers))
+	for _, p := range providers {
+		m[p.Name()] = p
+	}
 	service := &Service{
-		cfg: cfg,
-		httpClient: &http.Client{
-			Timeout: 0,
-		},
+		cfg:       cfg,
+		providers: m,
+		rand:      rand.New(rand.NewSource(time.Now().UnixNano())), //nolint:gosec // non-crypto rand is fine for retry jitter
 	}
 	service.acquireProviderCall = func(ctx context.Context) error {
 		limit := cfg.MaxConcurrency
@@ -56,10 +82,9 @@ func New(cfg config.TranslationConfig) *Service {
 	return service
 }
 
-// NewWithProviderLimiter applies a shared concurrency limit only around actual
-// translation-provider requests. Deterministic actress romanization and Hangul
-// mapping remain part of the normal worker pool.
-func NewWithProviderLimiter(cfg config.TranslationConfig, acquire func(context.Context) error, release func()) *Service {
+// NewWithProviderLimiter wraps actual provider calls with a caller-supplied
+// limiter in addition to the process-wide max_concurrency limiter.
+func NewWithProviderLimiter(cfg any, acquire func(context.Context) error, release func()) *Service {
 	service := New(cfg)
 	if acquire == nil || release == nil {
 		return service
@@ -108,796 +133,554 @@ func releaseSharedProviderCall() {
 	sharedProviderCalls.Unlock()
 }
 
-// TranslateActresses runs the existing actress transliteration pipeline without
-// queueing any other movie metadata fields.
-func (s *Service) TranslateActresses(
-	ctx context.Context,
-	actresses []models.Actress,
-	settingsHash string,
-) ([]models.Actress, []models.MovieTranslation, string, error) {
-	cloned := make([]models.Actress, len(actresses))
-	copy(cloned, actresses)
-	movie := &models.Movie{ID: "actress-sync", Actresses: cloned}
-	records, warning, err := s.TranslateMovie(ctx, movie, settingsHash)
-	return movie.Actresses, records, warning, err
+// TranslationOutput holds all translation data produced by TranslateMovie.
+// It carries genre/actress translation data as return values rather than
+// mutating *models.Movie, making the translation seam explicit.
+type TranslationOutput struct {
+	Movie               *models.MovieTranslation
+	Movies              []models.MovieTranslation
+	GenreTranslations   []models.GenreTranslationData
+	ActressTranslations []models.ActressTranslationData
 }
 
-// ApplyDMMHepburnName fills missing primary name fields from a DMM actjpgs
-// filename. Existing names are never overwritten.
-func ApplyDMMHepburnName(actress *models.Actress) bool {
-	if actress == nil {
-		return false
-	}
-	lastName, firstName, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL)
-	if !ok {
-		return false
-	}
-	changed := false
-	if strings.TrimSpace(actress.FirstName) == "" || models.IsUnknownActressName(actress.FirstName) {
-		actress.FirstName = firstName
-		changed = firstName != ""
-	}
-	if strings.TrimSpace(actress.LastName) == "" || models.IsUnknownActressName(actress.LastName) {
-		actress.LastName = lastName
-		changed = changed || lastName != ""
-	}
-	return changed
+// TranslationPlan captures the fields to translate as data (no closures), enabling
+// inspection, batching, and deterministic application. It replaces the previous
+// closure-based pendingField approach so that plan → execute is a two-phase seam.
+type TranslationPlan struct {
+	TargetLang     string
+	SourceLang     string
+	SourceLabel    string
+	ApplyToPrimary bool // when true, translated values are also written back to scraped movie
+	Fields         []TranslationField
 }
 
-// TargetLanguages returns the normalized configured output language order.
+// TranslationField describes a single field to translate, identified by name
+// and index. The result is applied via ApplyPlan rather than closures.
+type TranslationField struct {
+	FieldName    string
+	Index        int // -1 for scalar fields; >=0 for array elements (genres, actresses)
+	Text         string
+	Preset       *string           // deterministic result; skips the external provider
+	AllowEmpty   bool              // an intentionally cleaned empty result must not restore Text
+	Placeholders map[string]string // protected actress-name token → final Hangul
+	FallbackText string            // used when a protected token is dropped
+}
+
+// TranslationResultMap maps each field key (FieldName or FieldName[idx]) to
+// its translated text, enabling deterministic ApplyPlan without closures.
+type TranslationResultMap map[string]string
+
+// fieldKey returns the map key for a translation field.
+func fieldKey(f TranslationField) string {
+	if f.Index >= 0 {
+		return fmt.Sprintf("%s[%d]", f.FieldName, f.Index)
+	}
+	return f.FieldName
+}
+
+// BuildTranslationPlan creates a TranslationPlan from the movie based on config.
+// Fields are captured as data, not closures, making the plan inspectable and testable.
+func (s *Service) BuildTranslationPlan(scraped *models.Movie, targetLang, sourceLang, sourceLabel string) TranslationPlan {
+	fields := s.cfg.Fields
+	var planFields []TranslationField
+
+	queue := func(fieldName, text string, idx int) *TranslationField {
+		trimmed := strings.TrimSpace(text)
+		if trimmed == "" {
+			return nil
+		}
+		planFields = append(planFields, TranslationField{
+			FieldName: fieldName,
+			Index:     idx,
+			Text:      trimmed,
+		})
+		return &planFields[len(planFields)-1]
+	}
+	queuePreset := func(fieldName, text, value string, idx int, allowEmpty bool) {
+		valueCopy := value
+		planFields = append(planFields, TranslationField{
+			FieldName:  fieldName,
+			Index:      idx,
+			Text:       strings.TrimSpace(text),
+			Preset:     &valueCopy,
+			AllowEmpty: allowEmpty,
+		})
+	}
+
+	actressSourceNames := make([]string, len(scraped.Actresses))
+	actressHangulNames := make([]string, len(scraped.Actresses))
+	romanizedByJapaneseName := make(map[string]string, len(scraped.Actresses))
+	for i, original := range scraped.Actresses {
+		actress := original
+		CleanStoredActress(&actress)
+		if models.IsUnknownActressName(actress.FirstName) || models.IsUnknownActressName(actress.JapaneseName) {
+			continue
+		}
+		if last, first, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL); ok {
+			actressSourceNames[i] = joinRomanizedName(last, first)
+		} else if romanized := romanizedActressName(actress); romanized != "" {
+			actressSourceNames[i] = romanized
+		} else if strings.TrimSpace(actress.JapaneseName) != "" {
+			actressSourceNames[i] = cleanActressNameForTranslation(actress.JapaneseName)
+		} else {
+			actressSourceNames[i] = cleanActressNameForTranslation(actressDisplayTitle(actress))
+		}
+		if jaName := strings.TrimSpace(actress.JapaneseName); jaName != "" && isLikelyRomanized(actressSourceNames[i]) {
+			romanizedByJapaneseName[jaName] = actressSourceNames[i]
+		}
+		if hangul := hangulActressName(actress); hangul != "" {
+			actressHangulNames[i] = hangul
+		} else if isLikelyRomanized(actressSourceNames[i]) {
+			actressHangulNames[i], _ = romajiToHangul(actressSourceNames[i])
+		}
+	}
+
+	type nameSub struct{ japanese, hangul, token string }
+	nameSubs := make([]nameSub, 0, len(scraped.Actresses))
+	if targetLang == "ko" {
+		for i, actress := range scraped.Actresses {
+			japanese := strings.TrimSpace(actress.JapaneseName)
+			if japanese == "" || actressHangulNames[i] == "" {
+				continue
+			}
+			nameSubs = append(nameSubs, nameSub{
+				japanese: japanese,
+				hangul:   actressHangulNames[i],
+				token:    fmt.Sprintf("⟦%d⟧", len(nameSubs)),
+			})
+		}
+	}
+	protectNames := func(value string) (direct, protected string, placeholders map[string]string) {
+		direct, protected = value, value
+		placeholders = make(map[string]string)
+		for _, sub := range nameSubs {
+			if !strings.Contains(direct, sub.japanese) {
+				continue
+			}
+			direct = strings.ReplaceAll(direct, sub.japanese, sub.hangul)
+			protected = strings.ReplaceAll(protected, sub.japanese, sub.token)
+			placeholders[sub.token] = sub.hangul
+		}
+		return direct, protected, placeholders
+	}
+
+	if fields.Title {
+		cleaned := cleanTitleForTranslation(scraped.Title)
+		direct, protected, placeholders := protectNames(cleaned)
+		titleField := "title"
+		if romanized := romanizedByJapaneseName[strings.TrimSpace(cleaned)]; romanized != "" {
+			titleField = "title_as_name"
+			if targetLang != "ko" || len(placeholders) == 0 {
+				protected = romanized
+			}
+		}
+		if targetLang == "ko" && len(placeholders) > 0 && !containsTranslatableText(direct) {
+			queuePreset(titleField, cleaned, direct, -1, false)
+		} else if field := queue(titleField, protected, -1); field != nil && len(placeholders) > 0 {
+			field.Placeholders = placeholders
+			field.FallbackText = direct
+		}
+	}
+	if fields.OriginalTitle {
+		queue("original_title", scraped.OriginalTitle, -1)
+	}
+	if fields.Description {
+		cleaned := cleanDescriptionForTranslation(scraped.Description)
+		if cleaned == "" && strings.TrimSpace(scraped.Description) != "" {
+			queuePreset("description", scraped.Description, "", -1, true)
+		} else {
+			direct, protected, placeholders := protectNames(cleaned)
+			if field := queue("description", protected, -1); field != nil && len(placeholders) > 0 {
+				field.Placeholders = placeholders
+				field.FallbackText = direct
+			}
+		}
+	}
+	if fields.Director {
+		queue("director", scraped.Director, -1)
+	}
+	if fields.Maker {
+		queue("maker", scraped.Maker, -1)
+	}
+	if fields.Label {
+		queue("label", scraped.Label, -1)
+	}
+	if fields.Series {
+		queue("series", scraped.Series, -1)
+	}
+	if fields.Genres {
+		for i := range scraped.Genres {
+			queue("genre", scraped.Genres[i].Name, i)
+		}
+	}
+	if fields.Actresses {
+		for i := range scraped.Actresses {
+			if models.IsUnknownActressName(scraped.Actresses[i].FirstName) || models.IsUnknownActressName(scraped.Actresses[i].JapaneseName) {
+				queuePreset("actress", actressDisplayTitle(scraped.Actresses[i]), models.UnknownActressName, i, false)
+				continue
+			}
+			name := actressSourceNames[i]
+			if name == "" {
+				continue
+			}
+			if targetLang == "ko" && actressHangulNames[i] != "" {
+				queuePreset("actress", name, actressHangulNames[i], i, false)
+			} else {
+				queue("actress", name, i)
+			}
+		}
+	}
+
+	return TranslationPlan{
+		TargetLang:     targetLang,
+		SourceLang:     sourceLang,
+		SourceLabel:    sourceLabel,
+		ApplyToPrimary: s.cfg.ApplyToPrimary,
+		Fields:         planFields,
+	}
+}
+
+// ApplyPlan applies translated results back to the movie and builds translation records.
+// It uses the plan's field descriptors (no closures) to route each result to the
+// correct movie field and translation record.
+func ApplyPlan(scraped *models.Movie, plan TranslationPlan, results TranslationResultMap, translatedRecord *models.MovieTranslation, state *translationState) string {
+	var warnings []string
+	for _, field := range plan.Fields {
+		key := fieldKey(field)
+		translated, ok := results[key]
+		if !ok || strings.TrimSpace(translated) == "" && !field.AllowEmpty {
+			logging.Debugf("Translation: empty result for %s (original=%q), falling back to original", key, field.Text)
+			warnings = append(warnings, fmt.Sprintf("%s: empty translation, kept original", key))
+			translated = field.Text
+		}
+
+		// Route to the correct field on scraped movie and translation record
+		applyTranslatedField(scraped, field, translated, translatedRecord, state, plan)
+	}
+
+	if len(warnings) > 0 {
+		return strings.Join(warnings, "; ")
+	}
+	return ""
+}
+
+// applyTranslatedField routes a translated value to the correct movie field and
+// translation record based on the field descriptor.
+func applyTranslatedField(scraped *models.Movie, field TranslationField, translated string, translatedRecord *models.MovieTranslation, state *translationState, plan TranslationPlan) {
+	if plan.SourceLabel != "" {
+		translatedRecord.SourceName = plan.SourceLabel
+	}
+
+	switch field.FieldName {
+	case "title", "title_as_name":
+		translatedRecord.Title = translated
+		if plan.ApplyToPrimary {
+			scraped.Title = translated
+		}
+	case "original_title":
+		translatedRecord.OriginalTitle = translated
+		if plan.ApplyToPrimary {
+			scraped.OriginalTitle = translated
+		}
+	case "description":
+		translatedRecord.Description = translated
+		if plan.ApplyToPrimary {
+			scraped.Description = translated
+		}
+	case "director":
+		translatedRecord.Director = translated
+		if plan.ApplyToPrimary {
+			scraped.Director = translated
+		}
+	case "maker":
+		translatedRecord.Maker = translated
+		if plan.ApplyToPrimary {
+			scraped.Maker = translated
+		}
+	case "label":
+		translatedRecord.Label = translated
+		if plan.ApplyToPrimary {
+			scraped.Label = translated
+		}
+	case "series":
+		translatedRecord.Series = translated
+		if plan.ApplyToPrimary {
+			scraped.Series = translated
+		}
+	case "genre":
+		state.genreTranslations = append(state.genreTranslations, models.GenreTranslationData{
+			GenreIndex: field.Index,
+			Language:   plan.TargetLang,
+			Name:       translated,
+			SourceName: plan.SourceLabel,
+		})
+		if plan.ApplyToPrimary {
+			scraped.Genres[field.Index].Name = translated
+		}
+	case "actress":
+		first, last := models.SplitFullName(translated)
+		jName := ""
+		if strings.TrimSpace(scraped.Actresses[field.Index].JapaneseName) != "" || (strings.TrimSpace(scraped.Actresses[field.Index].FirstName) == "" && strings.TrimSpace(scraped.Actresses[field.Index].LastName) == "") {
+			jName = translated
+			first = ""
+			last = ""
+		}
+		state.actressTranslations = append(state.actressTranslations, models.ActressTranslationData{
+			ActressIndex: field.Index,
+			Language:     plan.TargetLang,
+			FirstName:    first,
+			LastName:     last,
+			JapaneseName: jName,
+			DisplayName:  translated,
+			SourceName:   plan.SourceLabel,
+		})
+		if plan.ApplyToPrimary {
+			replaceActressName(&scraped.Actresses[field.Index], translated)
+		}
+	}
+}
+
+// GroupByProvider groups translation fields by their provider for batch dispatch.
+// Currently all fields share the same provider, but this seam enables future
+// per-field provider routing (e.g., DeepL for titles, LLM for descriptions).
+func GroupByProvider(plan TranslationPlan, providerName string) map[string][]TranslationField {
+	groups := make(map[string][]TranslationField)
+	groups[providerName] = plan.Fields
+	return groups
+}
+
+// translationState holds mutable state shared between field collection and result application.
+type translationState struct {
+	genreTranslations   []models.GenreTranslationData
+	actressTranslations []models.ActressTranslationData
+}
+
+// TranslateMovie translates selected movie metadata fields from source to target language.
+// It returns a TranslationOutput carrying the translated record and genre/actress
+// translation data, rather than mutating *models.Movie in-place.
+func (s *Service) TranslateMovie(ctx context.Context, scraped *models.Movie, settingsHash string) (*TranslationOutput, string, error) {
+	if s == nil {
+		return nil, "", fmt.Errorf("translation: TranslateMovie called on nil Service")
+	}
+	if scraped == nil || !s.cfg.Enabled {
+		return (*TranslationOutput)(nil), "", nil
+	}
+
+	sourceLang := normalizeLanguage(s.cfg.SourceLanguage)
+	targetLanguages := s.TargetLanguages()
+	if len(targetLanguages) == 0 {
+		return (*TranslationOutput)(nil), "", fmt.Errorf("target language is required")
+	}
+	if sourceLang == "" {
+		sourceLang = sourceLangAuto
+	}
+
+	sourceLabel := "translation:" + normalizeProvider(s.cfg.Provider)
+	original := scraped.Clone()
+	output := &TranslationOutput{}
+	var warnings []string
+	processedTarget := false
+
+	for targetIndex, targetLang := range targetLanguages {
+		if sourceLang != sourceLangAuto && sourceLang == targetLang {
+			continue
+		}
+		processedTarget = true
+		translatedRecord := models.MovieTranslation{
+			Language:     targetLang,
+			SourceName:   sourceLabel,
+			SettingsHash: settingsHash,
+		}
+
+		plan := s.BuildTranslationPlan(original, targetLang, sourceLang, sourceLabel)
+		plan.ApplyToPrimary = s.cfg.ApplyToPrimary && targetIndex == 0
+		if len(plan.Fields) == 0 {
+			continue
+		}
+
+		texts := make([]string, 0, len(plan.Fields))
+		fieldNames := make([]string, 0, len(plan.Fields))
+		providerFields := make([]TranslationField, 0, len(plan.Fields))
+		results := make(TranslationResultMap, len(plan.Fields))
+		for _, field := range plan.Fields {
+			if field.Preset != nil {
+				results[fieldKey(field)] = *field.Preset
+				continue
+			}
+			texts = append(texts, field.Text)
+			fieldNames = append(fieldNames, fieldKey(field))
+			providerFields = append(providerFields, field)
+		}
+
+		if len(providerFields) > 0 {
+			translatedTexts, err := s.translateTexts(ctx, sourceLang, targetLang, texts, fieldNames)
+			if err != nil {
+				logging.Debugf("Translation: translateTexts failed for %s: %v", targetLang, err)
+				warning := sanitizeTranslationWarning(normalizeProvider(s.cfg.Provider), err)
+				return nil, warning, err
+			}
+			if len(translatedTexts) != len(providerFields) {
+				return nil, "", fmt.Errorf("translation provider returned %d items for %d inputs", len(translatedTexts), len(providerFields))
+			}
+			translatedTexts, qualityWarnings := s.retryLowQualitySlots(ctx, sourceLang, targetLang, providerFields, translatedTexts)
+			warnings = append(warnings, qualityWarnings...)
+			for i, field := range providerFields {
+				translated := strings.TrimSpace(translatedTexts[i])
+				if isTitleTranslationField(field.FieldName) {
+					if cleaned := cleanTitleForTranslation(translated); cleaned != "" {
+						translated = cleaned
+					}
+				}
+				if len(field.Placeholders) > 0 {
+					restored, ok := restoreNamePlaceholders(translated, field.Placeholders)
+					if !ok {
+						restored = field.FallbackText
+					}
+					translated = restored
+				}
+				results[fieldKey(field)] = translated
+			}
+		}
+		state := &translationState{}
+		if warningDetail := ApplyPlan(scraped, plan, results, &translatedRecord, state); warningDetail != "" {
+			warnings = append(warnings, targetLang+": "+warningDetail)
+		}
+		if len(state.actressTranslations) > 0 {
+			translatedRecord.Actresses = make([]string, len(original.Actresses))
+			for _, actress := range state.actressTranslations {
+				if actress.ActressIndex >= 0 && actress.ActressIndex < len(translatedRecord.Actresses) {
+					translatedRecord.Actresses[actress.ActressIndex] = actress.DisplayName
+				}
+			}
+		}
+		output.Movies = append(output.Movies, translatedRecord)
+		output.GenreTranslations = append(output.GenreTranslations, state.genreTranslations...)
+		output.ActressTranslations = append(output.ActressTranslations, state.actressTranslations...)
+	}
+
+	if len(output.Movies) == 0 {
+		if processedTarget {
+			return output, "", nil
+		}
+		return nil, "", nil
+	}
+	output.Movie = &output.Movies[0]
+	if len(warnings) == 0 {
+		return output, "", nil
+	}
+	warning := fmt.Sprintf("Translation (%s): %s", normalizeProvider(s.cfg.Provider), strings.Join(warnings, "; "))
+	logging.Warnf("Translation: %s", warning)
+	return output, warning, nil
+}
+
+func isTitleTranslationField(fieldName string) bool {
+	return fieldName == "title" || fieldName == "title_as_name"
+}
+
+func (s *Service) retryLowQualitySlots(ctx context.Context, sourceLang, targetLang string, fields []TranslationField, translated []string) ([]string, []string) {
+	if normalizeLanguage(targetLang) == "ja" {
+		return translated, nil
+	}
+	result := append([]string(nil), translated...)
+	var warnings []string
+	for i, field := range fields {
+		current := strings.TrimSpace(result[i])
+		if current == "" {
+			continue
+		}
+		personNeedsHangul := targetLang == "ko" && isPersonNameField(fieldKey(field)) && !containsHangul(current)
+		textHasJapanese := !isPersonNameField(fieldKey(field)) && containsResidualJapanese(current)
+		if !personNeedsHangul && !textHasJapanese {
+			continue
+		}
+
+		retried, err := s.translateTexts(ctx, sourceLang, targetLang, []string{field.Text}, []string{fieldKey(field)})
+		retryValue := ""
+		if err == nil && len(retried) == 1 {
+			retryValue = strings.TrimSpace(retried[0])
+		}
+		if personNeedsHangul {
+			if containsHangul(retryValue) {
+				result[i] = retryValue
+				continue
+			}
+			result[i] = field.Text
+			warnings = append(warnings, fmt.Sprintf("%s: LLM returned non-Hangul, kept source name", fieldKey(field)))
+			continue
+		}
+
+		if retryValue != "" && !containsResidualJapanese(retryValue) {
+			result[i] = retryValue
+			continue
+		}
+		if retryValue != "" && countResidualJapanese(retryValue) < countResidualJapanese(current) {
+			result[i] = retryValue
+		}
+		warnings = append(warnings, fmt.Sprintf("%s: LLM left untranslated Japanese, kept best partial", fieldKey(field)))
+	}
+	return result, warnings
+}
+
+// TargetLanguages returns normalized targets in configured order, removing blanks and duplicates.
 func (s *Service) TargetLanguages() []string {
 	if s == nil {
 		return nil
 	}
-	return s.targetLanguages()
-}
-
-func (s *Service) TranslateMovie(ctx context.Context, movie *models.Movie, settingsHash string) ([]models.MovieTranslation, string, error) {
-	if s == nil || movie == nil || !s.cfg.Enabled {
-		return nil, "", nil
+	raw := s.cfg.TargetLanguages
+	if len(raw) == 0 {
+		raw = []string{s.cfg.TargetLanguage}
 	}
-
-	movieID := movie.ID
-	ctx = context.WithValue(ctx, translationMovieIDKey{}, movieID)
-
-	targetLanguages := s.targetLanguages()
-	if len(targetLanguages) == 0 {
-		return nil, "", fmt.Errorf("target language is required")
-	}
-
-	sourceLang := normalizeLanguage(s.cfg.SourceLanguage)
-	if sourceLang == "" {
-		sourceLang = sourceLangAuto
-	}
-
-	type pendingText struct {
-		text       string
-		fieldName  string
-		targetLang string
-		isActress  bool
-		apply      func(string)
-	}
-
-	requests := make([]pendingText, 0)
-	records := make(map[string]*models.MovieTranslation)
-	touchedRecords := make(map[string]bool)
-
-	getRecord := func(lang string) *models.MovieTranslation {
-		if rec, ok := records[lang]; ok {
-			return rec
-		}
-		rec := &models.MovieTranslation{
-			Language:     lang,
-			SourceName:   "translation:" + normalizeProvider(s.cfg.Provider),
-			SettingsHash: settingsHash,
-		}
-		records[lang] = rec
-		return rec
-	}
-
-	queueField := func(lang, raw string, assignRecord func(string), assignMovie func(string), fieldName string) {
-		if sourceLang != sourceLangAuto && sourceLang == lang {
-			return
-		}
-		trimmed := strings.TrimSpace(raw)
-		if trimmed == "" {
-			return
-		}
-		touchedRecords[lang] = true
-		requests = append(requests, pendingText{
-			text:       trimmed,
-			fieldName:  fieldName,
-			targetLang: lang,
-			isActress:  strings.HasPrefix(fieldName, "actress["),
-			apply: func(translated string) {
-				assignRecord(translated)
-				if s.cfg.ApplyToPrimary && lang == targetLanguages[0] {
-					assignMovie(translated)
-				}
-			},
-		})
-	}
-
-	// Queue metadata fields for each target language — texts captured from ORIGINAL movie
-	fields := s.cfg.Fields
-
-	// Pre-pass: build JapaneseName → romanized name map so we can detect when the title
-	// is an actress name and substitute the romanized form instead of translating it.
-	actressJaNameToRomanized := make(map[string]string)
-	for i := range movie.Actresses {
-		if models.CanonicalizeUnknownActress(&movie.Actresses[i]) {
-			continue
-		}
-		actress := movie.Actresses[i]
-		jaName := strings.TrimSpace(actress.JapaneseName)
-		if jaName == "" {
-			continue
-		}
-		if lastName, firstName, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL); ok {
-			actressJaNameToRomanized[jaName] = joinName(lastName, firstName)
-		} else if actress.FirstName != "" && isLikelyRomanized(actress.FirstName) {
-			name := strings.TrimSpace(actress.FirstName)
-			if actress.LastName != "" && isLikelyRomanized(actress.LastName) {
-				name = strings.TrimSpace(actress.LastName) + " " + name
-			}
-			actressJaNameToRomanized[jaName] = name
-		}
-	}
-
-	// Per-actress transliteration source, resolved once. Romaji pins the correct
-	// kanji reading, so it is preferred over the Japanese name as LLM input:
-	// ① DMM actjpgs URL, ② scraper-provided romanization, ③ cleaned Japanese name.
-	// Empty entry → nothing usable, actress is skipped.
-	// A romaji source is additionally resolved to Hangul with the built-in
-	// transliteration table: for Korean the LLM is then bypassed entirely, so it
-	// can neither echo the romaji back nor substitute a different reading.
-	// The loop runs regardless of fields.Actresses because the Hangul names are
-	// also used to substitute actress names appearing inside the title.
-	actressSourceNames := make([]string, len(movie.Actresses))
-	actressHangulNames := make([]string, len(movie.Actresses))
-	for i := range movie.Actresses {
-		if models.CanonicalizeUnknownActress(&movie.Actresses[i]) {
-			logging.Debugf("Translation[%s]: actress[%d] skip — unknown placeholder", movieID, i)
-			continue
-		}
-		actress := movie.Actresses[i]
-		if lastName, firstName, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL); ok {
-			actressSourceNames[i] = joinName(lastName, firstName)
-		} else if jaName := strings.TrimSpace(actress.JapaneseName); jaName != "" {
-			if romanized := actressJaNameToRomanized[jaName]; romanized != "" {
-				actressSourceNames[i] = romanized
-			} else {
-				actressSourceNames[i] = cleanActressNameForTranslation(jaName)
-			}
-		}
-		if actressSourceNames[i] == "" {
-			logging.Debugf("Translation[%s]: actress[%d] skip — no usable source name (JapaneseName=%q ThumbURL=%q)", movieID, i, actress.JapaneseName, actress.ThumbURL)
-			continue
-		}
-		// A Hangul name already on the record (e.g. promoted in the DB) is used
-		// directly; otherwise a romaji source is transliterated via the table.
-		if hangul := hangulActressName(actress); hangul != "" {
-			actressHangulNames[i] = hangul
-		} else if isLikelyRomanized(actressSourceNames[i]) {
-			if hangul, ok := romajiToHangul(actressSourceNames[i]); ok {
-				actressHangulNames[i] = hangul
-			}
-		}
-		logging.Debugf("Translation[%s]: actress[%d] transliteration input %q (JapaneseName=%q, table=%q)", movieID, i, actressSourceNames[i], actress.JapaneseName, actressHangulNames[i])
-	}
-
-	// Bracketed VR tags ("[VR]", "【8K VR】") and shop-promotion tags ("[FANZA 限定]",
-	// "[数量限定]") are dropped before translation — they label the release, not the work.
-	cleanedTitle := cleanTitleForTranslation(movie.Title)
-	titleForTranslation := cleanedTitle
-
-	// Store promotions / platform notices are stripped from the description so they
-	// are never translated into the output.
-	descriptionForTranslation := movie.Description
-	if fields.Description {
-		descriptionForTranslation = cleanDescriptionForTranslation(movie.Description)
-		if descriptionForTranslation != strings.TrimSpace(movie.Description) {
-			logging.Debugf("Translation[%s]: description promotional text removed before translation", movieID)
-		}
-	}
-	descriptionPromotionalOnly := fields.Description && descriptionForTranslation == "" && strings.TrimSpace(movie.Description) != ""
-
-	// Actress names appearing inside the title or description are pinned to their
-	// table-confirmed Hangul reading so those fields and the actress fields always
-	// agree on the same transliteration (伊藤舞雪 → 이토 마유키, never a guessed
-	// reading). Each actress with a Hangul reading gets a stable ⟦N⟧ token; the LLM
-	// receives the placeholder form (an opaque token survives the round-trip far
-	// better than embedded Hangul, which local models "correct" to 히비キ etc.) and
-	// the token is restored afterwards. applyNameSubs returns the Hangul form, the
-	// placeholder form, and the token→Hangul map for the tokens it actually used.
-	type nameSub struct{ jaName, hangul, token string }
-	nameSubs := make([]nameSub, 0, len(movie.Actresses))
-	for i := range movie.Actresses {
-		if actressHangulNames[i] == "" {
-			continue
-		}
-		jaName := strings.TrimSpace(movie.Actresses[i].JapaneseName)
-		if jaName == "" {
-			continue
-		}
-		nameSubs = append(nameSubs, nameSub{jaName, actressHangulNames[i], fmt.Sprintf("⟦%d⟧", len(nameSubs))})
-	}
-	applyNameSubs := func(src string) (hangulVer, placeheldVer string, tokens map[string]string) {
-		hangulVer, placeheldVer = src, src
-		tokens = make(map[string]string)
-		for _, sub := range nameSubs {
-			if !strings.Contains(hangulVer, sub.jaName) {
-				continue
-			}
-			hangulVer = strings.ReplaceAll(hangulVer, sub.jaName, sub.hangul)
-			placeheldVer = strings.ReplaceAll(placeheldVer, sub.jaName, sub.token)
-			tokens[sub.token] = sub.hangul
-			logging.Debugf("Translation[%s]: substituted actress %q → Hangul %q (placeholder %q)", movieID, sub.jaName, sub.hangul, sub.token)
-		}
-		return
-	}
-
-	koTitleHangul, koTitlePlaceheld, titleTokens := applyNameSubs(cleanedTitle)
-	koDescHangul, koDescPlaceheld, descTokens := applyNameSubs(descriptionForTranslation)
-	// koTitleDirect: the title WAS only the actress name(s) — final without an LLM call.
-	koTitleDirect := len(titleTokens) > 0 && !containsTranslatableText(koTitleHangul)
-
-	// When the title is an actress name, queue it under the title_as_name label so the
-	// person-name prompt rule guarantees phonetic transliteration (never a semantic
-	// translation like 夏 → 여름). Romaji, when known, replaces the input because it
-	// pins the correct reading of the kanji.
-	titleFieldName := "title"
-	if normTitle := strings.TrimSpace(titleForTranslation); normTitle != "" {
-		for _, actress := range movie.Actresses {
-			if strings.TrimSpace(actress.JapaneseName) != normTitle {
-				continue
-			}
-			titleFieldName = fieldNameTitleAsName
-			if romanized := actressJaNameToRomanized[normTitle]; romanized != "" {
-				titleForTranslation = romanized
-			}
-			logging.Debugf("Translation[%s]: title %q matches actress JapaneseName → transliterating as person name (input %q)", movieID, normTitle, titleForTranslation)
-			break
-		}
-	}
-
-	for _, lang := range targetLanguages {
-		rec := getRecord(lang)
-		if fields.Title {
-			switch {
-			case lang == "ko" && koTitleDirect:
-				rec.Title = koTitleHangul
-				touchedRecords[lang] = true
-				if s.cfg.ApplyToPrimary && lang == targetLanguages[0] {
-					movie.Title = koTitleHangul
-				}
-			case lang == "ko" && len(titleTokens) > 0:
-				queueField(lang, koTitlePlaceheld, func(v string) { rec.Title = v }, func(v string) { movie.Title = v }, "title")
-			default:
-				queueField(lang, titleForTranslation, func(v string) { rec.Title = v }, func(v string) { movie.Title = v }, titleFieldName)
-			}
-		}
-		if fields.OriginalTitle {
-			queueField(lang, movie.OriginalTitle, func(v string) { rec.OriginalTitle = v }, func(v string) { movie.OriginalTitle = v }, "original_title")
-		}
-		if fields.Description {
-			descInput := descriptionForTranslation
-			if lang == "ko" && len(descTokens) > 0 {
-				descInput = koDescPlaceheld
-			}
-			queueField(lang, descInput, func(v string) { rec.Description = v }, func(v string) { movie.Description = v }, "description")
-		}
-		if fields.Director {
-			queueField(lang, movie.Director, func(v string) { rec.Director = v }, func(v string) { movie.Director = v }, "director")
-		}
-		if fields.Maker {
-			queueField(lang, movie.Maker, func(v string) { rec.Maker = v }, func(v string) { movie.Maker = v }, "maker")
-		}
-		if fields.Label {
-			queueField(lang, movie.Label, func(v string) { rec.Label = v }, func(v string) { movie.Label = v }, "label")
-		}
-		if fields.Series {
-			queueField(lang, movie.Series, func(v string) { rec.Series = v }, func(v string) { movie.Series = v }, "series")
-		}
-		if fields.Genres {
-			for i := range movie.Genres {
-				idx := i
-				queueField(lang, movie.Genres[idx].Name, func(string) {}, func(v string) { movie.Genres[idx].Name = v }, fmt.Sprintf("genre[%d]", i))
-			}
-		}
-		if fields.Actresses {
-			if rec.Actresses == nil {
-				rec.Actresses = make([]string, len(movie.Actresses))
-			}
-			for i := range movie.Actresses {
-				idx := i
-				actress := &movie.Actresses[idx]
-				if models.CanonicalizeUnknownActress(actress) {
-					rec.Actresses[idx] = models.UnknownActressName
-					continue
-				}
-				if actressSourceNames[idx] == "" {
-					continue
-				}
-				if lang == "ko" && actressHangulNames[idx] != "" {
-					// Table-resolved reading — assigned directly, no LLM slot.
-					rec.Actresses[idx] = actressHangulNames[idx]
-					touchedRecords[lang] = true
-					if s.cfg.ApplyToPrimary && lang == targetLanguages[0] {
-						replaceActressName(actress, actressHangulNames[idx])
-					}
-					continue
-				}
-				queueField(lang, actressSourceNames[idx],
-					func(v string) { rec.Actresses[idx] = v },
-					func(v string) { replaceActressName(actress, v) },
-					fmt.Sprintf("actress[%d]", idx))
-			}
-		}
-	}
-
-	if len(requests) == 0 && len(touchedRecords) == 0 && !movieTranslationRecordsHaveContent(records) {
-		if descriptionPromotionalOnly && s.cfg.ApplyToPrimary {
-			movie.Description = ""
-		}
-		return nil, "", nil
-	}
-
-	// Group requests by target language and execute one batch per language.
-	requestsByLang := make(map[string][]int)
-	for i := range requests {
-		requestsByLang[requests[i].targetLang] = append(requestsByLang[requests[i].targetLang], i)
-	}
-
-	var warnings []string
-	for lang, indexes := range requestsByLang {
-		texts := make([]string, 0, len(indexes))
-		fieldNames := make([]string, 0, len(indexes))
-		for _, idx := range indexes {
-			texts = append(texts, requests[idx].text)
-			fieldNames = append(fieldNames, requests[idx].fieldName)
-		}
-
-		translatedTexts, err := s.translateTexts(ctx, sourceLang, lang, texts, fieldNames)
-		if err != nil {
-			logging.Debugf("Translation[%s]: translateTexts failed: %v", movieID, err)
-			warning := sanitizeTranslationWarning(normalizeProvider(s.cfg.Provider), err)
-			return nil, warning, err
-		}
-		if len(translatedTexts) != len(indexes) {
-			logging.Debugf("Translation[%s]: count mismatch - got %d, expected %d", movieID, len(translatedTexts), len(indexes))
-			return nil, "", fmt.Errorf("translation provider returned %d items for %d inputs", len(translatedTexts), len(indexes))
-		}
-
-		// Per-slot quality retries for non-Japanese targets:
-		//   - person-name slots (Korean) that came back without Hangul — the model
-		//     echoed the romaji input instead of transliterating it.
-		//   - free-text slots that still contain untranslated Japanese kana/kanji
-		//     (the model translated most of the text but left fragments, e.g. すぎる).
-		// Both retry the offending slots individually; on persistent failure we keep
-		// the best available text rather than failing the batch.
-		if normalizeLanguage(lang) != "ja" {
-			var retries []slotRetry
-			for i, reqIdx := range indexes {
-				translated := strings.TrimSpace(translatedTexts[i])
-				if translated == "" {
-					continue
-				}
-				switch {
-				case lang == "ko" && isPersonNameField(requests[reqIdx].fieldName) && !containsHangul(translated):
-					logging.Debugf("Translation[%s]: non-Hangul result %q for %s, retrying slot individually", movieID, translated, requests[reqIdx].fieldName)
-					retries = append(retries, slotRetry{pos: i, kind: retryPersonName})
-				case !isPersonNameField(requests[reqIdx].fieldName) && containsResidualJapanese(translated):
-					logging.Debugf("Translation[%s]: residual Japanese in %s result %q, retrying slot individually", movieID, requests[reqIdx].fieldName, translated)
-					retries = append(retries, slotRetry{pos: i, kind: retryResidual})
-				}
-			}
-			if len(retries) > 0 {
-				retryTexts := make([]string, len(retries))
-				retryFields := make([]string, len(retries))
-				for j, r := range retries {
-					retryTexts[j] = requests[indexes[r.pos]].text
-					retryFields[j] = requests[indexes[r.pos]].fieldName
-				}
-				retried, retryErr := s.translateTextsOneByOne(ctx, sourceLang, lang, retryTexts, retryFields)
-				if retryErr != nil {
-					logging.Debugf("Translation[%s]: per-slot retry failed: %v", movieID, retryErr)
-				}
-				for j, r := range retries {
-					fieldName := requests[indexes[r.pos]].fieldName
-					var retryVal string
-					if retryErr == nil {
-						retryVal = strings.TrimSpace(retried[j])
-					}
-					switch r.kind {
-					case retryPersonName:
-						if retryVal != "" && containsHangul(retryVal) {
-							translatedTexts[r.pos] = retryVal
-							continue
-						}
-						translatedTexts[r.pos] = requests[indexes[r.pos]].text
-						warnings = append(warnings, fmt.Sprintf("%s: LLM returned non-Hangul, kept source name", fieldName))
-					case retryResidual:
-						// Accept the retry only if it removed all residual Japanese.
-						if retryVal != "" && !containsResidualJapanese(retryVal) {
-							translatedTexts[r.pos] = retryVal
-							continue
-						}
-						// Otherwise keep whichever partial has less leftover Japanese —
-						// never revert to the fully-Japanese source text.
-						current := strings.TrimSpace(translatedTexts[r.pos])
-						if retryVal != "" && countResidualJapanese(retryVal) < countResidualJapanese(current) {
-							translatedTexts[r.pos] = retryVal
-						}
-						warnings = append(warnings, fmt.Sprintf("%s: LLM left untranslated Japanese, kept best partial", fieldName))
-					}
-				}
-			}
-		}
-
-		for i, reqIdx := range indexes {
-			raw := translatedTexts[i]
-			translated := strings.TrimSpace(raw)
-			if translated == "" {
-				if requests[reqIdx].isActress {
-					logging.Debugf("Translation[%s]: empty result for %s (original=%q, raw=%q), non-person name — using Unknown", movieID, requests[reqIdx].fieldName, requests[reqIdx].text, raw)
-					warnings = append(warnings, fmt.Sprintf("%s: non-person name, set to Unknown", requests[reqIdx].fieldName))
-					translated = models.UnknownActressName
-				} else {
-					logging.Debugf("Translation[%s]: empty result for %s (original=%q, raw=%q), falling back to original", movieID, requests[reqIdx].fieldName, requests[reqIdx].text, raw)
-					warnings = append(warnings, fmt.Sprintf("%s: empty translation, kept original", requests[reqIdx].fieldName))
-					translated = requests[reqIdx].text
-				}
-			} else if requests[reqIdx].isActress && models.IsUnknownActressName(translated) {
-				translated = models.UnknownActressName
-			}
-			// Restore actress-name placeholders to their Hangul. If the model dropped
-			// a placeholder, fall back to the direct Hangul field so the name is never
-			// lost (surrounding text may stay untranslated).
-			switch {
-			case isTitleTranslationField(requests[reqIdx].fieldName):
-				cleanedTitle := cleanTitleForTranslation(translated)
-				if cleanedTitle != "" {
-					translated = cleanedTitle
-				} else {
-					translated = requests[reqIdx].text
-				}
-				if lang == "ko" && len(titleTokens) > 0 {
-					restored, ok := restoreNamePlaceholders(translated, titleTokens)
-					if !ok {
-						logging.Debugf("Translation[%s]: title placeholder missing in LLM output %q, using Hangul fallback", movieID, translated)
-						restored = koTitleHangul
-					}
-					translated = restored
-				}
-			case requests[reqIdx].fieldName == "description":
-				if lang == "ko" && len(descTokens) > 0 {
-					restored, ok := restoreNamePlaceholders(translated, descTokens)
-					if !ok {
-						logging.Debugf("Translation[%s]: description placeholder missing in LLM output %q, using Hangul fallback", movieID, translated)
-						restored = koDescHangul
-					}
-					translated = restored
-				}
-			}
-			requests[reqIdx].apply(translated)
-		}
-	}
-
-	var warning string
-	if len(warnings) > 0 {
-		warning = fmt.Sprintf("Translation (%s): %s", normalizeProvider(s.cfg.Provider), strings.Join(warnings, "; "))
-		logging.Warnf("Translation[%s]: %s", movieID, warning)
-	}
-	if descriptionPromotionalOnly && s.cfg.ApplyToPrimary {
-		movie.Description = ""
-	}
-
-	// Collect output records in target-language order
-	out := make([]models.MovieTranslation, 0, len(records))
-	seen := make(map[string]bool)
-	for _, lang := range targetLanguages {
-		rec, ok := records[lang]
-		if !ok || seen[lang] {
-			continue
-		}
-		if touchedRecords[lang] || movieTranslationHasContent(*rec) {
-			out = append(out, *rec)
-			seen[lang] = true
-		}
-	}
-
-	if len(out) == 0 {
-		return nil, warning, nil
-	}
-	return out, warning, nil
-}
-
-// TranslateTitles translates a batch of standalone titles into the primary target
-// language, returning translated titles and falling back to the original text on any
-// failure. Used to make multi-result candidate titles readable in the picker.
-func (s *Service) TranslateTitles(ctx context.Context, texts []string) ([]string, error) {
-	if s == nil || !s.cfg.Enabled || len(texts) == 0 {
-		return texts, nil
-	}
-	targets := s.targetLanguages()
-	if len(targets) == 0 {
-		return texts, nil
-	}
-	targetLang := targets[0]
-	sourceLang := normalizeLanguage(s.cfg.SourceLanguage)
-	if sourceLang == "" {
-		sourceLang = sourceLangAuto
-	}
-	if sourceLang != sourceLangAuto && sourceLang == normalizeLanguage(targetLang) {
-		return texts, nil
-	}
-
-	fieldNames := make([]string, len(texts))
-	for i := range fieldNames {
-		fieldNames[i] = "title"
-	}
-	translated, err := s.translateTexts(ctx, sourceLang, targetLang, texts, fieldNames)
-	if err != nil || len(translated) != len(texts) {
-		return texts, err
-	}
-	out := make([]string, len(texts))
-	for i := range texts {
-		if t := strings.TrimSpace(translated[i]); t != "" {
-			out[i] = t
-		} else {
-			out[i] = texts[i]
-		}
-	}
-	return out, nil
-}
-
-func (s *Service) targetLanguages() []string {
-	if len(s.cfg.TargetLanguages) == 0 {
-		lang := normalizeLanguage(s.cfg.TargetLanguage)
+	seen := make(map[string]struct{}, len(raw))
+	targets := make([]string, 0, len(raw))
+	for _, value := range raw {
+		lang := normalizeLanguage(value)
 		if lang == "" {
-			return nil
-		}
-		return []string{lang}
-	}
-
-	languages := make([]string, 0, len(s.cfg.TargetLanguages))
-	seen := make(map[string]bool, len(s.cfg.TargetLanguages))
-	for _, raw := range s.cfg.TargetLanguages {
-		lang := normalizeLanguage(raw)
-		if lang == "" || seen[lang] {
 			continue
 		}
-		seen[lang] = true
-		languages = append(languages, lang)
-	}
-	return languages
-}
-
-func movieTranslationHasContent(record models.MovieTranslation) bool {
-	if record.Title != "" || record.OriginalTitle != "" || record.Description != "" || record.Director != "" || record.Maker != "" || record.Label != "" || record.Series != "" {
-		return true
-	}
-	for _, actress := range record.Actresses {
-		if strings.TrimSpace(actress) != "" {
-			return true
+		if _, exists := seen[lang]; exists {
+			continue
 		}
+		seen[lang] = struct{}{}
+		targets = append(targets, lang)
 	}
-	return false
+	return targets
 }
 
-func movieTranslationRecordsHaveContent(records map[string]*models.MovieTranslation) bool {
-	for _, record := range records {
-		if record != nil && movieTranslationHasContent(*record) {
-			return true
-		}
+// TranslateTitles translates a list of candidate titles as semantic title
+// slots.  It is used by re-scrape candidate previews.
+func (s *Service) TranslateTitles(ctx context.Context, titles []string) ([]string, error) {
+	result := append([]string(nil), titles...)
+	if s == nil || !s.cfg.Enabled || len(titles) == 0 {
+		return result, nil
 	}
-	return false
+	targets := s.TargetLanguages()
+	if len(targets) == 0 {
+		return result, nil
+	}
+	source := normalizeLanguage(s.cfg.SourceLanguage)
+	if source == "" {
+		source = sourceLangAuto
+	}
+	if source != sourceLangAuto && source == targets[0] {
+		return result, nil
+	}
+	fields := make([]string, len(titles))
+	for i := range fields {
+		fields[i] = fmt.Sprintf("title[%d]", i)
+	}
+	return s.translateTexts(ctx, source, targets[0], titles, fields)
 }
 
-// CleanActressName strips descriptive extras (brackets, "name, age, occupation",
-// middle-dot extras, " N歳..." suffixes, honorific-preceded descriptions) from an
-// actress name so callers outside this package can recover the bare performer name.
-func CleanActressName(name string) string {
-	return cleanActressNameForTranslation(name)
-}
-
-// CleanActressInfo applies the shared actress fallback cleanup used by
-// aggregation and explicit actress sync. It returns true when any field changed.
-func CleanActressInfo(info *models.ActressInfo) bool {
-	if info == nil {
-		return false
+// TranslateActresses runs the movie translation pipeline for actress names
+// only and returns the per-language movie records used by sync persistence.
+func (s *Service) TranslateActresses(ctx context.Context, actresses []models.Actress, settingsHash string) ([]models.Actress, []models.MovieTranslation, string, error) {
+	cloned := append([]models.Actress(nil), actresses...)
+	movie := &models.Movie{ID: "actress-sync", Actresses: cloned}
+	output, warning, err := s.TranslateMovie(ctx, movie, settingsHash)
+	if output == nil {
+		return movie.Actresses, nil, warning, err
 	}
-	before := *info
-	info.JapaneseName = cleanActressNameForTranslation(info.JapaneseName)
-	info.FirstName = cleanActressNameForTranslation(info.FirstName)
-	info.LastName = cleanActressNameForTranslation(info.LastName)
-	if models.IsDescriptiveNonName(info.LastName, info.FirstName, info.JapaneseName) {
-		info.FirstName = models.UnknownActressName
-		info.LastName = ""
-		info.JapaneseName = models.UnknownActressName
-		info.ThumbURL = ""
-	} else {
-		models.CanonicalizeUnknownActressInfo(info)
-	}
-	return before.FirstName != info.FirstName || before.LastName != info.LastName ||
-		before.JapaneseName != info.JapaneseName || before.ThumbURL != info.ThumbURL
-}
-
-// CleanStoredActress applies the same fallback cleanup to an existing DB row.
-func CleanStoredActress(actress *models.Actress) bool {
-	if actress == nil {
-		return false
-	}
-	before := *actress
-	actress.JapaneseName = cleanActressNameForTranslation(actress.JapaneseName)
-	if before.JapaneseName != actress.JapaneseName {
-		actress.FirstName = ""
-		actress.LastName = ""
-	}
-	actress.FirstName = cleanActressNameForTranslation(actress.FirstName)
-	actress.LastName = cleanActressNameForTranslation(actress.LastName)
-	if models.IsDescriptiveNonName(actress.LastName, actress.FirstName, actress.JapaneseName) {
-		actress.FirstName = models.UnknownActressName
-		actress.LastName = ""
-		actress.JapaneseName = models.UnknownActressName
-		actress.ThumbURL = ""
-	} else {
-		models.CanonicalizeUnknownActress(actress)
-	}
-	return before.FirstName != actress.FirstName || before.LastName != actress.LastName ||
-		before.JapaneseName != actress.JapaneseName || before.ThumbURL != actress.ThumbURL
-}
-
-// cleanActressNameForTranslation strips descriptive extras from actress name strings
-// before sending to the LLM. Handles multiple patterns scrapers append to names.
-func cleanActressNameForTranslation(name string) string {
-	name = strings.TrimSpace(name)
-
-	// "[name]" → "name"
-	if strings.HasPrefix(name, "[") {
-		if end := strings.LastIndex(name, "]"); end > 0 {
-			name = strings.TrimSpace(name[1:end])
-		}
-	}
-
-	// "name, age, occupation" → "name"
-	if idx := strings.Index(name, ","); idx >= 0 {
-		name = strings.TrimSpace(name[:idx])
-	}
-
-	// "りむ・Hカップ 20歳..." → "りむ"  (middle-dot separates name from extras)
-	if idx := strings.Index(name, "・"); idx >= 0 {
-		name = strings.TrimSpace(name[:idx])
-	}
-
-	// "カレン 25歳 歯科衛生士" → "カレン"  (age suffix and everything after)
-	name = strings.TrimSpace(ageOccupationSuffixRE.ReplaceAllString(name, ""))
-
-	honorifics := []string{"ちゃん", "くん", "さん", "様", "氏", "君"}
-
-	// "高身長172cmショート× Gカップ豹変アクメギャル メイちゃん" → "メイちゃん": a trailing token
-	// that ends with a Japanese honorific IS the name; preceding tokens are description.
-	if tokens := strings.Fields(name); len(tokens) > 1 {
-		last := tokens[len(tokens)-1]
-		for _, sfx := range honorifics {
-			if strings.HasSuffix(last, sfx) {
-				name = last
-				break
-			}
-		}
-	}
-
-	// Drop occupation/attribute descriptor tokens, keeping the name token(s):
-	// "愛梨沙 西麻布ラウンジ勤務" → "愛梨沙". Japanese (kana/kanji) values only, so a
-	// romanized "Yui Hatano" keeps both name parts.
-	if containsResidualJapanese(name) {
-		if tokens := strings.Fields(name); len(tokens) > 1 {
-			kept := make([]string, 0, len(tokens))
-			for _, t := range tokens {
-				if models.ContainsDescriptorKeyword(t) {
-					continue
-				}
-				kept = append(kept, t)
-			}
-			if len(kept) > 0 {
-				name = strings.Join(kept, " ")
-			}
-		}
-	}
-
-	// Strip a trailing honorific attached to the bare name: "ありささん" → "ありさ",
-	// "メイちゃん" → "メイ". Longest suffix checked first.
-	for _, sfx := range honorifics {
-		if strings.HasSuffix(name, sfx) && len([]rune(name)) > len([]rune(sfx)) {
-			name = strings.TrimSuffix(name, sfx)
-			break
-		}
-	}
-
-	return strings.TrimSpace(name)
-}
-
-var descriptionPromoStoreRE = regexp.MustCompile(`(?:特集\s*)?最新作やセール商品など、お得な情報満載[の의]\s*『[^』]*KMPストア[^』]*』はこちら！?`)
-
-var descriptionPromotionalAnchors = []string{
-	"※この作品はバイノーラル録音されております",
-	"※ この作品はバイノーラル録音されております",
-	"※この商品は専用プレイヤーでの視聴に最適化されています",
-	"※ この商品は専用プレイヤーでの視聴に最適化されています",
-	"※VR専用作品は必ず下記リンクより動作環境・対応デバイス",
-	"※ VR専用作品は必ず下記リンクより動作環境・対応デバイス",
-	"「動作環境・対応デバイス」について",
-	"※ 配信方法によって収録内容が異なる場合があります",
-	"※配信方法によって収録内容が異なる場合があります",
-	"特集 最新作やセール商品など、お得な情報満載",
-	"最新作やセール商品など、お得な情報満載",
-}
-
-// cleanDescriptionForTranslation removes platform notices and store promotions
-// that should not be translated into the output description.
-func cleanDescriptionForTranslation(description string) string {
-	description = strings.TrimSpace(description)
-	if description == "" {
-		return ""
-	}
-
-	cutAt := len(description)
-	for _, anchor := range descriptionPromotionalAnchors {
-		if idx := strings.Index(description, anchor); idx >= 0 && idx < cutAt {
-			cutAt = idx
-		}
-	}
-	if cutAt < len(description) {
-		description = strings.TrimSpace(description[:cutAt])
-	}
-
-	description = descriptionPromoStoreRE.ReplaceAllString(description, "")
-	description = asciiSpaceRunRE.ReplaceAllString(description, " ")
-	return strings.TrimSpace(description)
-}
-
-// vrMarkerRE matches bracketed VR tags like [VR], [8K VR], 【VR】, ［4K VR］, （VR）.
-// Only bracketed marker tokens are removed; a bare "VR" inside the title text is kept
-// because there it carries meaning rather than labeling the release format.
-var vrMarkerRE = regexp.MustCompile(`[\[【［(（][\s　]*(?:\d+[\s　]*[KkＫｋ][\s　]*)?[VvＶｖ][RrＲｒ](?:[\s　]*(?:専用|動画|作品))?[\s　]*[\]】］)）]`)
-
-var asciiSpaceRunRE = regexp.MustCompile(`[ \t]{2,}`)
-
-// cleanTitleForTranslation strips release-format and sales-channel markers from a
-// title before translation: bracketed VR tags ([VR], 【8K VR】) and shop-promotion
-// tags ([FANZA 限定], [数量限定]). Neither describes the work itself.
-func cleanTitleForTranslation(title string) string {
-	return stripPromoMarkers(stripVRMarkers(title))
-}
-
-// stripVRMarkers removes bracketed VR format tags from a title before translation.
-// Scraped metadata often carries tags like "[VR]" or "【8K VR】" that may not match
-// the actual file, so they are dropped from the translated title.
-func stripVRMarkers(title string) string {
-	if !vrMarkerRE.MatchString(title) {
-		return title
-	}
-	cleaned := vrMarkerRE.ReplaceAllString(title, "")
-	cleaned = asciiSpaceRunRE.ReplaceAllString(cleaned, " ")
-	return strings.TrimSpace(cleaned)
-}
-
-// promoMarkerRE matches bracketed shop-promotion tags like [FANZA 限定], [数量限定],
-// 【期間限定セール】. Only brackets whose content carries a promo keyword are removed;
-// meaningful brackets (series names etc.) are kept.
-var promoMarkerRE = regexp.MustCompile(`[\[【［(（][^\]】］)）]*(?:限定|特典|セール|キャンペーン|独占|割引)[^\]】］)）]*[\]】］)）]`)
-
-// stripPromoMarkers removes bracketed shop-promotion tags from a title before
-// translation. They advertise the sales channel, not the work, so they do not
-// belong in the translated title.
-func stripPromoMarkers(title string) string {
-	if !promoMarkerRE.MatchString(title) {
-		return title
-	}
-	cleaned := promoMarkerRE.ReplaceAllString(title, "")
-	cleaned = asciiSpaceRunRE.ReplaceAllString(cleaned, " ")
-	return strings.TrimSpace(cleaned)
+	return movie.Actresses, output.Movies, warning, err
 }
 
 func normalizeProvider(provider string) string {
@@ -905,12 +688,14 @@ func normalizeProvider(provider string) string {
 }
 
 func sanitizeTranslationWarning(provider string, err error) string {
-	var te *TranslationError
+	var te *translationError
 	if errors.As(err, &te) && te.Kind == TranslationErrorHTTPStatus {
 		logging.Warnf("Translation (%s): HTTP %d error", provider, te.StatusCode)
 		switch {
 		case te.StatusCode == 429:
 			return "Translation failed: rate limited, try again later"
+		case te.StatusCode == 401:
+			return "Translation failed: unauthorized, check API key"
 		case te.StatusCode == 403:
 			return "Translation failed: access denied, check API key"
 		case te.StatusCode >= 500:
@@ -929,260 +714,31 @@ func normalizeLanguage(language string) string {
 	return strings.ToLower(strings.TrimSpace(language))
 }
 
-// ageOccupationSuffixRE matches " N歳..." suffixes (ASCII or full-width digits).
-// These are descriptive extras appended to actress names by some scrapers.
-var ageOccupationSuffixRE = regexp.MustCompile(`\s+[0-9０-９]+歳.*`)
-
-var longVowelReplacer = strings.NewReplacer(
-	"ā", "a", "Ā", "A",
-	"ū", "u", "Ū", "U",
-	"ō", "o", "Ō", "O",
-	"ē", "e", "Ē", "E",
-	"ī", "i", "Ī", "I",
-)
-
-// nihonshikiToHepburn converts DMM actjpgs URL romanization (Nihon-shiki) to
-// standard Hepburn. Compound digraphs are listed before their single-character
-// prefixes so the replacer matches the longer form first.
-var nihonshikiToHepburn = strings.NewReplacer(
-	"sya", "sha", "syu", "shu", "syo", "sho",
-	"tya", "cha", "tyu", "chu", "tyo", "cho",
-	"zya", "ja", "zyu", "ju", "zyo", "jo",
-	"si", "shi",
-	"ti", "chi",
-	"tu", "tsu",
-	"zi", "ji",
-	"hu", "fu",
-)
-
-func normalizeRomanizationToASCII(s string) string {
-	return longVowelReplacer.Replace(s)
-}
-
-// isLikelyRomanized returns true when s contains only ASCII or Latin Extended
-// characters (U+0000–U+024F). Rejects Hangul, CJK, kana, and other scripts
-// so we never treat a non-romanized name as a valid romanization substitute.
-func isLikelyRomanized(s string) bool {
-	for _, r := range s {
-		if r > 0x024F {
-			return false
-		}
+func actressDisplayTitle(actress models.Actress) string {
+	if strings.TrimSpace(actress.JapaneseName) != "" {
+		return actress.JapaneseName
 	}
-	return true
+	return strings.TrimSpace(strings.TrimSpace(actress.LastName) + " " + strings.TrimSpace(actress.FirstName))
 }
 
-// containsTranslatableText reports whether s still carries Japanese or Latin
-// content that needs LLM translation. Hangul, digits, and punctuation alone
-// do not.
-func containsTranslatableText(s string) bool {
-	for _, r := range s {
-		switch {
-		case r >= 0x3040 && r <= 0x30FF: // hiragana + katakana
-			return true
-		case r >= 0x3400 && r <= 0x4DBF, r >= 0x4E00 && r <= 0x9FFF: // CJK ideographs
-			return true
-		case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z':
-			return true
-		}
-	}
-	return false
-}
-
-// restoreNamePlaceholders replaces every ⟦N⟧ placeholder token in text with its
-// Hangul name. It reports ok=false when any expected token is absent from text
-// (the model dropped or mangled it), so the caller can fall back.
-func restoreNamePlaceholders(text string, placeholders map[string]string) (string, bool) {
-	ok := true
-	for token, hangul := range placeholders {
-		if !strings.Contains(text, token) {
-			ok = false
-			continue
-		}
-		text = replaceNameToken(text, token, hangul)
-	}
-	return text, ok
-}
-
-// replaceNameToken replaces every occurrence of token with hangul and, because the
-// LLM chose any following Korean particle to agree with the opaque token (not the
-// real name), fixes that particle to agree with the restored name's final syllable
-// (이토 마유키 + 이 → 가).
-func replaceNameToken(text, token, hangul string) string {
-	hasBatchim, jong := lastSyllableBatchim(hangul)
-	var b strings.Builder
-	for {
-		idx := strings.Index(text, token)
-		if idx < 0 {
-			b.WriteString(text)
-			break
-		}
-		b.WriteString(text[:idx])
-		b.WriteString(hangul)
-		text = correctLeadingParticle(text[idx+len(token):], hasBatchim, jong)
-	}
-	return b.String()
-}
-
-// lastSyllableBatchim reports whether the last Hangul syllable of s has a final
-// consonant (batchim) and that consonant's jongseong index (8 == ㄹ).
-func lastSyllableBatchim(s string) (bool, int) {
-	var last rune
-	for _, r := range s {
-		if r >= 0xAC00 && r <= 0xD7A3 {
-			last = r
-		}
-	}
-	if last == 0 {
-		return false, 0
-	}
-	jong := int((last - 0xAC00) % 28)
-	return jong != 0, jong
-}
-
-// koParticlePairs maps each allomorph of a Korean particle to {batchimForm,
-// vowelForm}. The correct form depends on whether the preceding noun ends in a
-// final consonant.
-var koParticlePairs = map[rune][2]rune{
-	'은': {'은', '는'}, '는': {'은', '는'}, // topic
-	'이': {'이', '가'}, '가': {'이', '가'}, // subject
-	'을': {'을', '를'}, '를': {'을', '를'}, // object
-	'과': {'과', '와'}, '와': {'과', '와'}, // and/with
-	'아': {'아', '야'}, '야': {'아', '야'}, // vocative
-}
-
-// correctLeadingParticle fixes a Korean particle at the start of s so it agrees
-// with a preceding noun whose final consonant is described by hasBatchim/jong.
-// Only a particle directly attached to the name (no space) is touched.
-func correctLeadingParticle(s string, hasBatchim bool, jong int) string {
-	if s == "" {
-		return s
-	}
-
-	// 으로 / 로 (means/direction): ㄹ-batchim (jong 8) behaves like no batchim.
-	if strings.HasPrefix(s, "으로") || strings.HasPrefix(s, "로") {
-		body := strings.TrimPrefix(s, "으로")
-		if body == s {
-			body = strings.TrimPrefix(s, "로")
-		}
-		if hasBatchim && jong != 8 {
-			return "으로" + body
-		}
-		return "로" + body
-	}
-
-	// Single-syllable allomorph particles.
-	for _, r := range s {
-		if pair, ok := koParticlePairs[r]; ok {
-			want := pair[1]
-			if hasBatchim {
-				want = pair[0]
-			}
-			if want != r {
-				return string(want) + s[len(string(r)):]
-			}
-		}
-		break
-	}
-	return s
-}
-
-// isPersonNameField reports whether the labeled slot carries a performer's name:
-// actress[N] batch entries and a title queued under the title_as_name label.
-func isPersonNameField(fieldName string) bool {
-	return strings.HasPrefix(fieldName, "actress[") || fieldName == fieldNameTitleAsName
-}
-
-func isTitleTranslationField(fieldName string) bool {
-	return fieldName == "title" || fieldName == fieldNameTitleAsName
-}
-
-// containsHangul reports whether s contains at least one Hangul syllable.
-func containsHangul(s string) bool {
-	for _, r := range s {
-		if r >= 0xAC00 && r <= 0xD7A3 {
-			return true
-		}
-	}
-	return false
-}
-
-// retryKind distinguishes the two per-slot translation retries.
-type retryKind int
-
-const (
-	retryPersonName retryKind = iota // Korean person-name slot returned without Hangul
-	retryResidual                    // free-text slot still contains untranslated Japanese
-)
-
-// slotRetry identifies a translated slot to re-request individually and why.
-type slotRetry struct {
-	pos  int
-	kind retryKind
-}
-
-// isResidualJapaneseRune reports whether r is Japanese kana or kanji — script that
-// must not remain in a translated (non-Japanese) output. Latin is excluded so brand
-// names / "www" don't count as untranslated.
-func isResidualJapaneseRune(r rune) bool {
-	switch {
-	case r >= 0x3040 && r <= 0x309F: // hiragana
-		return true
-	case r >= 0x30A0 && r <= 0x30FF: // katakana
-		return true
-	case r >= 0x3400 && r <= 0x4DBF, r >= 0x4E00 && r <= 0x9FFF: // kanji (CJK ideographs)
-		return true
-	}
-	return false
-}
-
-// containsResidualJapanese reports whether s still contains untranslated Japanese
-// kana or kanji.
-func containsResidualJapanese(s string) bool {
-	for _, r := range s {
-		if isResidualJapaneseRune(r) {
-			return true
-		}
-	}
-	return false
-}
-
-// countResidualJapanese counts the Japanese kana/kanji runes in s, used to pick the
-// less-untranslated of two candidate results.
-func countResidualJapanese(s string) int {
-	n := 0
-	for _, r := range s {
-		if isResidualJapaneseRune(r) {
-			n++
-		}
-	}
-	return n
-}
-
-// hangulActressName returns a Hangul reading already present on the actress
-// record (e.g. promoted into the DB by mergeActressData), keeping Japanese name
-// order (FamilyName GivenName). Returns "" when neither name part is Hangul.
-func hangulActressName(a models.Actress) string {
-	last := strings.TrimSpace(a.LastName)
-	first := strings.TrimSpace(a.FirstName)
-	lastHangul := containsHangul(last)
-	firstHangul := containsHangul(first)
-	switch {
-	case lastHangul && firstHangul:
-		return last + " " + first
-	case firstHangul:
-		return first
-	case lastHangul:
-		return last
-	default:
-		return ""
-	}
-}
-
+// replaceActressName updates an actress's name fields with the translated string.
+// The behavior depends on the current name state:
+//   - If the actress has a non-empty JapaneseName, or both FirstName and LastName
+//     are empty (single-token name), the translated string overwrites JapaneseName
+//     and clears FirstName/LastName. This preserves the convention that Japanese-name
+//     actresses store their display name in JapaneseName.
+//   - Otherwise, the translated string is assigned to FirstName and LastName is cleared.
+//     Multi-token names should be pre-split by the caller using models.SplitFullName.
+//
+// Note: When a name with a space is assigned to FirstName, it may confuse downstream
+// display name construction that concatenates "LastName FirstName". Callers should
+// pre-split using models.SplitFullName for multi-token translated names.
 func replaceActressName(actress *models.Actress, translated string) {
 	translated = strings.TrimSpace(translated)
 	if actress == nil || translated == "" {
 		return
 	}
+
 	if models.IsUnknownActressName(translated) {
 		actress.FirstName = models.UnknownActressName
 		actress.LastName = ""
@@ -1190,28 +746,19 @@ func replaceActressName(actress *models.Actress, translated string) {
 		return
 	}
 	if (containsHangul(actress.FirstName) || containsHangul(actress.LastName)) && !containsHangul(translated) {
-		// Never replace an established Korean display name with a lower-priority
-		// romanized result when apply_to_primary is enabled for another language.
 		return
 	}
-	// Strip parenthetical noise the LLM may append (e.g. "Kuroki(Mai" → "Kuroki").
 	if idx := strings.IndexAny(translated, "([（"); idx >= 0 {
 		translated = strings.TrimSpace(translated[:idx])
 	}
 	if translated == "" {
 		return
 	}
-	// Latin results get diacritics folded to ASCII; Hangul results are applied as-is.
-	// Anything else (kana/kanji echoed back) means transliteration failed — skip it.
 	if isLikelyRomanized(translated) {
 		translated = normalizeRomanizationToASCII(translated)
 	} else if !containsHangul(translated) {
-		logging.Debugf("Translation: replaceActressName skipping non-Latin/non-Hangul result %q", translated)
 		return
 	}
-	// Prompt returns Japanese name order: FamilyName GivenName.
-	// parts[0] = family name → LastName; parts[1:] = given name → FirstName.
-	// JapaneseName is preserved for <ACTRESS:ja>.
 	parts := strings.Fields(translated)
 	if len(parts) >= 2 {
 		actress.LastName = parts[0]
@@ -1222,170 +769,45 @@ func replaceActressName(actress *models.Actress, translated string) {
 	}
 }
 
-// extractNamesFromDMMActjpgsURL parses lastName and firstName from DMM actjpgs thumbnail URLs.
-// Format: https://pics.dmm.co.jp/mono/actjpgs/lastname_firstname[N].jpg
-// Single-name format: https://pics.dmm.co.jp/mono/actjpgs/firstname[N].jpg
-func extractNamesFromDMMActjpgsURL(thumbURL string) (lastName, firstName string, ok bool) {
-	const prefix = "actjpgs/"
-	idx := strings.LastIndex(thumbURL, prefix)
-	if idx < 0 {
-		return "", "", false
-	}
-	filename := thumbURL[idx+len(prefix):]
-	if q := strings.IndexByte(filename, '?'); q >= 0 {
-		filename = filename[:q]
-	}
-	if dot := strings.LastIndexByte(filename, '.'); dot >= 0 {
-		filename = filename[:dot]
-	}
-	// Strip trailing digits and underscores (e.g. "rena2" → "rena", "rena_2" → "rena", "reimi21" → "reimi")
-	filename = strings.TrimRight(filename, "0123456789_")
-	if filename == "" {
-		return "", "", false
-	}
-	parts := strings.SplitN(filename, "_", 2)
-	if len(parts) == 1 {
-		// Single name (no family/given split) — return as first name with empty last name
-		return "", nihonshikiToHepburn.Replace(parts[0]), true
-	}
-	if parts[0] == "" || parts[1] == "" {
-		return "", "", false
-	}
-	return nihonshikiToHepburn.Replace(parts[0]), nihonshikiToHepburn.Replace(parts[1]), true
-}
-
-func capitalize(s string) string {
-	if s == "" {
-		return ""
-	}
-	return strings.ToUpper(s[:1]) + s[1:]
-}
-
-func joinName(lastName, firstName string) string {
-	l := strings.TrimSpace(capitalize(lastName))
-	f := strings.TrimSpace(capitalize(firstName))
-	if l == "" {
-		return f
-	}
-	return l + " " + f
-}
-
 const maxTranslationRetries = 3
 
+// translationResult holds translated texts and optional raw LLM output returned by a TranslatorProvider.
 type translationResult struct {
-	texts  []string
-	rawLLM string
+	Texts  []string
+	RawLLM string
 }
 
-func (s *Service) translateTexts(ctx context.Context, sourceLang, targetLang string, texts []string, fieldNames []string) ([]string, error) {
-	provider := normalizeProvider(s.cfg.Provider)
-
-	// Prompts are provider-independent — build them once for LLM providers.
-	var systemPrompt, userPrompt string
-	var markers []string
-	switch provider {
-	case providerOpenAI, providerOpenAICompatible, providerAnthropic, providerBedrock:
-		var err error
-		systemPrompt, userPrompt, markers, err = buildLLMTranslationPrompts(sourceLang, targetLang, texts, fieldNames)
-		if err != nil {
-			return nil, err
-		}
-	case providerDeepL, providerGoogle:
-	default:
-		return nil, fmt.Errorf("unsupported translation provider: %s", provider)
+func (s *Service) translateTexts(ctx context.Context, sourceLang, targetLang string, texts []string, fieldNameSets ...[]string) ([]string, error) {
+	providerName := normalizeProvider(s.cfg.Provider)
+	provider, ok := s.providers[providerName]
+	if !ok {
+		return nil, fmt.Errorf("unsupported translation provider: %s", s.cfg.Provider)
 	}
-
-	var lastResult *translationResult
-	var lastErr error
-	expectedCount := len(texts)
-
-	for attempt := 1; attempt <= maxTranslationRetries; attempt++ {
-		var result *translationResult
-		var err error
-		err = func() error {
-			if s.acquireProviderCall != nil {
-				if acquireErr := s.acquireProviderCall(ctx); acquireErr != nil {
-					return acquireErr
-				}
-			}
-			if s.releaseProviderCall != nil {
-				defer s.releaseProviderCall()
-			}
-			switch provider {
-			case providerOpenAI:
-				result, err = s.translateWithOpenAI(ctx, systemPrompt, userPrompt, markers)
-			case providerDeepL:
-				result, err = s.translateWithDeepL(ctx, sourceLang, targetLang, texts)
-			case providerGoogle:
-				result, err = s.translateWithGoogle(ctx, sourceLang, targetLang, texts)
-			case providerOpenAICompatible:
-				result, err = s.translateWithOpenAICompatible(ctx, systemPrompt, userPrompt, markers)
-			case providerAnthropic:
-				result, err = s.translateWithAnthropic(ctx, systemPrompt, userPrompt, markers)
-			case providerBedrock:
-				result, err = s.translateWithBedrock(ctx, systemPrompt, userPrompt, markers)
-			}
-			return err
-		}()
-
-		if err == nil {
-			if result == nil {
-				err = &TranslationError{Kind: TranslationErrorProvider, Message: "translation provider returned no result"}
-			} else if len(result.texts) != expectedCount {
-				err = &TranslationError{
-					Kind:    TranslationErrorCountMismatch,
-					Message: fmt.Sprintf("translation provider returned %d items for %d inputs", len(result.texts), expectedCount),
-				}
-			}
-		}
-
-		if err == nil && result != nil {
-			if len(texts) > 1 && hasSlotWordCountAnomaly(texts, result.texts) {
-				logging.Debugf("Translation: slot word count anomaly detected, falling back to one-by-one")
-				return s.translateTextsOneByOne(ctx, sourceLang, targetLang, texts, fieldNames)
-			}
-			return result.texts, nil
-		}
-
-		lastResult = result
-		lastErr = err
-
-		if attempt < maxTranslationRetries {
-			if isRetryableError(err, result) {
-				logging.Debugf("Translation: attempt %d/%d failed (%v), retrying...", attempt, maxTranslationRetries, err)
-				select {
-				case <-ctx.Done():
-					return nil, ctx.Err()
-				case <-time.After(time.Duration(attempt) * 200 * time.Millisecond):
-				}
-			} else {
-				logging.Debugf("Translation: attempt %d/%d failed with non-retryable error (%v), giving up", attempt, maxTranslationRetries, err)
-				break
-			}
+	var fieldNames []string
+	if len(fieldNameSets) > 0 {
+		fieldNames = fieldNameSets[0]
+	}
+	if len(fieldNames) != len(texts) {
+		fieldNames = make([]string, len(texts))
+		for i := range fieldNames {
+			fieldNames[i] = fmt.Sprintf("JZ_%d", i)
 		}
 	}
-
-	if lastResult != nil && lastResult.rawLLM != "" {
-		logging.Debugf("Translation: all %d attempts failed. Last LLM output (length=%d):\n%s", maxTranslationRetries, len(lastResult.rawLLM), lastResult.rawLLM)
-	}
-
-	if lastErr != nil {
-		var te *TranslationError
-		if errors.As(lastErr, &te) && (te.Kind == TranslationErrorParse || te.Kind == TranslationErrorCountMismatch) && len(texts) > 1 {
-			logging.Debugf("Translation: all retries failed with parse/count error, falling back to one-by-one")
+	translated, err := s.translateWithProvider(withTranslationMarkers(ctx, fieldNames), provider, sourceLang, targetLang, texts)
+	if err != nil {
+		var translationErr *translationError
+		if len(texts) > 1 && errors.As(err, &translationErr) && translationErr.Kind == TranslationErrorParse {
 			return s.translateTextsOneByOne(ctx, sourceLang, targetLang, texts, fieldNames)
 		}
-		return nil, lastErr
+		return nil, err
 	}
-	return nil, &TranslationError{
-		Kind:    TranslationErrorProvider,
-		Message: fmt.Sprintf("translation failed after %d attempts", maxTranslationRetries),
+	if len(texts) > 1 && hasSlotWordCountAnomaly(texts, translated) {
+		logging.Debugf("Translation: slot word count anomaly detected, falling back to one-by-one")
+		return s.translateTextsOneByOne(ctx, sourceLang, targetLang, texts, fieldNames)
 	}
+	return translated, nil
 }
 
-// hasSlotWordCountAnomaly detects when an LLM has merged slots: e.g. a short input (title)
-// has been given a very long output (description merged into it). Uses rune-count-based
-// word estimation for Japanese input (no spaces) and whitespace-split count for output.
 func hasSlotWordCountAnomaly(inputs, outputs []string) bool {
 	for i := range inputs {
 		if i >= len(outputs) {
@@ -1400,33 +822,101 @@ func hasSlotWordCountAnomaly(inputs, outputs []string) bool {
 	return false
 }
 
-// translateTextsOneByOne translates each text individually to avoid LLM slot-merging issues.
-func (s *Service) translateTextsOneByOne(ctx context.Context, sourceLang, targetLang string, texts []string, fieldNames []string) ([]string, error) {
+func (s *Service) translateTextsOneByOne(ctx context.Context, sourceLang, targetLang string, texts, fieldNames []string) ([]string, error) {
 	results := make([]string, len(texts))
-	for i, text := range texts {
-		var fn []string
+	for i, input := range texts {
+		name := fmt.Sprintf("JZ_%d", i)
 		if i < len(fieldNames) {
-			fn = []string{fieldNames[i]}
+			name = fieldNames[i]
 		}
-		single, err := s.translateTexts(ctx, sourceLang, targetLang, []string{text}, fn)
+		translated, err := s.translateTexts(ctx, sourceLang, targetLang, []string{input}, []string{name})
 		if err != nil {
 			return nil, err
 		}
-		results[i] = single[0]
+		results[i] = translated[0]
 	}
 	return results, nil
 }
 
-func isRetryableError(err error, result *translationResult) bool {
-	if err == nil {
-		return result != nil && len(result.texts) == 0 && result.rawLLM != ""
+func (s *Service) translateWithProvider(ctx context.Context, provider TranslatorProvider, sourceLang, targetLang string, texts []string) ([]string, error) {
+	var lastResult *translationResult
+	var lastErr error
+	expectedCount := len(texts)
+
+	for attempt := 1; attempt <= maxTranslationRetries; attempt++ {
+		if s.acquireProviderCall != nil {
+			if err := s.acquireProviderCall(ctx); err != nil {
+				return nil, err
+			}
+		}
+		result, err := provider.Translate(ctx, sourceLang, targetLang, texts)
+		if s.releaseProviderCall != nil {
+			s.releaseProviderCall()
+		}
+
+		if err == nil {
+			if result == nil {
+				err = &translationError{Kind: TranslationErrorProvider, Message: "translation provider returned no result"}
+			} else if len(result.Texts) != expectedCount {
+				err = &translationError{
+					Kind:    TranslationErrorCountMismatch,
+					Message: fmt.Sprintf("translation provider returned %d items for %d inputs", len(result.Texts), expectedCount),
+				}
+			}
+		}
+
+		if err == nil && result != nil {
+			return result.Texts, nil
+		}
+
+		lastResult = result
+		lastErr = err
+
+		if attempt < maxTranslationRetries {
+			if isRetryableError(err, result) {
+				logging.Debugf("Translation: attempt %d/%d failed (%v), retrying...", attempt, maxTranslationRetries, err)
+				expBackoff := float64(time.Millisecond) * 100 * math.Pow(2, float64(attempt-1))
+				if expBackoff > float64(2*time.Second) {
+					expBackoff = float64(2 * time.Second)
+				}
+				s.randMu.Lock()
+				sleep := time.Duration(s.rand.Float64() * expBackoff) //nolint:gosec // non-crypto rand is fine for retry jitter
+				s.randMu.Unlock()
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(sleep):
+				}
+			} else {
+				logging.Debugf("Translation: attempt %d/%d failed with non-retryable error (%v), giving up", attempt, maxTranslationRetries, err)
+				break
+			}
+		}
 	}
 
-	var te *TranslationError
+	if lastResult != nil && lastResult.RawLLM != "" {
+		logging.Debugf("Translation: all %d attempts failed. Last LLM output (length=%d):\n%s", maxTranslationRetries, len(lastResult.RawLLM), lastResult.RawLLM)
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, &translationError{
+		Kind:    TranslationErrorProvider,
+		Message: fmt.Sprintf("translation failed after %d attempts", maxTranslationRetries),
+	}
+}
+
+func isRetryableError(err error, result *translationResult) bool {
+	if err == nil {
+		return result != nil && len(result.Texts) == 0 && result.RawLLM != ""
+	}
+
+	var te *translationError
 	if errors.As(err, &te) {
 		switch te.Kind {
 		case TranslationErrorCountMismatch, TranslationErrorParse:
-			return result != nil && result.rawLLM != ""
+			return result != nil && result.RawLLM != ""
 		default:
 			return false
 		}

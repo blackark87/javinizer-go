@@ -1,6 +1,7 @@
 package tag
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -92,6 +93,10 @@ Example:
 }
 
 func runAdd(cmd *cobra.Command, args []string, configFile string) error {
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	movieID := args[0]
 	tags := args[1:]
 
@@ -114,13 +119,13 @@ func runAdd(cmd *cobra.Command, args []string, configFile string) error {
 
 	addedTags := []string{}
 	for _, tag := range tags {
-		if err := repo.AddTag(movieID, tag); err != nil {
+		if err := repo.AddTag(ctx, movieID, tag); err != nil {
 			// Check if it's a duplicate error (UNIQUE constraint)
 			if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "unique") {
 				logging.Warnf("Tag '%s' already exists for %s, skipping", tag, movieID)
 				continue
 			}
-			return fmt.Errorf("failed to add tag '%s': %v", tag, err)
+			return fmt.Errorf("failed to add tag '%s': %w", tag, err)
 		}
 		addedTags = append(addedTags, tag)
 	}
@@ -137,6 +142,10 @@ func runAdd(cmd *cobra.Command, args []string, configFile string) error {
 }
 
 func runList(cmd *cobra.Command, args []string, configFile string) error {
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	// Load configuration
 	cfg, err := config.LoadOrCreate(configFile)
 	if err != nil {
@@ -157,9 +166,9 @@ func runList(cmd *cobra.Command, args []string, configFile string) error {
 	// List tags for specific movie
 	if len(args) == 1 {
 		movieID := args[0]
-		tags, err := repo.GetTagsForMovie(movieID)
+		tags, err := repo.GetTagsForMovie(ctx, movieID)
 		if err != nil {
-			return fmt.Errorf("failed to get tags: %v", err)
+			return fmt.Errorf("failed to get tags: %w", err)
 		}
 
 		if len(tags) == 0 {
@@ -175,10 +184,10 @@ func runList(cmd *cobra.Command, args []string, configFile string) error {
 		return nil
 	}
 
-	// List all tag mappings
-	allTags, err := repo.ListAll()
+	// List all tag mappings (chunked to avoid loading entire table at once)
+	allTags, err := repo.ListAllChunked(ctx, 1000)
 	if err != nil {
-		return fmt.Errorf("failed to list tags: %v", err)
+		return fmt.Errorf("failed to list tags: %w", err)
 	}
 
 	if len(allTags) == 0 {
@@ -200,6 +209,10 @@ func runList(cmd *cobra.Command, args []string, configFile string) error {
 }
 
 func runRemove(cmd *cobra.Command, args []string, configFile string) error {
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	movieID := args[0]
 
 	// Load configuration
@@ -222,16 +235,16 @@ func runRemove(cmd *cobra.Command, args []string, configFile string) error {
 	// Remove specific tag
 	if len(args) == 2 {
 		tag := args[1]
-		if err := repo.RemoveTag(movieID, tag); err != nil {
-			return fmt.Errorf("failed to remove tag: %v", err)
+		if err := repo.RemoveTag(ctx, movieID, tag); err != nil {
+			return fmt.Errorf("failed to remove tag: %w", err)
 		}
 		fmt.Printf("✅ Removed tag '%s' from %s\n", tag, movieID)
 		return nil
 	}
 
 	// Remove all tags
-	if err := repo.RemoveAllTags(movieID); err != nil {
-		return fmt.Errorf("failed to remove tags: %v", err)
+	if err := repo.RemoveAllTags(ctx, movieID); err != nil {
+		return fmt.Errorf("failed to remove tags: %w", err)
 	}
 	fmt.Printf("✅ Removed all tags from %s\n", movieID)
 
@@ -239,6 +252,10 @@ func runRemove(cmd *cobra.Command, args []string, configFile string) error {
 }
 
 func runSearch(cmd *cobra.Command, args []string, configFile string) error {
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	tag := args[0]
 
 	// Load configuration
@@ -256,7 +273,7 @@ func runSearch(cmd *cobra.Command, args []string, configFile string) error {
 
 	repo := database.NewMovieTagRepository(deps.DB)
 
-	movieIDs, err := repo.GetMoviesWithTag(tag)
+	movieIDs, err := repo.GetMoviesWithTag(ctx, tag)
 	if err != nil {
 		return fmt.Errorf("failed to search: %w", err)
 	}
@@ -275,6 +292,10 @@ func runSearch(cmd *cobra.Command, args []string, configFile string) error {
 }
 
 func runAllTags(cmd *cobra.Command, args []string, configFile string) error {
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	// Load configuration
 	cfg, err := config.LoadOrCreate(configFile)
 	if err != nil {
@@ -290,7 +311,7 @@ func runAllTags(cmd *cobra.Command, args []string, configFile string) error {
 
 	repo := database.NewMovieTagRepository(deps.DB)
 
-	tags, err := repo.GetUniqueTagsList()
+	tags, err := repo.GetUniqueTagsList(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list tags: %w", err)
 	}
@@ -303,7 +324,7 @@ func runAllTags(cmd *cobra.Command, args []string, configFile string) error {
 	fmt.Println("=== All Tags ===")
 	for _, tag := range tags {
 		// Count movies with this tag
-		movies, err := repo.GetMoviesWithTag(tag)
+		movies, err := repo.GetMoviesWithTag(ctx, tag)
 		if err != nil {
 			logging.Warnf("Failed to count movies for tag '%s': %v", tag, err)
 			fmt.Printf("  - %-30s (error)\n", tag)

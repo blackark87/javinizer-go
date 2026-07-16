@@ -1,6 +1,7 @@
 package history
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/database"
+	historypkg "github.com/javinizer/javinizer-go/internal/history"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -30,9 +32,9 @@ func setupHistoryTestDB(t *testing.T) (*database.DB, *database.HistoryRepository
 		},
 	}
 
-	db, err := database.New(cfg)
+	db, err := database.New(&database.Config{Type: cfg.Database.Type, DSN: cfg.Database.DSN, LogLevel: cfg.Database.LogLevel})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate())
+	require.NoError(t, db.RunMigrationsOnStartup(context.Background()))
 
 	repo := database.NewHistoryRepository(db)
 	return db, repo
@@ -43,16 +45,16 @@ func seedHistoryData(t *testing.T, repo *database.HistoryRepository) {
 	t.Helper()
 
 	records := []*models.History{
-		{MovieID: "IPX-001", Operation: "scrape", Status: "success", OriginalPath: "/path/to/IPX-001.mp4"},
-		{MovieID: "IPX-001", Operation: "download", Status: "success", OriginalPath: "https://example.com/cover.jpg", NewPath: "/path/to/cover.jpg"},
-		{MovieID: "IPX-001", Operation: "nfo", Status: "success", NewPath: "/path/to/IPX-001.nfo"},
-		{MovieID: "IPX-002", Operation: "scrape", Status: "failed", ErrorMessage: "scraper error"},
-		{MovieID: "IPX-003", Operation: "organize", Status: "success", OriginalPath: "/src/IPX-003.mp4", NewPath: "/dest/IPX-003.mp4"},
-		{MovieID: "IPX-004", Operation: "scrape", Status: "reverted"},
+		{MovieID: "IPX-001", Operation: models.HistoryOpScrape, Status: models.HistoryStatusSuccess, OriginalPath: "/path/to/IPX-001.mp4"},
+		{MovieID: "IPX-001", Operation: models.HistoryOpDownload, Status: models.HistoryStatusSuccess, OriginalPath: "https://example.com/cover.jpg", NewPath: "/path/to/cover.jpg"},
+		{MovieID: "IPX-001", Operation: models.HistoryOpNFO, Status: models.HistoryStatusSuccess, NewPath: "/path/to/IPX-001.nfo"},
+		{MovieID: "IPX-002", Operation: models.HistoryOpScrape, Status: models.HistoryStatusFailed, ErrorMessage: "scraper error"},
+		{MovieID: "IPX-003", Operation: models.HistoryOpOrganize, Status: models.HistoryStatusSuccess, OriginalPath: "/src/IPX-003.mp4", NewPath: "/dest/IPX-003.mp4"},
+		{MovieID: "IPX-004", Operation: models.HistoryOpScrape, Status: models.HistoryStatusReverted},
 	}
 
 	for _, r := range records {
-		err := repo.Create(r)
+		err := repo.Create(context.Background(), r)
 		require.NoError(t, err)
 	}
 }
@@ -119,7 +121,7 @@ func TestGetHistory(t *testing.T) {
 			validateFn: func(t *testing.T, resp *HistoryListResponse) {
 				assert.Equal(t, int64(3), resp.Total)
 				for _, r := range resp.Records {
-					assert.Equal(t, "scrape", r.Operation)
+					assert.Equal(t, models.HistoryOpScrape, r.Operation)
 				}
 			},
 		},
@@ -131,7 +133,19 @@ func TestGetHistory(t *testing.T) {
 			validateFn: func(t *testing.T, resp *HistoryListResponse) {
 				assert.Equal(t, int64(4), resp.Total)
 				for _, r := range resp.Records {
-					assert.Equal(t, "success", r.Status)
+					assert.Equal(t, models.HistoryStatusSuccess, r.Status)
+				}
+			},
+		},
+		{
+			name:           "filter by status",
+			queryParams:    "?status=success",
+			seedData:       true,
+			expectedStatus: http.StatusOK,
+			validateFn: func(t *testing.T, resp *HistoryListResponse) {
+				assert.Equal(t, int64(4), resp.Total)
+				for _, r := range resp.Records {
+					assert.Equal(t, models.HistoryStatusSuccess, r.Status)
 				}
 			},
 		},
@@ -198,106 +212,6 @@ func TestGetHistory(t *testing.T) {
 	}
 }
 
-func seedHistoryPaginationData(t *testing.T, repo *database.HistoryRepository) {
-	t.Helper()
-
-	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	records := []*models.History{
-		{MovieID: "IPX-900", Operation: "scrape", Status: "failed", CreatedAt: base.Add(1 * time.Minute)},
-		{MovieID: "IPX-900", Operation: "scrape", Status: "success", CreatedAt: base.Add(2 * time.Minute)},
-		{MovieID: "IPX-901", Operation: "scrape", Status: "failed", CreatedAt: base.Add(3 * time.Minute)},
-		{MovieID: "IPX-900", Operation: "organize", Status: "failed", CreatedAt: base.Add(4 * time.Minute)},
-		{MovieID: "IPX-902", Operation: "scrape", Status: "success", CreatedAt: base.Add(5 * time.Minute)},
-		{MovieID: "IPX-903", Operation: "download", Status: "success", CreatedAt: base.Add(6 * time.Minute)},
-	}
-
-	for _, r := range records {
-		require.NoError(t, repo.Create(r))
-	}
-}
-
-func TestGetHistory_FilteredPagination(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	tests := []struct {
-		name        string
-		queryParams string
-		validateFn  func(*testing.T, *HistoryListResponse)
-	}{
-		{
-			name:        "status filter applies limit and offset in query",
-			queryParams: "?status=failed&limit=2&offset=1",
-			validateFn: func(t *testing.T, resp *HistoryListResponse) {
-				assert.Equal(t, int64(3), resp.Total)
-				assert.Equal(t, 2, resp.Limit)
-				assert.Equal(t, 1, resp.Offset)
-				require.Len(t, resp.Records, 2)
-				assert.Equal(t, "IPX-901", resp.Records[0].MovieID)
-				assert.Equal(t, "IPX-900", resp.Records[1].MovieID)
-				for _, r := range resp.Records {
-					assert.Equal(t, "failed", r.Status)
-				}
-			},
-		},
-		{
-			name:        "operation filter applies limit and offset in query",
-			queryParams: "?operation=scrape&limit=2&offset=1",
-			validateFn: func(t *testing.T, resp *HistoryListResponse) {
-				assert.Equal(t, int64(4), resp.Total)
-				require.Len(t, resp.Records, 2)
-				assert.Equal(t, "IPX-901", resp.Records[0].MovieID)
-				assert.Equal(t, "IPX-900", resp.Records[1].MovieID)
-				for _, r := range resp.Records {
-					assert.Equal(t, "scrape", r.Operation)
-				}
-			},
-		},
-		{
-			name:        "movie_id filter applies limit and offset in query",
-			queryParams: "?movie_id=IPX-900&limit=1&offset=1",
-			validateFn: func(t *testing.T, resp *HistoryListResponse) {
-				assert.Equal(t, int64(3), resp.Total)
-				require.Len(t, resp.Records, 1)
-				assert.Equal(t, "IPX-900", resp.Records[0].MovieID)
-				assert.Equal(t, "scrape", resp.Records[0].Operation)
-				assert.Equal(t, "success", resp.Records[0].Status)
-			},
-		},
-		{
-			name:        "no filter preserves paginated list behavior",
-			queryParams: "?limit=2&offset=2",
-			validateFn: func(t *testing.T, resp *HistoryListResponse) {
-				assert.Equal(t, int64(6), resp.Total)
-				require.Len(t, resp.Records, 2)
-				assert.Equal(t, "IPX-900", resp.Records[0].MovieID)
-				assert.Equal(t, "IPX-901", resp.Records[1].MovieID)
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			db, repo := setupHistoryTestDB(t)
-			defer func() { _ = db.Close() }()
-			seedHistoryPaginationData(t, repo)
-
-			router := gin.New()
-			router.GET("/api/v1/history", getHistory(repo))
-
-			req := httptest.NewRequest(http.MethodGet, "/api/v1/history"+tt.queryParams, nil)
-			w := httptest.NewRecorder()
-
-			router.ServeHTTP(w, req)
-
-			assert.Equal(t, http.StatusOK, w.Code)
-
-			var resp HistoryListResponse
-			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
-			tt.validateFn(t, &resp)
-		})
-	}
-}
-
 func TestGetHistoryStats(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -316,11 +230,6 @@ func TestGetHistoryStats(t *testing.T) {
 				assert.Equal(t, int64(0), resp.Success)
 				assert.Equal(t, int64(0), resp.Failed)
 				assert.Equal(t, int64(0), resp.Reverted)
-				assert.Equal(t, 7, resp.RecentWindow)
-				assert.Equal(t, int64(0), resp.Total7d)
-				assert.Equal(t, int64(0), resp.Success7d)
-				assert.Equal(t, int64(0), resp.Failed7d)
-				assert.Equal(t, 0, resp.SuccessRate7d)
 				// ByOperation is always populated by the handler, even when empty
 			},
 		},
@@ -333,15 +242,10 @@ func TestGetHistoryStats(t *testing.T) {
 				assert.Equal(t, int64(4), resp.Success)
 				assert.Equal(t, int64(1), resp.Failed)
 				assert.Equal(t, int64(1), resp.Reverted)
-				assert.Equal(t, int64(3), resp.ByOperation["scrape"])
-				assert.Equal(t, int64(1), resp.ByOperation["organize"])
-				assert.Equal(t, int64(1), resp.ByOperation["download"])
-				assert.Equal(t, int64(1), resp.ByOperation["nfo"])
-				assert.Equal(t, 7, resp.RecentWindow)
-				assert.Equal(t, int64(6), resp.Total7d)
-				assert.Equal(t, int64(4), resp.Success7d)
-				assert.Equal(t, int64(1), resp.Failed7d)
-				assert.Equal(t, 67, resp.SuccessRate7d)
+				assert.Equal(t, int64(3), resp.ByOperation[string(models.HistoryOpScrape)])
+				assert.Equal(t, int64(1), resp.ByOperation[string(models.HistoryOpOrganize)])
+				assert.Equal(t, int64(1), resp.ByOperation[string(models.HistoryOpDownload)])
+				assert.Equal(t, int64(1), resp.ByOperation[string(models.HistoryOpNFO)])
 			},
 		},
 		{
@@ -368,7 +272,7 @@ func TestGetHistoryStats(t *testing.T) {
 			}
 
 			router := gin.New()
-			router.GET("/api/v1/history/stats", getHistoryStats(repo))
+			router.GET("/api/v1/history/stats", getHistoryStats(historypkg.NewLogger(repo)))
 
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/history/stats", nil)
 			w := httptest.NewRecorder()
@@ -397,7 +301,7 @@ func TestGetHistoryStats_EmptyDatabase(t *testing.T) {
 
 	// Empty database - no records
 	router := gin.New()
-	router.GET("/api/v1/history/stats", getHistoryStats(repo))
+	router.GET("/api/v1/history/stats", getHistoryStats(historypkg.NewLogger(repo)))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/history/stats", nil)
 	w := httptest.NewRecorder()
@@ -414,8 +318,6 @@ func TestGetHistoryStats_EmptyDatabase(t *testing.T) {
 	assert.Equal(t, int64(0), resp.Success)
 	assert.Equal(t, int64(0), resp.Failed)
 	assert.Equal(t, int64(0), resp.Reverted)
-	assert.Equal(t, int64(0), resp.Total7d)
-	assert.Equal(t, 0, resp.SuccessRate7d)
 }
 
 func TestGetHistoryStats_WithAllOperationTypes(t *testing.T) {
@@ -429,17 +331,17 @@ func TestGetHistoryStats_WithAllOperationTypes(t *testing.T) {
 	// Create records with all operation types
 	// The mock repo CountByOperation returns 1 for "scrape" (first one created),
 	// and 0 for others since mock only tracks by status, not operation
-	operations := []string{"scrape", "organize", "download", "nfo"}
+	operations := []models.HistoryOperation{models.HistoryOpScrape, models.HistoryOpOrganize, models.HistoryOpDownload, models.HistoryOpNFO}
 	for i, op := range operations {
-		require.NoError(t, repo.Create(&models.History{
+		require.NoError(t, repo.Create(context.Background(), &models.History{
 			MovieID:   fmt.Sprintf("TEST-%03d", i+1),
 			Operation: op,
-			Status:    "success",
+			Status:    models.HistoryStatusSuccess,
 		}))
 	}
 
 	router := gin.New()
-	router.GET("/api/v1/history/stats", getHistoryStats(repo))
+	router.GET("/api/v1/history/stats", getHistoryStats(historypkg.NewLogger(repo)))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/history/stats", nil)
 	w := httptest.NewRecorder()
@@ -474,7 +376,7 @@ func TestGetHistoryStats_AllFailurePaths(t *testing.T) {
 	seedHistoryData(t, repo)
 
 	router := gin.New()
-	router.GET("/api/v1/history/stats", getHistoryStats(repo))
+	router.GET("/api/v1/history/stats", getHistoryStats(historypkg.NewLogger(repo)))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/history/stats", nil)
 	w := httptest.NewRecorder()
@@ -492,10 +394,6 @@ func TestGetHistoryStats_AllFailurePaths(t *testing.T) {
 	assert.Equal(t, int64(4), resp.Success)
 	assert.Equal(t, int64(1), resp.Failed)
 	assert.Equal(t, int64(1), resp.Reverted)
-	assert.Equal(t, int64(6), resp.Total7d)
-	assert.Equal(t, int64(4), resp.Success7d)
-	assert.Equal(t, int64(1), resp.Failed7d)
-	assert.Equal(t, 67, resp.SuccessRate7d)
 }
 
 func TestDeleteHistory(t *testing.T) {
@@ -514,7 +412,7 @@ func TestDeleteHistory(t *testing.T) {
 			seedData:       true,
 			expectedStatus: http.StatusOK,
 			validateFn: func(t *testing.T, repo *database.HistoryRepository) {
-				_, err := repo.FindByID(1)
+				_, err := repo.FindByID(context.Background(), 1)
 				assert.Error(t, err) // Should not exist
 			},
 		},
@@ -583,7 +481,7 @@ func TestDeleteHistoryBulk(t *testing.T) {
 			expectedStatus: http.StatusOK,
 			validateFn: func(t *testing.T, resp *DeleteHistoryBulkResponse, repo *database.HistoryRepository) {
 				assert.Equal(t, int64(3), resp.Deleted)
-				records, _ := repo.FindByMovieID("IPX-001")
+				records, _ := repo.FindByMovieID(context.Background(), "IPX-001")
 				assert.Empty(t, records)
 			},
 		},
@@ -652,11 +550,11 @@ func TestGetHistory_WithDateFilter(t *testing.T) {
 	twoHoursAgo := now.Add(-2 * time.Hour)
 	oneHourAgo := now.Add(-1 * time.Hour)
 
-	require.NoError(t, repo.Create(&models.History{
-		MovieID: "OLD-001", Operation: "scrape", Status: "success", CreatedAt: twoHoursAgo,
+	require.NoError(t, repo.Create(context.Background(), &models.History{
+		MovieID: "OLD-001", Operation: models.HistoryOpScrape, Status: models.HistoryStatusSuccess, CreatedAt: twoHoursAgo,
 	}))
-	require.NoError(t, repo.Create(&models.History{
-		MovieID: "NEW-001", Operation: "scrape", Status: "success", CreatedAt: oneHourAgo,
+	require.NoError(t, repo.Create(context.Background(), &models.History{
+		MovieID: "NEW-001", Operation: models.HistoryOpScrape, Status: models.HistoryStatusSuccess, CreatedAt: oneHourAgo,
 	}))
 
 	router := gin.New()
@@ -679,14 +577,14 @@ func TestGetHistoryStats_ByOperationType(t *testing.T) {
 	db, repo := setupHistoryTestDB(t)
 	defer func() { _ = db.Close() }()
 
-	require.NoError(t, repo.Create(&models.History{MovieID: "A-001", Operation: "scrape", Status: "success"}))
-	require.NoError(t, repo.Create(&models.History{MovieID: "A-002", Operation: "scrape", Status: "failed"}))
-	require.NoError(t, repo.Create(&models.History{MovieID: "A-003", Operation: "organize", Status: "success"}))
-	require.NoError(t, repo.Create(&models.History{MovieID: "A-004", Operation: "download", Status: "success"}))
-	require.NoError(t, repo.Create(&models.History{MovieID: "A-005", Operation: "nfo", Status: "reverted"}))
+	require.NoError(t, repo.Create(context.Background(), &models.History{MovieID: "A-001", Operation: models.HistoryOpScrape, Status: models.HistoryStatusSuccess}))
+	require.NoError(t, repo.Create(context.Background(), &models.History{MovieID: "A-002", Operation: models.HistoryOpScrape, Status: models.HistoryStatusFailed}))
+	require.NoError(t, repo.Create(context.Background(), &models.History{MovieID: "A-003", Operation: models.HistoryOpOrganize, Status: models.HistoryStatusSuccess}))
+	require.NoError(t, repo.Create(context.Background(), &models.History{MovieID: "A-004", Operation: models.HistoryOpDownload, Status: models.HistoryStatusSuccess}))
+	require.NoError(t, repo.Create(context.Background(), &models.History{MovieID: "A-005", Operation: models.HistoryOpNFO, Status: models.HistoryStatusReverted}))
 
 	router := gin.New()
-	router.GET("/api/v1/history/stats", getHistoryStats(repo))
+	router.GET("/api/v1/history/stats", getHistoryStats(historypkg.NewLogger(repo)))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/history/stats", nil)
 	w := httptest.NewRecorder()
@@ -700,14 +598,10 @@ func TestGetHistoryStats_ByOperationType(t *testing.T) {
 	assert.Equal(t, int64(3), resp.Success)
 	assert.Equal(t, int64(1), resp.Failed)
 	assert.Equal(t, int64(1), resp.Reverted)
-	assert.Equal(t, int64(2), resp.ByOperation["scrape"])
-	assert.Equal(t, int64(1), resp.ByOperation["organize"])
-	assert.Equal(t, int64(1), resp.ByOperation["download"])
-	assert.Equal(t, int64(1), resp.ByOperation["nfo"])
-	assert.Equal(t, int64(5), resp.Total7d)
-	assert.Equal(t, int64(3), resp.Success7d)
-	assert.Equal(t, int64(1), resp.Failed7d)
-	assert.Equal(t, 60, resp.SuccessRate7d)
+	assert.Equal(t, int64(2), resp.ByOperation[string(models.HistoryOpScrape)])
+	assert.Equal(t, int64(1), resp.ByOperation[string(models.HistoryOpOrganize)])
+	assert.Equal(t, int64(1), resp.ByOperation[string(models.HistoryOpDownload)])
+	assert.Equal(t, int64(1), resp.ByOperation[string(models.HistoryOpNFO)])
 }
 
 func TestDeleteHistoryBulk_ByOperationType(t *testing.T) {
@@ -743,15 +637,15 @@ func TestHistoryRecordFields(t *testing.T) {
 	// Create a record with all fields populated
 	record := &models.History{
 		MovieID:      "TEST-001",
-		Operation:    "scrape",
-		Status:       "success",
+		Operation:    models.HistoryOpScrape,
+		Status:       models.HistoryStatusSuccess,
 		OriginalPath: "/original/path.mp4",
 		NewPath:      "/new/path.mp4",
 		ErrorMessage: "",
 		Metadata:     `{"source": "test"}`,
 		DryRun:       true,
 	}
-	require.NoError(t, repo.Create(record))
+	require.NoError(t, repo.Create(context.Background(), record))
 
 	router := gin.New()
 	router.GET("/api/v1/history", getHistory(repo))
@@ -771,8 +665,8 @@ func TestHistoryRecordFields(t *testing.T) {
 	r := resp.Records[0]
 
 	assert.Equal(t, "TEST-001", r.MovieID)
-	assert.Equal(t, "scrape", r.Operation)
-	assert.Equal(t, "success", r.Status)
+	assert.Equal(t, models.HistoryOpScrape, r.Operation)
+	assert.Equal(t, models.HistoryStatusSuccess, r.Status)
 	assert.Equal(t, "/original/path.mp4", r.OriginalPath)
 	assert.Equal(t, "/new/path.mp4", r.NewPath)
 	assert.Equal(t, `{"source": "test"}`, r.Metadata)
@@ -790,10 +684,10 @@ func TestHistoryPaginationEdgeCases(t *testing.T) {
 
 	// Create exactly 5 records
 	for i := 0; i < 5; i++ {
-		require.NoError(t, repo.Create(&models.History{
+		require.NoError(t, repo.Create(context.Background(), &models.History{
 			MovieID:   "TEST",
-			Operation: "scrape",
-			Status:    "success",
+			Operation: models.HistoryOpScrape,
+			Status:    models.HistoryStatusSuccess,
 		}))
 	}
 
@@ -835,9 +729,9 @@ func TestGetHistory_StatusFailed(t *testing.T) {
 	db, repo := setupHistoryTestDB(t)
 	defer func() { _ = db.Close() }()
 
-	require.NoError(t, repo.Create(&models.History{MovieID: "A-001", Operation: "scrape", Status: "success"}))
-	require.NoError(t, repo.Create(&models.History{MovieID: "A-002", Operation: "scrape", Status: "failed"}))
-	require.NoError(t, repo.Create(&models.History{MovieID: "A-003", Operation: "organize", Status: "failed"}))
+	require.NoError(t, repo.Create(context.Background(), &models.History{MovieID: "A-001", Operation: models.HistoryOpScrape, Status: models.HistoryStatusSuccess}))
+	require.NoError(t, repo.Create(context.Background(), &models.History{MovieID: "A-002", Operation: models.HistoryOpScrape, Status: models.HistoryStatusFailed}))
+	require.NoError(t, repo.Create(context.Background(), &models.History{MovieID: "A-003", Operation: models.HistoryOpOrganize, Status: models.HistoryStatusFailed}))
 
 	router := gin.New()
 	router.GET("/api/v1/history", getHistory(repo))
@@ -852,7 +746,7 @@ func TestGetHistory_StatusFailed(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, int64(2), resp.Total)
 	for _, r := range resp.Records {
-		assert.Equal(t, "failed", r.Status)
+		assert.Equal(t, models.HistoryStatusFailed, r.Status)
 	}
 }
 
@@ -862,8 +756,8 @@ func TestGetHistory_DefaultList(t *testing.T) {
 	db, repo := setupHistoryTestDB(t)
 	defer func() { _ = db.Close() }()
 
-	require.NoError(t, repo.Create(&models.History{MovieID: "A-001", Operation: "scrape", Status: "success"}))
-	require.NoError(t, repo.Create(&models.History{MovieID: "A-002", Operation: "organize", Status: "success"}))
+	require.NoError(t, repo.Create(context.Background(), &models.History{MovieID: "A-001", Operation: models.HistoryOpScrape, Status: models.HistoryStatusSuccess}))
+	require.NoError(t, repo.Create(context.Background(), &models.History{MovieID: "A-002", Operation: models.HistoryOpOrganize, Status: models.HistoryStatusSuccess}))
 
 	router := gin.New()
 	router.GET("/api/v1/history", getHistory(repo))
@@ -878,4 +772,118 @@ func TestGetHistory_DefaultList(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, int64(2), resp.Total)
 	assert.Len(t, resp.Records, 2)
+}
+
+// TestGetHistory_FilteredPagination verifies the filtered branches (movie_id,
+// operation, status) paginate at the repository layer instead of loading every
+// matching row. With >10 matching rows, limit=10&offset=0 returns exactly 10
+// records and the true total, and offset shifts the window without overlap.
+func TestGetHistory_FilteredPagination(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	type filterCase struct {
+		name  string
+		query string
+		// movieIDs/op/status of the seed rows that the filter must match.
+		validate func(t *testing.T, page1, page2 []HistoryRecord, total int64)
+	}
+
+	seed := func(t *testing.T, repo *database.HistoryRepository, movieID string, op models.HistoryOperation, status models.HistoryStatus) {
+		t.Helper()
+		base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		for i := 0; i < 15; i++ {
+			require.NoError(t, repo.Create(context.Background(), &models.History{
+				MovieID:   movieID,
+				Operation: op,
+				Status:    status,
+				CreatedAt: base.Add(time.Duration(i) * time.Second),
+			}))
+		}
+	}
+
+	cases := []filterCase{
+		{
+			name:  "movie_id",
+			query: "movie_id=PAG-001",
+			validate: func(t *testing.T, page1, page2 []HistoryRecord, total int64) {
+				assert.Equal(t, int64(15), total)
+				for _, r := range append(append([]HistoryRecord{}, page1...), page2...) {
+					assert.Equal(t, "PAG-001", r.MovieID)
+				}
+			},
+		},
+		{
+			name:  "operation",
+			query: "operation=scrape",
+			validate: func(t *testing.T, page1, page2 []HistoryRecord, total int64) {
+				assert.Equal(t, int64(15), total)
+				for _, r := range append(append([]HistoryRecord{}, page1...), page2...) {
+					assert.Equal(t, models.HistoryOpScrape, r.Operation)
+				}
+			},
+		},
+		{
+			name:  "status",
+			query: "status=failed",
+			validate: func(t *testing.T, page1, page2 []HistoryRecord, total int64) {
+				assert.Equal(t, int64(15), total)
+				for _, r := range append(append([]HistoryRecord{}, page1...), page2...) {
+					assert.Equal(t, models.HistoryStatusFailed, r.Status)
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			db, repo := setupHistoryTestDB(t)
+			defer func() { _ = db.Close() }()
+
+			// 15 matching rows + a few non-matching rows to prove the filter is scoped.
+			seed(t, repo, "PAG-001", models.HistoryOpScrape, models.HistoryStatusFailed)
+			require.NoError(t, repo.Create(context.Background(), &models.History{
+				MovieID: "OTHER", Operation: models.HistoryOpOrganize, Status: models.HistoryStatusSuccess,
+			}))
+
+			router := gin.New()
+			router.GET("/api/v1/history", getHistory(repo))
+
+			// First page: limit=10, offset=0 -> exactly 10 records and the true total.
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/history?limit=10&offset=0&"+tc.query, nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			require.Equal(t, http.StatusOK, w.Code)
+
+			var resp1 HistoryListResponse
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp1))
+			assert.Equal(t, int64(15), resp1.Total, "total must reflect all matching rows, not just the page")
+			assert.Len(t, resp1.Records, 10, "first page must be capped at limit=10")
+			assert.Equal(t, 10, resp1.Limit)
+			assert.Equal(t, 0, resp1.Offset)
+
+			// Second page: offset=10 -> the remaining 5 records, no overlap with page 1.
+			req2 := httptest.NewRequest(http.MethodGet, "/api/v1/history?limit=10&offset=10&"+tc.query, nil)
+			w2 := httptest.NewRecorder()
+			router.ServeHTTP(w2, req2)
+			require.Equal(t, http.StatusOK, w2.Code)
+
+			var resp2 HistoryListResponse
+			require.NoError(t, json.Unmarshal(w2.Body.Bytes(), &resp2))
+			assert.Equal(t, int64(15), resp2.Total)
+			assert.Len(t, resp2.Records, 5, "second page must contain the remaining records")
+
+			// Pages must not overlap.
+			seen := make(map[uint]struct{}, len(resp1.Records))
+			for _, r := range resp1.Records {
+				seen[r.ID] = struct{}{}
+			}
+			for _, r := range resp2.Records {
+				_, dup := seen[r.ID]
+				assert.False(t, dup, "second page record %d must not repeat in first page", r.ID)
+			}
+
+			tc.validate(t, resp1.Records, resp2.Records, resp1.Total)
+		})
+	}
 }

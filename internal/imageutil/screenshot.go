@@ -16,6 +16,11 @@ var (
 	dmmImageExtRegex = regexp.MustCompile(`(?i)\.jpe?g$`)
 )
 
+// picsDMMHost is the hostname serving DMM cover/poster/screenshot images
+// at their canonical (lower-resolution) URLs. awsimgsrc.dmm.com serves
+// higher-resolution equivalents.
+const picsDMMHost = "pics.dmm.co.jp"
+
 // IsDMMHost returns true if the hostname belongs to a DMM-owned domain
 // (dmm.co.jp, dmm.com, and their subdomains).
 func IsDMMHost(host string) bool {
@@ -47,7 +52,7 @@ func NormalizeDMMScreenshotURL(raw string) string {
 		raw = "https:" + raw
 	}
 
-	raw = strings.Replace(raw, "awsimgsrc.dmm.co.jp/pics_dig", "pics.dmm.co.jp", 1)
+	raw = strings.Replace(raw, "awsimgsrc.dmm.co.jp/pics_dig", picsDMMHost, 1)
 
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -81,13 +86,6 @@ func NormalizeDMMScreenshotURL(raw string) string {
 	return u.String()
 }
 
-// UpgradeCoverResolution upgrades cover image URLs to their highest-resolution
-// variant. It applies two transformations:
-//   - ps.jpg → pl.jpg (for all URLs, including amateur)
-//   - jp.jpg → pl.jpg (for non-amateur URLs only)
-//
-// Screenshot-style filenames (e.g., ipx00535jp-1.jpg) are left unchanged
-// because the suffix check uses HasSuffix rather than Contains.
 // DiscoverScreenshots probes pics.dmm.co.jp for screenshot URLs based on a cover URL pattern.
 // When the r18.dev API returns an empty gallery, this fallback discovers screenshots by
 // trying the standard DMM screenshot URL pattern: {base}/{content_id}jp-{N}.jpg
@@ -112,7 +110,7 @@ func DiscoverScreenshots(coverURL string, client *http.Client) []string {
 		return nil
 	}
 
-	if u.Hostname() != "pics.dmm.co.jp" {
+	if u.Hostname() != picsDMMHost {
 		return nil
 	}
 
@@ -217,12 +215,31 @@ func probeScreenshots(dir, contentID string, client *http.Client) []string {
 	return screenshots
 }
 
+// UpgradeCoverResolution upgrades cover image filenames to their
+// highest-resolution suffix variant:
+//   - ps.jpg → pl.jpg (for all URLs, including amateur)
+//   - jp.jpg → pl.jpg (for non-amateur URLs only)
+//
+// It does NOT change the CDN host — use UpgradeDMMCoverCDN for that.
+// Screenshot-style filenames (e.g., ipx00535jp-1.jpg) are left unchanged
+// because the suffix check uses HasSuffix rather than Contains.
 func UpgradeCoverResolution(rawURL string) string {
 	if strings.HasSuffix(rawURL, "ps.jpg") {
 		rawURL = rawURL[:len(rawURL)-len("ps.jpg")] + "pl.jpg"
 	}
 	if !strings.Contains(rawURL, "/amateur/") && strings.HasSuffix(rawURL, "jp.jpg") {
 		rawURL = rawURL[:len(rawURL)-len("jp.jpg")] + "pl.jpg"
+	}
+	return rawURL
+}
+
+// UpgradeDMMCoverCDN rewrites a pics.dmm.co.jp cover URL to its
+// higher-resolution equivalent on the awsimgsrc.dmm.com CDN (e.g.
+// 800×501 → 2184×1368 for SONE-560). Returns the input unchanged for
+// non-pics URLs or URLs that don't match a known DMM cover pattern.
+func UpgradeDMMCoverCDN(rawURL string) string {
+	if upgraded := constructAwsimgsrcURL(rawURL, "pl.jpg"); upgraded != "" {
+		return upgraded
 	}
 	return rawURL
 }

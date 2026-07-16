@@ -6,7 +6,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,7 +27,8 @@ func TestResolveActressIdentityUsesLibreDMMActressIndexWithoutMovieScrape(t *tes
 	}))
 	defer server.Close()
 
-	scraper := New(config.ScraperSettings{Enabled: true, BaseURL: server.URL}, nil, config.FlareSolverrConfig{})
+	settings := models.ScraperSettings{Enabled: true, BaseURL: server.URL}
+	scraper := newScraper(&settings, nil, models.FlareSolverrConfig{})
 	result, err := scraper.ResolveActressIdentity(context.Background(), models.ActressIdentityQuery{Names: []string{"波多野結衣"}})
 	require.NoError(t, err)
 	assert.Equal(t, 1, requests)

@@ -11,8 +11,7 @@ import type {
 	ProxyConfig,
 	OpenAICompatibleTranslationConfig,
 	AnthropicTranslationConfig,
-	BedrockTranslationConfig,
-	TranslationConfig
+	TranslationConfig,
 } from '$lib/api/types';
 
 export interface SettingsStore {
@@ -20,6 +19,7 @@ export interface SettingsStore {
 	settingsConfig: SettingsConfig | null;
 	configInitialized: boolean;
 	loading: boolean;
+	reloading: boolean;
 	error: string | null;
 	inputClass: string;
 	configQuery: ReturnType<typeof createConfigQuery>;
@@ -58,6 +58,7 @@ export function createSettingsStore(deps: SettingsStoreDeps): SettingsStore {
 	const queryClient = useQueryClient();
 	const configQuery = createConfigQuery();
 	let loading = $derived(configQuery.isPending && !configQuery.data);
+	let reloading = $state(false);
 	let error = $state<string | null>(null);
 	let fetchingTranslationModels = $state(false);
 	let translationModelOptions = $state<string[]>([]);
@@ -97,9 +98,19 @@ export function createSettingsStore(deps: SettingsStoreDeps): SettingsStore {
 		const globalProxyEnabled = config?.scrapers?.proxy?.enabled ?? false;
 		const flaresolverrEnabled = config?.scrapers?.flaresolverr?.enabled ?? false;
 
-		if (globalProxyEnabled && !isTestValid(deps.getGlobalProxyTestResult(), config?.scrapers?.proxy, TEST_VALIDITY_MS))
+		if (
+			globalProxyEnabled &&
+			!isTestValid(deps.getGlobalProxyTestResult(), config?.scrapers?.proxy, TEST_VALIDITY_MS)
+		)
 			return false;
-		if (flaresolverrEnabled && !isTestValid(deps.getGlobalFlareSolverrTestResult(), config?.scrapers?.flaresolverr, TEST_VALIDITY_MS))
+		if (
+			flaresolverrEnabled &&
+			!isTestValid(
+				deps.getGlobalFlareSolverrTestResult(),
+				config?.scrapers?.flaresolverr,
+				TEST_VALIDITY_MS,
+			)
+		)
 			return false;
 
 		for (const name of Object.keys(deps.getProfileTestResults())) {
@@ -137,7 +148,7 @@ export function createSettingsStore(deps: SettingsStoreDeps): SettingsStore {
 			profiles.main = {
 				url: cfg.scrapers.proxy?.default_profile ?? '',
 				username: '',
-				password: ''
+				password: '',
 			};
 		}
 
@@ -162,7 +173,6 @@ export function createSettingsStore(deps: SettingsStoreDeps): SettingsStore {
 		if (!translation.source_language) translation.source_language = 'en';
 		if (!translation.target_language) translation.target_language = 'ja';
 		if (!translation.timeout_seconds) translation.timeout_seconds = 60;
-		if (!translation.max_concurrency) translation.max_concurrency = 3;
 		if (translation.apply_to_primary === undefined) translation.apply_to_primary = true;
 		if (translation.overwrite_existing_target === undefined)
 			translation.overwrite_existing_target = true;
@@ -202,18 +212,23 @@ export function createSettingsStore(deps: SettingsStoreDeps): SettingsStore {
 
 		if (!translation.anthropic || typeof translation.anthropic !== 'object')
 			translation.anthropic = {} as AnthropicTranslationConfig;
-		if (!translation.anthropic.base_url) translation.anthropic.base_url = 'https://api.anthropic.com';
+		if (!translation.anthropic.base_url)
+			translation.anthropic.base_url = 'https://api.anthropic.com';
 		if (!translation.anthropic.model) translation.anthropic.model = '';
 		if (!translation.anthropic.api_key) translation.anthropic.api_key = '';
+	}
 
-		if (!translation.bedrock || typeof translation.bedrock !== 'object')
-			translation.bedrock = {} as BedrockTranslationConfig;
-		if (!translation.bedrock.region) translation.bedrock.region = 'us-east-1';
-		if (!translation.bedrock.base_url) translation.bedrock.base_url = '';
-		if (!translation.bedrock.model) translation.bedrock.model = 'anthropic.claude-3-5-sonnet-20241022-v2:0';
-		if (!translation.bedrock.access_key_id) translation.bedrock.access_key_id = '';
-		if (!translation.bedrock.secret_access_key) translation.bedrock.secret_access_key = '';
-		if (!translation.bedrock.session_token) translation.bedrock.session_token = '';
+	// Rehydrate local state from a config payload. Shared by the initial-load
+	// $effect below and reloadConfig so the rehydrate steps live in one place.
+	// Callers own configInitialized: the effect sets it on first hydration; reload
+	// leaves it true (it only ever means "config is populated", and `reloading`
+	// signals the in-flight reload to the UI instead).
+	function applyConfigData(data: Config): void {
+		config = JSON.parse(JSON.stringify(data));
+		ensureProxyProfilesInitialized();
+		ensureTranslationConfig();
+		deps.onConfigInitialized();
+		updateProxyConfigBaseline();
 	}
 
 	$effect(() => {
@@ -221,18 +236,35 @@ export function createSettingsStore(deps: SettingsStoreDeps): SettingsStore {
 		if (data && !configInitialized) {
 			untrack(() => {
 				configInitialized = true;
-				config = JSON.parse(JSON.stringify(data));
-				ensureProxyProfilesInitialized();
-				ensureTranslationConfig();
-				deps.onConfigInitialized();
-				updateProxyConfigBaseline();
+				applyConfigData(data);
 			});
 		}
 	});
 
 	async function reloadConfig() {
-		configInitialized = false;
-		await queryClient.refetchQueries({ queryKey: ['config'] });
+		reloading = true;
+		try {
+			// throwOnError makes refetchQueries reject on a failed fetch instead of
+			// silently swallowing the error (its default `.catch(noop)`), so the
+			// catch below can surface a failure toast to the user.
+			await queryClient.refetchQueries({ queryKey: ['config'] }, { throwOnError: true });
+			// Rehydrate from the awaited refetch result directly. We deliberately do
+			// NOT reset configInitialized to false before the await: that would let
+			// the rehydrating $effect above re-run against the still-cached (stale)
+			// configQuery.data and mark us initialized again before this fresh
+			// payload lands, so the new values would never get applied. On error we
+			// leave config as the last-known-good (configInitialized stays true).
+			const data = configQuery.data;
+			if (data) {
+				applyConfigData(data);
+			}
+			toastStore.success('Configuration reloaded successfully', 4000);
+		} catch (e) {
+			const msg = e instanceof Error ? e.message : 'Failed to reload configuration';
+			toastStore.error(msg, 5000);
+		} finally {
+			reloading = false;
+		}
 	}
 
 	const saveConfigMutation = createMutation(() => ({
@@ -242,23 +274,33 @@ export function createSettingsStore(deps: SettingsStoreDeps): SettingsStore {
 			}
 			const payload = {
 				...config,
-				proxy_verification_tokens: buildVerificationTokenPayload()
+				proxy_verification_tokens: buildVerificationTokenPayload(),
 			};
 			await apiClient.request('/api/v1/config', {
 				method: 'PUT',
-				body: JSON.stringify(payload)
+				body: JSON.stringify(payload),
 			});
 		},
 		onSuccess: () => {
 			deps.clearTestResults();
 			updateProxyConfigBaseline();
 			toastStore.success('Configuration saved successfully', 4000);
-			void queryClient.invalidateQueries({ queryKey: ['config'] });
+			void queryClient.invalidateQueries({ queryKey: ['config'] }).then(() => {
+				const updated = queryClient.getQueryData<Config>(['config']);
+				if (updated && config) {
+					// Only update warnings — don't replace the entire config
+					// object, as the user may have started editing other fields
+					// while the save refetch was in flight.
+					config.warnings = updated.warnings;
+				} else if (updated) {
+					applyConfigData(updated);
+				}
+			});
 		},
 		onError: (err: Error) => {
 			error = err.message;
 			toastStore.error(err.message, 5000);
-		}
+		},
 	}));
 
 	function handleSave() {
@@ -279,7 +321,7 @@ export function createSettingsStore(deps: SettingsStoreDeps): SettingsStore {
 		try {
 			const data = await apiClient.request<{ models: string[] }>('/api/v1/translation/models', {
 				method: 'POST',
-				body: JSON.stringify({ provider, base_url: baseUrl, api_key: apiKey })
+				body: JSON.stringify({ provider, base_url: baseUrl, api_key: apiKey }),
 			});
 			translationModelOptions = data.models || [];
 		} catch (e) {
@@ -292,22 +334,49 @@ export function createSettingsStore(deps: SettingsStoreDeps): SettingsStore {
 	}
 
 	return {
-		get config() { return config; },
-		set config(v) { config = v; },
-		get settingsConfig() { return settingsConfig; },
-		get configInitialized() { return configInitialized; },
-		set configInitialized(v) { configInitialized = v; },
-		get loading() { return loading; },
-		get error() { return error; },
-		set error(v) { error = v; },
+		get config() {
+			return config;
+		},
+		set config(v) {
+			config = v;
+		},
+		get settingsConfig() {
+			return settingsConfig;
+		},
+		get configInitialized() {
+			return configInitialized;
+		},
+		set configInitialized(v) {
+			configInitialized = v;
+		},
+		get loading() {
+			return loading;
+		},
+		get reloading() {
+			return reloading;
+		},
+		get error() {
+			return error;
+		},
+		set error(v) {
+			error = v;
+		},
 		inputClass,
-		get configQuery() { return configQuery; },
+		get configQuery() {
+			return configQuery;
+		},
 		reloadConfig,
 		handleSave,
-		get saveConfigMutation() { return saveConfigMutation; },
+		get saveConfigMutation() {
+			return saveConfigMutation;
+		},
 		fetchTranslationModels,
-		get fetchingTranslationModels() { return fetchingTranslationModels; },
-		get translationModelOptions() { return translationModelOptions; },
+		get fetchingTranslationModels() {
+			return fetchingTranslationModels;
+		},
+		get translationModelOptions() {
+			return translationModelOptions;
+		},
 		ensureProxyProfilesInitialized,
 		ensureTranslationConfig,
 		updateProxyConfigBaseline,
@@ -315,7 +384,11 @@ export function createSettingsStore(deps: SettingsStoreDeps): SettingsStore {
 		canSafelySave,
 		hasUnsavedProxyChanges,
 		buildVerificationTokenPayload,
-		get proxyConfigBaseline() { return proxyConfigBaseline; },
-		get flaresolverrConfigBaseline() { return flaresolverrConfigBaseline; }
+		get proxyConfigBaseline() {
+			return proxyConfigBaseline;
+		},
+		get flaresolverrConfigBaseline() {
+			return flaresolverrConfigBaseline;
+		},
 	};
 }

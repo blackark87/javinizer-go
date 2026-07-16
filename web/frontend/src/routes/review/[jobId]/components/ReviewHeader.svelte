@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Button from '$lib/components/ui/Button.svelte';
-	import { ChevronDown, ChevronUp, Image, LayoutGrid, List, LoaderCircle, Play, RefreshCw, Settings2, X, CheckSquare, Square, Trash2, RotateCcw, MousePointerClick } from 'lucide-svelte';
+	import { ChevronDown, ChevronUp, Image, LayoutGrid, List, LoaderCircle, Play, RefreshCw, Settings2, X, CheckSquare, Square, Trash2, RotateCcw, MousePointerClick, Save } from 'lucide-svelte';
 	import type { CompletenessTier } from '$lib/utils/completeness';
 
 	interface Props {
@@ -30,6 +30,10 @@
 		onClose: () => void;
 		onUpdateAll: () => void;
 		onOrganizeAll: () => void;
+		onSaveAll: () => void | Promise<void>;
+		hasEdits: boolean;
+		editCount: number;
+		savingEdits: boolean;
 	}
 
 		let {
@@ -58,7 +62,11 @@
 		onBulkRescrape,
 		onClose,
 		onUpdateAll,
-		onOrganizeAll
+		onOrganizeAll,
+		onSaveAll,
+		hasEdits,
+		editCount,
+		savingEdits
 	}: Props = $props();
 
 	$effect(() => {
@@ -126,7 +134,19 @@
 			</Button>
 		</div>
 		<div class="h-8 w-px bg-border"></div>
-		<Button variant="outline" onclick={onClose}>
+		{#if hasEdits}
+			<Button onclick={() => { void Promise.resolve(onSaveAll()).catch(() => {}); }} disabled={savingEdits || organizing} title="Save pending edits to the database">
+				{#snippet children()}
+					{#if savingEdits}
+						<LoaderCircle class="h-4 w-4 mr-2 animate-spin" />
+					{:else}
+						<Save class="h-4 w-4 mr-2" />
+					{/if}
+					{savingEdits ? 'Saving...' : `Save changes${editCount > 1 ? ` (${editCount})` : ''}`}
+				{/snippet}
+			</Button>
+		{/if}
+		<Button variant="outline" onclick={onClose} disabled={organizing}>
 			{#snippet children()}
 				<X class="h-4 w-4 mr-2" />
 				{isUpdateMode ? 'Close' : 'Cancel'}
@@ -158,36 +178,36 @@
 	</div>
 </div>
 
-<div class="flex items-center gap-3 mb-4">
-	<Button
-		size="sm"
-		variant={selectionMode ? 'default' : 'outline'}
-		aria-pressed={selectionMode}
-		onclick={() => onToggleSelectionMode?.()}
-	>
-		{#snippet children()}
-			<MousePointerClick class="h-4 w-4 mr-1" />
-			Select
-		{/snippet}
-	</Button>
-	{#if selectionMode}
+{#if viewMode === 'grid-poster' || viewMode === 'grid-cover'}
+	<div class="flex items-center gap-3 mb-4">
 		<Button
 			size="sm"
-			variant="outline"
-			onclick={allSelected ? onDeselectAll : onSelectAll}
+			variant={selectionMode ? 'default' : 'outline'}
+			aria-pressed={selectionMode}
+			onclick={() => onToggleSelectionMode?.()}
 		>
 			{#snippet children()}
-				{#if allSelected}
-					<CheckSquare class="h-4 w-4 mr-1" />
-					Deselect All
-				{:else}
-					<Square class="h-4 w-4 mr-1" />
-					Select All
-				{/if}
+				<MousePointerClick class="h-4 w-4 mr-1" />
+				Select
 			{/snippet}
 		</Button>
-	{/if}
-	{#if viewMode === 'grid-poster' || viewMode === 'grid-cover'}
+		{#if selectionMode}
+			<Button
+				size="sm"
+				variant="outline"
+				onclick={allSelected ? onDeselectAll : onSelectAll}
+			>
+				{#snippet children()}
+					{#if allSelected}
+						<CheckSquare class="h-4 w-4 mr-1" />
+						Deselect All
+					{:else}
+						<Square class="h-4 w-4 mr-1" />
+						Select All
+					{/if}
+				{/snippet}
+			</Button>
+		{/if}
 		<div class="h-4 w-px bg-border"></div>
 		<div class="inline-flex items-center gap-1">
 			{#each tierConfig as { tier, label, dotClass }}
@@ -205,46 +225,46 @@
 				</button>
 			{/each}
 		</div>
-	{/if}
-	{#if selectedCount > 0}
-		<div class="ml-auto flex items-center gap-3">
-			<span class="text-sm font-medium text-muted-foreground whitespace-nowrap">
-				{selectedCount} selected
-			</span>
-			<Button
-				size="sm"
-				variant="outline"
-				onclick={onBulkExclude}
-				disabled={bulkExcluding || bulkRescraping}
-				class="text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300"
-			>
-				{#snippet children()}
-					{#if bulkExcluding}
-						<LoaderCircle class="h-4 w-4 mr-1 animate-spin" />
-					{:else}
-						<Trash2 class="h-4 w-4 mr-1" />
-					{/if}
-					Remove
-				{/snippet}
-			</Button>
-			<Button
-				size="sm"
-				variant="outline"
-				onclick={onBulkRescrape}
-				disabled={bulkExcluding || bulkRescraping}
-			>
-				{#snippet children()}
-					{#if bulkRescraping}
-						<LoaderCircle class="h-4 w-4 mr-1 animate-spin" />
-					{:else}
-						<RotateCcw class="h-4 w-4 mr-1" />
-					{/if}
-					Rescrape
-				{/snippet}
-			</Button>
-		</div>
-	{/if}
-</div>
+		{#if selectedCount > 0}
+			<div class="ml-auto flex items-center gap-3">
+				<span class="text-sm font-medium text-muted-foreground whitespace-nowrap">
+					{selectedCount} selected
+				</span>
+				<Button
+					size="sm"
+					variant="outline"
+					onclick={onBulkExclude}
+					disabled={bulkExcluding || bulkRescraping}
+					class="text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300"
+				>
+					{#snippet children()}
+						{#if bulkExcluding}
+							<LoaderCircle class="h-4 w-4 mr-1 animate-spin" />
+						{:else}
+							<Trash2 class="h-4 w-4 mr-1" />
+						{/if}
+						Remove
+					{/snippet}
+				</Button>
+				<Button
+					size="sm"
+					variant="outline"
+					onclick={onBulkRescrape}
+					disabled={bulkExcluding || bulkRescraping}
+				>
+					{#snippet children()}
+						{#if bulkRescraping}
+							<LoaderCircle class="h-4 w-4 mr-1 animate-spin" />
+						{:else}
+							<RotateCcw class="h-4 w-4 mr-1" />
+						{/if}
+						Rescrape
+					{/snippet}
+				</Button>
+			</div>
+		{/if}
+	</div>
+{/if}
 
 {#if isUpdateMode}
 	<div class="mb-4">

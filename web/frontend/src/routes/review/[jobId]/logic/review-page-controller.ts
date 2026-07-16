@@ -4,7 +4,7 @@ import { previewImageUrl } from '$lib/utils/image';
 interface ReviewPageControllerDeps {
 	getJob: () => BatchJobResponse | null;
 	getCurrentMovie: () => Movie | null;
-	getCurrentResult: () => { result_id: string; movie_id: string } | undefined;
+	getCurrentResult: () => { result_id: string } | undefined;
 	getEditedMovies: () => Map<string, Movie>;
 	getDestinationPath: () => string;
 	setDestinationPath: (destinationPath: string) => void;
@@ -16,6 +16,9 @@ interface ReviewPageControllerDeps {
 	setImageViewerIndex: (index: number) => void;
 	setImageViewerTitle: (title: string | undefined) => void;
 	excludeMovie: (jobId: string, resultId: string) => void;
+	api: {
+		getPreviewImageURL: (url: string) => string;
+	};
 }
 
 export function createReviewPageController(deps: ReviewPageControllerDeps) {
@@ -38,7 +41,9 @@ export function createReviewPageController(deps: ReviewPageControllerDeps) {
 	}
 
 	function previewImageURL(url: string | undefined): string {
-		return previewImageUrl(url) ?? '';
+		if (!url) return '';
+		if (url.startsWith('/api/v1/') || url.startsWith('/')) return url;
+		return previewImageUrl(deps.api.getPreviewImageURL(url)) ?? '';
 	}
 
 	function openScreenshotViewer(index: number) {
@@ -81,6 +86,6 @@ export function createReviewPageController(deps: ReviewPageControllerDeps) {
 		openScreenshotViewer,
 		openCoverViewer,
 		closeImageViewer,
-		excludeCurrentMovie
+		excludeCurrentMovie,
 	};
 }

@@ -6,20 +6,36 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 )
 
-var ErrSSRFBlocked = fmt.Errorf("SSRF blocked: URL resolves to private/internal IP")
+var (
+	lookupIPMu sync.RWMutex
+	lookupIP   = net.LookupIP
+)
 
-var lookupIP = net.LookupIP
-
-func SetLookupIPForTest(fn func(string) ([]net.IP, error)) func() {
-	orig := lookupIP
+// setLookupIPForTest overrides the DNS resolver for testing. Returns a cleanup
+// function that restores the original resolver.
+func setLookupIPForTest(fn func(string) ([]net.IP, error)) func() {
+	lookupIPMu.Lock()
+	defer lookupIPMu.Unlock()
+	original := lookupIP
 	lookupIP = fn
-	return func() { lookupIP = orig }
+	return func() {
+		lookupIPMu.Lock()
+		defer lookupIPMu.Unlock()
+		lookupIP = original
+	}
 }
 
-func IsPrivateIP(ip net.IP) bool {
+func currentLookupIP() func(string) ([]net.IP, error) {
+	lookupIPMu.RLock()
+	defer lookupIPMu.RUnlock()
+	return lookupIP
+}
+
+func isPrivateIP(ip net.IP) bool {
 	if ip == nil {
 		return false
 	}
@@ -41,6 +57,7 @@ func IsPrivateIP(ip net.IP) bool {
 	return false
 }
 
+// CheckURL validates that rawURL uses an http(s) scheme and does not resolve to a private or internal IP address.
 func CheckURL(rawURL string) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -53,19 +70,19 @@ func CheckURL(rawURL string) error {
 	if host == "" {
 		return fmt.Errorf("SSRF blocked: empty hostname")
 	}
-	ips, err := lookupIP(host)
+	ips, err := currentLookupIP()(host)
 	if err != nil {
 		return fmt.Errorf("SSRF blocked: failed to resolve hostname %q: %w", host, err)
 	}
 	for _, ip := range ips {
-		if IsPrivateIP(ip) {
+		if isPrivateIP(ip) {
 			return fmt.Errorf("SSRF blocked: %s resolves to private/internal IP", host)
 		}
 	}
 	return nil
 }
 
-func CheckRedirect(req *http.Request, via []*http.Request) error {
+func checkRedirect(req *http.Request, via []*http.Request) error {
 	if err := CheckURL(req.URL.String()); err != nil {
 		return fmt.Errorf("SSRF blocked: redirect to private/internal IP: %w", err)
 	}
@@ -75,6 +92,7 @@ func CheckRedirect(req *http.Request, via []*http.Request) error {
 	return nil
 }
 
+// NewSSRFSafeClient returns an HTTP client that blocks requests to private or internal IP addresses.
 func NewSSRFSafeClient(timeout time.Duration) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil
@@ -84,12 +102,12 @@ func NewSSRFSafeClient(timeout time.Duration) *http.Client {
 		if err != nil {
 			return nil, fmt.Errorf("SSRF blocked: invalid address %q: %w", addr, err)
 		}
-		ips, err := lookupIP(host)
+		ips, err := currentLookupIP()(host)
 		if err != nil {
 			return nil, fmt.Errorf("SSRF blocked: failed to resolve %q: %w", host, err)
 		}
 		for _, ip := range ips {
-			if IsPrivateIP(ip) {
+			if isPrivateIP(ip) {
 				return nil, fmt.Errorf("SSRF blocked: %s resolves to private/internal IP %s", host, ip)
 			}
 		}
@@ -102,10 +120,11 @@ func NewSSRFSafeClient(timeout time.Duration) *http.Client {
 	return &http.Client{
 		Transport:     transport,
 		Timeout:       timeout,
-		CheckRedirect: CheckRedirect,
+		CheckRedirect: checkRedirect,
 	}
 }
 
+// WrapTransportWithSSRFCheck wraps the given transport's dialer to block connections to private or internal IP addresses.
 func WrapTransportWithSSRFCheck(transport *http.Transport) *http.Transport {
 	originalDialContext := transport.DialContext
 	if originalDialContext == nil {
@@ -116,12 +135,12 @@ func WrapTransportWithSSRFCheck(transport *http.Transport) *http.Transport {
 		if err != nil {
 			return nil, fmt.Errorf("SSRF blocked: invalid address %q: %w", addr, err)
 		}
-		ips, err := lookupIP(host)
+		ips, err := currentLookupIP()(host)
 		if err != nil {
 			return nil, fmt.Errorf("SSRF blocked: failed to resolve %q: %w", host, err)
 		}
 		for _, ip := range ips {
-			if IsPrivateIP(ip) {
+			if isPrivateIP(ip) {
 				return nil, fmt.Errorf("SSRF blocked: %s resolves to private/internal IP %s", host, ip)
 			}
 		}

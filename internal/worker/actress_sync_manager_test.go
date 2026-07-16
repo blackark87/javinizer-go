@@ -16,11 +16,12 @@ import (
 	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/models"
+	"github.com/javinizer/javinizer-go/internal/scraperutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func newActressSyncManagerTest(t *testing.T, cfg *config.Config, registry *models.ScraperRegistry) (*ActressSyncManager, *database.DB, *database.ActressRepository, *database.MovieRepository) {
+func newActressSyncManagerTest(t *testing.T, cfg *config.Config, registry *scraperutil.ScraperRegistry) (*ActressSyncManager, *database.DB, *database.ActressRepository, *database.MovieRepository) {
 	t.Helper()
 	if cfg == nil {
 		cfg = &config.Config{}
@@ -32,14 +33,14 @@ func newActressSyncManagerTest(t *testing.T, cfg *config.Config, registry *model
 	if cfg.Scrapers.RequestTimeoutSeconds == 0 {
 		cfg.Scrapers.RequestTimeoutSeconds = 5
 	}
-	db, err := database.New(cfg)
+	db, err := database.New(&database.Config{Type: cfg.Database.Type, DSN: cfg.Database.DSN, LogLevel: cfg.Database.LogLevel})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate())
+	require.NoError(t, db.RunMigrationsOnStartup(context.Background()))
 	actressRepo := database.NewActressRepository(db)
 	movieRepo := database.NewMovieRepository(db)
 	manager := NewActressSyncManager(ActressSyncManagerDeps{
 		DB: db, ActressRepo: actressRepo, MovieRepo: movieRepo,
-		GetConfig: func() *config.Config { return cfg }, GetRegistry: func() *models.ScraperRegistry { return registry },
+		GetConfig: func() *config.Config { return cfg }, GetRegistry: func() *scraperutil.ScraperRegistry { return registry },
 	})
 	t.Cleanup(func() {
 		manager.Stop()
@@ -86,8 +87,8 @@ func TestActressSyncManagerUsesFiveGeneralWorkers(t *testing.T) {
 		}
 		return &models.ScraperResult{ID: movieID, Actresses: []models.ActressInfo{{DMMID: 1000 + int(current), JapaneseName: "実名" + movieID}}}, nil
 	}
-	registry := models.NewScraperRegistry()
-	registry.Register(resolver)
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
 	cfg := &config.Config{Performance: config.PerformanceConfig{MaxWorkers: 5}}
 	cfg.Scrapers.Priority = []string{"sougouwiki"}
 	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, cfg, registry)
@@ -95,8 +96,8 @@ func TestActressSyncManagerUsesFiveGeneralWorkers(t *testing.T) {
 	ids := make([]uint, 0, 5)
 	for index := 0; index < 5; index++ {
 		actress := &models.Actress{JapaneseName: fmt.Sprintf("仮名女優%d", index)}
-		require.NoError(t, actressRepo.Create(actress))
-		require.NoError(t, movieRepo.Create(&models.Movie{
+		require.NoError(t, actressRepo.Create(context.Background(), actress))
+		require.NoError(t, movieRepo.Create(context.Background(), &models.Movie{
 			ContentID: fmt.Sprintf("worker-%d", index), ID: fmt.Sprintf("WORKER-%03d", index), Actresses: []models.Actress{*actress},
 		}))
 		ids = append(ids, actress.ID)
@@ -133,8 +134,8 @@ func TestActressSyncManagerCancelStopsPendingAfterRunningItems(t *testing.T) {
 			DMMID: 3000 + index, JapaneseName: fmt.Sprintf("取消実名%d", index), ThumbURL: "resolved.jpg",
 		}}}, nil
 	}
-	registry := models.NewScraperRegistry()
-	registry.Register(resolver)
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
 	cfg := &config.Config{Performance: config.PerformanceConfig{MaxWorkers: 2}}
 	cfg.Scrapers.Priority = []string{"sougouwiki"}
 	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, cfg, registry)
@@ -142,8 +143,8 @@ func TestActressSyncManagerCancelStopsPendingAfterRunningItems(t *testing.T) {
 	ids := make([]uint, 0, 4)
 	for index := 0; index < 4; index++ {
 		actress := &models.Actress{JapaneseName: fmt.Sprintf("取消仮名%d", index)}
-		require.NoError(t, actressRepo.Create(actress))
-		require.NoError(t, movieRepo.Create(&models.Movie{
+		require.NoError(t, actressRepo.Create(context.Background(), actress))
+		require.NoError(t, movieRepo.Create(context.Background(), &models.Movie{
 			ContentID: fmt.Sprintf("cancel-%d", index), ID: fmt.Sprintf("CANCEL-%03d", index), Actresses: []models.Actress{*actress},
 		}))
 		ids = append(ids, actress.ID)
@@ -177,17 +178,17 @@ func TestActressSyncManagerUnknownMoviesAreIsolatedAndReuseExistingActress(t *te
 		}
 		return &models.ScraperResult{ID: id, Actresses: []models.ActressInfo{{DMMID: 101, JapaneseName: "確認女優"}}}, nil
 	}
-	registry := models.NewScraperRegistry()
-	registry.Register(resolver)
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
 	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, &config.Config{}, registry)
 
 	unknown := &models.Actress{FirstName: models.UnknownActressName, JapaneseName: models.UnknownActressName}
-	require.NoError(t, actressRepo.Create(unknown))
+	require.NoError(t, actressRepo.Create(context.Background(), unknown))
 	existing := &models.Actress{DMMID: 101, JapaneseName: "確認女優", FirstName: "Kakunin", LastName: "Joyu"}
-	require.NoError(t, actressRepo.Create(existing))
-	require.NoError(t, movieRepo.Create(&models.Movie{ContentID: "ok001", ID: "OK-001", Actresses: []models.Actress{*unknown}}))
+	require.NoError(t, actressRepo.Create(context.Background(), existing))
+	require.NoError(t, movieRepo.Create(context.Background(), &models.Movie{ContentID: "ok001", ID: "OK-001", Actresses: []models.Actress{*unknown}}))
 	for index := 2; index <= 6; index++ {
-		require.NoError(t, movieRepo.Create(&models.Movie{
+		require.NoError(t, movieRepo.Create(context.Background(), &models.Movie{
 			ContentID: fmt.Sprintf("fail%03d", index), ID: fmt.Sprintf("FAIL-%03d", index), Actresses: []models.Actress{*unknown},
 		}))
 	}
@@ -199,16 +200,16 @@ func TestActressSyncManagerUnknownMoviesAreIsolatedAndReuseExistingActress(t *te
 	assert.Equal(t, 1, completed.Updated)
 	assert.Equal(t, 5, completed.Failed)
 
-	successMovie, err := movieRepo.FindByContentID("ok001")
+	successMovie, err := movieRepo.FindByContentID(context.Background(), "ok001")
 	require.NoError(t, err)
 	require.Len(t, successMovie.Actresses, 1)
 	assert.Equal(t, existing.ID, successMovie.Actresses[0].ID, "verified actress must reuse the existing DMM row")
 
-	failedMovie, err := movieRepo.FindByContentID("fail002")
+	failedMovie, err := movieRepo.FindByContentID(context.Background(), "fail002")
 	require.NoError(t, err)
 	require.Len(t, failedMovie.Actresses, 1)
 	assert.Equal(t, unknown.ID, failedMovie.Actresses[0].ID, "failed movie must preserve its Unknown mapping")
-	_, err = actressRepo.FindByID(unknown.ID)
+	_, err = actressRepo.FindByID(context.Background(), unknown.ID)
 	require.NoError(t, err, "shared Unknown row must remain while another movie still uses it")
 
 	tasks, err := manager.ListTasks(job.ID)
@@ -223,15 +224,15 @@ func TestActressSyncManagerDeduplicatesMissingDMMTasksByMovie(t *testing.T) {
 	resolver.resolveFn = func(_ context.Context, id string) (*models.ScraperResult, error) {
 		return &models.ScraperResult{ID: id, Actresses: []models.ActressInfo{{DMMID: 801, JapaneseName: "確認女優"}}}, nil
 	}
-	registry := models.NewScraperRegistry()
-	registry.Register(resolver)
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
 	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, &config.Config{}, registry)
 
 	first := &models.Actress{JapaneseName: "仮名一"}
 	second := &models.Actress{JapaneseName: "仮名二"}
-	require.NoError(t, actressRepo.Create(first))
-	require.NoError(t, actressRepo.Create(second))
-	require.NoError(t, movieRepo.Create(&models.Movie{
+	require.NoError(t, actressRepo.Create(context.Background(), first))
+	require.NoError(t, actressRepo.Create(context.Background(), second))
+	require.NoError(t, movieRepo.Create(context.Background(), &models.Movie{
 		ContentID: "dedupe001", ID: "300MIUM-921", Actresses: []models.Actress{*first, *second},
 	}))
 
@@ -253,16 +254,16 @@ func TestActressSyncManagerFallbackCleansDecoratedNamesAndUnknownDescriptions(t 
 	resolver.resolveFn = func(_ context.Context, id string) (*models.ScraperResult, error) {
 		return &models.ScraperResult{ID: id}, nil
 	}
-	registry := models.NewScraperRegistry()
-	registry.Register(resolver)
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
 	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, &config.Config{}, registry)
 
 	decorated := &models.Actress{JapaneseName: "あいり 21歳 大学3年生", ThumbURL: "decorated.jpg"}
 	description := &models.Actress{JapaneseName: "欲求不満セレブ妻", ThumbURL: "untrusted.jpg"}
-	require.NoError(t, actressRepo.Create(decorated))
-	require.NoError(t, actressRepo.Create(description))
-	require.NoError(t, movieRepo.Create(&models.Movie{ContentID: "clean001", ID: "300MIUM-834", Actresses: []models.Actress{*decorated}}))
-	require.NoError(t, movieRepo.Create(&models.Movie{ContentID: "clean002", ID: "JNT-051", Actresses: []models.Actress{*description}}))
+	require.NoError(t, actressRepo.Create(context.Background(), decorated))
+	require.NoError(t, actressRepo.Create(context.Background(), description))
+	require.NoError(t, movieRepo.Create(context.Background(), &models.Movie{ContentID: "clean001", ID: "300MIUM-834", Actresses: []models.Actress{*decorated}}))
+	require.NoError(t, movieRepo.Create(context.Background(), &models.Movie{ContentID: "clean002", ID: "JNT-051", Actresses: []models.Actress{*description}}))
 
 	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{
 		Scope: "selected", ActressIDs: []uint{decorated.ID, description.ID},
@@ -271,10 +272,10 @@ func TestActressSyncManagerFallbackCleansDecoratedNamesAndUnknownDescriptions(t 
 	completed := waitForActressSyncJob(t, manager, job.ID)
 	assert.Equal(t, 2, completed.Updated)
 
-	cleaned, err := actressRepo.FindByID(decorated.ID)
+	cleaned, err := actressRepo.FindByID(context.Background(), decorated.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "あいり", cleaned.JapaneseName)
-	unknown, err := actressRepo.FindByID(description.ID)
+	unknown, err := actressRepo.FindByID(context.Background(), description.ID)
 	require.NoError(t, err)
 	assert.Equal(t, models.UnknownActressName, unknown.JapaneseName)
 	assert.Equal(t, models.UnknownActressName, unknown.FirstName)
@@ -286,13 +287,13 @@ func TestActressSyncManagerResolverFailureKeepsMappingsAndStoresContext(t *testi
 	resolver.resolveFn = func(_ context.Context, _ string) (*models.ScraperResult, error) {
 		return nil, errors.New("upstream timeout")
 	}
-	registry := models.NewScraperRegistry()
-	registry.Register(resolver)
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
 	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, &config.Config{}, registry)
 
 	placeholder := &models.Actress{JapaneseName: "仮名"}
-	require.NoError(t, actressRepo.Create(placeholder))
-	require.NoError(t, movieRepo.Create(&models.Movie{ContentID: "failure001", ID: "FAILURE-001", Actresses: []models.Actress{*placeholder}}))
+	require.NoError(t, actressRepo.Create(context.Background(), placeholder))
+	require.NoError(t, movieRepo.Create(context.Background(), &models.Movie{ContentID: "failure001", ID: "FAILURE-001", Actresses: []models.Actress{*placeholder}}))
 	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{Scope: "selected", ActressIDs: []uint{placeholder.ID}})
 	require.NoError(t, err)
 	completed := waitForActressSyncJob(t, manager, job.ID)
@@ -306,7 +307,7 @@ func TestActressSyncManagerResolverFailureKeepsMappingsAndStoresContext(t *testi
 	assert.Contains(t, tasks[0].ErrorMessage, "sougouwiki")
 	assert.Contains(t, tasks[0].ErrorMessage, "resolving stage")
 	assert.Contains(t, tasks[0].ErrorMessage, "upstream timeout")
-	movie, err := movieRepo.FindByContentID("failure001")
+	movie, err := movieRepo.FindByContentID(context.Background(), "failure001")
 	require.NoError(t, err)
 	require.Len(t, movie.Actresses, 1)
 	assert.Equal(t, placeholder.ID, movie.Actresses[0].ID)
@@ -317,17 +318,17 @@ func TestActressSyncManagerReplacesOnlyUnverifiedMovieMappings(t *testing.T) {
 	resolver.resolveFn = func(_ context.Context, id string) (*models.ScraperResult, error) {
 		return &models.ScraperResult{ID: id, Actresses: []models.ActressInfo{{DMMID: 902, JapaneseName: "新規確認女優"}}}, nil
 	}
-	registry := models.NewScraperRegistry()
-	registry.Register(resolver)
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
 	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, &config.Config{}, registry)
 
 	verified := &models.Actress{DMMID: 901, JapaneseName: "既存確認女優"}
 	first := &models.Actress{JapaneseName: "仮名一"}
 	second := &models.Actress{JapaneseName: "仮名二"}
-	require.NoError(t, actressRepo.Create(verified))
-	require.NoError(t, actressRepo.Create(first))
-	require.NoError(t, actressRepo.Create(second))
-	require.NoError(t, movieRepo.Create(&models.Movie{
+	require.NoError(t, actressRepo.Create(context.Background(), verified))
+	require.NoError(t, actressRepo.Create(context.Background(), first))
+	require.NoError(t, actressRepo.Create(context.Background(), second))
+	require.NoError(t, movieRepo.Create(context.Background(), &models.Movie{
 		ContentID: "replace001", ID: "REPLACE-001", Actresses: []models.Actress{*verified, *first, *second},
 	}))
 
@@ -335,13 +336,13 @@ func TestActressSyncManagerReplacesOnlyUnverifiedMovieMappings(t *testing.T) {
 	require.NoError(t, err)
 	completed := waitForActressSyncJob(t, manager, job.ID)
 	assert.Equal(t, 1, completed.Updated)
-	movie, err := movieRepo.FindByContentID("replace001")
+	movie, err := movieRepo.FindByContentID(context.Background(), "replace001")
 	require.NoError(t, err)
 	require.Len(t, movie.Actresses, 2)
 	assert.ElementsMatch(t, []int{901, 902}, []int{movie.Actresses[0].DMMID, movie.Actresses[1].DMMID})
-	_, err = actressRepo.FindByID(first.ID)
+	_, err = actressRepo.FindByID(context.Background(), first.ID)
 	assert.True(t, database.IsNotFound(err))
-	_, err = actressRepo.FindByID(second.ID)
+	_, err = actressRepo.FindByID(context.Background(), second.ID)
 	assert.True(t, database.IsNotFound(err))
 }
 
@@ -355,8 +356,8 @@ func TestActressSyncManagerLLMFailureKeepsVerifiedIdentityAndMapping(t *testing.
 	resolver.resolveFn = func(_ context.Context, id string) (*models.ScraperResult, error) {
 		return &models.ScraperResult{ID: id, Actresses: []models.ActressInfo{{DMMID: 9901, JapaneseName: "響蓮"}}}, nil
 	}
-	registry := models.NewScraperRegistry()
-	registry.Register(resolver)
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
 	cfg := &config.Config{}
 	cfg.Metadata.Translation = config.TranslationConfig{
 		Enabled: true, Provider: "openai", SourceLanguage: "ja", TargetLanguage: "ko", ApplyToPrimary: true,
@@ -366,8 +367,8 @@ func TestActressSyncManagerLLMFailureKeepsVerifiedIdentityAndMapping(t *testing.
 	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, cfg, registry)
 
 	placeholder := &models.Actress{JapaneseName: "仮名"}
-	require.NoError(t, actressRepo.Create(placeholder))
-	require.NoError(t, movieRepo.Create(&models.Movie{ContentID: "llm-failure", ID: "LLM-FAIL-001", Actresses: []models.Actress{*placeholder}}))
+	require.NoError(t, actressRepo.Create(context.Background(), placeholder))
+	require.NoError(t, movieRepo.Create(context.Background(), &models.Movie{ContentID: "llm-failure", ID: "LLM-FAIL-001", Actresses: []models.Actress{*placeholder}}))
 	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{Scope: "selected", ActressIDs: []uint{placeholder.ID}})
 	require.NoError(t, err)
 	completed := waitForActressSyncJob(t, manager, job.ID)
@@ -375,7 +376,7 @@ func TestActressSyncManagerLLMFailureKeepsVerifiedIdentityAndMapping(t *testing.
 	assert.Equal(t, 1, completed.Warnings)
 	assert.Zero(t, completed.Failed)
 
-	movie, err := movieRepo.FindByContentID("llm-failure")
+	movie, err := movieRepo.FindByContentID(context.Background(), "llm-failure")
 	require.NoError(t, err)
 	require.Len(t, movie.Actresses, 1)
 	assert.Equal(t, 9901, movie.Actresses[0].DMMID)
@@ -396,18 +397,18 @@ func TestActressSyncManagerRepairsMissingDMMIDAndSkipsNormalExistingProfile(t *t
 			{DMMID: 702, FirstName: "Yui", LastName: "Hatano", JapaneseName: "波多野結衣"},
 		}}, nil
 	}
-	registry := models.NewScraperRegistry()
-	registry.Register(resolver)
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
 	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, &config.Config{}, registry)
 
 	existingCanonical := &models.Actress{
 		DMMID: 701, FirstName: "이치카", LastName: "마츠모토", JapaneseName: "기존 정상 일본어명",
 		ThumbURL: "existing-profile.jpg", Aliases: "기존 별칭",
 	}
-	require.NoError(t, actressRepo.Create(existingCanonical))
+	require.NoError(t, actressRepo.Create(context.Background(), existingCanonical))
 	missingDMMID := &models.Actress{JapaneseName: "잘못 남아 있던 가명"}
-	require.NoError(t, actressRepo.Create(missingDMMID))
-	require.NoError(t, movieRepo.Create(&models.Movie{
+	require.NoError(t, actressRepo.Create(context.Background(), missingDMMID))
+	require.NoError(t, movieRepo.Create(context.Background(), &models.Movie{
 		ContentID: "mium00123", ID: "MIUM-123", Actresses: []models.Actress{*missingDMMID},
 	}))
 
@@ -423,7 +424,7 @@ func TestActressSyncManagerRepairsMissingDMMIDAndSkipsNormalExistingProfile(t *t
 
 	completed := waitForActressSyncJob(t, manager, job.ID)
 	assert.Equal(t, 1, completed.Updated)
-	updatedMovie, err := movieRepo.FindByContentID("mium00123")
+	updatedMovie, err := movieRepo.FindByContentID(context.Background(), "mium00123")
 	require.NoError(t, err)
 	require.Len(t, updatedMovie.Actresses, 2)
 	assert.ElementsMatch(t, []int{701, 702}, []int{updatedMovie.Actresses[0].DMMID, updatedMovie.Actresses[1].DMMID})
@@ -445,7 +446,7 @@ func TestActressSyncManagerRepairsMissingDMMIDAndSkipsNormalExistingProfile(t *t
 	for _, actress := range updatedMovie.Actresses {
 		assert.NotEqual(t, "잘못 남아 있던 가명", actress.JapaneseName)
 	}
-	_, err = actressRepo.FindByID(missingDMMID.ID)
+	_, err = actressRepo.FindByID(context.Background(), missingDMMID.ID)
 	assert.True(t, database.IsNotFound(err), "the stale missing-DMMID row must be deleted after its final movie mapping is replaced")
 	assert.Empty(t, resolver.identityQueries, "missing-DMMID actresses with linked movies must use movie cast resolution, not name identity lookup")
 	assert.Contains(t, resolver.resolveQueries, "MIUM-123")
@@ -455,12 +456,12 @@ func TestActressSyncManagerDoesNotFallBackToNameResolverWithoutLinkedMovie(t *te
 	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true, identityResult: &models.ScraperResult{
 		Actresses: []models.ActressInfo{{DMMID: 999, JapaneseName: "직접 조회 결과"}},
 	}}
-	registry := models.NewScraperRegistry()
-	registry.Register(resolver)
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
 	manager, _, actressRepo, _ := newActressSyncManagerTest(t, &config.Config{}, registry)
 
 	missingDMMID := &models.Actress{JapaneseName: "연결 작품 없는 배우"}
-	require.NoError(t, actressRepo.Create(missingDMMID))
+	require.NoError(t, actressRepo.Create(context.Background(), missingDMMID))
 	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{
 		Scope: "selected", ActressIDs: []uint{missingDMMID.ID},
 	})
@@ -478,27 +479,27 @@ func TestActressSyncManagerReusesMatchingDMMOwnerAndBackfillsIt(t *testing.T) {
 			ID: id, Actresses: []models.ActressInfo{{DMMID: 501, JapaneseName: "同一女優", ThumbURL: "https://example.com/501.jpg"}},
 		}, nil
 	}
-	registry := models.NewScraperRegistry()
-	registry.Register(resolver)
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
 	cfg := &config.Config{}
 	cfg.Scrapers.Priority = []string{"sougouwiki"}
 	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, cfg, registry)
 
 	target := &models.Actress{JapaneseName: "同一女優"}
 	owner := &models.Actress{DMMID: 501, JapaneseName: "同一女優"}
-	require.NoError(t, actressRepo.Create(target))
-	require.NoError(t, actressRepo.Create(owner))
-	require.NoError(t, movieRepo.Create(&models.Movie{ContentID: "same001", ID: "SAME-001", Actresses: []models.Actress{*target}}))
+	require.NoError(t, actressRepo.Create(context.Background(), target))
+	require.NoError(t, actressRepo.Create(context.Background(), owner))
+	require.NoError(t, movieRepo.Create(context.Background(), &models.Movie{ContentID: "same001", ID: "SAME-001", Actresses: []models.Actress{*target}}))
 
 	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{Scope: "selected", ActressIDs: []uint{target.ID}})
 	require.NoError(t, err)
 	completed := waitForActressSyncJob(t, manager, job.ID)
 	assert.Equal(t, 1, completed.Updated)
-	movie, err := movieRepo.FindByContentID("same001")
+	movie, err := movieRepo.FindByContentID(context.Background(), "same001")
 	require.NoError(t, err)
 	require.Len(t, movie.Actresses, 1)
 	assert.Equal(t, owner.ID, movie.Actresses[0].ID)
-	updatedOwner, err := actressRepo.FindByID(owner.ID)
+	updatedOwner, err := actressRepo.FindByID(context.Background(), owner.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "https://example.com/501.jpg", updatedOwner.ThumbURL)
 }

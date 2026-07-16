@@ -1,16 +1,19 @@
 package database
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/javinizer/javinizer-go/internal/logging"
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
+// WordReplacementRepository persists word replacement records.
 type WordReplacementRepository struct {
 	*BaseRepository[models.WordReplacement, uint]
 }
 
+// NewWordReplacementRepository creates a word replacement repository backed by the given database.
 func NewWordReplacementRepository(db *DB) *WordReplacementRepository {
 	return &WordReplacementRepository{
 		BaseRepository: NewBaseRepository[models.WordReplacement, uint](
@@ -21,57 +24,65 @@ func NewWordReplacementRepository(db *DB) *WordReplacementRepository {
 	}
 }
 
-func (r *WordReplacementRepository) Create(replacement *models.WordReplacement) error {
-	return r.BaseRepository.Create(replacement)
+// Create inserts a new word replacement record.
+func (r *WordReplacementRepository) Create(ctx context.Context, replacement *models.WordReplacement) error {
+	return r.BaseRepository.Create(ctx, replacement)
 }
 
-func (r *WordReplacementRepository) Upsert(replacement *models.WordReplacement) error {
-	existing, err := r.FindByOriginal(replacement.Original)
+// Upsert inserts the word replacement or updates the existing record matched by its original text.
+func (r *WordReplacementRepository) Upsert(ctx context.Context, replacement *models.WordReplacement) error {
+	existing, err := r.FindByOriginal(ctx, replacement.Original)
 	if err != nil {
-		if !isRecordNotFound(err) {
+		if !IsNotFound(err) {
 			return err
 		}
-		return r.Create(replacement)
+		return r.Create(ctx, replacement)
 	}
 
 	replacement.ID = existing.ID
 	replacement.CreatedAt = existing.CreatedAt
-	if err := r.GetDB().Save(replacement).Error; err != nil {
+	if err := r.GetDB().WithContext(ctx).Save(replacement).Error; err != nil {
 		return wrapDBErr("update", fmt.Sprintf("word replacement %s", replacement.Original), err)
 	}
 	return nil
 }
 
-func (r *WordReplacementRepository) FindByOriginal(original string) (*models.WordReplacement, error) {
+// FindByOriginal returns the word replacement matching the given original text.
+func (r *WordReplacementRepository) FindByOriginal(ctx context.Context, original string) (*models.WordReplacement, error) {
 	var replacement models.WordReplacement
-	err := r.GetDB().First(&replacement, "original = ?", original).Error
+	err := r.GetDB().WithContext(ctx).First(&replacement, "original = ?", original).Error
 	if err != nil {
 		return nil, wrapDBErr("find", fmt.Sprintf("word replacement %s", original), err)
 	}
 	return &replacement, nil
 }
 
-func (r *WordReplacementRepository) List() ([]models.WordReplacement, error) {
-	return r.ListAll()
+// List returns all stored word replacements.
+func (r *WordReplacementRepository) List(ctx context.Context) ([]models.WordReplacement, error) {
+	return r.ListAll(ctx)
 }
 
-func (r *WordReplacementRepository) FindByID(id uint) (*models.WordReplacement, error) {
-	return r.BaseRepository.FindByID(id)
+// FindByID returns the word replacement with the given identifier.
+func (r *WordReplacementRepository) FindByID(ctx context.Context, id uint) (*models.WordReplacement, error) {
+	return r.BaseRepository.FindByID(ctx, id)
 }
 
-func (r *WordReplacementRepository) DeleteByID(id uint) error {
-	return r.BaseRepository.Delete(id)
+// DeleteByID removes the word replacement with the given identifier.
+func (r *WordReplacementRepository) DeleteByID(ctx context.Context, id uint) error {
+	return r.BaseRepository.Delete(ctx, id)
 }
 
-func (r *WordReplacementRepository) Delete(original string) error {
-	if err := r.GetDB().Delete(&models.WordReplacement{}, "original = ?", original).Error; err != nil {
+// Delete removes the word replacement matching the given original text.
+func (r *WordReplacementRepository) Delete(ctx context.Context, original string) error {
+	if err := r.GetDB().WithContext(ctx).Delete(&models.WordReplacement{}, "original = ?", original).Error; err != nil {
 		return wrapDBErr("delete", fmt.Sprintf("word replacement %s", original), err)
 	}
 	return nil
 }
 
-func (r *WordReplacementRepository) GetReplacementMap() (map[string]string, error) {
-	replacements, err := r.List()
+// GetReplacementMap returns a map of original text to replacement text for all stored entries.
+func (r *WordReplacementRepository) GetReplacementMap(ctx context.Context) (map[string]string, error) {
+	replacements, err := r.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -83,16 +94,7 @@ func (r *WordReplacementRepository) GetReplacementMap() (map[string]string, erro
 	return result, nil
 }
 
-// DefaultWordReplacements returns the full list of default uncensor replacements.
-// This is the single source of truth for default word replacement data.
-func DefaultWordReplacements() []models.WordReplacement {
-	dst := make([]models.WordReplacement, len(defaultWordReplacements))
-	copy(dst, defaultWordReplacements)
-	return dst
-}
-
-// IsDefaultWordReplacement returns true if the given original string matches
-// one of the default uncensor replacements.
+// IsDefaultWordReplacement reports whether the given original text is one of the built-in default replacements.
 func IsDefaultWordReplacement(original string) bool {
 	_, ok := defaultOrigins[original]
 	return ok
@@ -180,12 +182,11 @@ func init() {
 	}
 }
 
-// SeedDefaultWordReplacements populates the word replacement table with uncensor defaults.
-// Each rule is upserted, so existing entries are preserved across restarts.
-func SeedDefaultWordReplacements(repo *WordReplacementRepository) {
+// SeedDefaultWordReplacements upserts the built-in default word replacements into the repository.
+func SeedDefaultWordReplacements(ctx context.Context, repo WordReplacementRepositoryInterface) {
 	for i := range defaultWordReplacements {
 		r := defaultWordReplacements[i]
-		if err := repo.Upsert(&r); err != nil {
+		if err := repo.Upsert(ctx, &r); err != nil {
 			logging.Warnf("failed to seed word replacement %q: %v", r.Original, err)
 		}
 	}

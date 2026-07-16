@@ -2,237 +2,447 @@ package aggregator
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/javinizer/javinizer-go/internal/logging"
 	"github.com/javinizer/javinizer-go/internal/models"
-	"github.com/javinizer/javinizer-go/internal/template"
-	"github.com/javinizer/javinizer-go/internal/translation"
 )
 
-// fc2NoPPVRegex matches FC2 IDs that are missing the PPV token (e.g. "FC2-2314275").
-// The canonical form used by the FC2 scraper is "FC2-PPV-<digits>".
-// Other scrapers (JavDB, etc.) may omit the PPV segment, so we normalize after aggregation.
-var fc2NoPPVRegex = regexp.MustCompile(`(?i)^FC2-(\d+)$`)
-
 // Aggregate combines multiple scraper results into a single Movie
-func (a *Aggregator) Aggregate(results []*models.ScraperResult) (*models.Movie, string, error) {
+func (a *Aggregator) Aggregate(results []*models.ScraperResult) (*models.Movie, *AggregateResult, error) {
+	if a == nil {
+		return nil, nil, fmt.Errorf("Aggregate called on nil Aggregator")
+	}
 	return a.aggregateWithPriority(results, func(field string) []string {
 		return a.resolvedPriorities[field]
 	})
 }
 
-func (a *Aggregator) AggregateWithPriority(results []*models.ScraperResult, customPriority []string) (*models.Movie, string, error) {
+// AggregateWithPriority combines scraper results into a Movie using a custom scraper priority override.
+func (a *Aggregator) AggregateWithPriority(results []*models.ScraperResult, customPriority []string) (*models.Movie, *AggregateResult, error) {
+	if a == nil {
+		return nil, nil, fmt.Errorf("AggregateWithPriority called on nil Aggregator")
+	}
 	return a.aggregateWithPriority(results, func(field string) []string {
+		// Pure exclusivity — identical semantics to resolvePriorities, so a
+		// non-empty per-field override is honored consistently in BOTH scrape
+		// paths (Aggregate and AggregateWithPriority). This is the v1 (original
+		// PowerShell Javinizer) behavior (#50): a non-empty per-field list means
+		// "only these scrapers are consulted for this field," with NO fallback.
+		//
+		// Consistency between the paths matters: scrape.go calls
+		// AggregateWithPriority(results, cmd.SelectedScrapers) when the user
+		// selects scrapers (--scrapers / batch UI). customPriority replaces the
+		// GLOBAL priority as the fallback for fields without a per-field override
+		// (the user chose which scrapers to run); but a non-empty per-field
+		// override still wins exclusively — so `series: [dmm]` still routes Series
+		// to dmm even when scraping with `--scrapers r18dev`, and
+		// `series: [tokyohot]` still leaves Series empty (tokyohot didn't run /
+		// lacks it). A present-empty slice (`series: []`) does NOT win exclusively
+		// — it inherits customPriority (commit 9f882f22's documented intent:
+		// "[] still means 'inherit global'"); deliberate suppression uses the
+		// ["__skip__"] sentinel (matches no scraper). PerFieldOverride returns a
+		// non-nil empty slice for a present `[]`, so `len(fp) > 0` skips it here
+		// and falls through to customPriority below.
+		if a.cfg != nil && a.cfg.Metadata != nil {
+			if fp := a.cfg.Metadata.Priority.PerFieldOverride(toSnakeCase(field)); len(fp) > 0 {
+				return fp
+			}
+		}
 		return customPriority
 	})
 }
 
-// aggregateWithPriority contains the shared aggregation logic used by both Aggregate and AggregateWithPriority.
-// The priorityFunc parameter returns the priority list for a given field name.
-func (a *Aggregator) aggregateWithPriority(results []*models.ScraperResult, priorityFunc func(field string) []string) (*models.Movie, string, error) {
-	if len(results) == 0 {
-		return nil, "", fmt.Errorf("no scraper results to aggregate")
+// stringFieldSpec defines a simple string field that can be assigned by priority.
+type stringFieldSpec struct {
+	fieldKey    string                             // key in fieldSources map
+	priorityKey string                             // key for priorityFunc
+	getter      func(*models.ScraperResult) string // value getter from ScraperResult
+	setter      func(*models.Movie, string)        // value setter on Movie
+}
+
+// stringFieldSpecs lists all simple string fields assigned by priority.
+var stringFieldSpecs = []stringFieldSpec{
+	{"id", "ID", func(r *models.ScraperResult) string { return r.ID }, func(m *models.Movie, v string) { m.ID = v }},
+	{"content_id", "ContentID", func(r *models.ScraperResult) string { return r.ContentID }, func(m *models.Movie, v string) { m.ContentID = v }},
+	{"original_title", "OriginalTitle", func(r *models.ScraperResult) string { return r.OriginalTitle }, func(m *models.Movie, v string) { m.OriginalTitle = v }},
+	{"description", "Description", func(r *models.ScraperResult) string { return r.Description }, func(m *models.Movie, v string) { m.Description = v }},
+	{"director", "Director", func(r *models.ScraperResult) string { return r.Director }, func(m *models.Movie, v string) { m.Director = v }},
+	{"maker", "Maker", func(r *models.ScraperResult) string { return r.Maker }, func(m *models.Movie, v string) { m.Maker = v }},
+	{"label", "Label", func(r *models.ScraperResult) string { return r.Label }, func(m *models.Movie, v string) { m.Label = v }},
+	{"series", "Series", func(r *models.ScraperResult) string { return r.Series }, func(m *models.Movie, v string) { m.Series = v }},
+	{"poster_url", "PosterURL", func(r *models.ScraperResult) string { return r.PosterURL }, func(m *models.Movie, v string) { m.Poster.PosterURL = v }},
+	{"cover_url", "CoverURL", func(r *models.ScraperResult) string { return r.CoverURL }, func(m *models.Movie, v string) { m.Poster.CoverURL = v }},
+	{"trailer_url", "TrailerURL", func(r *models.ScraperResult) string { return r.TrailerURL }, func(m *models.Movie, v string) { m.TrailerURL = v }},
+}
+
+// assignStringFields assigns all simple string fields using a spec-driven loop.
+func assignStringFields(movie *models.Movie, resultsBySource map[string]*models.ScraperResult, priorityFunc func(field string) []string, fieldSources map[string]string) {
+	assignString := func(fieldKey string, priority []string, getter func(*models.ScraperResult) string) string {
+		for _, source := range priority {
+			if result, exists := resultsBySource[source]; exists {
+				if value := getter(result); value != "" {
+					fieldSources[fieldKey] = source
+					return value
+				}
+			}
+		}
+		return ""
 	}
 
-	movie := &models.Movie{}
+	for _, spec := range stringFieldSpecs {
+		spec.setter(movie, assignString(spec.fieldKey, priorityFunc(spec.priorityKey), spec.getter))
+	}
+}
+
+func (a *Aggregator) aggregateWithPriority(results []*models.ScraperResult, priorityFunc func(field string) []string) (*models.Movie, *AggregateResult, error) {
+	if a == nil || a.cfg == nil || a.cfg.Metadata == nil {
+		return nil, nil, fmt.Errorf("aggregateWithPriority called on Aggregator with nil config")
+	}
+	if len(results) == 0 {
+		return nil, nil, fmt.Errorf("no scraper results to aggregate")
+	}
+
+	scraped := &models.Movie{}
+	fieldSources := make(map[string]string)
 
 	resultsBySource := make(map[string]*models.ScraperResult)
 	for _, result := range results {
 		resultsBySource[result.Source] = result
 	}
 
-	movie.ID = a.getFieldByPriority(resultsBySource, priorityFunc("ID"), func(r *models.ScraperResult) string {
-		return r.ID
-	})
+	// Assign fields using named methods — each handles its own priority resolution
+	assignStringFields(scraped, resultsBySource, priorityFunc, fieldSources)
+	a.assignTitle(scraped, resultsBySource, priorityFunc, fieldSources)
+	a.assignShouldCropPoster(scraped, resultsBySource, priorityFunc, fieldSources)
+	a.assignRuntime(scraped, resultsBySource, priorityFunc, fieldSources)
+	a.assignReleaseDate(scraped, resultsBySource, priorityFunc, fieldSources)
+	a.assignRating(scraped, resultsBySource, priorityFunc, fieldSources)
+	a.assignActresses(scraped, resultsBySource, priorityFunc, fieldSources)
+	a.assignGenres(scraped, resultsBySource, priorityFunc, fieldSources)
+	a.assignScreenshots(scraped, resultsBySource, priorityFunc, fieldSources)
 
-	movie.ContentID = a.getFieldByPriority(resultsBySource, priorityFunc("ContentID"), func(r *models.ScraperResult) string {
-		return r.ContentID
-	})
-
-	// Normalize FC2 IDs: scrapers like JavDB use "FC2-<n>" but the canonical form is "FC2-PPV-<n>".
-	if m := fc2NoPPVRegex.FindStringSubmatch(movie.ID); len(m) > 1 {
-		movie.ID = "FC2-PPV-" + m[1]
-	}
-	if m := fc2NoPPVRegex.FindStringSubmatch(movie.ContentID); len(m) > 1 {
-		movie.ContentID = "FC2-PPV-" + m[1]
-	}
-
-	movie.Title = a.getFieldByPriority(resultsBySource, priorityFunc("Title"), func(r *models.ScraperResult) string {
-		return r.Title
-	})
-
-	movie.OriginalTitle = a.getFieldByPriority(resultsBySource, priorityFunc("OriginalTitle"), func(r *models.ScraperResult) string {
-		return r.OriginalTitle
-	})
-
-	movie.Description = a.getFieldByPriority(resultsBySource, priorityFunc("Description"), func(r *models.ScraperResult) string {
-		return r.Description
-	})
-
-	movie.Director = a.getFieldByPriority(resultsBySource, priorityFunc("Director"), func(r *models.ScraperResult) string {
-		return r.Director
-	})
-
-	movie.Maker = a.getFieldByPriority(resultsBySource, priorityFunc("Maker"), func(r *models.ScraperResult) string {
-		return r.Maker
-	})
-
-	movie.Label = a.getFieldByPriority(resultsBySource, priorityFunc("Label"), func(r *models.ScraperResult) string {
-		return r.Label
-	})
-
-	movie.Series = a.getFieldByPriority(resultsBySource, priorityFunc("Series"), func(r *models.ScraperResult) string {
-		return r.Series
-	})
-
-	movie.PosterURL = a.getFieldByPriority(resultsBySource, priorityFunc("PosterURL"), func(r *models.ScraperResult) string {
-		return r.PosterURL
-	})
-
-	movie.CoverURL = a.getFieldByPriority(resultsBySource, priorityFunc("CoverURL"), func(r *models.ScraperResult) string {
-		return r.CoverURL
-	})
-
-	for _, source := range priorityFunc("PosterURL") {
-		if result, exists := resultsBySource[source]; exists && result.PosterURL != "" {
-			movie.ShouldCropPoster = result.ShouldCropPoster
-			break
-		}
+	// Derived fields
+	if scraped.ReleaseDate != nil {
+		scraped.ReleaseYear = scraped.ReleaseDate.Year()
 	}
 
-	movie.TrailerURL = a.getFieldByPriority(resultsBySource, priorityFunc("TrailerURL"), func(r *models.ScraperResult) string {
-		return r.TrailerURL
-	})
+	a.assignSourceMetadata(scraped, resultsBySource, results, priorityFunc)
 
-	movie.Runtime = a.getIntFieldByPriority(resultsBySource, priorityFunc("Runtime"), func(r *models.ScraperResult) int {
-		return r.Runtime
-	})
+	scraped.Translations = a.buildTranslations(results, scraped)
 
-	movie.ReleaseDate = a.getTimeFieldByPriority(resultsBySource, priorityFunc("ReleaseDate"), func(r *models.ScraperResult) *time.Time {
-		return r.ReleaseDate
-	})
-
-	if movie.ReleaseDate != nil {
-		movie.ReleaseYear = movie.ReleaseDate.Year()
+	if a.wordProcessor != nil {
+		a.wordProcessor.applyToMovie(scraped)
 	}
 
-	ratingScore, ratingVotes, ratingWarning := a.getRatingByPriority(resultsBySource, priorityFunc("Rating"))
-	movie.RatingScore = ratingScore
-	movie.RatingVotes = ratingVotes
-	movie.RatingWarning = ratingWarning
-
-	movie.Actresses = a.getActressesByPriority(resultsBySource, priorityFunc("Actress"))
-	a.enrichActressReadings(movie.Actresses)
-
-	genreNames := a.getGenresByPriority(resultsBySource, priorityFunc("Genre"))
-	movie.Genres = make([]models.Genre, 0, len(genreNames))
-	for _, name := range genreNames {
-		replacedName := a.applyGenreReplacement(name)
-
-		if a.isGenreIgnored(replacedName) {
-			continue
-		}
-		movie.Genres = append(movie.Genres, models.Genre{Name: replacedName})
-	}
-
-	movie.Screenshots = a.getScreenshotsByPriority(resultsBySource, priorityFunc("ScreenshotURL"))
-
-	if len(results) > 0 {
-		movie.SourceName = results[0].Source
-		movie.SourceURL = results[0].SourceURL
-	}
-
-	movie.Translations = a.buildTranslations(results, movie)
-
-	preTranslationTitle := movie.Title
-	preTranslationMaker := movie.Maker
-	preTranslationContentID := movie.ContentID
-
-	translationWarning := a.ApplyConfiguredTranslation(movie)
-
-	if preTranslationTitle != movie.Title || preTranslationMaker != movie.Maker || preTranslationContentID != movie.ContentID {
-		logging.Debugf("Aggregation: translation modified primary fields - Title: %q->%q, Maker: %q->%q, ContentID: %q->%q",
-			preTranslationTitle, movie.Title, preTranslationMaker, movie.Maker, preTranslationContentID, movie.ContentID)
-	}
-
-	a.applyWordReplacements(movie)
-
-	if a.config.Metadata.NFO.DisplayTitle != "" {
-		ctx := template.NewContextFromMovie(movie)
-		ctx.GroupActress = a.config.Output.GroupActress
-		ctx.GroupActressName = a.config.Output.GroupActressName
-		ctx.FirstNameOrder = a.config.Output.FirstNameOrder
-		displayTitle, err := a.templateEngine.Execute(a.config.Metadata.NFO.DisplayTitle, ctx)
-		if err == nil && displayTitle != "" {
-			movie.DisplayTitle = displayTitle
-		}
-	}
-	if movie.DisplayTitle == "" && movie.Title != "" {
-		movie.DisplayTitle = movie.Title
-	}
-
-	if len(a.config.Metadata.RequiredFields) > 0 {
-		if err := validateRequiredFields(movie, a.config.Metadata.RequiredFields); err != nil {
-			return nil, "", fmt.Errorf("required field validation failed: %w", err)
+	if len(a.cfg.Metadata.RequiredFields) > 0 {
+		if err := validateRequiredFieldsScraped(scraped, a.cfg.Metadata.RequiredFields); err != nil {
+			return nil, nil, fmt.Errorf("required field validation failed: %w", err)
 		}
 	}
 
 	now := time.Now().UTC()
-	movie.CreatedAt = now
-	movie.UpdatedAt = now
+	scraped.CreatedAt = now
+	scraped.UpdatedAt = now
 
-	return movie, translationWarning, nil
+	result := &AggregateResult{
+		FieldSources:       fieldSources,
+		ResolvedPriorities: a.resolvedPriorities,
+	}
+
+	return scraped, result, nil
 }
 
-// getFieldByPriority retrieves a string field based on priority
-func (a *Aggregator) getFieldByPriority(
-	results map[string]*models.ScraperResult,
-	priority []string,
-	getter func(*models.ScraperResult) string,
-) string {
+// assignTitle assigns the title field and records both title and display_title sources.
+func (a *Aggregator) assignTitle(movie *models.Movie, resultsBySource map[string]*models.ScraperResult, priorityFunc func(string) []string, fieldSources map[string]string) {
+	priority := priorityFunc("Title")
+	titleSource := ""
 	for _, source := range priority {
-		if result, exists := results[source]; exists {
-			if value := getter(result); value != "" {
-				return value
+		if result, exists := resultsBySource[source]; exists {
+			if result.Title != "" {
+				fieldSources["title"] = source
+				movie.Title = result.Title
+				titleSource = source
+				break
 			}
 		}
 	}
-	return ""
+	if titleSource != "" {
+		fieldSources["display_title"] = titleSource
+	}
 }
 
-// getIntFieldByPriority retrieves an integer field based on priority
-func (a *Aggregator) getIntFieldByPriority(
-	results map[string]*models.ScraperResult,
-	priority []string,
-	getter func(*models.ScraperResult) int,
-) int {
+// assignShouldCropPoster assigns the ShouldCropPoster flag derived from the PosterURL source.
+func (a *Aggregator) assignShouldCropPoster(movie *models.Movie, resultsBySource map[string]*models.ScraperResult, priorityFunc func(string) []string, fieldSources map[string]string) {
+	priority := priorityFunc("PosterURL")
 	for _, source := range priority {
-		if result, exists := results[source]; exists {
-			if value := getter(result); value > 0 {
-				return value
+		if result, exists := resultsBySource[source]; exists && result.PosterURL != "" {
+			movie.Poster.ShouldCropPoster = result.ShouldCropPoster
+			if result.ShouldCropPoster {
+				fieldSources["should_crop_poster"] = source
+			}
+			break
+		}
+	}
+}
+
+// assignRuntime assigns the runtime field from the first source with a positive value.
+func (a *Aggregator) assignRuntime(movie *models.Movie, resultsBySource map[string]*models.ScraperResult, priorityFunc func(string) []string, fieldSources map[string]string) {
+	priority := priorityFunc("Runtime")
+	for _, source := range priority {
+		if result, exists := resultsBySource[source]; exists {
+			if v := result.Runtime; v > 0 {
+				fieldSources["runtime"] = source
+				movie.Runtime = v
+				break
 			}
 		}
 	}
-	return 0
 }
 
-// getTimeFieldByPriority retrieves a time field based on priority
-func (a *Aggregator) getTimeFieldByPriority(
-	results map[string]*models.ScraperResult,
-	priority []string,
-	getter func(*models.ScraperResult) *time.Time,
-) *time.Time {
+// assignReleaseDate assigns the release date from the first source with a non-nil date.
+func (a *Aggregator) assignReleaseDate(movie *models.Movie, resultsBySource map[string]*models.ScraperResult, priorityFunc func(string) []string, fieldSources map[string]string) {
+	priority := priorityFunc("ReleaseDate")
 	for _, source := range priority {
-		if result, exists := results[source]; exists {
-			if value := getter(result); value != nil {
-				return value
+		if result, exists := resultsBySource[source]; exists {
+			if v := result.ReleaseDate; v != nil {
+				fieldSources["release_date"] = source
+				movie.ReleaseDate = v
+				break
 			}
 		}
 	}
-	return nil
+}
+
+// assignRating assigns the rating score and votes, with out-of-range validation.
+func (a *Aggregator) assignRating(movie *models.Movie, resultsBySource map[string]*models.ScraperResult, priorityFunc func(string) []string, fieldSources map[string]string) {
+	priority := priorityFunc("Rating")
+	ratingScore, ratingVotes, ratingSource, ratingWarning := a.getRatingByPriorityWithSource(resultsBySource, priority)
+	movie.RatingScore = ratingScore
+	movie.RatingVotes = ratingVotes
+	if ratingSource != "" {
+		fieldSources["rating_score"] = ratingSource
+		fieldSources["rating_votes"] = ratingSource
+	}
+	// ratingWarning names the source(s) whose out-of-range score was skipped.
+	// getRatingByPriorityWithSource skips corrupt scores before returning, so
+	// any stored rating is already in range; the warning is the surviving
+	// diagnostic for the skipped sources (restores the source name that the
+	// old single-rating warning lost — cycle-1 NIT-11).
+	if ratingWarning != "" {
+		movie.RatingWarning = ratingWarning
+	}
+}
+
+// assignActresses assigns the actress list using alias-aware merging.
+func (a *Aggregator) assignActresses(movie *models.Movie, resultsBySource map[string]*models.ScraperResult, priorityFunc func(string) []string, fieldSources map[string]string) {
+	priority := priorityFunc("Actress")
+	movie.Actresses = a.getActressesByPriorityWithSource(resultsBySource, priority, fieldSources)
+	a.enrichActressReadings(movie.Actresses)
+}
+
+// assignGenres assigns genres with replacement and filtering applied.
+func (a *Aggregator) assignGenres(movie *models.Movie, resultsBySource map[string]*models.ScraperResult, priorityFunc func(string) []string, fieldSources map[string]string) {
+	priority := priorityFunc("Genre")
+	genreNames, genreSource := a.getGenresByPriorityWithSource(resultsBySource, priority)
+	movie.Genres = make([]models.Genre, 0, len(genreNames))
+	for _, name := range genreNames {
+		// Apply configured word replacements to each genre token before genre
+		// replacement + ignore-check. The old genre loop (deleted genre.go)
+		// did `name = a.applyWordReplacement(name)` first; the rewrite dropped
+		// it and wordProcessor.applyToMovie does not touch movie.Genres, so
+		// user word maps no longer normalized genre tokens.
+		replacedName := name
+		if a.wordProcessor != nil {
+			replacedName = a.wordProcessor.Apply(replacedName)
+		}
+		if a.genreProcessor != nil {
+			replacedName = a.genreProcessor.applyReplacement(replacedName)
+		}
+		ignored := false
+		if a.genreProcessor != nil {
+			ignored = a.genreProcessor.isIgnored(replacedName)
+		}
+		if ignored {
+			continue
+		}
+		movie.Genres = append(movie.Genres, models.Genre{Name: replacedName})
+	}
+	if genreSource != "" {
+		fieldSources["genres"] = genreSource
+	}
+}
+
+// assignScreenshots assigns screenshot URLs from the highest-priority source.
+func (a *Aggregator) assignScreenshots(movie *models.Movie, resultsBySource map[string]*models.ScraperResult, priorityFunc func(string) []string, fieldSources map[string]string) {
+	priority := priorityFunc("ScreenshotURL")
+	movie.Screenshots = a.getScreenshotsByPriorityWithSource(resultsBySource, priority, fieldSources)
+}
+
+// assignSourceMetadata sets SourceName and SourceURL from the first available result.
+func (a *Aggregator) assignSourceMetadata(movie *models.Movie, resultsBySource map[string]*models.ScraperResult, results []*models.ScraperResult, priorityFunc func(string) []string) {
+	sourcePriority := priorityFunc("title")
+	for _, source := range sourcePriority {
+		if result, exists := resultsBySource[source]; exists {
+			movie.SourceName = result.Source
+			movie.SourceURL = result.SourceURL
+			return
+		}
+	}
+	if len(results) > 0 {
+		movie.SourceName = results[0].Source
+		movie.SourceURL = results[0].SourceURL
+	}
+}
+
+func (a *Aggregator) getRatingByPriorityWithSource(
+	results map[string]*models.ScraperResult,
+	priority []string,
+) (float64, int, string, string) {
+	var skipped []string
+	for _, source := range priority {
+		if result, exists := results[source]; exists {
+			if result.Rating != nil && (result.Rating.Score > 0 || result.Rating.Votes > 0) {
+				score := result.Rating.Score
+				// Skip corrupt/out-of-range scores and keep scanning for the
+				// first *valid* priority source. The old getRatingByPriority
+				// did `if !isRatingScoreValid(score) { warn; continue }` —
+				// without this, a scraper returning a 0–100 percentage or
+				// garbage is persisted into movie/DB/NFO instead of being
+				// defensively discarded and replaced by the next source.
+				if score > 0 && (score < ratingMinValid || score > ratingMaxValid) {
+					skipped = append(skipped, fmt.Sprintf("%s(%.2f)", source, score))
+					continue
+				}
+				return score, result.Rating.Votes, source, skippedWarning(skipped)
+			}
+		}
+	}
+	return 0, 0, "", skippedWarning(skipped)
+}
+
+// skippedWarning builds a diagnostic naming the sources whose out-of-range
+// rating was skipped. Empty when nothing was skipped. The source name is
+// included so users can see which scraper returned the corrupt score (the
+// pre-refactor warning named only the stored rating, not the source).
+func skippedWarning(skipped []string) string {
+	if len(skipped) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("skipped out-of-range rating(s): %s (valid range [%.1f, %.1f])", strings.Join(skipped, ", "), ratingMinValid, ratingMaxValid)
+}
+
+func isUnknownActress(info models.ActressInfo, nameKey string, unknownText string) bool {
+	if models.IsUnknownActressFields(info.LastName, info.FirstName, info.JapaneseName) {
+		return true
+	}
+	if unknownText == "" {
+		return false
+	}
+	if nameKey == unknownText {
+		return true
+	}
+	if models.NormalizeActressNameKey(info.JapaneseName) == unknownText {
+		return true
+	}
+	if models.NormalizeActressNameKey(info.FirstName) == unknownText {
+		return true
+	}
+	if models.NormalizeActressNameKey(info.LastName) == unknownText {
+		return true
+	}
+	return false
+}
+
+func resolveNameKey(japaneseName, firstName, lastName string) string {
+	if k := models.NormalizeActressNameKey(japaneseName); k != "" {
+		return k
+	}
+	if k := models.NormalizeActressNameKey(firstName + " " + lastName); k != "" {
+		return k
+	}
+	return models.NormalizeActressNameKey(lastName + " " + firstName)
+}
+
+// resolveCanonicalNameKey returns the bucket key used to deduplicate actresses
+// across sources. When an aliasResolver is available and maps the incoming
+// name to a canonical form, the canonical form is normalized and used as the
+// key — so two scrapers crediting the same person under different alias names
+// (e.g. JavDB's 青木桃 vs libredmm's 朝日芹奈) collapse into one entry.
+// Unlike Resolve (which renames the display name and is gated by
+// ConvertAlias), this keying path is gated only by ActressDatabase.Enabled:
+// removing duplicates is always correct. Falls back to resolveNameKey when
+// the resolver is absent, disabled, or has no alias for the name.
+func resolveCanonicalNameKey(resolver aliasResolverInterface, japaneseName, firstName, lastName string) string {
+	if resolver != nil {
+		if canonical := resolver.CanonicalName(japaneseName, firstName, lastName); canonical != "" {
+			if k := models.NormalizeActressNameKey(canonical); k != "" {
+				return k
+			}
+		}
+	}
+	return resolveNameKey(japaneseName, firstName, lastName)
+}
+
+func (a *Aggregator) getActressesByPriorityWithSource(
+	results map[string]*models.ScraperResult,
+	priority []string,
+	fieldSources map[string]string,
+) []models.Actress {
+	// Map ScraperResult → actressSource at the call boundary
+	sources := make([]actressSource, 0, len(priority))
+	for _, src := range priority {
+		if r, ok := results[src]; ok {
+			sources = append(sources, actressSource{
+				Source:    src,
+				Actresses: r.Actresses,
+			})
+		}
+	}
+
+	// Build narrow options from config
+	skipUnknown := false
+	unknownText := ""
+	if a.cfg != nil {
+		skipUnknown = !a.cfg.Metadata.NFO.IsUnknownActressFallback()
+		unknownText = a.cfg.Metadata.NFO.UnknownActressText
+	}
+
+	opts := actressMergeOptions{
+		Priority:      priority,
+		SkipUnknown:   skipUnknown,
+		UnknownText:   unknownText,
+		AliasResolver: a.aliasResolver,
+	}
+
+	result := a.actressMerger.Merge(sources, opts)
+
+	// Record field source (side-effect belongs to Aggregator, not ActressMerger)
+	if len(result) > 0 && fieldSources != nil {
+		for _, src := range priority {
+			if r, ok := results[src]; ok && len(r.Actresses) > 0 {
+				fieldSources["actresses"] = src
+				break
+			}
+		}
+	}
+
+	return result
+}
+
+func (a *Aggregator) getGenresByPriorityWithSource(
+	results map[string]*models.ScraperResult,
+	priority []string,
+) ([]string, string) {
+	for _, source := range priority {
+		if result, exists := results[source]; exists {
+			if len(result.Genres) > 0 {
+				return result.Genres, source
+			}
+		}
+	}
+	return []string{}, ""
 }
 
 const (
@@ -240,339 +450,19 @@ const (
 	ratingMaxValid = 10.0
 )
 
-func (a *Aggregator) getRatingByPriority(
+func (a *Aggregator) getScreenshotsByPriorityWithSource(
 	results map[string]*models.ScraperResult,
 	priority []string,
-) (float64, int, string) {
-	var warning string
-	for _, source := range priority {
-		result, exists := results[source]
-		if !exists || result.Rating == nil {
-			continue
-		}
-		if result.Rating.Score <= 0 && result.Rating.Votes <= 0 {
-			continue
-		}
-		if !isRatingScoreValid(result.Rating.Score) {
-			msg := fmt.Sprintf(
-				"scraper %q returned corrupt rating score %g (out of range [%.1f, %.1f]); skipping",
-				source, result.Rating.Score, ratingMinValid, ratingMaxValid,
-			)
-			logging.Warnf("Aggregator: %s", msg)
-			if warning == "" {
-				warning = msg
-			}
-			continue
-		}
-		return result.Rating.Score, result.Rating.Votes, warning
-	}
-	return 0, 0, warning
-}
-
-func isRatingScoreValid(score float64) bool {
-	return score >= ratingMinValid && score <= ratingMaxValid
-}
-
-func normalizeNameKey(name string) string {
-	return strings.Join(strings.Fields(strings.ToLower(strings.TrimSpace(name))), " ")
-}
-
-func isUnknownActress(info models.ActressInfo, _ string, unknownText string) bool {
-	if models.IsUnknownActressFields(info.LastName, info.FirstName, info.JapaneseName) {
-		return true
-	}
-
-	if unknownText == "" {
-		return false
-	}
-
-	if normalizeNameKey(info.LastName+" "+info.FirstName) == unknownText ||
-		normalizeNameKey(info.FirstName+" "+info.LastName) == unknownText {
-		return true
-	}
-
-	hasPlaceholder := false
-	for _, name := range []string{info.JapaneseName, info.FirstName, info.LastName} {
-		nameKey := normalizeNameKey(name)
-		if nameKey == "" {
-			continue
-		}
-		if nameKey != unknownText {
-			return false
-		}
-		hasPlaceholder = true
-	}
-	return hasPlaceholder
-}
-
-func resolveNameKey(japaneseName, firstName, lastName string) string {
-	if k := normalizeNameKey(japaneseName); k != "" {
-		return k
-	}
-	if k := normalizeNameKey(firstName + " " + lastName); k != "" {
-		return k
-	}
-	return normalizeNameKey(lastName + " " + firstName)
-}
-
-// getActressesByPriority retrieves actresses based on priority and merges data from multiple sources
-func (a *Aggregator) getActressesByPriority(
-	results map[string]*models.ScraperResult,
-	priority []string,
-) []models.Actress {
-	// Collect actresses from all sources, keyed by DMMID (most reliable identifier)
-	actressByDMMID := make(map[int]*models.Actress)
-	actressByName := make(map[string]*models.Actress)
-
-	unknownText := ""
-	skipUnknown := false
-	if a.config != nil {
-		skipUnknown = !a.config.Metadata.NFO.IsUnknownActressFallback()
-		if skipUnknown {
-			unknownText = normalizeNameKey(a.config.Metadata.NFO.UnknownActressText)
-		}
-	}
-
-	hadAnyActressFromScrapers := false
-
-	for _, source := range priority {
-		result, exists := results[source]
-		if !exists || len(result.Actresses) == 0 {
-			continue
-		}
-
-		for _, info := range result.Actresses {
-			hadAnyActressFromScrapers = true
-			models.CanonicalizeUnknownActressInfo(&info)
-			cleanActressInfoName(&info)
-
-			nameKey := resolveNameKey(info.JapaneseName, info.FirstName, info.LastName)
-
-			if skipUnknown && unknownText != "" && isUnknownActress(info, nameKey, unknownText) {
-				continue
-			}
-
-			var existing *models.Actress
-			if info.DMMID > 0 {
-				existing = actressByDMMID[info.DMMID]
-			} else if nameKey != "" {
-				existing = actressByName[nameKey]
-			}
-
-			// If actress exists, merge fields
-			if existing != nil {
-				if existing.FirstName == "" && info.FirstName != "" {
-					existing.FirstName = info.FirstName
-				}
-				if existing.LastName == "" && info.LastName != "" {
-					existing.LastName = info.LastName
-				}
-				if existing.JapaneseName == "" && info.JapaneseName != "" {
-					existing.JapaneseName = info.JapaneseName
-				}
-				if existing.ThumbURL == "" && info.ThumbURL != "" {
-					existing.ThumbURL = info.ThumbURL
-				}
-			} else {
-				// New actress - add to appropriate map
-				actress := &models.Actress{
-					DMMID:        info.DMMID,
-					FirstName:    info.FirstName,
-					LastName:     info.LastName,
-					JapaneseName: info.JapaneseName,
-					ThumbURL:     info.ThumbURL,
-				}
-
-				if info.DMMID > 0 {
-					actressByDMMID[info.DMMID] = actress
-				} else if nameKey != "" {
-					actressByName[nameKey] = actress
-				}
-				// Skip actresses with no DMMID and no name
-			}
-		}
-	}
-
-	// Merge both maps and convert to slice
-	totalActresses := len(actressByDMMID) + len(actressByName)
-	if totalActresses > 0 {
-		actresses := make([]models.Actress, 0, totalActresses)
-
-		// Add actresses with DMMID first (primary source)
-		for _, actress := range actressByDMMID {
-			// Apply alias conversion if enabled
-			if a.config.Metadata.ActressDatabase.Enabled && a.config.Metadata.ActressDatabase.ConvertAlias {
-				a.applyActressAlias(actress)
-			}
-			actresses = append(actresses, *actress)
-		}
-
-		// Add actresses without DMMID (fallback)
-		for _, actress := range actressByName {
-			// Apply alias conversion if enabled
-			if a.config.Metadata.ActressDatabase.Enabled && a.config.Metadata.ActressDatabase.ConvertAlias {
-				a.applyActressAlias(actress)
-			}
-			actresses = append(actresses, *actress)
-		}
-
-		return dropRedundantUnknowns(actresses)
-	}
-
-	// If no actresses found and unknown actress text is set, add unknown
-	if !hadAnyActressFromScrapers && a.config.Metadata.NFO.IsUnknownActressFallback() && a.config.Metadata.NFO.UnknownActressText != "" {
-		return []models.Actress{
-			{
-				FirstName:    models.UnknownActressName,
-				JapaneseName: models.UnknownActressName,
-			},
-		}
-	}
-
-	return []models.Actress{}
-}
-
-// actressHasUsableReading reports whether the actress already carries a phonetic
-// reading — a DMM actjpgs thumbnail (romaji filename), an ASCII romaji name, or a
-// Hangul name. If not, only the kanji is known and translation must guess it.
-func actressHasUsableReading(a models.Actress) bool {
-	if strings.Contains(a.ThumbURL, "actjpgs/") {
-		return true
-	}
-	return isASCIILettersName(a.FirstName) || nameContainsHangul(a.FirstName+a.LastName)
-}
-
-// isASCIILettersName reports whether s is non-empty, pure ASCII, and has a letter.
-func isASCIILettersName(s string) bool {
-	hasLetter := false
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c >= 0x80 {
-			return false
-		}
-		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
-			hasLetter = true
-		}
-	}
-	return hasLetter
-}
-
-// nameContainsHangul reports whether s contains at least one Hangul syllable.
-func nameContainsHangul(s string) bool {
-	for _, r := range s {
-		if r >= 0xAC00 && r <= 0xD7A3 {
-			return true
-		}
-	}
-	return false
-}
-
-// enrichActressReadings fills in a phonetic reading for actresses that reached
-// aggregation with only a kanji name, by looking them up in the stored actress
-// table (populated by earlier scrapes with DMM/r18 romaji). Only empty fields are
-// filled — scraped data is never overwritten. Without this, a kanji-only actress
-// (common in VR titles) gets her name guessed by the LLM (伊藤舞雪 → 마이세츠 이토).
-// cleanActressInfoName recovers the bare performer name from a decorated scraper
-// value ("あいり 21歳 大学3年生" → "あいり") so the same person merges regardless of how
-// a scraper labeled her. If nothing name-like survives cleaning — a promotional
-// blurb such as "【あいちゃん/24歳/173cm！！…】【のんちゃん/…】…" — the entry is replaced with
-// the Unknown placeholder so it is neither transliterated verbatim nor persisted.
-// Runs before name-key dedup so decorated and plain forms of one name collapse.
-func cleanActressInfoName(info *models.ActressInfo) {
-	translation.CleanActressInfo(info)
-	if models.IsUnknownActressFields(info.LastName, info.FirstName, info.JapaneseName) {
-		logging.Debugf("Aggregation: actress value %q/%q/%q has no usable name after cleaning — treating as Unknown",
-			info.LastName, info.FirstName, info.JapaneseName)
-	}
-}
-
-// dropRedundantUnknowns removes Unknown placeholder entries when at least one real
-// actress is present, so a mis-scraped description that became Unknown (e.g.
-// "欲求不満セレブ妻") doesn't clutter the list alongside the real name. When no real
-// actress exists the list is returned unchanged (fallback Unknown is preserved).
-func dropRedundantUnknowns(actresses []models.Actress) []models.Actress {
-	hasReal := false
-	for i := range actresses {
-		if !models.IsUnknownActressFields(actresses[i].LastName, actresses[i].FirstName, actresses[i].JapaneseName) {
-			hasReal = true
-			break
-		}
-	}
-	if !hasReal {
-		return actresses
-	}
-	filtered := actresses[:0]
-	for _, act := range actresses {
-		if models.IsUnknownActressFields(act.LastName, act.FirstName, act.JapaneseName) {
-			continue
-		}
-		filtered = append(filtered, act)
-	}
-	return filtered
-}
-
-func (a *Aggregator) enrichActressReadings(actresses []models.Actress) {
-	if a.actressLookupRepo == nil {
-		return
-	}
-	for i := range actresses {
-		act := &actresses[i]
-		if models.IsUnknownActressFields(act.LastName, act.FirstName, act.JapaneseName) {
-			continue
-		}
-		if actressHasUsableReading(*act) {
-			continue
-		}
-
-		var stored *models.Actress
-		var err error
-		if act.DMMID > 0 {
-			stored, err = a.actressLookupRepo.FindByDMMID(act.DMMID)
-		} else if strings.TrimSpace(act.JapaneseName) != "" {
-			stored, err = a.actressLookupRepo.FindUnverifiedByJapaneseName(strings.TrimSpace(act.JapaneseName))
-		}
-		if err != nil || stored == nil {
-			continue
-		}
-
-		if act.FirstName == "" && stored.FirstName != "" {
-			act.FirstName = stored.FirstName
-		}
-		if act.LastName == "" && stored.LastName != "" {
-			act.LastName = stored.LastName
-		}
-		if act.ThumbURL == "" && stored.ThumbURL != "" {
-			act.ThumbURL = stored.ThumbURL
-		}
-		logging.Debugf("Aggregation: enriched actress %q reading from DB (First=%q Last=%q Thumb=%q)", act.JapaneseName, act.FirstName, act.LastName, act.ThumbURL)
-	}
-}
-
-// getGenresByPriority retrieves genres based on priority
-func (a *Aggregator) getGenresByPriority(
-	results map[string]*models.ScraperResult,
-	priority []string,
-) []string {
-	for _, source := range priority {
-		if result, exists := results[source]; exists {
-			if len(result.Genres) > 0 {
-				return result.Genres
-			}
-		}
-	}
-	return []string{}
-}
-
-// getScreenshotsByPriority retrieves screenshots based on priority
-func (a *Aggregator) getScreenshotsByPriority(
-	results map[string]*models.ScraperResult,
-	priority []string,
+	fieldSources map[string]string,
 ) []string {
 	for _, source := range priority {
 		if result, exists := results[source]; exists {
 			screenshotCount := len(result.ScreenshotURL)
 			if screenshotCount > 0 {
 				logging.Debugf("Screenshots: Using %s (%d screenshots)", source, screenshotCount)
+				if fieldSources != nil {
+					fieldSources["screenshot_urls"] = source
+				}
 				return result.ScreenshotURL
 			}
 			logging.Debugf("Screenshots: %s has 0 screenshots, checking next priority", source)

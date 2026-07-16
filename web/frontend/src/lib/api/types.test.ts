@@ -20,7 +20,8 @@ import type {
 	NFOConfig,
 	TranslationConfig,
 	TranslationFieldsConfig,
-	ProxyProfile
+	ProxyProfile,
+	BatchScrapeRequest,
 } from './types';
 
 describe('types.ts has no unnecessary any', () => {
@@ -63,7 +64,13 @@ describe('types.ts has no unnecessary any', () => {
 		const req: ProxyTestRequest = {
 			mode: 'direct',
 			proxy: { enabled: true },
-			flaresolverr: { enabled: true, url: 'http://localhost:8191', timeout: 30, max_retries: 3, session_ttl: 300 },
+			flaresolverr: {
+				enabled: true,
+				url: 'http://localhost:8191',
+				timeout: 30,
+				max_retries: 3,
+				session_ttl: 300,
+			},
 		};
 		assertType<ProxyConfig>(req.proxy);
 		assertType<FlareSolverrConfig | undefined>(req.flaresolverr);
@@ -82,8 +89,26 @@ describe('types.ts has no unnecessary any', () => {
 
 	it('ScrapersConfig allows scraper overrides via index', () => {
 		const sc: ScrapersConfig = {};
-		sc.javbus = { enabled: true, language: 'ja', timeout: 30, rate_limit: 0, retry_count: 0, user_agent: '', use_flaresolverr: false, use_browser: false };
-		assertType<ScraperSettings | string | number | boolean | string[] | FlareSolverrConfig | ProxyConfig | undefined>(sc.javbus);
+		sc.javbus = {
+			enabled: true,
+			language: 'ja',
+			timeout: 30,
+			rate_limit: 0,
+			retry_count: 0,
+			user_agent: '',
+			use_flaresolverr: false,
+			use_browser: false,
+		};
+		assertType<
+			| ScraperSettings
+			| string
+			| number
+			| boolean
+			| string[]
+			| FlareSolverrConfig
+			| ProxyConfig
+			| undefined
+		>(sc.javbus);
 	});
 
 	it('Config has all Go-backed sections typed', () => {
@@ -100,10 +125,16 @@ describe('types.ts has no unnecessary any', () => {
 	});
 
 	it('new config sub-interfaces exist and are properly typed', () => {
-		const server: ServerConfig = { host: 'localhost', port: 8080 };
+		const server: ServerConfig = { host: 'localhost', port: 8765 };
 		const profile: ProxyProfile = { url: 'http://proxy:8080', username: 'user', password: 'pass' };
 		const proxy: ProxyConfig = { enabled: true, profile: 'main', profiles: { main: profile } };
-		const fs: FlareSolverrConfig = { enabled: true, url: 'http://localhost:8191', timeout: 30, max_retries: 3, session_ttl: 300 };
+		const fs: FlareSolverrConfig = {
+			enabled: true,
+			url: 'http://localhost:8191',
+			timeout: 30,
+			max_retries: 3,
+			session_ttl: 300,
+		};
 		const nfo: NFOConfig = { enabled: true, display_title: '{title}', filename_template: '{id}' };
 		const fields: TranslationFieldsConfig = { title: true, description: true };
 		const translation: TranslationConfig = { enabled: true, provider: 'openai' };
@@ -117,5 +148,29 @@ describe('types.ts has no unnecessary any', () => {
 		expect(nfo.enabled).toBe(true);
 		expect(metadata.translation?.provider).toBe('openai');
 		expect(db.type).toBe('sqlite');
+	});
+});
+
+describe('BatchScrapeRequest.manual_inputs wire contract', () => {
+	it('serializes per-file manual inputs under the snake_case manual_inputs key', () => {
+		const req: BatchScrapeRequest = {
+			files: ['/test/a.mp4', '/test/b.mp4'],
+			strict: false,
+			force: false,
+			manual_inputs: { '/test/a.mp4': 'IPX-123', '/test/b.mp4': 'https://example.com/v/456' },
+		};
+		const wire = JSON.stringify(req);
+		expect(wire).toContain('"manual_inputs"');
+		expect(wire).toContain('IPX-123');
+		const back = JSON.parse(wire) as BatchScrapeRequest;
+		expect(back.manual_inputs).toEqual({
+			'/test/a.mp4': 'IPX-123',
+			'/test/b.mp4': 'https://example.com/v/456',
+		});
+	});
+
+	it('omits manual_inputs when not set (existing callers unaffected)', () => {
+		const req: BatchScrapeRequest = { files: ['/test/a.mp4'], strict: false, force: false };
+		expect(JSON.stringify(req)).not.toContain('manual_inputs');
 	});
 });

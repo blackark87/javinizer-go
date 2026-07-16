@@ -1,120 +1,56 @@
 package database
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/javinizer/javinizer-go/internal/models"
-	"gorm.io/gorm"
 )
 
+// HistoryRepository persists and queries operation history records.
 type HistoryRepository struct {
 	*BaseRepository[models.History, uint]
 }
 
-// HistoryFilter contains optional filters for querying history records.
-type HistoryFilter struct {
-	Operation string
-	Status    string
-	MovieID   string
-}
-
+// NewHistoryRepository creates a HistoryRepository backed by the given database.
 func NewHistoryRepository(db *DB) *HistoryRepository {
 	return &HistoryRepository{
 		BaseRepository: NewBaseRepository[models.History, uint](
 			db, "history",
 			func(h models.History) string { return fmt.Sprintf("%d", h.ID) },
-			WithDefaultOrder[models.History, uint]("created_at DESC"),
+			withDefaultOrder[models.History, uint]("created_at DESC"),
 			WithNewEntity[models.History, uint](func() models.History { return models.History{} }),
 		),
 	}
 }
 
-// HistoryStatsAggregate contains grouped counts used by dashboard and history stats APIs.
-type HistoryStatsAggregate struct {
-	Total          int64
-	ByStatus       map[string]int64
-	ByOperation    map[string]int64
-	RecentByStatus map[string]int64
+// Create inserts a new history record.
+func (r *HistoryRepository) Create(ctx context.Context, history *models.History) error {
+	return r.BaseRepository.Create(ctx, history)
 }
 
-type groupedCount struct {
-	Key   string `gorm:"column:key"`
-	Count int64  `gorm:"column:count"`
+// FindByID returns the history record with the given primary key.
+func (r *HistoryRepository) FindByID(ctx context.Context, id uint) (*models.History, error) {
+	return r.BaseRepository.FindByID(ctx, id)
 }
 
-// StatsAggregate returns total history count, grouped status counts, grouped
-// operation counts, and grouped status counts for records created since
-// recentSince. The grouped queries avoid repeated per-status and per-operation
-// count calls during dashboard initialization.
-func (r *HistoryRepository) StatsAggregate(recentSince time.Time) (*HistoryStatsAggregate, error) {
-	stats := &HistoryStatsAggregate{
-		ByStatus:       make(map[string]int64),
-		ByOperation:    make(map[string]int64),
-		RecentByStatus: make(map[string]int64),
-	}
-
-	if err := r.GetDB().Model(&models.History{}).Count(&stats.Total).Error; err != nil {
-		return nil, wrapDBErr("count", "history", err)
-	}
-
-	var statusCounts []groupedCount
-	if err := r.GetDB().Model(&models.History{}).
-		Select("status AS key, COUNT(*) AS count").
-		Group("status").
-		Scan(&statusCounts).Error; err != nil {
-		return nil, wrapDBErr("count", "history by status", err)
-	}
-	for _, row := range statusCounts {
-		stats.ByStatus[row.Key] = row.Count
-	}
-
-	var operationCounts []groupedCount
-	if err := r.GetDB().Model(&models.History{}).
-		Select("operation AS key, COUNT(*) AS count").
-		Group("operation").
-		Scan(&operationCounts).Error; err != nil {
-		return nil, wrapDBErr("count", "history by operation", err)
-	}
-	for _, row := range operationCounts {
-		stats.ByOperation[row.Key] = row.Count
-	}
-
-	var recentStatusCounts []groupedCount
-	if err := r.GetDB().Model(&models.History{}).
-		Select("status AS key, COUNT(*) AS count").
-		Where("datetime(created_at) >= datetime(?)", recentSince.UTC().Format(SqliteTimeFormat)).
-		Group("status").
-		Scan(&recentStatusCounts).Error; err != nil {
-		return nil, wrapDBErr("count", "recent history by status", err)
-	}
-	for _, row := range recentStatusCounts {
-		stats.RecentByStatus[row.Key] = row.Count
-	}
-
-	return stats, nil
-}
-
-func (r *HistoryRepository) Create(history *models.History) error {
-	return r.BaseRepository.Create(history)
-}
-
-func (r *HistoryRepository) FindByID(id uint) (*models.History, error) {
-	return r.BaseRepository.FindByID(id)
-}
-
-func (r *HistoryRepository) FindByMovieID(movieID string) ([]models.History, error) {
+// FindByMovieID returns all history records for the given movie ID, newest first.
+func (r *HistoryRepository) FindByMovieID(ctx context.Context, movieID string) ([]models.History, error) {
 	var history []models.History
-	err := r.GetDB().Where("movie_id = ?", movieID).Order("created_at DESC").Find(&history).Error
+	err := r.GetDB().WithContext(ctx).Where("movie_id = ?", movieID).Order("created_at DESC").Find(&history).Error
 	if err != nil {
 		return nil, wrapDBErr("find", fmt.Sprintf("history for movie %s", movieID), err)
 	}
 	return history, nil
 }
 
-func (r *HistoryRepository) FindLatestSuccessfulOperation(movieID, operation string) (*models.History, error) {
+// FindLatestSuccessfulOperation returns the newest successful history entry
+// for a movie and operation.
+func (r *HistoryRepository) FindLatestSuccessfulOperation(ctx context.Context, movieID string, operation models.HistoryOperation) (*models.History, error) {
 	var entry models.History
-	err := r.GetDB().Where("movie_id = ? AND operation = ? AND status = ?", movieID, operation, "success").
+	err := r.GetDB().WithContext(ctx).
+		Where("movie_id = ? AND operation = ? AND status = ?", movieID, operation, models.HistoryStatusSuccess).
 		Order("created_at DESC, id DESC").First(&entry).Error
 	if err != nil {
 		return nil, wrapDBErr("find", fmt.Sprintf("latest %s history for movie %s", operation, movieID), err)
@@ -122,9 +58,36 @@ func (r *HistoryRepository) FindLatestSuccessfulOperation(movieID, operation str
 	return &entry, nil
 }
 
-func (r *HistoryRepository) FindByOperation(operation string, limit int) ([]models.History, error) {
+// ListByMovieID returns a paginated slice of history records for the given movie
+// ID, ordered by most recent first. When limit is zero no pagination is applied,
+// matching the semantics of BaseRepository.List.
+func (r *HistoryRepository) ListByMovieID(ctx context.Context, movieID string, limit, offset int) ([]models.History, error) {
 	var history []models.History
-	query := r.GetDB().Where("operation = ?", operation).Order("created_at DESC")
+	query := r.GetDB().WithContext(ctx).Where("movie_id = ?", movieID).Order("created_at DESC")
+	if limit > 0 {
+		query = query.Limit(limit).Offset(offset)
+	}
+	err := query.Find(&history).Error
+	if err != nil {
+		return nil, wrapDBErr("find", fmt.Sprintf("history for movie %s", movieID), err)
+	}
+	return history, nil
+}
+
+// CountByMovieID returns the total number of history records for the given movie ID.
+func (r *HistoryRepository) CountByMovieID(ctx context.Context, movieID string) (int64, error) {
+	var count int64
+	err := r.GetDB().WithContext(ctx).Model(&models.History{}).Where("movie_id = ?", movieID).Count(&count).Error
+	if err != nil {
+		return 0, wrapDBErr("count", fmt.Sprintf("history for movie %s", movieID), err)
+	}
+	return count, nil
+}
+
+// FindByOperation returns history records for the given operation, newest first, capped at limit when limit is positive.
+func (r *HistoryRepository) FindByOperation(ctx context.Context, operation models.HistoryOperation, limit int) ([]models.History, error) {
+	var history []models.History
+	query := r.GetDB().WithContext(ctx).Where("operation = ?", operation).Order("created_at DESC")
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
@@ -135,9 +98,26 @@ func (r *HistoryRepository) FindByOperation(operation string, limit int) ([]mode
 	return history, nil
 }
 
-func (r *HistoryRepository) FindByStatus(status string, limit int) ([]models.History, error) {
+// ListByOperation returns a paginated slice of history records for the given
+// operation, ordered by most recent first. When limit is zero no pagination is
+// applied, matching the semantics of BaseRepository.List.
+func (r *HistoryRepository) ListByOperation(ctx context.Context, operation models.HistoryOperation, limit, offset int) ([]models.History, error) {
 	var history []models.History
-	query := r.GetDB().Where("status = ?", status).Order("created_at DESC")
+	query := r.GetDB().WithContext(ctx).Where("operation = ?", operation).Order("created_at DESC")
+	if limit > 0 {
+		query = query.Limit(limit).Offset(offset)
+	}
+	err := query.Find(&history).Error
+	if err != nil {
+		return nil, wrapDBErr("find", fmt.Sprintf("history by operation %s", operation), err)
+	}
+	return history, nil
+}
+
+// FindByStatus returns history records with the given status, newest first, capped at limit when limit is positive.
+func (r *HistoryRepository) FindByStatus(ctx context.Context, status models.HistoryStatus, limit int) ([]models.History, error) {
+	var history []models.History
+	query := r.GetDB().WithContext(ctx).Where("status = ?", status).Order("created_at DESC")
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
@@ -148,107 +128,97 @@ func (r *HistoryRepository) FindByStatus(status string, limit int) ([]models.His
 	return history, nil
 }
 
-func (r *HistoryRepository) FindRecent(limit int) ([]models.History, error) {
+// ListByStatus returns a paginated slice of history records for the given status,
+// ordered by most recent first. When limit is zero no pagination is applied,
+// matching the semantics of BaseRepository.List.
+func (r *HistoryRepository) ListByStatus(ctx context.Context, status models.HistoryStatus, limit, offset int) ([]models.History, error) {
 	var history []models.History
-	err := r.GetDB().Order("created_at DESC").Limit(limit).Find(&history).Error
+	query := r.GetDB().WithContext(ctx).Where("status = ?", status).Order("created_at DESC")
+	if limit > 0 {
+		query = query.Limit(limit).Offset(offset)
+	}
+	err := query.Find(&history).Error
+	if err != nil {
+		return nil, wrapDBErr("find", fmt.Sprintf("history by status %s", status), err)
+	}
+	return history, nil
+}
+
+// FindRecent returns the most recent history records up to limit.
+func (r *HistoryRepository) FindRecent(ctx context.Context, limit int) ([]models.History, error) {
+	var history []models.History
+	err := r.GetDB().WithContext(ctx).Order("created_at DESC").Limit(limit).Find(&history).Error
 	if err != nil {
 		return nil, wrapDBErr("find", "recent history", err)
 	}
 	return history, nil
 }
 
-func (r *HistoryRepository) FindByDateRange(start, end time.Time) ([]models.History, error) {
+// FindByDateRange returns history records created within the [start, end] range, newest first.
+func (r *HistoryRepository) FindByDateRange(ctx context.Context, start, end time.Time) ([]models.History, error) {
 	var history []models.History
-	err := r.GetDB().Where("datetime(created_at) BETWEEN datetime(?) AND datetime(?)", start.Format(SqliteTimeFormat), end.Format(SqliteTimeFormat)).Order("created_at DESC").Find(&history).Error
+	err := r.GetDB().WithContext(ctx).Where("datetime(created_at) BETWEEN datetime(?) AND datetime(?)", start.Format(sqliteTimeFormat), end.Format(sqliteTimeFormat)).Order("created_at DESC").Find(&history).Error
 	if err != nil {
 		return nil, wrapDBErr("find", "history by date range", err)
 	}
 	return history, nil
 }
 
-func (r *HistoryRepository) Count() (int64, error) {
-	return r.BaseRepository.Count()
+// Count returns the total number of history records.
+func (r *HistoryRepository) Count(ctx context.Context) (int64, error) {
+	return r.BaseRepository.Count(ctx)
 }
 
-func (r *HistoryRepository) applyFilter(filter HistoryFilter) *gorm.DB {
-	query := r.GetDB().Model(&models.History{})
-	if filter.Operation != "" {
-		query = query.Where("operation = ?", filter.Operation)
-	}
-	if filter.Status != "" {
-		query = query.Where("status = ?", filter.Status)
-	}
-	if filter.MovieID != "" {
-		query = query.Where("movie_id = ?", filter.MovieID)
-	}
-	return query
-}
-
-func (r *HistoryRepository) ListFiltered(filter HistoryFilter, limit int, offset int) ([]models.History, error) {
-	var history []models.History
-	query := r.applyFilter(filter).Order("created_at DESC")
-	if limit > 0 {
-		query = query.Limit(limit).Offset(offset)
-	}
-	err := query.Find(&history).Error
-	if err != nil {
-		return nil, wrapDBErr("find", "filtered history", err)
-	}
-	return history, nil
-}
-
-func (r *HistoryRepository) CountFiltered(filter HistoryFilter) (int64, error) {
+// CountByStatus returns the number of history records with the given status.
+func (r *HistoryRepository) CountByStatus(ctx context.Context, status models.HistoryStatus) (int64, error) {
 	var count int64
-	err := r.applyFilter(filter).Count(&count).Error
-	if err != nil {
-		return 0, wrapDBErr("count", "filtered history", err)
-	}
-	return count, nil
-}
-
-func (r *HistoryRepository) CountByStatus(status string) (int64, error) {
-	var count int64
-	err := r.GetDB().Model(&models.History{}).Where("status = ?", status).Count(&count).Error
+	err := r.GetDB().WithContext(ctx).Model(&models.History{}).Where("status = ?", status).Count(&count).Error
 	if err != nil {
 		return 0, wrapDBErr("count", fmt.Sprintf("history by status %s", status), err)
 	}
 	return count, nil
 }
 
-func (r *HistoryRepository) CountByOperation(operation string) (int64, error) {
+// CountByOperation returns the number of history records with the given operation.
+func (r *HistoryRepository) CountByOperation(ctx context.Context, operation models.HistoryOperation) (int64, error) {
 	var count int64
-	err := r.GetDB().Model(&models.History{}).Where("operation = ?", operation).Count(&count).Error
+	err := r.GetDB().WithContext(ctx).Model(&models.History{}).Where("operation = ?", operation).Count(&count).Error
 	if err != nil {
 		return 0, wrapDBErr("count", fmt.Sprintf("history by operation %s", operation), err)
 	}
 	return count, nil
 }
 
-func (r *HistoryRepository) Delete(id uint) error {
-	return r.BaseRepository.Delete(id)
+// Delete removes the history record with the given primary key.
+func (r *HistoryRepository) Delete(ctx context.Context, id uint) error {
+	return r.BaseRepository.Delete(ctx, id)
 }
 
-func (r *HistoryRepository) DeleteByMovieID(movieID string) error {
-	if err := r.GetDB().Where("movie_id = ?", movieID).Delete(&models.History{}).Error; err != nil {
+// DeleteByMovieID removes all history records for the given movie ID.
+func (r *HistoryRepository) DeleteByMovieID(ctx context.Context, movieID string) error {
+	if err := r.GetDB().WithContext(ctx).Where("movie_id = ?", movieID).Delete(&models.History{}).Error; err != nil {
 		return wrapDBErr("delete", fmt.Sprintf("history for movie %s", movieID), err)
 	}
 	return nil
 }
 
-func (r *HistoryRepository) DeleteOlderThan(date time.Time) error {
-	if err := r.GetDB().Where("datetime(created_at) < datetime(?)", date.Format(SqliteTimeFormat)).Delete(&models.History{}).Error; err != nil {
+// DeleteOlderThan removes history records created before the given date.
+func (r *HistoryRepository) DeleteOlderThan(ctx context.Context, date time.Time) error {
+	if err := r.GetDB().WithContext(ctx).Where("datetime(created_at) < datetime(?)", date.UTC().Format(sqliteTimeFormat)).Delete(&models.History{}).Error; err != nil {
 		return wrapDBErr("delete", "history older than date", err)
 	}
 	return nil
 }
 
-func (r *HistoryRepository) List(limit, offset int) ([]models.History, error) {
-	return r.BaseRepository.List(limit, offset)
+// List returns a paginated slice of history records ordered by created_at descending.
+func (r *HistoryRepository) List(ctx context.Context, limit, offset int) ([]models.History, error) {
+	return r.BaseRepository.List(ctx, limit, offset)
 }
 
-func (r *HistoryRepository) FindByBatchJobID(batchJobID string) ([]models.History, error) {
+// FindByBatchJobID returns all history records for the given batch job ID, oldest first.
+func (r *HistoryRepository) FindByBatchJobID(ctx context.Context, batchJobID string) ([]models.History, error) {
 	var history []models.History
-	err := r.GetDB().Where("batch_job_id = ?", batchJobID).Order("created_at ASC").Find(&history).Error
+	err := r.GetDB().WithContext(ctx).Where("batch_job_id = ?", batchJobID).Order("created_at ASC").Find(&history).Error
 	if err != nil {
 		return nil, wrapDBErr("find", fmt.Sprintf("history for batch job %s", batchJobID), err)
 	}

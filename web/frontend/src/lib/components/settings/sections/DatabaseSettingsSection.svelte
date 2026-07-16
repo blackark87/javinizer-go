@@ -59,18 +59,6 @@
 		/>
 	</SettingsSubsection>
 
-	<SettingsSubsection title="Genre Replacement">
-		<FormToggle
-			label="Auto-add genres"
-			description="Automatically add new genre replacements to the database"
-			checked={config.metadata.genre_replacement?.auto_add ?? false}
-			onchange={(val) => {
-				if (!config.metadata.genre_replacement) config.metadata.genre_replacement = {};
-				config.metadata.genre_replacement.auto_add = val;
-			}}
-		/>
-	</SettingsSubsection>
-
 	<SettingsSubsection title="Tag Database">
 		<FormToggle
 			label="Enable tag database"

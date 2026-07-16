@@ -2,19 +2,20 @@ package models
 
 import "strings"
 
+// UnknownActressName is the canonical placeholder for missing performer data.
 const UnknownActressName = "Unknown"
 
 var unknownActressNameAliases = map[string]struct{}{
 	"unknown":         {},
 	"unknown actress": {},
 	"unknown actor":   {},
-	"미지수":           {},
-	"미상":            {},
-	"알수없음":          {},
-	"알수 없음":         {},
-	"알 수 없음":        {},
-	"알 수 없는":        {},
-	"불명":            {},
+	"미지수":             {},
+	"미상":              {},
+	"알수없음":            {},
+	"알수 없음":           {},
+	"알 수 없음":          {},
+	"알 수 없는":          {},
+	"불명":              {},
 }
 
 func normalizeUnknownActressKey(name string) string {

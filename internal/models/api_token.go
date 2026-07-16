@@ -2,6 +2,7 @@ package models
 
 import "time"
 
+// ApiToken represents a persisted API authentication token.
 type ApiToken struct {
 	ID          string     `json:"id" gorm:"primaryKey"`
 	Name        string     `json:"name"`
@@ -12,6 +13,7 @@ type ApiToken struct {
 	RevokedAt   *time.Time `json:"revoked_at" gorm:"index"`
 }
 
+// TableName implements gorm.Tabler, mapping ApiToken to the api_tokens table.
 func (ApiToken) TableName() string {
 	return "api_tokens"
 }

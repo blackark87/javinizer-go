@@ -13,12 +13,134 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/go-resty/resty/v2"
 	"github.com/javinizer/javinizer-go/internal/httpclient"
+	"github.com/javinizer/javinizer-go/internal/imageutil"
 	"github.com/javinizer/javinizer-go/internal/logging"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/scraperutil"
 )
 
-func (s *Scraper) extractActresses(ctx context.Context, doc *goquery.Document) []models.ActressInfo {
+// ResolveActressIdentity searches DMM directly by actress name and accepts
+// only exact-name profile links. Movie-detail pages are intentionally not
+// involved, so actor synchronization cannot attach an unrelated cast member.
+func (s *scraper) ResolveActressIdentity(ctx context.Context, query models.ActressIdentityQuery) (*models.ScraperResult, error) {
+	if !s.enabled {
+		return nil, fmt.Errorf("DMM scraper is disabled")
+	}
+
+	names := uniqueDMMIdentityNames(query.Names)
+	if dmmID := extractActressID(query.ThumbURL); dmmID > 0 {
+		name := ""
+		if len(names) > 0 {
+			name = names[0]
+		}
+		return &models.ScraperResult{
+			Source:    s.Name(),
+			SourceURL: query.ThumbURL,
+			ID:        "thumbnail URL",
+			Actresses: []models.ActressInfo{{DMMID: dmmID, JapaneseName: name}},
+		}, nil
+	}
+	if len(names) == 0 {
+		return nil, models.NewScraperNotFoundError("DMM", "no actress name is available")
+	}
+
+	var lastErr error
+	for _, name := range names {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		searchTarget := fmt.Sprintf(searchURL, url.PathEscape(name))
+		if err := s.rateLimiter.Wait(ctx); err != nil {
+			return nil, err
+		}
+		resp, err := s.client.R().SetContext(ctx).Get(searchTarget)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if resp.StatusCode() != http.StatusOK {
+			lastErr = models.NewScraperStatusError("DMM", resp.StatusCode(), fmt.Sprintf("DMM returned status code %d", resp.StatusCode()))
+			continue
+		}
+		doc, err := goquery.NewDocumentFromReader(strings.NewReader(resp.String()))
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		actresses := extractExactDMMActressIdentities(doc, name)
+		if len(actresses) > 0 {
+			return &models.ScraperResult{
+				Source:    s.Name(),
+				SourceURL: searchTarget,
+				Language:  "ja",
+				ID:        name,
+				Actresses: actresses,
+			}, nil
+		}
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, models.NewScraperNotFoundError("DMM", "no exact actress profile link was found")
+}
+
+func extractExactDMMActressIdentities(doc *goquery.Document, queryName string) []models.ActressInfo {
+	if doc == nil {
+		return nil
+	}
+	wanted := normalizeDMMIdentityName(queryName)
+	if wanted == "" {
+		return nil
+	}
+	seen := make(map[int]struct{})
+	var result []models.ActressInfo
+	doc.Find(actressLinkSelector).Each(func(_ int, link *goquery.Selection) {
+		if normalizeDMMIdentityName(link.Text()) != wanted {
+			return
+		}
+		href, ok := link.Attr("href")
+		if !ok {
+			return
+		}
+		dmmID := extractActressID(href)
+		if dmmID <= 0 {
+			return
+		}
+		if _, exists := seen[dmmID]; exists {
+			return
+		}
+		seen[dmmID] = struct{}{}
+		result = append(result, models.ActressInfo{DMMID: dmmID, JapaneseName: strings.TrimSpace(queryName)})
+	})
+	return result
+}
+
+func uniqueDMMIdentityNames(names []string) []string {
+	seen := make(map[string]struct{})
+	result := make([]string, 0, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		key := normalizeDMMIdentityName(name)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, name)
+	}
+	return result
+}
+
+func normalizeDMMIdentityName(name string) string {
+	return strings.ToLower(scraperutil.CleanActressName(cleanActressName(name)))
+}
+
+var _ models.ActressIdentityResolver = (*scraper)(nil)
+
+func (s *scraper) extractActresses(ctx context.Context, doc *goquery.Document) []models.ActressInfo {
 	actresses := make([]models.ActressInfo, 0)
 	actressIndexByID := make(map[int]int)
 
@@ -62,7 +184,7 @@ func (s *Scraper) extractActresses(ctx context.Context, doc *goquery.Document) [
 	return actresses
 }
 
-func (s *Scraper) extractActressesFromStreamingPage(ctx context.Context, doc *goquery.Document) []models.ActressInfo {
+func (s *scraper) extractActressesFromStreamingPage(ctx context.Context, doc *goquery.Document) []models.ActressInfo {
 	actresses := make([]models.ActressInfo, 0)
 	actressIndexByID := make(map[int]int)
 
@@ -142,7 +264,7 @@ func (s *Scraper) extractActressesFromStreamingPage(ctx context.Context, doc *go
 	return actresses
 }
 
-func (s *Scraper) extractActressFromLink(ctx context.Context, sel *goquery.Selection) models.ActressInfo {
+func (s *scraper) extractActressFromLink(ctx context.Context, sel *goquery.Selection) models.ActressInfo {
 	href, exists := sel.Attr("href")
 	if !exists {
 		return models.ActressInfo{}
@@ -280,40 +402,29 @@ func normalizeActressThumbURL(rawURL string) string {
 		rawURL = rawURL[:whitespaceIdx]
 	}
 
+	if strings.HasPrefix(rawURL, "//") {
+		rawURL = "https:" + rawURL
+	}
 	if strings.HasPrefix(rawURL, "/") && !strings.HasPrefix(rawURL, "//") {
 		rawURL = "https://video.dmm.co.jp" + rawURL
 	}
 
-	return normalizeDMMActressImageURL(rawURL)
-}
-
-func normalizeDMMActressImageURL(rawURL string) string {
-	rawURL = strings.TrimSpace(rawURL)
-	if rawURL == "" {
+	// Preserve DMM's high-quality actress CDN host while removing its
+	// presentation-only pics_dig prefix and resizing query. Validate the parsed
+	// URL first so scraped file/loopback/metadata URLs never reach downloaders.
+	parsed, err := url.Parse(rawURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || !imageutil.IsDMMHost(parsed.Hostname()) {
 		return ""
 	}
-
-	if strings.HasPrefix(rawURL, "//") {
-		rawURL = "https:" + rawURL
+	host := strings.ToLower(parsed.Hostname())
+	if host == "awsimgsrc.dmm.co.jp" && strings.HasPrefix(parsed.Path, "/pics_dig/") {
+		parsed.Path = strings.TrimPrefix(parsed.Path, "/pics_dig")
 	}
-
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return rawURL
-	}
-
-	host := strings.ToLower(u.Hostname())
-	if host == "awsimgsrc.dmm.co.jp" && strings.HasPrefix(u.Path, "/pics_dig/") {
-		u.Path = strings.TrimPrefix(u.Path, "/pics_dig")
-	}
-	if host == "pics.dmm.co.jp" || host == "awsimgsrc.dmm.co.jp" {
-		u.Scheme = "https"
-		u.Host = host
-		u.RawQuery = ""
-		u.Fragment = ""
-	}
-
-	return u.String()
+	parsed.Scheme = "https"
+	parsed.Host = host
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
 }
 
 func upsertActressInfo(actresses *[]models.ActressInfo, indexByID map[int]int, actress models.ActressInfo) bool {
@@ -343,9 +454,8 @@ func upsertActressInfo(actresses *[]models.ActressInfo, indexByID map[int]int, a
 	return true
 }
 
-func (s *Scraper) tryActressThumbURLs(ctx context.Context, firstName, lastName string, dmmID int) string {
+func (s *scraper) tryActressThumbURLs(ctx context.Context, firstName, lastName string, dmmID int) string {
 	candidates := make([]string, 0)
-
 	var romajiVariants []string
 	if dmmID > 0 {
 		doc := s.fetchActressPageDoc(ctx, dmmID)
@@ -372,15 +482,18 @@ func (s *Scraper) tryActressThumbURLs(ctx context.Context, firstName, lastName s
 
 	testClient, err := httpclient.NewRestyClient(s.proxyProfile, 5*time.Second, 0)
 	if err != nil {
+		// Warn (not Debug): falling back to an explicit no-proxy client can
+		// expose the caller's direct IP when the configured proxy is unreachable,
+		// so this must be visible at the default log level, not debug-only.
 		logging.Warnf("DMM: Failed to create thumbnail probe client with scraper proxy: %v, using explicit no-proxy fallback", err)
 		testClient = httpclient.NewRestyClientNoProxy(5*time.Second, 0)
 	}
 	testClient.SetRedirectPolicy(resty.NoRedirectPolicy())
 
-	for _, url := range candidates {
-		if actressImageExists(ctx, testClient, url) {
-			logging.Debugf("DMM: Found actress thumbnail via fallback: %s", url)
-			return url
+	for _, candidate := range candidates {
+		if actressImageExists(ctx, testClient, candidate) {
+			logging.Debugf("DMM: Found actress thumbnail via fallback: %s", candidate)
+			return candidate
 		}
 	}
 
@@ -388,144 +501,18 @@ func (s *Scraper) tryActressThumbURLs(ctx context.Context, firstName, lastName s
 	return ""
 }
 
-// ResolveActressThumbnail exposes DMM's existing profile-page and actjpgs
-// lookup as an optional enrichment hook for actress-only resolvers.
-func (s *Scraper) ResolveActressThumbnail(ctx context.Context, actress models.ActressInfo) string {
+// ResolveActressThumbnail exposes DMM's profile-page and actjpgs lookup to
+// actress synchronization without requiring a movie detail scrape.
+func (s *scraper) ResolveActressThumbnail(ctx context.Context, actress models.ActressInfo) string {
 	if actress.ThumbURL != "" {
-		return actress.ThumbURL
+		return normalizeActressThumbURL(actress.ThumbURL)
 	}
 	return s.tryActressThumbURLs(ctx, actress.FirstName, actress.LastName, actress.DMMID)
 }
 
-var _ models.ActressThumbnailResolver = (*Scraper)(nil)
+var _ models.ActressThumbnailResolver = (*scraper)(nil)
 
-// ResolveActressIdentity searches DMM directly with actress names and extracts
-// only exact-name actress profile links from the result page. It does not
-// resolve or scrape any movie detail page.
-func (s *Scraper) ResolveActressIdentity(ctx context.Context, query models.ActressIdentityQuery) (*models.ScraperResult, error) {
-	if !s.enabled {
-		return nil, fmt.Errorf("DMM scraper is disabled")
-	}
-
-	names := uniqueDMMIdentityNames(query.Names)
-	if dmmID := extractActressID(query.ThumbURL); dmmID > 0 {
-		name := ""
-		if len(names) > 0 {
-			name = names[0]
-		}
-		return &models.ScraperResult{
-			Source:    s.Name(),
-			SourceURL: query.ThumbURL,
-			ID:        "thumbnail URL",
-			Actresses: []models.ActressInfo{{DMMID: dmmID, JapaneseName: name}},
-		}, nil
-	}
-	if len(names) == 0 {
-		return nil, models.NewScraperNotFoundError("DMM", "no actress name is available")
-	}
-
-	var lastErr error
-
-	for _, name := range names {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		searchTarget := fmt.Sprintf(searchURL, url.PathEscape(name))
-		if err := s.rateLimiter.Wait(ctx); err != nil {
-			return nil, err
-		}
-		resp, err := s.client.R().SetContext(ctx).Get(searchTarget)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		if resp.StatusCode() != http.StatusOK {
-			lastErr = models.NewScraperStatusError("DMM", resp.StatusCode(), fmt.Sprintf("DMM returned status code %d", resp.StatusCode()))
-			continue
-		}
-		doc, err := goquery.NewDocumentFromReader(strings.NewReader(resp.String()))
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		actresses := extractExactDMMActressIdentities(doc, name)
-		if len(actresses) > 0 {
-			return &models.ScraperResult{
-				Source:    s.Name(),
-				SourceURL: searchTarget,
-				Language:  "ja",
-				ID:        name,
-				Actresses: actresses,
-			}, nil
-		}
-	}
-
-	if lastErr != nil {
-		return nil, lastErr
-	}
-	return nil, models.NewScraperNotFoundError("DMM", "no exact actress profile link was found")
-}
-
-func extractExactDMMActressIdentities(doc *goquery.Document, queryName string) []models.ActressInfo {
-	if doc == nil {
-		return nil
-	}
-	wanted := normalizeDMMIdentityName(queryName)
-	if wanted == "" {
-		return nil
-	}
-	seen := make(map[int]struct{})
-	var result []models.ActressInfo
-	doc.Find(actressLinkSelector).Each(func(_ int, link *goquery.Selection) {
-		if normalizeDMMIdentityName(link.Text()) != wanted {
-			return
-		}
-		href, ok := link.Attr("href")
-		if !ok {
-			return
-		}
-		dmmID := extractActressID(href)
-		if dmmID <= 0 {
-			return
-		}
-		if _, exists := seen[dmmID]; exists {
-			return
-		}
-		seen[dmmID] = struct{}{}
-		result = append(result, models.ActressInfo{DMMID: dmmID, JapaneseName: strings.TrimSpace(queryName)})
-	})
-	return result
-}
-
-func uniqueDMMIdentityNames(names []string) []string {
-	seen := make(map[string]struct{})
-	result := make([]string, 0, len(names))
-	for _, name := range names {
-		name = strings.TrimSpace(name)
-		key := normalizeDMMIdentityName(name)
-		if key == "" {
-			continue
-		}
-		if _, exists := seen[key]; exists {
-			continue
-		}
-		seen[key] = struct{}{}
-		result = append(result, name)
-	}
-	return result
-}
-
-func normalizeDMMIdentityName(name string) string {
-	return strings.ToLower(scraperutil.CleanActressName(cleanActressName(name)))
-}
-
-var _ models.ActressIdentityResolver = (*Scraper)(nil)
-
-func (s *Scraper) extractRomajiVariantsFromActressPageCtx(ctx context.Context, dmmID int) []string {
-	return extractRomajiVariantsFromActressDoc(s.fetchActressPageDoc(ctx, dmmID))
-}
-
-func (s *Scraper) fetchActressPageDoc(ctx context.Context, dmmID int) *goquery.Document {
+func (s *scraper) fetchActressPageDoc(ctx context.Context, dmmID int) *goquery.Document {
 	url := fmt.Sprintf("https://www.dmm.co.jp/mono/dvd/-/list/=/article=actress/id=%d/", dmmID)
 
 	if err := s.rateLimiter.Wait(ctx); err != nil {
@@ -586,10 +573,6 @@ func extractRomajiVariantsFromActressDoc(doc *goquery.Document) []string {
 	return variants
 }
 
-func extractActressProfileImagesFromDoc(doc *goquery.Document) []string {
-	return extractActressProfileImageCandidates(doc)
-}
-
 func extractActressProfileImageCandidates(doc *goquery.Document) []string {
 	if doc == nil {
 		return nil
@@ -609,7 +592,7 @@ func extractActressProfileImageCandidates(doc *goquery.Document) []string {
 		otherCandidates = append(otherCandidates, normalized)
 	}
 
-	doc.Find("img, source").Each(func(i int, sel *goquery.Selection) {
+	doc.Find("img, source").Each(func(_ int, sel *goquery.Selection) {
 		for _, attr := range []string{"data-src", "src", "srcset"} {
 			if value, exists := sel.Attr(attr); exists {
 				add(value)
@@ -641,7 +624,7 @@ func actressImageExists(ctx context.Context, client *resty.Client, candidate str
 		SetContext(ctx).
 		SetDoNotParseResponse(true).
 		Head(candidate)
-	if err == nil && resp.StatusCode() == 200 {
+	if err == nil && resp.StatusCode() == http.StatusOK {
 		return true
 	}
 	if err == nil && resp.StatusCode() != http.StatusMethodNotAllowed {
@@ -651,5 +634,5 @@ func actressImageExists(ctx context.Context, client *resty.Client, candidate str
 		SetContext(ctx).
 		SetDoNotParseResponse(true).
 		Get(candidate)
-	return err == nil && resp.StatusCode() == 200
+	return err == nil && resp.StatusCode() == http.StatusOK
 }

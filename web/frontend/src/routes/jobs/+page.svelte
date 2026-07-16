@@ -25,10 +25,7 @@
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import RevertConfirmationModal from '$lib/components/RevertConfirmationModal.svelte';
 	import { apiClient } from '$lib/api/client';
-	import { previewImageUrl } from '$lib/utils/image';
 	import { toastStore } from '$lib/stores/toast';
-	import { websocketStore } from '$lib/stores/websocket';
-	import { computeJobProgress } from '$lib/utils/job-progress';
 	import { createBatchJobsQuery, createConfigQuery } from '$lib/query/queries';
 	import type { BatchJobResponse, FileResult } from '$lib/api/types';
 
@@ -41,32 +38,6 @@
 	let hasLoadedOnce = $derived(!!jobsQuery.data);
 	let error = $derived(jobsQuery.error?.message ?? null);
 
-	let hasRunningJobs = $derived(jobs.some((j) => j.status.toLowerCase() === 'running'));
-
-	$effect(() => {
-		const shouldPoll = hasRunningJobs;
-		if (!shouldPoll) return;
-		const interval = setInterval(() => {
-			void queryClient.invalidateQueries({ queryKey: ['batch-jobs'] });
-		}, 5000);
-		return () => clearInterval(interval);
-	});
-
-	let lastEvictedJobs = $state<Set<string>>(new Set());
-
-	$effect(() => {
-		const runningIds = new Set(
-			jobs.filter((j) => j.status.toLowerCase() === 'running').map((j) => j.id),
-		);
-		const wsJobIds = Object.keys(wsState.messagesByFile);
-		for (const jobId of wsJobIds) {
-			if (!runningIds.has(jobId) && !lastEvictedJobs.has(jobId)) {
-				lastEvictedJobs = new Set([...lastEvictedJobs, jobId]);
-				websocketStore.clearJobMessages(jobId);
-			}
-		}
-	});
-
 	const configQuery = createConfigQuery();
 	let config = $derived(configQuery.data ?? null);
 
@@ -74,6 +45,12 @@
 	let olderThanDays = $state(30);
 	let isCleaningHistory = $state(false);
 	let isCleaningEvents = $state(false);
+
+	// Reactive per-job poster error state — reset when the job list changes
+	// so a refreshed (same-URL) poster re-fetches instead of staying hidden
+	// by a stale onerror display:none from a prior failed load.
+	let posterErrors = $state<Set<string | undefined>>(new Set());
+	$effect(() => { paginatedJobs; posterErrors = new Set(); });
 	let activeFilter = $state<string>('all');
 	let currentPage = $state(1);
 	const pageSize = 10;
@@ -81,18 +58,6 @@
 	let revertModalOpen = $state(false);
 	let revertTargetId = $state('');
 	let revertFileCount = $state(0);
-
-	const wsState = $derived($websocketStore);
-
-	function getJobProgress(job: BatchJobResponse): number {
-		return computeJobProgress(
-			wsState.messagesByFile[job.id],
-			job.total_files,
-			job.progress,
-			job.status.toLowerCase() === 'running',
-			job.completed + job.failed + (job.cancelled ?? 0),
-		);
-	}
 
 	$effect(() => {
 		const statusParam = $page.url.searchParams.get('status');
@@ -277,11 +242,11 @@
 	function getFirstPoster(job: BatchJobResponse): string | null {
 		const results = Object.values(job.results || {});
 		for (const r of results) {
-			if (r.data?.cropped_poster_url) {
-				return r.data.cropped_poster_url;
+			if (r.movie?.cropped_poster_url) {
+				return apiClient.withSessionParam(r.movie.cropped_poster_url);
 			}
-			if (r.data?.poster_url) {
-				return previewImageUrl(r.data.poster_url) ?? '';
+			if (r.movie?.poster_url) {
+				return apiClient.getPreviewImageURL(r.movie.poster_url);
 			}
 		}
 		return null;
@@ -419,13 +384,13 @@
 								<div class="flex items-center p-3 gap-4">
 									{#if poster}
 										<div class="w-20 h-20 flex-shrink-0 bg-muted rounded-md overflow-hidden flex items-center justify-center">
+											<!-- [hidden] attr: a Tailwind 'block'/'flex' utility on this <img>
+											     would override [hidden]; keep display utilities off this element -->
 											<img
 												src={poster}
 												alt=""
-												class="w-full h-full object-cover object-center"
-												onerror={(e) => {
-													(e.target as HTMLImageElement).style.display = 'none';
-												}}
+												class="w-full h-full object-cover object-center" hidden={posterErrors.has(poster)}
+												onerror={() => { posterErrors = new Set([...posterErrors, poster]); }}
 											/>
 										</div>
 									{:else}
@@ -463,7 +428,7 @@
 												<div class="h-1.5 rounded-full bg-muted overflow-hidden">
 													<div
 														class="h-full bg-primary transition-all duration-300"
-														style="width: {Math.max(0, Math.min(100, getJobProgress(job)))}%"
+														style="width: {Math.max(0, Math.min(100, job.progress))}%"
 													></div>
 												</div>
 											</div>
@@ -481,19 +446,9 @@
 											</Button>
 										{:else if job.status.toLowerCase() === 'completed'}
 											{#if job.completed > 0}
-												{#if job.operation_count > 0}
-													<Button variant="outline" size="sm" onclick={() => goto(`/review/${job.id}`)}>
-														<Eye class="h-4 w-4 mr-1" />
-														Review
-													</Button>
-													<Button variant="default" size="sm" onclick={() => goto(`/review/${job.id}`)}>
-														Resume Organize
-													</Button>
-												{:else}
-													<Button variant="default" size="sm" onclick={() => goto(`/review/${job.id}`)}>
-														Review & Organize
-													</Button>
-												{/if}
+												<Button variant="default" size="sm" onclick={() => goto(`/review/${job.id}`)}>
+													Review & Organize
+												</Button>
 											{/if}
 											{#if job.failed > 0}
 												<Button variant="outline" size="sm" class="min-w-[150px]" onclick={() => goto(`/review/${job.id}?tab=failed`)} title="View failed files in review">

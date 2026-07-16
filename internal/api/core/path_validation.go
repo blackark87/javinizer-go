@@ -1,166 +1,66 @@
 package core
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
-	"strings"
 
 	"github.com/javinizer/javinizer-go/internal/api/apperrors"
-	"github.com/javinizer/javinizer-go/internal/config"
+	"github.com/spf13/afero"
 )
 
 // validateScanPath validates and sanitizes user-provided paths for scanning.
-// It performs multiple security checks:
-// 1. Expands home directory (~)
-// 2. Cleans the path (removes ../, ./, etc.)
-// 3. Windows: Strips trailing dots/spaces (Win32 API silently strips these)
-// 4. Windows: Checks for reserved device names (CON, NUL, etc.) BEFORE filesystem access
-// 5. Converts to absolute path
-// 6. Canonicalizes path (resolves symlinks) - CRITICAL for security
-// 7. Windows: Validates UNC paths (blocks by default to prevent NTLM leaks)
-// 8. Windows: Normalizes path for platform (resolves 8.3 short names, trailing chars)
-// 9. Checks against allowlist (if provided in config)
-// 10. Blocks sensitive system directories (built-in + config denylist)
-// 11. Verifies path exists and is a directory
+// It delegates to PathValidator.ValidateDir for the shared validation pipeline.
+//
+// Security checks performed:
+//  1. Expands home directory (~)
+//  2. Cleans the path (removes ../, ./, etc.)
+//  3. Windows: Strips trailing dots/spaces (Win32 API silently strips these)
+//  4. Windows: Checks for reserved device names (CON, NUL, etc.) BEFORE filesystem access
+//  5. Converts to absolute path
+//  6. Canonicalizes path (resolves symlinks) - CRITICAL for security
+//  7. Windows: Validates UNC paths (blocks by default to prevent NTLM leaks)
+//  8. Windows: Normalizes path for platform (resolves 8.3 short names, trailing chars)
+//  9. Checks against allowlist (if provided in config)
+//  10. Blocks sensitive system directories (built-in + config denylist)
+//  11. Verifies path exists and is a directory
 //
 // Returns: cleaned absolute path, error
-func validateScanPath(userPath string, cfg *config.SecurityConfig) (string, error) {
-	if len(cfg.AllowedDirectories) == 0 {
-		return "", apperrors.ErrAllowedDirsEmpty
+func validateScanPath(userPath string, cfg *SecurityNarrowConfig) (string, error) {
+	if cfg == nil {
+		// Programmer error — a nil security config must never reach validation.
+		// Return a descriptive error rather than apperrors.ErrAllowedDirsEmpty
+		// (403 Forbidden), which would mischaracterize this as a user-facing
+		// authorization failure instead of an internal wiring bug.
+		return "", fmt.Errorf("validateScanPath: security config is required")
 	}
+	v := NewPathValidatorWithUNC(
+		afero.NewOsFs(),
+		cfg.AllowedDirectories,
+		cfg.DeniedDirectories,
+		cfg.AllowUNC,
+		cfg.AllowedUNCServers,
+	)
+	return v.ValidateDir(userPath)
+}
 
-	hasValidEntry := false
-	for _, dir := range cfg.AllowedDirectories {
-		if strings.TrimSpace(dir) != "" {
-			hasValidEntry = true
-			break
-		}
+// validateBrowsePath mirrors validateScanPath but runs the browse validator,
+// which skips the allowlist gate. Used by the browse and autocomplete endpoints
+// so an admin can list directories to configure the allowlist — the bootstrap
+// operation that the (possibly empty or '.'-only) allowlist would otherwise
+// block. The allowlist is a safety guard for file operations (scan/organize),
+// not a restriction on browsing. The denylist still applies.
+func validateBrowsePath(userPath string, cfg *SecurityNarrowConfig) (string, error) {
+	if cfg == nil {
+		return "", fmt.Errorf("validateBrowsePath: security config is required")
 	}
-	if !hasValidEntry {
-		return "", apperrors.ErrAllowedDirsEmpty
-	}
-
-	expandedPath := expandHomeDir(userPath)
-
-	cleanPath := filepath.Clean(expandedPath)
-
-	// Windows: Strip trailing dots and spaces before further processing.
-	// Win32 API silently strips these, so we must too for accurate comparison.
-	cleanPath = stripTrailingChars(cleanPath)
-
-	// Windows: Check for reserved device names BEFORE any filesystem access.
-	// Accessing paths like COM1, NUL, etc. can hang operations.
-	for _, component := range strings.Split(cleanPath, string(filepath.Separator)) {
-		if isReservedDeviceName(component) {
-			return "", apperrors.NewPathError(apperrors.ErrReservedDeviceName, cleanPath)
-		}
-	}
-
-	absPath, err := filepath.Abs(cleanPath)
-	if err != nil {
-		return "", apperrors.ErrPathInvalid
-	}
-
-	// Windows: Normalize extended-path prefixes before security checks.
-	// This converts \??\UNC\, \\?\UNC\, \\.\UNC\ variants to standard \\ format
-	// for consistent UNC detection.
-	absPath = normalizeWindowsPath(absPath)
-
-	// Windows: Block UNC paths BEFORE any filesystem access.
-	// os.Lstat on UNC paths triggers SMB connection and NTLM authentication.
-	if isUNCPath(absPath) {
-		if !cfg.AllowUNC {
-			return "", apperrors.NewPathError(apperrors.ErrUNCPathBlocked, absPath)
-		}
-		// Early whitelist check to prevent connection to malicious servers
-		normalizedUNC, err := normalizeUNCPath(absPath, cfg.AllowUNC, cfg.AllowedUNCServers)
-		if err != nil {
-			return "", err
-		}
-		absPath = normalizedUNC
-	}
-
-	canonicalPath, err := filepath.EvalSymlinks(absPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", apperrors.NewPathError(apperrors.ErrPathNotExist, absPath)
-		}
-		return "", apperrors.NewPathError(apperrors.ErrPathUnresolvable, absPath)
-	}
-
-	if !filepath.IsAbs(canonicalPath) {
-		canonicalPath, err = filepath.Abs(canonicalPath)
-		if err != nil {
-			return "", apperrors.ErrPathInvalid
-		}
-	}
-
-	info, err := os.Stat(canonicalPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", apperrors.NewPathError(apperrors.ErrPathNotExist, canonicalPath)
-		}
-		return "", apperrors.ErrPathInvalid
-	}
-
-	// Windows: Normalize path for platform comparison.
-	// This resolves 8.3 short names and ensures consistent path format.
-	canonicalPath = normalizePathForPlatform(canonicalPath)
-
-	allowed := false
-	for _, baseDir := range cfg.AllowedDirectories {
-		if strings.TrimSpace(baseDir) == "" {
-			continue
-		}
-		expandedBase := expandHomeDir(baseDir)
-		absBase, err := filepath.Abs(expandedBase)
-		if err != nil {
-			continue
-		}
-
-		// Windows: Normalize allowlist entry for platform comparison.
-		absBase = normalizePathForPlatform(absBase)
-
-		canonicalBase, err := filepath.EvalSymlinks(absBase)
-		if err != nil {
-			continue
-		}
-
-		rel, err := filepath.Rel(canonicalBase, canonicalPath)
-		if err == nil && !strings.HasPrefix(rel, "..") && rel != ".." {
-			allowed = true
-			break
-		}
-	}
-	if !allowed {
-		return "", apperrors.NewPathError(apperrors.ErrPathOutsideAllowed, canonicalPath)
-	}
-
-	deniedPrefixes := getDeniedDirectories()
-	for _, denied := range cfg.DeniedDirectories {
-		expandedDenied := expandHomeDir(denied)
-		absDenied, err := filepath.Abs(expandedDenied)
-		if err == nil {
-			if canonicalDenied, err := filepath.EvalSymlinks(absDenied); err == nil {
-				deniedPrefixes = append(deniedPrefixes, canonicalDenied)
-			} else {
-				deniedPrefixes = append(deniedPrefixes, absDenied)
-			}
-		}
-	}
-
-	for _, denied := range deniedPrefixes {
-		if isPathWithin(canonicalPath, denied) {
-			return "", apperrors.NewPathError(apperrors.ErrPathInDenylist, canonicalPath)
-		}
-	}
-
-	if !info.IsDir() {
-		return "", apperrors.NewPathError(apperrors.ErrPathNotDir, canonicalPath)
-	}
-
-	return canonicalPath, nil
+	v := NewPathValidatorBrowse(
+		afero.NewOsFs(),
+		cfg.DeniedDirectories,
+		cfg.AllowUNC,
+		cfg.AllowedUNCServers,
+	)
+	return v.ValidateDir(userPath)
 }
 
 // getDeniedDirectories returns a list of system directories that should never be scanned
@@ -174,84 +74,22 @@ func getDeniedDirectories() []string {
 
 // expandHomeDir expands ~ to the user's home directory
 func expandHomeDir(path string) string {
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			return filepath.Join(home, path[2:])
-		}
-	}
-	return path
-}
-
-// contains checks if a string contains a substring (case-sensitive)
-func contains(s, substr string) bool {
-	return strings.Contains(s, substr)
-}
-
-// normalizeWindowsPath removes Windows extended-path prefixes (\\?\, \\?\UNC\, \??\, \??\UNC\, \\.\, \\.\UNC\)
-// to prevent denylist bypass via extended-length path syntax
-// Uses case-insensitive comparison to handle mixed-case prefixes (e.g., \\?\Unc\)
-// Handles Win32 namespace (\\?\), NT namespace (\??\), and device namespace (\\.\) aliases
-func normalizeWindowsPath(path string) string {
-	if runtime.GOOS != "windows" {
-		return path
-	}
-
-	// Use case-insensitive check for extended path prefixes
-	lowerPath := strings.ToLower(path)
-
-	// Remove \\?\UNC\ prefix (UNC paths: \\?\UNC\server\share -> \\server\share)
-	// Check case-insensitively to prevent \\?\Unc\ or \\?\uNc\ bypass
-	if strings.HasPrefix(lowerPath, `\\?\unc\`) {
-		return `\\` + path[8:] // Keep the \\ prefix for UNC paths
-	}
-
-	// Remove \??\UNC\ prefix (NT namespace UNC: \??\UNC\server\share -> \\server\share)
-	if strings.HasPrefix(lowerPath, `\??\unc\`) {
-		return `\\` + path[8:] // Keep the \\ prefix for UNC paths
-	}
-
-	// Remove \\.\UNC\ prefix (device namespace UNC: \\.\UNC\server\share -> \\server\share)
-	if strings.HasPrefix(lowerPath, `\\.\unc\`) {
-		return `\\` + path[8:] // Keep the \\ prefix for UNC paths
-	}
-
-	// Remove \\?\ prefix (extended paths: \\?\C:\Windows -> C:\Windows)
-	if strings.HasPrefix(lowerPath, `\\?\`) {
-		return path[4:]
-	}
-
-	// Remove \??\ prefix (NT namespace: \??\C:\Windows -> C:\Windows)
-	if strings.HasPrefix(lowerPath, `\??\`) {
-		return path[4:]
-	}
-
-	// Remove \\.\ prefix (device namespace: \\.\C:\Windows -> C:\Windows)
-	if strings.HasPrefix(lowerPath, `\\.\`) {
-		return path[4:]
-	}
-
-	return path
-}
-
-// pathHasPrefix checks if path starts with prefix, using case-insensitive comparison on Windows
-// This prevents bypassing the denylist with different case (e.g., c:\Windows vs C:\Windows)
-// and extended-path prefixes (e.g., \\?\C:\Windows)
-// NOTE: This uses raw string prefix matching and should NOT be used for denylist checks
-// because it doesn't distinguish between /dev and /devmedia. Use isPathWithin for denylist.
-func pathHasPrefix(path, prefix string) bool {
-	if runtime.GOOS == "windows" {
-		normalizedPath := normalizeWindowsPath(path)
-		normalizedPrefix := normalizeWindowsPath(prefix)
-		return strings.HasPrefix(strings.ToLower(normalizedPath), strings.ToLower(normalizedPrefix))
-	}
-	return strings.HasPrefix(path, prefix)
+	return ExpandHomeDir(path)
 }
 
 // ValidateScanPath validates and sanitizes user-provided paths for scanning.
 // Returns the canonical path string. For TOCTOU-safe operations, use ValidateAndOpenPath.
-func ValidateScanPath(userPath string, cfg *config.SecurityConfig) (string, error) {
+func ValidateScanPath(userPath string, cfg *SecurityNarrowConfig) (string, error) {
 	return validateScanPath(userPath, cfg)
+}
+
+// ValidateBrowsePath is the browse variant of ValidateScanPath: it skips the
+// allowlist gate so the configure-scope browse/autocomplete endpoints can list
+// directories outside the allowlist (used to configure the allowlist/denylist).
+// Operational browse/autocomplete use ValidateScanPath instead. The denylist
+// always applies.
+func ValidateBrowsePath(userPath string, cfg *SecurityNarrowConfig) (string, error) {
+	return validateBrowsePath(userPath, cfg)
 }
 
 // ValidateAndOpenPath validates a user-provided path and returns an open *os.File
@@ -270,8 +108,27 @@ func ValidateScanPath(userPath string, cfg *config.SecurityConfig) (string, erro
 //	if err != nil { ... }
 //	defer f.Close()
 //	// Use f.ReadDir() or path (file remains open, preventing swap)
-func ValidateAndOpenPath(userPath string, cfg *config.SecurityConfig) (*os.File, string, error) {
-	canonicalPath, err := validateScanPath(userPath, cfg)
+func ValidateAndOpenPath(userPath string, cfg *SecurityNarrowConfig) (*os.File, string, error) {
+	return validateAndOpenPath(userPath, cfg, false)
+}
+
+// ValidateAndOpenBrowsePath is the browse variant of ValidateAndOpenPath: it
+// skips the allowlist gate so the configure-scope browse endpoint can list
+// directories outside the allowlist (used to configure the allowlist).
+// Operational browse uses ValidateAndOpenPath instead. The denylist always
+// applies.
+func ValidateAndOpenBrowsePath(userPath string, cfg *SecurityNarrowConfig) (*os.File, string, error) {
+	return validateAndOpenPath(userPath, cfg, true)
+}
+
+func validateAndOpenPath(userPath string, cfg *SecurityNarrowConfig, browse bool) (*os.File, string, error) {
+	var canonicalPath string
+	var err error
+	if browse {
+		canonicalPath, err = validateBrowsePath(userPath, cfg)
+	} else {
+		canonicalPath, err = validateScanPath(userPath, cfg)
+	}
 	if err != nil {
 		return nil, "", err
 	}
@@ -327,22 +184,25 @@ func ValidateAndOpenPath(userPath string, cfg *config.SecurityConfig) (*os.File,
 	return f, canonicalPath, nil
 }
 
-// ExpandHomeDir expands "~/" paths.
+// ExpandHomeDir expands "~/" and "~" paths.
 func ExpandHomeDir(path string) string {
-	return expandHomeDir(path)
-}
-
-// Contains reports whether s contains substr.
-func Contains(s, substr string) bool {
-	return contains(s, substr)
+	if path == "~" {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			return home
+		}
+		return path
+	}
+	if len(path) >= 2 && path[0] == '~' && (path[1] == '/' || path[1] == filepath.Separator) {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			return filepath.Join(home, path[2:])
+		}
+	}
+	return path
 }
 
 // GetDeniedDirectories returns built-in denied directories.
 func GetDeniedDirectories() []string {
 	return getDeniedDirectories()
-}
-
-// PathHasPrefix checks prefix with platform-aware behavior.
-func PathHasPrefix(path, prefix string) bool {
-	return pathHasPrefix(path, prefix)
 }

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { fade } from 'svelte/transition';
-	import { tick } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import Button from '$lib/components/ui/Button.svelte';
@@ -22,6 +21,8 @@
 	import RescrapeModal from './components/RescrapeModal.svelte';
 	import BulkRescrapeProgress from './components/BulkRescrapeProgress.svelte';
 	import CandidatePreviewPanel from './components/CandidatePreviewPanel.svelte';
+	import SourceViewerModal from './components/SourceViewerModal.svelte';
+	import type { ScraperResult } from '$lib/api/types';
 	import SourceFilesCard from './components/SourceFilesCard.svelte';
 	import UnidentifiedFilesCard from './components/UnidentifiedFilesCard.svelte';
 	import { createReviewState } from './stores/review-state.svelte';
@@ -55,21 +56,41 @@
 		void goto(buildTabUrl($page.url, activeTab), { replaceState: true, noScroll: true, keepFocus: true });
 	});
 
-	let prevViewMode = $state('');
-	$effect(() => {
-		const current = s.viewMode;
-		if (prevViewMode === 'detail' && (current === 'grid-poster' || current === 'grid-cover')) {
-			const movieId = s.currentMovieGroup?.movieId;
-			if (movieId) {
-				tick().then(() => {
-					const wrapper = document.querySelector(`[data-card-wrapper="${movieId}"]`);
-					wrapper?.firstElementChild?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-				});
-			}
-		}
-		prevViewMode = current;
-	});
+	let sourceViewerLoading = $state(false);
+	let sourceViewerResults: ScraperResult[] = $state([]);
+	let pendingOverrideField = $state<string | null>(null);
 
+	async function loadSourcesForCurrent() {
+		if (!s.currentResult) return;
+		sourceViewerLoading = true;
+		try {
+			const resp = await s.loadSources(s.currentResult.result_id);
+			sourceViewerResults = resp.results ?? [];
+		} catch (err) {
+			sourceViewerResults = [];
+			console.error('Failed to load sources', err);
+		} finally {
+			sourceViewerLoading = false;
+		}
+	}
+
+	function openSourceViewer() {
+		if (!s.currentResult) return;
+		sourceViewerResults = [];
+		s.openSourceViewerModal();
+		void loadSourcesForCurrent();
+	}
+
+	async function handleApplyOverride(field: string, source: string) {
+		if (!s.currentResult) return;
+		pendingOverrideField = field;
+		try {
+			await s.applyFieldOverride(field, source);
+			await loadSourcesForCurrent();
+		} finally {
+			pendingOverrideField = null;
+		}
+	}
 </script>
 
 <div class="container mx-auto px-4 py-8">
@@ -189,6 +210,10 @@
 						onClose={() => goto('/browse')}
 						onUpdateAll={s.updateAll}
 						onOrganizeAll={s.organizeAll}
+						onSaveAll={s.saveAllEdits}
+						hasEdits={s.editedMovieCount > 0}
+						editCount={s.editedMovieCount}
+						savingEdits={s.isSavingEdits}
 					/>
 
 					<OrganizeStatusCard
@@ -205,32 +230,31 @@
 					{#if s.viewMode === 'grid-poster' || s.viewMode === 'grid-cover'}
 						<div class="grid {s.viewMode === 'grid-cover' ? 'grid-cols-3' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'} {s.viewMode === 'grid-cover' ? 'gap-2' : 'gap-4'}">
 							{#each s.filteredMovieGroups as group}
-								<div style="display:contents" data-card-wrapper={group.movieId}>
-									<ReviewGridCard
-										movieGroup={group}
-										isSelected={group.primaryResult.result_id === s.currentResult?.result_id}
-										isEdited={s.editedMovies.has(group.primaryResult.file_path)}
-										isBulkSelected={s.selectedMovieIds.has(group.movieId)}
-										selectionMode={s.selectionMode}
-										displayPosterUrl={(() => {
-											const movie = group.primaryResult.data;
-											if (!movie) return undefined;
-											return s.resolvePosterUrl(movie, group.primaryResult.file_path);
-										})()}
-										displayCoverUrl={group.primaryResult.data?.cover_url}
-										displayImageType={s.viewMode === 'grid-cover' ? 'cover' : 'poster'}
-										previewImageURL={s.reviewPageController.previewImageURL}
-										onclick={(e) => {
-											if (s.selectionMode) {
-												s.toggleMovieSelection(group.movieId, e.shiftKey);
-											} else {
-												void s.navigateToMovieIndex(s.movieGroups.findIndex(g => g.movieId === group.movieId));
-												s.viewMode = 'detail';
-											}
-										}}
-										completenessConfig={s.completenessConfig}
-									/>
-								</div>
+								{@const effMovie = s.getEffectiveMovie(group.primaryResult.file_path, group.primaryResult.movie)}
+								<ReviewGridCard
+									movieGroup={group}
+									isSelected={group.primaryResult.result_id === s.currentResult?.result_id}
+									isEdited={s.editedMovies.has(group.primaryResult.file_path)}
+									isBulkSelected={s.selectedMovieIds.has(group.movieId)}
+									selectionMode={s.selectionMode}
+									effectiveMovie={effMovie ?? undefined}
+									displayPosterUrl={(() => {
+										if (!effMovie) return undefined;
+										return s.resolvePosterUrl(effMovie, group.primaryResult.file_path);
+									})()}
+									displayCoverUrl={effMovie?.cover_url}
+									displayImageType={s.viewMode === 'grid-cover' ? 'cover' : 'poster'}
+									previewImageURL={s.reviewPageController.previewImageURL}
+									onclick={(e) => {
+										if (s.selectionMode) {
+											s.toggleMovieSelection(group.movieId, e.shiftKey);
+										} else {
+											s.currentMovieIndex = s.movieGroups.findIndex(g => g.movieId === group.movieId);
+											s.viewMode = 'detail';
+										}
+									}}
+									completenessConfig={s.completenessConfig}
+								/>
 							{/each}
 						</div>
 					{:else}
@@ -249,21 +273,21 @@
 								onOpenCoverViewer={s.reviewPageController.openCoverViewer}
 								onOpenScreenshotViewer={s.reviewPageController.openScreenshotViewer}
 								onUseScreenshotAsPoster={s.useScreenshotAsPoster}
+								onUseScreenshotAsCover={s.useScreenshotAsCover}
 								onResetPoster={s.resetPoster}
+							onResetCover={s.resetCover}
+							canResetPoster={s.canResetPoster}
+							canResetCover={s.canResetCover}
 								previewImageURL={s.reviewPageController.previewImageURL}
 							/>
 
 						<div class="space-y-6 min-w-0">
 							<MovieNavigationCard
-								currentMovieIndex={s.currentMovieIndex}
-								onNavigate={s.navigateToMovieIndex}
+								bind:currentMovieIndex={s.currentMovieIndex}
 								movieResultsLength={s.movieResults.length}
 								currentMovieId={s.currentMovie.id}
 								hasChanges={s.reviewPageController.hasChanges(s.currentResult.file_path)}
-								selectionMode={s.selectionMode}
-								isSelected={s.selectedMovieIds.has(s.currentMovieGroup?.movieId ?? '')}
 								onExclude={s.reviewPageController.excludeCurrentMovie}
-								onToggleSelection={() => s.currentMovieGroup && s.toggleMovieSelection(s.currentMovieGroup.movieId, false)}
 							/>
 
 							<SourceFilesCard
@@ -295,11 +319,11 @@
 										</p>
 									</div>
 									<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-										{#each s.currentResult.candidates ?? [] as cand (cand.source)}
+										{#each s.currentResult.candidates ?? [] as candidate (candidate.source)}
 											<CandidatePreviewPanel
-												candidate={cand}
-												disabled={s.rescrapingStates.get(s.currentResult?.result_id || '') || false}
-												onSelect={(source) => s.currentResult && s.selectCandidateProvider(s.currentResult.result_id, source)}
+												{candidate}
+												disabled={s.rescrapingStates.get(s.currentResult.result_id) || false}
+											onSelect={(source) => s.currentResult && s.selectCandidateProvider(s.currentResult.result_id, source)}
 											/>
 										{/each}
 									</div>
@@ -311,7 +335,8 @@
 								currentResult={s.currentResult}
 								bind:showFieldScraperSources={s.showFieldScraperSources}
 								isRescraping={s.rescrapingStates.get(s.currentResult?.result_id || '') || false}
-								onOpenRescrape={() => s.currentResult && s.openRescrapeModal(s.currentResult.result_id)}
+								onOpenRescrape={() => s.currentResult && s.openRescrapeModal(s.currentResult.movie_id)}
+							onOpenSourceViewer={openSourceViewer}
 								onResetCurrentMovie={s.resetCurrentMovie}
 								onUpdateCurrentMovie={s.updateCurrentMovie}
 							/>
@@ -320,6 +345,9 @@
 								<ActressEditor
 									movie={s.currentMovie!}
 									onUpdate={s.updateCurrentMovie}
+								onPersistEdits={s.saveAllEdits}
+								savingEdits={s.isSavingEdits}
+								organizing={s.organizing}
 									actressSources={s.currentResult.actress_sources}
 									showFieldSources={s.showFieldScraperSources}
 								/>
@@ -334,6 +362,7 @@
 								showFieldScraperSources={s.showFieldScraperSources}
 								onUpdateCurrentMovie={s.updateCurrentMovie}
 								onUseScreenshotAsPoster={s.useScreenshotAsPoster}
+								onUseScreenshotAsCover={s.useScreenshotAsCover}
 							/>
 
 							{#if s.canOrganize}
@@ -410,23 +439,26 @@
 
 <PosterCropModal
 	bind:show={s.showPosterCropModal}
-	posterCropSaving={s.posterCropMutation.isPending}
+	posterCropSaving={s.posterCropSaving}
 	posterCropLoadError={s.posterCropLoadError}
 	cropSourceURL={s.cropSourceURL}
 	cropMetrics={s.cropMetrics}
 	cropBox={s.cropBox}
 	overlayStyle={s.posterCropController.getPosterCropOverlayStyle()}
+	configMaxPosterHeight={s.config?.output?.max_poster_height ?? 0}
+	maxPosterHeight={s.maxPosterHeight}
 	onClose={s.posterCropController.closePosterCropModal}
 	onReset={s.posterCropController.resetPosterCropBox}
 	onApply={s.posterCropController.applyPosterCrop}
 	onImageLoad={s.posterCropController.handlePosterCropImageLoad}
 	onImageError={s.posterCropController.handlePosterCropImageError}
 	onCropMouseDown={s.posterCropController.startPosterCropDrag}
+	onMaxPosterHeightChange={(v) => { s.maxPosterHeight = v; }}
 />
 
 <RescrapeModal
 	bind:show={s.showRescrapeModal}
-	rescraping={s.rescrapingStates.get(s.rescrapeMovieId) || false || s.bulkRescraping}
+	rescraping={s.rescrapingStates.get(s.rescrapeResultId) || false || s.bulkRescraping}
 	rescrapeMovieId={s.rescrapeMovieId}
 	rescrapeMovieName={s.currentMovie?.id}
 	bulkMovieCount={s.bulkRescrapeMovieIds.length || undefined}
@@ -453,4 +485,14 @@
 	progress={s.bulkRescrapeProgress}
 	active={s.bulkRescraping}
 	onDismiss={() => { s.dismissBulkRescrapeProgress(); }}
+/>
+
+<SourceViewerModal
+	bind:show={s.showSourceViewerModal}
+	loading={sourceViewerLoading}
+	results={sourceViewerResults}
+	fieldSources={s.currentResult?.field_sources}
+	pendingField={pendingOverrideField}
+	onLoad={loadSourcesForCurrent}
+	onApply={handleApplyOverride}
 />

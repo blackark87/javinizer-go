@@ -13,7 +13,6 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/go-resty/resty/v2"
-	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/httpclient"
 	"github.com/javinizer/javinizer-go/internal/logging"
 	"github.com/javinizer/javinizer-go/internal/models"
@@ -43,10 +42,11 @@ type Scraper struct {
 	enabled     bool
 	baseURL     string
 	rateLimiter *ratelimit.Limiter
-	settings    config.ScraperSettings
+	settings    models.ScraperSettings
 }
 
-func New(settings config.ScraperSettings, globalProxy *config.ProxyConfig, flareSolverr config.FlareSolverrConfig) *Scraper {
+// New constructs a SougouWiki actress resolver from scraper settings.
+func New(settings models.ScraperSettings, globalProxy *models.ProxyConfig, flareSolverr models.FlareSolverrConfig) *Scraper {
 	base := strings.TrimSpace(settings.BaseURL)
 	if base == "" {
 		base = defaultBaseURL
@@ -72,15 +72,23 @@ func New(settings config.ScraperSettings, globalProxy *config.ProxyConfig, flare
 	}
 }
 
+// Name returns the registry name for this scraper.
 func (s *Scraper) Name() string { return scraperName }
 
+// IsEnabled reports whether the resolver is enabled.
 func (s *Scraper) IsEnabled() bool { return s.enabled }
 
-func (s *Scraper) Config() *config.ScraperSettings { return s.settings.DeepCopy() }
+// Config returns a copy of the scraper settings.
+func (s *Scraper) Config() *models.ScraperSettings {
+	cloned := s.settings.Clone()
+	return &cloned
+}
 
+// Close releases scraper resources.
 func (s *Scraper) Close() error { return nil }
 
-func (s *Scraper) GetURL(id string) (string, error) {
+// GetURL returns the SougouWiki search URL for a movie ID.
+func (s *Scraper) GetURL(_ context.Context, id string) (string, error) {
 	return s.getSearchURL(id, "all")
 }
 
@@ -101,6 +109,7 @@ func (s *Scraper) getSearchURL(keyword, target string) (string, error) {
 	return searchURL.String(), nil
 }
 
+// Search resolves the verified actresses associated with a movie ID.
 func (s *Scraper) Search(ctx context.Context, id string) (*models.ScraperResult, error) {
 	return s.ResolveActresses(ctx, id)
 }
@@ -112,7 +121,7 @@ func (s *Scraper) ResolveActresses(ctx context.Context, id string) (*models.Scra
 	}
 
 	id = strings.TrimSpace(id)
-	searchURL, err := s.GetURL(id)
+	searchURL, err := s.GetURL(ctx, id)
 	if err != nil {
 		return nil, err
 	}

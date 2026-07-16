@@ -1,13 +1,35 @@
 import { createMutation } from '@tanstack/svelte-query';
 import type { QueryClient } from '@tanstack/svelte-query';
-import type { BatchJobResponse, BatchExcludeRequest, BatchExcludeResponse, BulkRescrapeRequest, FileResult, Movie, PosterCropResponse, PosterFromURLResponse } from '$lib/api/types';
-import { normalizeCropBox, type PosterCropBox, type PosterCropState, type PosterPreviewOverride, type PosterCropMetrics } from '../review-utils';
+import type {
+	BatchJobResponse,
+	BatchExcludeRequest,
+	BatchExcludeResponse,
+	BulkRescrapeRequest,
+	BulkRescrapeResponse,
+	FieldOverrideResponse,
+	FileResult,
+	Movie,
+	PosterCropResponse,
+	PosterFromURLResponse,
+	SourceResultsResponse,
+} from '$lib/api/types';
+import {
+	normalizeCropBox,
+	type PosterCropBox,
+	type PosterCropState,
+	type PosterPreviewOverride,
+	type PosterCropMetrics,
+} from '../review-utils';
+import { overlayFieldOverride } from './overlay-field-override';
 
-	interface ReviewMutationsDeps {
+interface ReviewMutationsDeps {
 	getJobId: () => string;
 	getJob: () => BatchJobResponse | null;
 	setJob: (job: BatchJobResponse) => void;
 	skipJobSync: () => void;
+	clearEditStorage: () => void;
+	clearEditedMovies: () => void;
+	clearPosterPreviewOverrides: () => void;
 	getEditedMovies: () => Map<string, Movie>;
 	getCurrentResult: () => FileResult | undefined;
 	getPosterPreviewOverrides: () => Map<string, PosterPreviewOverride>;
@@ -20,12 +42,33 @@ import { normalizeCropBox, type PosterCropBox, type PosterCropState, type Poster
 	getMovieResultsLength: () => number;
 	gotoJobs: () => void;
 	setShowPosterCropModal: (show: boolean) => void;
-	updateBatchMoviePosterFromURL: (jobId: string, resultId: string, body: { url: string }) => Promise<PosterFromURLResponse>;
+	updateBatchMoviePosterFromURL: (
+		jobId: string,
+		resultId: string,
+		body: { url: string },
+	) => Promise<PosterFromURLResponse>;
+	getBatchMovieSources: (jobId: string, resultId: string) => Promise<SourceResultsResponse>;
+	overrideBatchMovieField: (
+		jobId: string,
+		resultId: string,
+		body: { field: string; source: string },
+	) => Promise<FieldOverrideResponse>;
 	excludeBatchMovie: (jobId: string, resultId: string) => Promise<unknown>;
 	updateBatchMovie: (jobId: string, resultId: string, movie: Movie) => Promise<unknown>;
-	updateBatchMoviePosterCrop: (jobId: string, resultId: string, crop: PosterCropBox) => Promise<PosterCropResponse>;
-	batchExcludeMovies: (jobId: string, request: BatchExcludeRequest) => Promise<BatchExcludeResponse>;
-	bulkRescrapeMovies: (jobId: string, request: BulkRescrapeRequest) => Promise<void>;
+	updateBatchMoviePosterCrop: (
+		jobId: string,
+		resultId: string,
+		crop: PosterCropBox,
+		maxPosterHeight?: number,
+	) => Promise<PosterCropResponse>;
+	batchExcludeMovies: (
+		jobId: string,
+		request: BatchExcludeRequest,
+	) => Promise<BatchExcludeResponse>;
+	bulkRescrapeMovies: (
+		jobId: string,
+		request: BulkRescrapeRequest,
+	) => Promise<BulkRescrapeResponse>;
 	getSelectedMovieIds: () => Set<string>;
 	clearSelectedMovieIds: () => void;
 	deleteSelectedMovieId: (movieId: string) => void;
@@ -37,8 +80,11 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 	const queryClient = deps.getQueryClient();
 
 	function invalidateJobQueries() {
-		void queryClient.invalidateQueries({ queryKey: ['batch-job', deps.getJobId()] });
-		void queryClient.invalidateQueries({ queryKey: ['batch-job-slim', deps.getJobId()] });
+		return Promise.all([
+			queryClient.invalidateQueries({ queryKey: ['batch-job', deps.getJobId()] }),
+			queryClient.invalidateQueries({ queryKey: ['batch-job-slim', deps.getJobId()] }),
+			queryClient.invalidateQueries({ queryKey: ['actresses'] }),
+		]);
 	}
 
 	const posterFromUrlMutation = createMutation(() => ({
@@ -50,19 +96,19 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 			if (currentJob) {
 				const updatedJob: BatchJobResponse = {
 					...currentJob,
-					results: { ...currentJob.results }
+					results: { ...currentJob.results },
 				};
 				for (const [filePath, result] of Object.entries(updatedJob.results)) {
 					const r = result as FileResult;
-					if (r.result_id === resultId && r.data) {
+					if (r.result_id === resultId && r.movie) {
 						updatedJob.results[filePath] = {
 							...r,
-							data: {
-								...r.data,
+							movie: {
+								...r.movie,
 								poster_url: data.poster_url,
 								cropped_poster_url: data.cropped_poster_url,
-								should_crop_poster: false
-							}
+								should_crop_poster: false,
+							},
 						};
 					}
 				}
@@ -77,7 +123,7 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 							...movie,
 							poster_url: data.poster_url,
 							cropped_poster_url: data.cropped_poster_url,
-							should_crop_poster: false
+							should_crop_poster: false,
 						});
 					}
 				}
@@ -87,20 +133,25 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 			if (currentResult) {
 				deps.getPosterPreviewOverrides().set(currentResult.file_path, {
 					url: data.cropped_poster_url,
-					version: Date.now()
+					version: Date.now(),
 				});
 			}
 
-			invalidateJobQueries();
+			void invalidateJobQueries();
 		},
 		onError: (err: Error) => {
 			deps.toastError(`Failed to set poster from screenshot: ${err.message}`);
-		}
+		},
 	}));
 
 	function applyPosterFromUrl(resultId: string, url: string) {
 		if (!deps.getJob() || posterFromUrlMutation.isPending) return;
 		posterFromUrlMutation.mutate({ resultId, url });
+	}
+
+	async function applyPosterFromUrlAsync(resultId: string, url: string) {
+		if (!deps.getJob()) return;
+		await posterFromUrlMutation.mutateAsync({ resultId, url });
 	}
 
 	const excludeMovieMutation = createMutation(() => ({
@@ -117,7 +168,7 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 				}
 			}
 			deps.toastSuccess('Movie excluded from organization');
-			invalidateJobQueries();
+			void invalidateJobQueries();
 
 			const movieResultsLength = deps.getMovieResultsLength();
 			const postExcludeLength = movieResultsLength - 1;
@@ -133,7 +184,7 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 		},
 		onError: (err: Error) => {
 			deps.toastError(`Failed to exclude movie: ${err.message}`);
-		}
+		},
 	}));
 
 	const saveEditsMutation = createMutation(() => ({
@@ -145,50 +196,79 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 					movieToSave.title = movieToSave.display_title;
 				}
 				const resultId = job?.results?.[filePath]?.result_id;
-				if (!resultId) return Promise.resolve();
+				if (!resultId) return null;
 				return deps.updateBatchMovie(deps.getJobId(), resultId, movieToSave);
 			});
 
-			if (savePromises.length > 0) {
-				await Promise.all(savePromises);
+			const sent = savePromises.filter((p): p is Promise<unknown> => p !== null);
+			if (sent.length > 0) {
+				await Promise.all(sent);
 			}
+			return sent.length;
 		},
-		onSuccess: () => {
-			invalidateJobQueries();
+		onSuccess: async (sent: number) => {
+			if (sent > 0) {
+				await invalidateJobQueries().catch(() => {});
+				deps.toastSuccess('Changes saved to database');
+			}
+			deps.clearEditedMovies();
+			deps.clearPosterPreviewOverrides();
+			deps.clearEditStorage();
 		},
 		onError: (err: Error) => {
 			deps.toastError(`Failed to save edits: ${err.message}`);
-		}
+		},
 	}));
 
 	const posterCropMutation = createMutation(() => ({
-		mutationFn: async ({ jobId: mutationJobId, resultId, crop }: { jobId: string; resultId: string; crop: PosterCropBox }) => {
-			return deps.updateBatchMoviePosterCrop(mutationJobId, resultId, crop);
+		mutationFn: async ({
+			jobId: mutationJobId,
+			resultId,
+			crop,
+			maxPosterHeight,
+		}: {
+			jobId: string;
+			resultId: string;
+			crop: PosterCropBox;
+			maxPosterHeight?: number;
+		}) => {
+			return deps.updateBatchMoviePosterCrop(mutationJobId, resultId, crop, maxPosterHeight);
 		},
 		onSuccess: (response: PosterCropResponse) => {
 			const currentResultVal = deps.getCurrentResult();
 			if (currentResultVal) {
 				deps.getPosterPreviewOverrides().set(currentResultVal.file_path, {
 					url: response.cropped_poster_url,
-					version: Date.now()
+					version: Date.now(),
 				});
 
 				const cropMetricsVal = deps.getCropMetrics();
 				const cropBoxVal = deps.getCropBox();
 				if (cropMetricsVal && cropBoxVal) {
-					deps.getPosterCropStates().set(currentResultVal.file_path, normalizeCropBox(cropBoxVal, cropMetricsVal));
+					deps
+						.getPosterCropStates()
+						.set(currentResultVal.file_path, normalizeCropBox(cropBoxVal, cropMetricsVal));
 				}
 			}
 
 			deps.toastSuccess('Poster crop updated');
 			deps.setShowPosterCropModal(false);
 
-			invalidateJobQueries();
+			void invalidateJobQueries();
 		},
 		onError: (err: Error) => {
 			deps.toastError(err.message || 'Failed to update poster crop');
-		}
+		},
 	}));
+
+	async function applyPosterCropAsync(
+		jobId: string,
+		resultId: string,
+		crop: PosterCropBox,
+		maxPosterHeight?: number,
+	) {
+		await posterCropMutation.mutateAsync({ jobId, resultId, crop, maxPosterHeight });
+	}
 
 	const bulkExcludeMutation = createMutation(() => ({
 		mutationFn: async ({ resultIds }: { resultIds: string[] }) => {
@@ -203,20 +283,31 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 			deps.clearSelectedMovieIds();
 
 			if (data.failed.length > 0) {
-				deps.toastError(`Failed to exclude ${data.failed.length} movie${data.failed.length !== 1 ? 's' : ''}`);
+				deps.toastError(
+					`Failed to exclude ${data.failed.length} movie${data.failed.length !== 1 ? 's' : ''}`,
+				);
 			} else {
-				deps.toastSuccess(`Excluded ${data.excluded.length} movie${data.excluded.length !== 1 ? 's' : ''}`);
+				deps.toastSuccess(
+					`Excluded ${data.excluded.length} movie${data.excluded.length !== 1 ? 's' : ''}`,
+				);
 			}
 
-			invalidateJobQueries();
+			void invalidateJobQueries();
 		},
 		onError: (err: Error) => {
 			deps.toastError(`Failed to exclude movies: ${err.message}`);
-		}
+		},
 	}));
 
 	const bulkRescrapeMutation = createMutation(() => ({
-		mutationFn: async ({ movieIds, selectedScrapers, preset, scalarStrategy, arrayStrategy, sections }: {
+		mutationFn: async ({
+			movieIds,
+			selectedScrapers,
+			preset,
+			scalarStrategy,
+			arrayStrategy,
+			sections,
+		}: {
 			movieIds: string[];
 			selectedScrapers: string[];
 			preset?: string;
@@ -228,24 +319,108 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 				movie_ids: movieIds,
 				selected_scrapers: selectedScrapers,
 				preset: preset as 'conservative' | 'gap-fill' | 'aggressive' | undefined,
-				scalar_strategy: scalarStrategy as 'prefer-nfo' | 'prefer-scraper' | 'preserve-existing' | 'fill-missing-only' | undefined,
+				scalar_strategy: scalarStrategy as
+					| 'prefer-nfo'
+					| 'prefer-scraper'
+					| 'preserve-existing'
+					| 'fill-missing-only'
+					| 'merge-arrays'
+					| undefined,
 				array_strategy: arrayStrategy as 'merge' | 'replace' | undefined,
 				sections: sections && sections.length > 0 ? sections : undefined,
 			});
 		},
-		// API returns 202 (async); completion/stats are delivered via WebSocket.
+		onSuccess: (data) => {
+			if (data.job) {
+				deps.skipJobSync();
+				deps.setJob(data.job);
+			}
+
+			if (data.failed > 0) {
+				deps.toastError(`Failed to rescrape ${data.failed} movie${data.failed !== 1 ? 's' : ''}`);
+			} else {
+				deps.toastSuccess(`Rescraped ${data.succeeded} movie${data.succeeded !== 1 ? 's' : ''}`);
+			}
+
+			void invalidateJobQueries();
+		},
 		onError: (err: Error) => {
 			deps.toastError(`Failed to rescrape movies: ${err.message}`);
-		}
+		},
 	}));
+
+	// overlayFieldOverride is imported from ./overlay-field-override so it can be
+	// unit-tested independently (the .svelte.ts module can't export locals).
+
+	const fieldOverrideMutation = createMutation(() => ({
+		mutationFn: async ({
+			resultId,
+			field,
+			source,
+		}: {
+			resultId: string;
+			field: string;
+			source: string;
+		}) => {
+			return deps.overrideBatchMovieField(deps.getJobId(), resultId, { field, source });
+		},
+		onSuccess: (data: FieldOverrideResponse, { resultId, field, source }) => {
+			const currentJob = deps.getJob();
+			if (currentJob && data.movie) {
+				const updatedJob: BatchJobResponse = {
+					...currentJob,
+					results: { ...currentJob.results },
+				};
+				for (const [filePath, result] of Object.entries(updatedJob.results)) {
+					const r = result as FileResult;
+					if (r.result_id === resultId) {
+						updatedJob.results[filePath] = {
+							...r,
+							movie: data.movie,
+							field_sources: data.field_sources ?? r.field_sources,
+							actress_sources: data.actress_sources ?? r.actress_sources,
+						};
+					}
+				}
+				deps.skipJobSync();
+				deps.setJob(updatedJob);
+
+				// Overlay the overridden field onto any in-flight edit so a subsequent
+				// Save doesn't clobber the override (and unsaved edits to other fields survive).
+				const editedMovies = deps.getEditedMovies();
+				for (const [filePath, movie] of editedMovies) {
+					const editedResultId = currentJob.results?.[filePath]?.result_id;
+					if (editedResultId === resultId && data.movie) {
+						const merged: Movie = { ...movie };
+						overlayFieldOverride(merged, field, data.movie);
+						editedMovies.set(filePath, merged);
+					}
+				}
+			}
+			deps.toastSuccess(`Replaced ${field} from ${source}`);
+			void invalidateJobQueries();
+		},
+		onError: (err: Error) => {
+			deps.toastError(`Failed to override field: ${err.message}`);
+		},
+	}));
+
+	async function applyFieldOverrideAsync(resultId: string, field: string, source: string) {
+		if (!deps.getJob()) return;
+		await fieldOverrideMutation.mutateAsync({ resultId, field, source });
+	}
 
 	return {
 		posterFromUrlMutation,
 		applyPosterFromUrl,
+		applyPosterFromUrlAsync,
 		excludeMovieMutation,
 		bulkExcludeMutation,
 		bulkRescrapeMutation,
 		saveEditsMutation,
-		posterCropMutation
+		posterCropMutation,
+		applyPosterCropAsync,
+		fieldOverrideMutation,
+		applyFieldOverrideAsync,
 	};
 }

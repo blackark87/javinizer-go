@@ -100,6 +100,21 @@ func TestGetActressesByPriority_HonorificAndDescription(t *testing.T) {
 	assert.Equal(t, "ありさ", got[0].JapaneseName)
 }
 
+func TestGetActressesByPriority_HonorificBeforeOccupationDescription(t *testing.T) {
+	agg := newDescriptiveTestAggregator(t)
+	results := map[string]*models.ScraperResult{
+		"libredmm": {Actresses: []models.ActressInfo{
+			{JapaneseName: "マヒロさん マッチョバー経営の女社長"},
+			{JapaneseName: "マヒロ"},
+		}},
+	}
+
+	got := agg.getActressesByPriorityWithSource(results, []string{"libredmm"}, nil)
+
+	require.Len(t, got, 1)
+	assert.Equal(t, "マヒロ", got[0].JapaneseName)
+}
+
 // TestGetActressesByPriority_OccupationSuffixMerges covers MIUM-1256: "愛梨沙 西麻布ラウンジ
 // 勤務" and plain "愛梨沙" collapse into a single "愛梨沙".
 func TestGetActressesByPriority_OccupationSuffixMerges(t *testing.T) {

@@ -19,6 +19,7 @@ type actressResolverScraper struct {
 	calls      int
 	thumbnail  string
 	thumbCalls int
+	resolveID  string
 }
 
 func (s *actressResolverScraper) Name() string { return s.name }
@@ -31,8 +32,9 @@ func (s *actressResolverScraper) Config() *models.ScraperSettings {
 	return &models.ScraperSettings{Enabled: s.enabled}
 }
 func (s *actressResolverScraper) Close() error { return nil }
-func (s *actressResolverScraper) ResolveActresses(context.Context, string) (*models.ScraperResult, error) {
+func (s *actressResolverScraper) ResolveActresses(_ context.Context, id string) (*models.ScraperResult, error) {
 	s.calls++
+	s.resolveID = id
 	return s.result, s.err
 }
 func (s *actressResolverScraper) ResolveActressThumbnail(context.Context, models.ActressInfo) string {
@@ -62,6 +64,127 @@ func TestResolveMissingActressesRunsOnlyWithoutVerifiedDMMIdentity(t *testing.T)
 	assert.Nil(t, result)
 	assert.Nil(t, failure)
 	assert.Equal(t, 1, resolver.calls)
+}
+
+func TestResolveMissingActressesUsesDedicatedResolverWhenDisabled(t *testing.T) {
+	resolver := &actressResolverScraper{name: actressResolverScraperName, enabled: false, result: &models.ScraperResult{
+		Actresses: []models.ActressInfo{{DMMID: 1054165, JapaneseName: "夏希まろん"}},
+	}}
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
+	s := &Scraper{registry: registry}
+
+	result, failure := s.resolveMissingActresses(context.Background(), "JNT-042", []*models.ScraperResult{{
+		Source: "regular", Actresses: []models.ActressInfo{
+			{JapaneseName: "マヒロさん マッチョバー経営の女社長"},
+			{JapaneseName: "マヒロ"},
+		},
+	}})
+
+	require.Nil(t, failure)
+	require.NotNil(t, result)
+	assert.Equal(t, 1, resolver.calls)
+	assert.Equal(t, "JNT-042", result.ID)
+	require.Len(t, result.Actresses, 1)
+	assert.Equal(t, 1054165, result.Actresses[0].DMMID)
+	assert.Equal(t, "夏希まろん", result.Actresses[0].JapaneseName)
+}
+
+func TestScrapeJNT042ReplacesDecoratedUnverifiedCastWithDisabledResolver(t *testing.T) {
+	fixture := newFixture(t).withScraper("regular", &models.ScraperResult{
+		Source: "regular", ID: "JNT-042", Title: "JNT test",
+		Actresses: []models.ActressInfo{
+			{JapaneseName: "マヒロさん マッチョバー経営の女社長"},
+			{JapaneseName: "マヒロ"},
+		},
+	}, nil)
+	resolver := &actressResolverScraper{name: actressResolverScraperName, enabled: false, result: &models.ScraperResult{
+		Actresses: []models.ActressInfo{{DMMID: 1054165, JapaneseName: "夏希まろん"}},
+	}}
+	fixture.registry.RegisterInstance(resolver)
+	s := fixture.build()
+
+	result, err := s.Scrape(context.Background(), ScrapeCmd{MovieID: "JNT-042"}, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, result.Movie)
+	assert.Equal(t, "JNT-042", resolver.resolveID)
+	assert.Equal(t, 1, resolver.calls)
+	require.Len(t, result.Movie.Actresses, 1)
+	assert.Equal(t, 1054165, result.Movie.Actresses[0].DMMID)
+	assert.Equal(t, "夏希まろん", result.Movie.Actresses[0].JapaneseName)
+	require.Len(t, result.ScraperResults, 2)
+	require.Len(t, result.ScraperResults[0].Actresses, 2, "raw regular source must remain available for review")
+}
+
+func TestCachedJNT042AutomaticallyRepairsAndRequestsPersistence(t *testing.T) {
+	fixture := newFixture(t)
+	_, err := fixture.movieRepo.Upsert(context.Background(), &models.Movie{
+		ID: "JNT-042", Title: "cached", SourceName: "regular",
+		Actresses: []models.Actress{
+			{JapaneseName: "マヒロさん マッチョバー経営の女社長"},
+			{JapaneseName: "マヒロ"},
+		},
+	})
+	require.NoError(t, err)
+	resolver := &actressResolverScraper{name: actressResolverScraperName, enabled: false, result: &models.ScraperResult{
+		Actresses: []models.ActressInfo{{DMMID: 1054165, JapaneseName: "夏希まろん"}},
+	}}
+	fixture.registry.RegisterInstance(resolver)
+	s := fixture.build()
+
+	result, err := s.Scrape(context.Background(), ScrapeCmd{MovieID: "JNT-042"}, nil)
+
+	require.NoError(t, err)
+	require.True(t, result.Cached)
+	assert.True(t, result.NeedsPersistence)
+	assert.Equal(t, "JNT-042", resolver.resolveID)
+	assert.Equal(t, 1, resolver.calls)
+	require.Len(t, result.Movie.Actresses, 1)
+	assert.Equal(t, 1054165, result.Movie.Actresses[0].DMMID)
+	assert.Equal(t, "夏希まろん", result.Movie.Actresses[0].JapaneseName)
+	require.Len(t, result.ScraperResults, 2)
+	require.Len(t, result.ScraperResults[0].Actresses, 2, "pre-repair cache source must remain visible")
+	assert.Equal(t, actressResolverScraperName, result.ScraperResults[1].Source)
+	assert.Equal(t, actressResolverScraperName, result.ActressSources[ActressSourceKey(result.Movie.Actresses[0])])
+
+	_, err = fixture.movieRepo.UpsertWithTranslations(context.Background(), result.Movie, nil, nil)
+	require.NoError(t, err)
+	resolver.calls = 0
+	resolver.resolveID = ""
+
+	second, err := s.Scrape(context.Background(), ScrapeCmd{MovieID: "JNT-042"}, nil)
+	require.NoError(t, err)
+	require.True(t, second.Cached)
+	assert.False(t, second.NeedsPersistence)
+	assert.Zero(t, resolver.calls, "persisted DMM identity must prevent repeated Wiki lookups")
+	require.Len(t, second.Movie.Actresses, 1)
+	assert.Equal(t, 1054165, second.Movie.Actresses[0].DMMID)
+	assert.Equal(t, "夏希まろん", second.Movie.Actresses[0].JapaneseName)
+}
+
+func TestCachedJNT042CleansAndDeduplicatesWhenResolverFails(t *testing.T) {
+	fixture := newFixture(t)
+	_, err := fixture.movieRepo.Upsert(context.Background(), &models.Movie{
+		ID: "JNT-042", Title: "cached", SourceName: "regular",
+		Actresses: []models.Actress{
+			{JapaneseName: "マヒロさん マッチョバー経営の女社長"},
+			{JapaneseName: "マヒロ"},
+		},
+	})
+	require.NoError(t, err)
+	resolver := &actressResolverScraper{name: actressResolverScraperName, enabled: false, err: errors.New("lookup failed")}
+	fixture.registry.RegisterInstance(resolver)
+	s := fixture.build()
+
+	result, err := s.Scrape(context.Background(), ScrapeCmd{MovieID: "JNT-042"}, nil)
+
+	require.NoError(t, err)
+	assert.True(t, result.NeedsPersistence)
+	assert.Equal(t, 1, resolver.calls)
+	require.Len(t, result.Movie.Actresses, 1)
+	assert.Equal(t, "マヒロ", result.Movie.Actresses[0].JapaneseName)
+	assert.Zero(t, result.Movie.Actresses[0].DMMID)
 }
 
 func TestResolveMissingActressesFailureIsOptionalAndAttributed(t *testing.T) {

@@ -219,8 +219,8 @@ func TestActressSyncManagerUnknownMoviesAreIsolatedAndReuseExistingActress(t *te
 	assert.Contains(t, resolver.resolveQueries, "FAIL-002")
 }
 
-func TestActressSyncManagerDeduplicatesMissingDMMTasksByMovie(t *testing.T) {
-	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true}
+func TestActressSyncManagerUsesDisabledResolverAndDeduplicatesMissingDMMTasksByMovie(t *testing.T) {
+	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: false}
 	resolver.resolveFn = func(_ context.Context, id string) (*models.ScraperResult, error) {
 		return &models.ScraperResult{ID: id, Actresses: []models.ActressInfo{{DMMID: 801, JapaneseName: "確認女優"}}}, nil
 	}

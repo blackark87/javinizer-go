@@ -20,7 +20,7 @@ func (s *Scraper) resolveMissingActresses(ctx context.Context, movieID string, r
 		return nil, nil
 	}
 	instance, ok := s.registry.GetInstance(actressResolverScraperName)
-	if !ok || instance == nil || !instance.IsEnabled() {
+	if !ok || instance == nil {
 		return nil, nil
 	}
 	resolver, ok := instance.(models.ActressResolver)

@@ -359,6 +359,8 @@ func TestCleanActressNameForTranslation(t *testing.T) {
 		// honorific-based name extraction from trailing token, then honorific stripped
 		{"高身長172cmショート× Gカップ豹変アクメギャル メイちゃん", "メイ"},
 		{"デカパイ美容師 ひとみさん", "ひとみ"},
+		// honorific name token followed by a scraper-added occupation description
+		{"マヒロさん マッチョバー経営の女社長", "マヒロ"},
 		// trailing honorific on a bare single-token name is stripped
 		{"ありささん", "ありさ"},
 		{"あいちゃん", "あい"},

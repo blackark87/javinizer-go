@@ -461,15 +461,15 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 		return err
 	}
 	if m.deps.GetRegistry == nil {
-		return fmt.Errorf("movie %s: SougouWiki resolver is unavailable; enable scrapers.sougouwiki.enabled in scraper settings", movie.ID)
+		return fmt.Errorf("movie %s: SougouWiki resolver registry is unavailable", movie.ID)
 	}
 	registry := m.deps.GetRegistry()
 	if registry == nil {
-		return fmt.Errorf("movie %s: SougouWiki resolver is unavailable; enable scrapers.sougouwiki.enabled in scraper settings", movie.ID)
+		return fmt.Errorf("movie %s: SougouWiki resolver registry is unavailable", movie.ID)
 	}
 	scraper, ok := registry.GetInstance("sougouwiki")
-	if !ok || scraper == nil || !scraper.IsEnabled() {
-		return fmt.Errorf("movie %s: SougouWiki is disabled; enable scrapers.sougouwiki.enabled in scraper settings", movie.ID)
+	if !ok || scraper == nil {
+		return fmt.Errorf("movie %s: SougouWiki resolver is unavailable", movie.ID)
 	}
 	resolver, ok := scraper.(models.ActressResolver)
 	if !ok {

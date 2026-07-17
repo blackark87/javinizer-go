@@ -343,8 +343,11 @@ func (s *Scraper) Scrape(ctx context.Context, cmd ScrapeCmd, progress ProgressFu
 	aggregationResults := actressOverrideResults(results, actressResolverScraperName)
 	var scraped *models.Movie
 	var aggResult *aggregator.AggregateResult
-	if len(cmd.SelectedScrapers) > 0 {
+	if len(cmd.SelectedScrapers) > 0 || resolverResult != nil {
 		priority := append([]string(nil), cmd.SelectedScrapers...)
+		if len(priority) == 0 {
+			priority = append(priority, scraperNames...)
+		}
 		if resolverResult != nil && !containsString(priority, actressResolverScraperName) {
 			priority = append(priority, actressResolverScraperName)
 		}

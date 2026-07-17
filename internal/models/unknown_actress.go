@@ -78,7 +78,7 @@ var descriptiveNonNameMarkers = []string{
 var descriptorKeywords = []string{
 	"歳", "才", "カップ", "ｶｯﾌﾟ", "cm", "ｃｍ", // age / cup / height
 	"妻", "人妻", "若妻", "熟女", "主婦", "奥さん", // marital / relation
-	"セレブ", "嬢", "キャバ", "ラウンジ", "勤務", // occupation / venue
+	"セレブ", "嬢", "キャバ", "ラウンジ", "勤務", "経営", "社長", // occupation / venue
 	"女子大生", "大学", "年生", "専門学生", "職業", // student / occupation
 	"OL", "ＯＬ", "素人", // office lady / amateur
 }

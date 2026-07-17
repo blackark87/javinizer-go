@@ -89,6 +89,30 @@ func TestResolveActressesKnownMappingsEUCJP(t *testing.T) {
 	}
 }
 
+func TestDisabledScraperStillAllowsDedicatedActressResolution(t *testing.T) {
+	server := newFixtureServer(t, func(_ string, request *http.Request) (string, int) {
+		switch request.URL.Path {
+		case "/search":
+			return searchFixture("/d/actress"), http.StatusOK
+		case "/d/actress":
+			return actressFixture("JNT-042", "夏希まろん", 1054165), http.StatusOK
+		default:
+			return "not found", http.StatusNotFound
+		}
+	})
+	defer server.Close()
+
+	scraper := New(models.ScraperSettings{Enabled: false, BaseURL: server.URL + "/"}, nil, models.FlareSolverrConfig{})
+	_, err := scraper.Search(context.Background(), "JNT-042")
+	require.ErrorContains(t, err, "disabled")
+
+	result, err := scraper.ResolveActresses(context.Background(), "JNT-042")
+	require.NoError(t, err)
+	require.Len(t, result.Actresses, 1)
+	assert.Equal(t, 1054165, result.Actresses[0].DMMID)
+	assert.Equal(t, "夏希まろん", result.Actresses[0].JapaneseName)
+}
+
 func TestResolveActressesMultipleAndDuplicateDMMIDs(t *testing.T) {
 	server := newFixtureServer(t, func(_ string, request *http.Request) (string, int) {
 		switch request.URL.Path {

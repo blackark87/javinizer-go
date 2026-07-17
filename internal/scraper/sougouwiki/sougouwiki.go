@@ -111,15 +111,16 @@ func (s *Scraper) getSearchURL(keyword, target string) (string, error) {
 
 // Search resolves the verified actresses associated with a movie ID.
 func (s *Scraper) Search(ctx context.Context, id string) (*models.ScraperResult, error) {
-	return s.ResolveActresses(ctx, id)
-}
-
-// ResolveActresses implements models.ActressResolver.
-func (s *Scraper) ResolveActresses(ctx context.Context, id string) (*models.ScraperResult, error) {
 	if !s.enabled {
 		return nil, fmt.Errorf("%s scraper is disabled", displayName)
 	}
+	return s.ResolveActresses(ctx, id)
+}
 
+// ResolveActresses implements models.ActressResolver. The dedicated fallback
+// remains callable even when the scraper is disabled for ordinary metadata
+// searches; missing-DMM actress verification is an automatic safety step.
+func (s *Scraper) ResolveActresses(ctx context.Context, id string) (*models.ScraperResult, error) {
 	id = strings.TrimSpace(id)
 	searchURL, err := s.GetURL(ctx, id)
 	if err != nil {

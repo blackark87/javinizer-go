@@ -163,10 +163,10 @@ scrapers:
     libredmm:
         enabled: false
         base_url: "https://www.libredmm.com"
-    # Optional actress identity resolver. Runs only when regular scraper results
-    # contain no actress with a valid DMM ID.
+    # Actress identity resolver. Missing-DMM verification runs automatically even
+    # when enabled is false; enabled only controls ordinary metadata scraping.
     sougouwiki:
-        enabled: false
+        enabled: false            # Keep disabled unless it should be a regular source
         request_delay: 1000
         base_url: "https://seesaawiki.jp/w/sougouwiki/"
     mgstage:

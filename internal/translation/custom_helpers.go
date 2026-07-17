@@ -10,6 +10,8 @@ import (
 
 var ageOccupationSuffixRE = regexp.MustCompile(`\s+[0-9０-９]+歳.*`)
 
+var actressNameHonorifics = []string{"ちゃん", "くん", "さん", "様", "氏", "君"}
+
 var nihonshikiToHepburn = strings.NewReplacer(
 	"sya", "sha", "syu", "shu", "syo", "sho",
 	"tya", "cha", "tyu", "chu", "tyo", "cho",
@@ -81,15 +83,8 @@ func cleanActressNameForTranslation(name string) string {
 		name = strings.TrimSpace(name[:idx])
 	}
 	name = strings.TrimSpace(ageOccupationSuffixRE.ReplaceAllString(name, ""))
-	honorifics := []string{"ちゃん", "くん", "さん", "様", "氏", "君"}
-	if tokens := strings.Fields(name); len(tokens) > 1 {
-		last := tokens[len(tokens)-1]
-		for _, suffix := range honorifics {
-			if strings.HasSuffix(last, suffix) {
-				name = last
-				break
-			}
-		}
+	if honorificName, ok := extractHonorificNameToken(name); ok {
+		name = honorificName
 	}
 	if containsResidualJapanese(name) {
 		if tokens := strings.Fields(name); len(tokens) > 1 {
@@ -104,13 +99,36 @@ func cleanActressNameForTranslation(name string) string {
 			}
 		}
 	}
-	for _, suffix := range honorifics {
+	for _, suffix := range actressNameHonorifics {
 		if strings.HasSuffix(name, suffix) && len([]rune(name)) > len([]rune(suffix)) {
 			name = strings.TrimSuffix(name, suffix)
 			break
 		}
 	}
 	return strings.TrimSpace(name)
+}
+
+// extractHonorificNameToken finds a name token carrying a Japanese honorific
+// even when scraper-added occupation text follows it. Descriptor-only tokens
+// such as "奥さん" are ignored so they cannot become a false performer name.
+func extractHonorificNameToken(name string) (string, bool) {
+	if tokens := strings.Fields(name); len(tokens) > 1 {
+		for _, token := range tokens {
+			if models.ContainsDescriptorKeyword(token) {
+				continue
+			}
+			for _, suffix := range actressNameHonorifics {
+				if !strings.HasSuffix(token, suffix) {
+					continue
+				}
+				bare := strings.TrimSpace(strings.TrimSuffix(token, suffix))
+				if bare != "" && !models.IsDescriptiveNonName("", "", bare) {
+					return bare, true
+				}
+			}
+		}
+	}
+	return "", false
 }
 
 var descriptionPromoStoreRE = regexp.MustCompile(`(?:特集\s*)?最新作やセール商品など、お得な情報満載[の의]\s*『[^』]*KMPストア[^』]*』はこちら！?`)

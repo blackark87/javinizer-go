@@ -31,7 +31,7 @@ const (
 
 var (
 	dmmActressIDPattern  = regexp.MustCompile(`/article=actress/id=(\d+)`)
-	movieTokenPattern    = regexp.MustCompile(`(?i)[0-9]*[a-z][a-z0-9]*[\s_-]*\d+`)
+	movieTokenPattern    = regexp.MustCompile(`(?i)[0-9]*[a-z][a-z0-9]*(?:[\s_-]+[a-z][a-z0-9]*)*[\s_-]*\d+`)
 	readingSuffixPattern = regexp.MustCompile(`\s*[（(][^）)]*[）)]\s*$`)
 )
 

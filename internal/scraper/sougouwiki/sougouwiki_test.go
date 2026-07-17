@@ -210,6 +210,8 @@ func TestMovieIDEquivalence(t *testing.T) {
 		{pageID: "MIUM-834", query: "300MIUM-834", want: true},
 		{pageID: "300MIUM-835", query: "MIUM-834", want: false},
 		{pageID: "JNT-051", query: "JNT-051", want: true},
+		{pageID: "FC2-PPV-123456", query: "FC2-PPV-123456", want: true},
+		{pageID: "S-CUTE-123", query: "S-CUTE-123", want: true},
 	} {
 		if got := pageContainsMovieID(test.pageID, test.query); got != test.want {
 			t.Errorf("pageContainsMovieID(%q, %q) = %v, want %v", test.pageID, test.query, got, test.want)

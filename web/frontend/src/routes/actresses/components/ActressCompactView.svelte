@@ -43,7 +43,13 @@
 					/>
 					<div class="flex-1 min-w-0">
 						<div class="flex items-center gap-2 min-w-0">
-							<p class="font-medium truncate">{getDisplayName(actress)}</p>
+							<p class="font-medium truncate">
+								{#if actress.id}
+									<a href={`/actresses/${actress.id}`} class="hover:underline">{getDisplayName(actress)}</a>
+								{:else}
+									{getDisplayName(actress)}
+								{/if}
+							</p>
 							{#if actress.id}
 								<span class="text-xs rounded bg-muted px-2 py-0.5">#{actress.id}</span>
 							{/if}

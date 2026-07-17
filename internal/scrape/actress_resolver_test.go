@@ -42,7 +42,7 @@ func (s *actressResolverScraper) ResolveActressThumbnail(context.Context, models
 	return s.thumbnail
 }
 
-func TestResolveMissingActressesRunsOnlyWithoutVerifiedDMMIdentity(t *testing.T) {
+func TestResolveMissingActressesRunsWhenAnyActressLacksVerifiedDMMIdentity(t *testing.T) {
 	resolver := &actressResolverScraper{name: actressResolverScraperName, enabled: true, result: &models.ScraperResult{
 		Actresses: []models.ActressInfo{{DMMID: 777, JapaneseName: "正式名"}},
 	}}
@@ -59,11 +59,51 @@ func TestResolveMissingActressesRunsOnlyWithoutVerifiedDMMIdentity(t *testing.T)
 	assert.Equal(t, "TEST-001", result.ID)
 
 	result, failure = s.resolveMissingActresses(context.Background(), "TEST-002", []*models.ScraperResult{{
-		Source: "regular", Actresses: []models.ActressInfo{{DMMID: 1, JapaneseName: "정식명"}},
+		Source: "regular", Actresses: []models.ActressInfo{
+			{DMMID: 1, JapaneseName: "정식명"},
+			{JapaneseName: "미검증명"},
+		},
+	}})
+	require.Nil(t, failure)
+	require.NotNil(t, result)
+	assert.Equal(t, 2, resolver.calls)
+
+	result, failure = s.resolveMissingActresses(context.Background(), "TEST-003", []*models.ScraperResult{{
+		Source: "regular", Actresses: []models.ActressInfo{
+			{DMMID: 1, JapaneseName: "정식명"},
+			{DMMID: 2, JapaneseName: "다른 정식명"},
+		},
 	}})
 	assert.Nil(t, result)
 	assert.Nil(t, failure)
+	assert.Equal(t, 2, resolver.calls)
+}
+
+func TestScrapeReplacesMixedVerifiedAndUnverifiedCastWithResolverCast(t *testing.T) {
+	fixture := newFixture(t).withScraper("regular", &models.ScraperResult{
+		Source: "regular", ID: "MIXED-001", Title: "Mixed cast",
+		Actresses: []models.ActressInfo{
+			{DMMID: 100, JapaneseName: "검증 배우"},
+			{JapaneseName: "남아 있으면 안 되는 이름"},
+		},
+	}, nil)
+	resolver := &actressResolverScraper{name: actressResolverScraperName, enabled: false, result: &models.ScraperResult{
+		Actresses: []models.ActressInfo{
+			{DMMID: 100, JapaneseName: "검증 배우"},
+			{DMMID: 200, JapaneseName: "보정 배우"},
+		},
+	}}
+	fixture.registry.RegisterInstance(resolver)
+	s := fixture.build()
+
+	result, err := s.Scrape(context.Background(), ScrapeCmd{MovieID: "MIXED-001"}, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, result.Movie)
 	assert.Equal(t, 1, resolver.calls)
+	require.Len(t, result.Movie.Actresses, 2)
+	assert.Equal(t, []int{100, 200}, []int{result.Movie.Actresses[0].DMMID, result.Movie.Actresses[1].DMMID})
+	assert.NotContains(t, []string{result.Movie.Actresses[0].JapaneseName, result.Movie.Actresses[1].JapaneseName}, "남아 있으면 안 되는 이름")
 }
 
 func TestResolveMissingActressesUsesDedicatedResolverWhenDisabled(t *testing.T) {

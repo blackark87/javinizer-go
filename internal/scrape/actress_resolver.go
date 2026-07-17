@@ -11,12 +11,12 @@ import (
 
 const actressResolverScraperName = "sougouwiki"
 
-// resolveMissingActresses asks the dedicated actress resolver only when every
-// regular result lacks a verified DMM identity. Resolver failures are optional
-// when another scraper returned movie metadata, and fatal only when no result
-// remains at all.
+// resolveMissingActresses asks the dedicated actress resolver when the regular
+// results contain no cast or at least one actress without a verified DMM
+// identity. Resolver failures are optional when another scraper returned movie
+// metadata, and fatal only when no result remains at all.
 func (s *Scraper) resolveMissingActresses(ctx context.Context, movieID string, results []*models.ScraperResult) (*models.ScraperResult, *models.ScraperError) {
-	if hasVerifiedActressResult(results) || s.registry == nil {
+	if !needsActressResolution(results) || s.registry == nil {
 		return nil, nil
 	}
 	instance, ok := s.registry.GetInstance(actressResolverScraperName)
@@ -55,18 +55,20 @@ func callActressResolver(ctx context.Context, resolver models.ActressResolver, m
 	return resolver.ResolveActresses(ctx, movieID)
 }
 
-func hasVerifiedActressResult(results []*models.ScraperResult) bool {
+func needsActressResolution(results []*models.ScraperResult) bool {
+	hasActress := false
 	for _, result := range results {
 		if result == nil {
 			continue
 		}
 		for _, actress := range result.Actresses {
-			if actress.DMMID > 0 {
+			hasActress = true
+			if actress.DMMID <= 0 {
 				return true
 			}
 		}
 	}
-	return false
+	return !hasActress
 }
 
 func (s *Scraper) enrichResolvedActressThumbnails(ctx context.Context, result *models.ScraperResult) {

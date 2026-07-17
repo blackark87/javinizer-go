@@ -38,8 +38,8 @@ func defaultAPIConfig() APIConfig {
 		Security: SecurityConfig{
 			AllowedDirectories: []string{},
 			DeniedDirectories:  []string{},
-			MaxFilesPerScan:    10000,
-			ScanTimeoutSeconds: 30,
+			MaxFilesPerScan:    0,
+			ScanTimeoutSeconds: 0,
 			AllowedOrigins: []string{
 				"http://localhost:8765",
 				"http://localhost:5173",
@@ -49,7 +49,7 @@ func defaultAPIConfig() APIConfig {
 				"http://127.0.0.1:5174",
 			},
 			RateLimit: RateLimitConfig{
-				RequestsPerMinute: 60,
+				RequestsPerMinute: 0,
 			},
 		},
 	}

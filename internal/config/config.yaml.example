@@ -38,15 +38,15 @@ api:
         # Explicitly deny specific directories (optional)
         denied_directories: []
 
-        # Maximum number of files to return in a scan
-        max_files_per_scan: 10000
-        # Timeout for scan operations (seconds)
-        scan_timeout_seconds: 30
+        # Maximum number of files to return in a scan (0 = unlimited)
+        max_files_per_scan: 0
+        # Timeout for scan operations in seconds (0 = disabled)
+        scan_timeout_seconds: 0
 
         # Rate limiting for write endpoints (per IP, requests per minute)
-        # Set to 0 to disable. Default: 60
+        # Disabled for single-user operation.
         rate_limit:
-            requests_per_minute: 60
+            requests_per_minute: 0
 
         # Trusted reverse proxy IPs/CIDRs for proxy header validation.
         # X-Forwarded-Proto, X-Forwarded-Host, and Forwarded are only used for

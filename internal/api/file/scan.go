@@ -45,7 +45,6 @@ func scanDirectory(rt *core.APIRuntime) gin.HandlerFunc {
 		// between the calls (issue #44).
 		snap := rt.Snapshot()
 		apiCfg := snap.APIConfig()
-		scanCfg := apiCfg.ScannerConfig()
 
 		dirFile, validPath, err := core.ValidateAndOpenPath(req.Path, apiCfg.SecurityConfig())
 		if err != nil {
@@ -62,18 +61,18 @@ func scanDirectory(rt *core.APIRuntime) gin.HandlerFunc {
 
 		// Execute scan + match via the seam
 		scanResult, err := wf.ScanAndMatch(c.Request.Context(), workflow.ScanAndMatchCmd{
-			Directory:      validPath,
-			Recursive:      req.Recursive,
-			TimeoutSeconds: scanCfg.ScanTimeoutSeconds,
-			MaxFiles:       scanCfg.MaxFilesPerScan,
-			Filter:         req.Filter,
+			Directory: validPath,
+			Recursive: req.Recursive,
+			MaxFiles:  -1, // Negative means unlimited; process the complete selection.
+			Filter:    req.Filter,
 		})
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: err.Error()})
 			return
 		}
 
-		// Check if scan was limited or timed out
+		// Request cancellation can still stop a scan even though configured scan
+		// limits and server-side timeouts are disabled.
 		if scanResult.TimedOut {
 			c.JSON(http.StatusServiceUnavailable, contracts.ErrorResponse{Error: "scan operation timed out"})
 			return

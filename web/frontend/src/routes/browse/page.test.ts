@@ -382,15 +382,19 @@ describe('/browse — recursive selected-folder scan safety', () => {
 				{ name: 'two', path: '/library/two', is_dir: true, size: 0, mod_time: '2024-01-01T00:00:00Z' }
 			]
 		} as never);
+		let resolveFirstScan!: (value: unknown) => void;
 		apiClient.scan
-			.mockResolvedValueOnce({
+			.mockImplementationOnce(() => new Promise((resolve) => {
+				resolveFirstScan = resolve;
+			}) as never)
+			.mockRejectedValueOnce(new Error('scan incomplete: filesystem error'));
+		const firstScanResult = {
 				files: [{
 					name: 'ABC-123.mp4', path: '/library/one/ABC-123.mp4', is_dir: false,
 					size: 1, mod_time: '2024-01-01T00:00:00Z', matched: true, movie_id: 'ABC-123'
 				}],
 				count: 1
-			} as never)
-			.mockRejectedValueOnce(new Error('scan incomplete: filesystem error'));
+			};
 
 		const { findByText, getByRole, getByLabelText, getByText } = renderPage();
 		await findByText('one');
@@ -398,6 +402,8 @@ describe('/browse — recursive selected-folder scan safety', () => {
 		await fireEvent.click(getByLabelText('Recursive'));
 		await fireEvent.click(getByRole('button', { name: 'Scan' }));
 
+		await waitFor(() => expect(apiClient.scan).toHaveBeenCalledTimes(1));
+		resolveFirstScan(firstScanResult);
 		await waitFor(() => expect(apiClient.scan).toHaveBeenCalledTimes(2));
 		await waitFor(() => expect(toastError).toHaveBeenCalledWith(
 			expect.stringContaining('File selection was cleared'),

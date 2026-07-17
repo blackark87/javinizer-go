@@ -4,12 +4,10 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	"golang.org/x/time/rate"
 
 	swaggerPkg "github.com/javinizer/javinizer-go/docs/swagger"
 	"github.com/javinizer/javinizer-go/internal/api/actress"
@@ -126,15 +124,13 @@ func registerAPIV1Routes(router *gin.Engine, rt *core.APIRuntime) {
 	protected.Use(auth.RequireTokenOrSession(deps))
 	protected.Use(middleware.InstallEnvironmentInjector(deps.CoreDeps))
 
-	var rateLimiter *middleware.IPRateLimiter
 	apiCfg := rt.GetAPIConfig()
 	secCfg := apiCfg.SecurityConfig()
-	if rpm := apiCfg.RateLimitRPM; rpm > 0 {
-		rateLimiter = middleware.NewIPRateLimiter(rate.Every(time.Minute/time.Duration(rpm)), rpm)
-	}
 
+	// This application is operated as a single-user service. Keep the route
+	// grouping used by domain registration, but do not throttle authenticated
+	// API requests. Large selected-folder scans are queued by the frontend.
 	writeProtected := protected.Group("")
-	writeProtected.Use(middleware.RateLimitMiddleware(rateLimiter))
 
 	actressDeps := actress.NewActressDeps(deps.Repos.ContentRepos, deps.Repos.TranslationRepos)
 	genreDeps := genre.NewGenreDeps(deps.Repos.ReplacementRepos, deps.Repos.TranslationRepos)

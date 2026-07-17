@@ -882,6 +882,38 @@ func TestScanDirectory_RecursiveFlag(t *testing.T) {
 	})
 }
 
+func TestScanDirectory_IgnoresConfiguredFileAndTimeoutLimits(t *testing.T) {
+	tempDir := t.TempDir()
+	for _, name := range []string{"IPX-001.mp4", "IPX-002.mp4", "IPX-003.mp4"} {
+		require.NoError(t, os.WriteFile(filepath.Join(tempDir, name), []byte("test"), 0644))
+	}
+
+	cfg := &config.Config{
+		API: config.APIConfig{Security: config.SecurityConfig{
+			AllowedDirectories: []string{tempDir},
+			MaxFilesPerScan:    1,
+			ScanTimeoutSeconds: 1,
+		}},
+		Matching: config.MatchingConfig{Extensions: []string{".mp4"}},
+	}
+	deps := createTestDeps(t, cfg, "")
+	router := gin.New()
+	router.POST("/scan", scanDirectory(testkit.GetTestRuntime(deps)))
+
+	body, err := json.Marshal(contracts.ScanRequest{Path: tempDir, Recursive: true})
+	require.NoError(t, err)
+	req := httptest.NewRequest(http.MethodPost, "/scan", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	var response contracts.ScanResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	assert.Equal(t, 3, response.Count)
+}
+
 func containsPath(paths []string, substr string) bool {
 	for _, p := range paths {
 		if strings.Contains(p, substr) {

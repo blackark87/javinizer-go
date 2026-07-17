@@ -3,19 +3,12 @@ package batch
 import (
 	"context"
 	"path/filepath"
-	"time"
 
 	"github.com/javinizer/javinizer-go/internal/api/core"
 	"github.com/javinizer/javinizer-go/internal/logging"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/workflow"
 	"github.com/spf13/afero"
-)
-
-const (
-	// minScanTimeout is the minimum timeout duration for directory scans.
-	// This prevents immediate context cancellation when ScanTimeoutSeconds is 0 or negative.
-	minScanTimeout = 5 * time.Second
 )
 
 // isDirAllowed checks if a directory is allowed based on API security settings.
@@ -38,7 +31,7 @@ func isDirAllowed(fs afero.Fs, dir string, secCfg *core.SecurityNarrowConfig) bo
 // The snapshot pins a consistent reload epoch so the workflow used for sibling
 // discovery matches the security/scanner config the caller read from the same
 // snapshot (issue #44).
-func discoverSiblingPartsWithMetadata(ctx context.Context, files []string, snap *core.RuntimeSnapshot, secCfg *core.SecurityNarrowConfig, scanCfg *core.ScannerNarrowConfig) ([]string, map[string]models.FileMatchInfo) {
+func discoverSiblingPartsWithMetadata(ctx context.Context, files []string, snap *core.RuntimeSnapshot, secCfg *core.SecurityNarrowConfig, _ *core.ScannerNarrowConfig) ([]string, map[string]models.FileMatchInfo) {
 	if len(files) == 0 {
 		return files, nil
 	}
@@ -79,16 +72,10 @@ func discoverSiblingPartsWithMetadata(ctx context.Context, files []string, snap 
 			continue
 		}
 
-		timeout := time.Duration(scanCfg.ScanTimeoutSeconds) * time.Second
-		if timeout <= 0 {
-			timeout = minScanTimeout
-		}
-
 		scanResult, err := wf.ScanAndMatch(ctx, workflow.ScanAndMatchCmd{
-			Directory:      dir,
-			Recursive:      false,
-			TimeoutSeconds: int(timeout.Seconds()),
-			MaxFiles:       scanCfg.MaxFilesPerScan,
+			Directory: dir,
+			Recursive: false,
+			MaxFiles:  -1,
 		})
 		if err != nil {
 			logging.Debugf("Failed to scan directory %s for siblings: %v", dir, err)

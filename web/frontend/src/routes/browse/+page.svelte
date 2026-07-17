@@ -325,46 +325,25 @@
 		scanning = true;
 		try {
 			if (recursive && selectedFolders.length > 0) {
-				const scanPromises = selectedFolders.map(folderPath =>
-					apiClient.scan({ path: folderPath, recursive: true, filter: filter || undefined })
-				);
-				const settled = await Promise.allSettled(scanPromises);
 				const seenPaths = new Set<string>();
 				const allMatched: string[] = [];
-				const failedFolders: string[] = [];
-				let fulfilledCount = 0;
-				for (let i = 0; i < settled.length; i++) {
-					const result = settled[i];
-					if (result.status === 'fulfilled') {
-						fulfilledCount++;
-						for (const f of result.value.files) {
-							if (f.matched && !f.is_dir && !seenPaths.has(f.path)) {
-								seenPaths.add(f.path);
-								allMatched.push(f.path);
-							}
+				for (const folderPath of selectedFolders) {
+					const result = await apiClient.scan({
+						path: folderPath,
+						recursive: true,
+						filter: filter || undefined
+					});
+					for (const f of result.files) {
+						if (f.matched && !f.is_dir && !seenPaths.has(f.path)) {
+							seenPaths.add(f.path);
+							allMatched.push(f.path);
 						}
-					} else {
-						failedFolders.push(selectedFolders[i]);
 					}
-				}
-				if (failedFolders.length > 0) {
-					selectedFiles = [];
-					const firstFailure = settled.find(
-						(result): result is PromiseRejectedResult => result.status === 'rejected'
-					);
-					const reason = firstFailure?.reason instanceof Error
-						? ` ${firstFailure.reason.message}`
-						: '';
-					toastStore.error(
-						`Scan incomplete: ${failedFolders.length} of ${selectedFolders.length} selected folder${selectedFolders.length !== 1 ? 's' : ''} failed. File selection was cleared.${reason}`,
-						7000
-					);
-					return;
 				}
 				if (allMatched.length > 0) {
 					selectedFiles = [...new Set([...selectedFiles, ...allMatched])];
 					toastStore.success(
-						`Added ${allMatched.length} JAV file${allMatched.length !== 1 ? 's' : ''} from ${fulfilledCount} folder${fulfilledCount !== 1 ? 's' : ''}`,
+						`Added ${allMatched.length} JAV file${allMatched.length !== 1 ? 's' : ''} from ${selectedFolders.length} folder${selectedFolders.length !== 1 ? 's' : ''}`,
 						3000
 					);
 				} else {
@@ -412,7 +391,8 @@
 			}
 		} catch (error) {
 			selectedFiles = [];
-			toastStore.error(error instanceof Error ? error.message : 'Failed to scan directory', 5000);
+			const reason = error instanceof Error ? error.message : 'Failed to scan directory';
+			toastStore.error(`Scan incomplete. File selection was cleared. ${reason}`, 7000);
 		} finally {
 			scanning = false;
 		}

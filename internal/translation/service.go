@@ -723,16 +723,10 @@ func actressDisplayTitle(actress models.Actress) string {
 
 // replaceActressName updates an actress's name fields with the translated string.
 // The behavior depends on the current name state:
-//   - If the actress has a non-empty JapaneseName, or both FirstName and LastName
-//     are empty (single-token name), the translated string overwrites JapaneseName
-//     and clears FirstName/LastName. This preserves the convention that Japanese-name
-//     actresses store their display name in JapaneseName.
-//   - Otherwise, the translated string is assigned to FirstName and LastName is cleared.
-//     Multi-token names should be pre-split by the caller using models.SplitFullName.
-//
-// Note: When a name with a space is assigned to FirstName, it may confuse downstream
-// display name construction that concatenates "LastName FirstName". Callers should
-// pre-split using models.SplitFullName for multi-token translated names.
+//   - If the actress has a non-empty JapaneseName, the translated string overwrites
+//     JapaneseName and clears FirstName/LastName. This preserves the translated display
+//     order instead of allowing output.first_name_order to reverse it later.
+//   - Otherwise, multi-token names are stored as LastName FirstName components.
 func replaceActressName(actress *models.Actress, translated string) {
 	translated = strings.TrimSpace(translated)
 	if actress == nil || translated == "" {
@@ -757,6 +751,12 @@ func replaceActressName(actress *models.Actress, translated string) {
 	if isLikelyRomanized(translated) {
 		translated = normalizeRomanizationToASCII(translated)
 	} else if !containsHangul(translated) {
+		return
+	}
+	if strings.TrimSpace(actress.JapaneseName) != "" {
+		actress.JapaneseName = translated
+		actress.FirstName = ""
+		actress.LastName = ""
 		return
 	}
 	parts := strings.Fields(translated)

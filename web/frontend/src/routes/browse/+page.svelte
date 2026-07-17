@@ -347,17 +347,26 @@
 						failedFolders.push(selectedFolders[i]);
 					}
 				}
+				if (failedFolders.length > 0) {
+					selectedFiles = [];
+					const firstFailure = settled.find(
+						(result): result is PromiseRejectedResult => result.status === 'rejected'
+					);
+					const reason = firstFailure?.reason instanceof Error
+						? ` ${firstFailure.reason.message}`
+						: '';
+					toastStore.error(
+						`Scan incomplete: ${failedFolders.length} of ${selectedFolders.length} selected folder${selectedFolders.length !== 1 ? 's' : ''} failed. File selection was cleared.${reason}`,
+						7000
+					);
+					return;
+				}
 				if (allMatched.length > 0) {
 					selectedFiles = [...new Set([...selectedFiles, ...allMatched])];
-					const failedInfo = failedFolders.length > 0 ? ` (${failedFolders.length} folder${failedFolders.length !== 1 ? 's' : ''} failed)` : '';
 					toastStore.success(
-						`Added ${allMatched.length} JAV file${allMatched.length !== 1 ? 's' : ''} from ${fulfilledCount} folder${fulfilledCount !== 1 ? 's' : ''}${failedInfo}`,
+						`Added ${allMatched.length} JAV file${allMatched.length !== 1 ? 's' : ''} from ${fulfilledCount} folder${fulfilledCount !== 1 ? 's' : ''}`,
 						3000
 					);
-				} else if (failedFolders.length === selectedFolders.length) {
-					toastStore.error(`All ${failedFolders.length} folder scan${failedFolders.length !== 1 ? 's' : ''} failed`, 5000);
-				} else if (failedFolders.length > 0) {
-					toastStore.warning(`No JAV files found in ${fulfilledCount} folder${fulfilledCount !== 1 ? 's' : ''}; ${failedFolders.length} folder${failedFolders.length !== 1 ? 's' : ''} failed`, 5000);
 				} else {
 					toastStore.warning(`No JAV files found in selected folders`, 5000);
 				}
@@ -402,6 +411,7 @@
 				}
 			}
 		} catch (error) {
+			selectedFiles = [];
 			toastStore.error(error instanceof Error ? error.message : 'Failed to scan directory', 5000);
 		} finally {
 			scanning = false;

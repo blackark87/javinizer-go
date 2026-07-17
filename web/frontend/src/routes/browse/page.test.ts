@@ -60,6 +60,7 @@ vi.mock('$lib/api/client', () => ({
 		getScrapers: vi.fn(),
 		getCurrentWorkingDirectory: vi.fn(),
 		browse: vi.fn(),
+		scan: vi.fn(),
 		batchScrape: vi.fn()
 	}
 }));
@@ -79,6 +80,8 @@ vi.mock('$lib/stores/pending-scrape.svelte', () => ({
 const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 const mod = await import('$lib/api/client');
 const apiClient = vi.mocked(mod.apiClient);
+const toastModule = await import('$lib/stores/toast');
+const toastError = vi.spyOn(toastModule.toastStore, 'error');
 const pending = await import('$lib/stores/pending-scrape.svelte');
 const pendingSet = vi.mocked(pending.setPendingScrape);
 
@@ -365,5 +368,42 @@ describe('/browse — phantom selection pruning on refresh', () => {
 		await waitFor(() => expect(apiClient.browse).toHaveBeenCalledTimes(2));
 		expect(getByText('deep.mp4')).toBeTruthy();
 		expect(getByText(/1 file selected/)).toBeTruthy();
+	});
+});
+
+describe('/browse — recursive selected-folder scan safety', () => {
+	it('adds no files when any selected folder scan fails', async () => {
+		apiClient.browse.mockResolvedValue({
+			current_path: '/library',
+			parent_path: '',
+			items: [
+				{ name: 'kept.mp4', path: '/library/kept.mp4', is_dir: false, size: 1, mod_time: '2024-01-01T00:00:00Z' },
+				{ name: 'one', path: '/library/one', is_dir: true, size: 0, mod_time: '2024-01-01T00:00:00Z' },
+				{ name: 'two', path: '/library/two', is_dir: true, size: 0, mod_time: '2024-01-01T00:00:00Z' }
+			]
+		} as never);
+		apiClient.scan
+			.mockResolvedValueOnce({
+				files: [{
+					name: 'ABC-123.mp4', path: '/library/one/ABC-123.mp4', is_dir: false,
+					size: 1, mod_time: '2024-01-01T00:00:00Z', matched: true, movie_id: 'ABC-123'
+				}],
+				count: 1
+			} as never)
+			.mockRejectedValueOnce(new Error('scan incomplete: filesystem error'));
+
+		const { findByText, getByRole, getByLabelText, getByText } = renderPage();
+		await findByText('one');
+		await fireEvent.click(getByRole('button', { name: 'Select All' }));
+		await fireEvent.click(getByLabelText('Recursive'));
+		await fireEvent.click(getByRole('button', { name: 'Scan' }));
+
+		await waitFor(() => expect(apiClient.scan).toHaveBeenCalledTimes(2));
+		await waitFor(() => expect(toastError).toHaveBeenCalledWith(
+			expect.stringContaining('File selection was cleared'),
+			7000
+		));
+		expect(getByText('No files selected')).toBeTruthy();
+		expect(getByRole('button', { name: 'Scrape 0 Files' }).hasAttribute('disabled')).toBe(true);
 	});
 });

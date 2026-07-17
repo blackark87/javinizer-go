@@ -217,6 +217,21 @@ func TestScanWithLimits_MemMapFs_MaxFiles(t *testing.T) {
 	result, err := s.ScanWithLimits(context.Background(), tmpDir, 5)
 	require.NoError(t, err)
 	assert.LessOrEqual(t, len(result.Files), 5)
+	assert.True(t, result.LimitReached)
+}
+
+func TestScanWithLimits_ExactMaximumIsComplete(t *testing.T) {
+	tmpDir := t.TempDir()
+	for i := 0; i < 5; i++ {
+		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, fmt.Sprintf("movie%02d.mp4", i)), []byte("data"), 0644))
+	}
+
+	s := NewScanner(afero.NewOsFs(), &Config{Extensions: []string{".mp4"}})
+	result, err := s.ScanWithLimits(context.Background(), tmpDir, 5)
+
+	require.NoError(t, err)
+	assert.Len(t, result.Files, 5)
+	assert.False(t, result.LimitReached)
 }
 
 // --- ScanSingleFromHandle: nil handle ---

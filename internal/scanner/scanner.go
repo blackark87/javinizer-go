@@ -181,8 +181,11 @@ func (s *Scanner) ScanWithFilter(ctx context.Context, rootPath string, maxFiles 
 
 			result.Files = append(result.Files, fmi)
 
-			// Check if we've reached the file limit
-			if maxFiles > 0 && len(result.Files) >= maxFiles {
+			// Only report a limit when an additional matching file proves that
+			// the result would be incomplete. Stopping at exactly maxFiles would
+			// incorrectly reject directories containing exactly that many files.
+			if maxFiles > 0 && len(result.Files) > maxFiles {
+				result.Files = result.Files[:maxFiles]
 				result.LimitReached = true
 				return filepath.SkipAll // Stop walking
 			}

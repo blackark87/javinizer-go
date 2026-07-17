@@ -85,6 +85,18 @@ func (o *scanAndMatchOrchImpl) Execute(ctx context.Context, cmd ScanAndMatchCmd)
 	if err != nil {
 		return nil, fmt.Errorf("scan failed: %w", err)
 	}
+	if scanResult == nil {
+		return nil, fmt.Errorf("scan failed: scanner returned no result")
+	}
+	if scanResult.TimedOut {
+		return &ScanAndMatchResult{TimedOut: true}, nil
+	}
+	if scanResult.LimitReached {
+		return nil, fmt.Errorf("scan incomplete: matching file limit of %d exceeded; no files were selected", maxFiles)
+	}
+	if len(scanResult.Errors) > 0 {
+		return nil, fmt.Errorf("scan incomplete: encountered %d filesystem error(s); no files were selected: %w", len(scanResult.Errors), scanResult.Errors[0])
+	}
 
 	// Match results using the orchestrator's matcher.
 	var matchResults []matcher.MatchResult

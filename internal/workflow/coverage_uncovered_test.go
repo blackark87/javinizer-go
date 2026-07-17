@@ -602,6 +602,56 @@ func TestScanAndMatch_Execute_ScanError(t *testing.T) {
 	assert.Contains(t, err.Error(), "scan failed")
 }
 
+func TestScanAndMatch_Execute_RejectsPartialFilesystemResult(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	orch := newScanAndMatchOrchestrator(
+		&mockScanner{scanFilterRes: &scanner.ScanResult{
+			Files:  []models.FileMatchInfo{{Path: "/videos/ABC-123.mp4"}},
+			Errors: []error{errors.New("transient read failure")},
+		}},
+		scanner.Config{},
+		fs,
+		nil,
+		100,
+		nil,
+	)
+
+	result, err := orch.Execute(context.Background(), ScanAndMatchCmd{
+		Directory: "/videos",
+		Recursive: true,
+	})
+
+	assert.Nil(t, result)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "scan incomplete")
+	assert.ErrorContains(t, err, "no files were selected")
+}
+
+func TestScanAndMatch_Execute_RejectsFileLimitResult(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	orch := newScanAndMatchOrchestrator(
+		&mockScanner{scanFilterRes: &scanner.ScanResult{
+			Files:        []models.FileMatchInfo{{Path: "/videos/ABC-123.mp4"}},
+			LimitReached: true,
+		}},
+		scanner.Config{},
+		fs,
+		nil,
+		100,
+		nil,
+	)
+
+	result, err := orch.Execute(context.Background(), ScanAndMatchCmd{
+		Directory: "/videos",
+		Recursive: true,
+	})
+
+	assert.Nil(t, result)
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "matching file limit of 100 exceeded")
+	assert.ErrorContains(t, err, "no files were selected")
+}
+
 func TestScanAndMatch_Execute_NilMatcher(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	orch := newScanAndMatchOrchestrator(

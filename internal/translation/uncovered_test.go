@@ -166,12 +166,12 @@ func TestReplaceActressName_Uncovered(t *testing.T) {
 		assert.Equal(t, "元の名前", a.JapaneseName)
 	})
 
-	t.Run("replaces JapaneseName without splitting display order", func(t *testing.T) {
+	t.Run("preserves JapaneseName and stores translated display order", func(t *testing.T) {
 		a := &models.Actress{JapaneseName: "元の名前"}
 		replaceActressName(a, "Translated Name")
-		assert.Equal(t, "Translated Name", a.JapaneseName)
-		assert.Empty(t, a.LastName)
-		assert.Empty(t, a.FirstName)
+		assert.Equal(t, "元の名前", a.JapaneseName)
+		assert.Equal(t, "Translated", a.LastName)
+		assert.Equal(t, "Name", a.FirstName)
 	})
 
 	t.Run("replaces FirstName when no JapaneseName", func(t *testing.T) {

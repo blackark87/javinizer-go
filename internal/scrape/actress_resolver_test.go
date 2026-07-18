@@ -115,7 +115,10 @@ func TestScrapeEnrichesRegularDMMActressesBeforeTranslationAfterDatabaseReset(t 
 	require.Len(t, result.Movie.Actresses, 1)
 	assert.Equal(t, 1, profile.profileCalls)
 	assert.Equal(t, 1077521, result.Movie.Actresses[0].DMMID)
-	assert.Equal(t, "사쿠라 마히루", result.Movie.Actresses[0].JapaneseName)
+	assert.Equal(t, "櫻茉日", result.Movie.Actresses[0].JapaneseName)
+	assert.Equal(t, "마히루", result.Movie.Actresses[0].FirstName)
+	assert.Equal(t, "사쿠라", result.Movie.Actresses[0].LastName)
+	assert.Equal(t, "사쿠라 마히루", result.Movie.Actresses[0].FullName())
 	assert.Equal(t, "https://pics.dmm.co.jp/mono/actjpgs/sakura_mahiru.jpg", result.Movie.Actresses[0].ThumbURL)
 }
 

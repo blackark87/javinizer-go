@@ -73,6 +73,21 @@ func SplitFullName(fullName string) (firstName, lastName string) {
 	}
 }
 
+// SplitActressName splits an actress display name written in Japanese order
+// (family name followed by given name) into the model's FirstName and LastName
+// fields. A single-token stage name is stored in FirstName.
+func SplitActressName(fullName string) (firstName, lastName string) {
+	fullName = strings.TrimSpace(fullName)
+	parts := strings.Fields(fullName)
+	if len(parts) == 0 {
+		return "", ""
+	}
+	if len(parts) == 1 {
+		return parts[0], ""
+	}
+	return strings.Join(parts[1:], " "), parts[0]
+}
+
 // NormalizeActressNameKey normalizes an actress name for comparison purposes.
 // It trims whitespace, lowercases, and collapses internal whitespace.
 func NormalizeActressNameKey(name string) string {

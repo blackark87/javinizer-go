@@ -141,13 +141,15 @@ func TestReplaceActressName(t *testing.T) {
 		expected   models.Actress
 	}{
 		{
-			name: "japanese actress - preserves translated display order",
+			name: "japanese actress - preserves identity and translated display order",
 			actress: &models.Actress{
 				JapaneseName: "田中香",
 			},
 			translated: "Tanaka Yui",
 			expected: models.Actress{
-				JapaneseName: "Tanaka Yui",
+				JapaneseName: "田中香",
+				LastName:     "Tanaka",
+				FirstName:    "Yui",
 			},
 		},
 		{
@@ -189,7 +191,9 @@ func TestReplaceActressName(t *testing.T) {
 			},
 			translated: "De Niro Maria",
 			expected: models.Actress{
-				JapaneseName: "De Niro Maria",
+				JapaneseName: "田中",
+				LastName:     "De",
+				FirstName:    "Niro Maria",
 			},
 		},
 		{
@@ -208,7 +212,9 @@ func TestReplaceActressName(t *testing.T) {
 			},
 			translated: "Kuroki Mai(Mai",
 			expected: models.Actress{
-				JapaneseName: "Kuroki Mai",
+				JapaneseName: "黒木麻衣",
+				LastName:     "Kuroki",
+				FirstName:    "Mai",
 			},
 		},
 		{
@@ -239,7 +245,9 @@ func TestReplaceActressName(t *testing.T) {
 			actress:    &models.Actress{JapaneseName: "波多野結衣"},
 			translated: "Hatano Yūi",
 			expected: models.Actress{
-				JapaneseName: "Hatano Yui",
+				JapaneseName: "波多野結衣",
+				LastName:     "Hatano",
+				FirstName:    "Yui",
 			},
 		},
 		{
@@ -252,7 +260,7 @@ func TestReplaceActressName(t *testing.T) {
 			},
 		},
 		{
-			name: "Korean LLM output preserves JapaneseName display order",
+			name: "Korean LLM output preserves Japanese identity and display order",
 			actress: &models.Actress{
 				JapaneseName: "まひる",
 				FirstName:    "Mahiru",
@@ -260,7 +268,8 @@ func TestReplaceActressName(t *testing.T) {
 			},
 			translated: "마히루",
 			expected: models.Actress{
-				JapaneseName: "마히루",
+				JapaneseName: "まひる",
+				FirstName:    "마히루",
 			},
 		},
 		{
@@ -272,7 +281,25 @@ func TestReplaceActressName(t *testing.T) {
 			},
 			translated: "하타노 유이",
 			expected: models.Actress{
-				JapaneseName: "하타노 유이",
+				JapaneseName: "波多野結衣",
+				LastName:     "하타노",
+				FirstName:    "유이",
+			},
+		},
+		{
+			name: "Mikami Yua keeps Japanese identity and splits Korean name",
+			actress: &models.Actress{
+				DMMID:        1038019,
+				JapaneseName: "三上悠亜",
+				ThumbURL:     "https://pics.dmm.co.jp/mono/actjpgs/mikami_yua.jpg",
+			},
+			translated: "미카미 유야",
+			expected: models.Actress{
+				DMMID:        1038019,
+				JapaneseName: "三上悠亜",
+				LastName:     "미카미",
+				FirstName:    "유야",
+				ThumbURL:     "https://pics.dmm.co.jp/mono/actjpgs/mikami_yua.jpg",
 			},
 		},
 		{

@@ -1821,8 +1821,8 @@ func TestTranslateMovie_FullFlow(t *testing.T) {
 			// Verify actresses translation if configured
 			if tt.cfg.Fields.Actresses && len(tt.movie.Actresses) > 0 {
 				assert.NotEqual(t,
-					actressDisplayTitle(tt.movie.Actresses[0]),
-					actressDisplayTitle(movieCopy.Actresses[0]),
+					tt.movie.Actresses[0].FullName(),
+					movieCopy.Actresses[0].FullName(),
 				)
 			}
 
@@ -3759,8 +3759,8 @@ func TestTranslateMovie_ActressTranslationData(t *testing.T) {
 	require.Len(t, output.ActressTranslations, 1)
 	assert.Equal(t, 0, output.ActressTranslations[0].ActressIndex)
 	assert.Equal(t, "en", output.ActressTranslations[0].Language)
-	assert.Equal(t, "Jane", output.ActressTranslations[0].FirstName)
-	assert.Equal(t, "Smith", output.ActressTranslations[0].LastName)
+	assert.Equal(t, "Smith", output.ActressTranslations[0].FirstName)
+	assert.Equal(t, "Jane", output.ActressTranslations[0].LastName)
 	assert.Equal(t, "Jane Smith", output.ActressTranslations[0].DisplayName)
 	assert.Equal(t, "translation:openai", output.ActressTranslations[0].SourceName)
 
@@ -3808,7 +3808,8 @@ func TestTranslateMovie_ActressTranslationData_JapaneseName(t *testing.T) {
 		NewAnthropicProvider(cfg, httpClient),
 	)
 
-	// Actress with JapaneseName — translation should map to JapaneseName field
+	// Actress with JapaneseName — translation keeps the identity and stores the
+	// translated display value without splitting its order.
 	movie := &models.Movie{
 		Actresses: []models.Actress{
 			{JapaneseName: "山田花子"},
@@ -3820,8 +3821,8 @@ func TestTranslateMovie_ActressTranslationData_JapaneseName(t *testing.T) {
 	require.NotNil(t, output)
 
 	require.Len(t, output.ActressTranslations, 1)
-	assert.Equal(t, "ヤマダハナコ", output.ActressTranslations[0].JapaneseName)
-	assert.Empty(t, output.ActressTranslations[0].FirstName)
+	assert.Equal(t, "山田花子", output.ActressTranslations[0].JapaneseName)
+	assert.Equal(t, "ヤマダハナコ", output.ActressTranslations[0].FirstName)
 	assert.Empty(t, output.ActressTranslations[0].LastName)
 	assert.Equal(t, "ヤマダハナコ", output.ActressTranslations[0].DisplayName)
 

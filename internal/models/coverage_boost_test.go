@@ -108,6 +108,28 @@ func TestFormatActressName_FirstNameOrder(t *testing.T) {
 	assert.Equal(t, "John Doe", result)
 }
 
+func TestSplitActressName_JapaneseDisplayOrder(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		wantFirst string
+		wantLast  string
+	}{
+		{name: "Korean name", input: "미카미 유야", wantFirst: "유야", wantLast: "미카미"},
+		{name: "romanized name", input: "Mikami Yua", wantFirst: "Yua", wantLast: "Mikami"},
+		{name: "stage name", input: "마히루", wantFirst: "마히루"},
+		{name: "empty", input: "   "},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			first, last := SplitActressName(tt.input)
+			assert.Equal(t, tt.wantFirst, first)
+			assert.Equal(t, tt.wantLast, last)
+		})
+	}
+}
+
 func TestFormatActressName_SkipUnknown(t *testing.T) {
 	a := Actress{}
 	result := FormatActressName(a, FormatActressNameOptions{UnknownActressMode: UnknownActressModeSkip})

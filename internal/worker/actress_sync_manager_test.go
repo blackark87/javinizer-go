@@ -615,15 +615,15 @@ func TestPreserveResolvedActressTranslationsKeepsKoreanDisplayNameAndJapaneseIde
 		ID: 1, DMMID: 1077521, JapaneseName: "櫻茉日", FirstName: "Mahiru", LastName: "Sakura",
 	}}
 	translated := []models.Actress{{
-		ID: 1, DMMID: 1077521, JapaneseName: "사쿠라 마히루",
+		ID: 1, DMMID: 1077521, JapaneseName: "櫻茉日", FirstName: "마히루", LastName: "사쿠라",
 	}}
 	records := []models.MovieTranslation{{Language: "ko", Actresses: []string{"사쿠라 마히루"}}}
 
 	translated, records = preserveResolvedActressTranslations(original, translated, records)
 
 	assert.Equal(t, "櫻茉日", translated[0].JapaneseName)
-	assert.Equal(t, "사쿠라 마히루", translated[0].FirstName)
-	assert.Empty(t, translated[0].LastName)
+	assert.Equal(t, "마히루", translated[0].FirstName)
+	assert.Equal(t, "사쿠라", translated[0].LastName)
 	assert.Equal(t, "사쿠라 마히루", translated[0].FullName())
 	assert.Equal(t, "사쿠라 마히루", records[0].Actresses[0])
 }

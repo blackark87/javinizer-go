@@ -84,6 +84,32 @@ func TestMovieRepository_UpsertWithTranslations_WithActressesDMMID_Partial(t *te
 	assert.Len(t, result.Actresses, 1)
 }
 
+func TestMovieRepository_UpsertPreservesTranslatedActjpgsNameDuringDMMReconciliation(t *testing.T) {
+	db := newDatabaseTestDB(t)
+	movieRepo := NewMovieRepository(db)
+	actressRepo := NewActressRepository(db)
+	canonical := &models.Actress{
+		DMMID: 555001, JapaneseName: "五十嵐かな",
+		ThumbURL: "https://pics.dmm.co.jp/mono/actjpgs/igarasi_kana.jpg",
+	}
+	require.NoError(t, actressRepo.Create(context.Background(), canonical))
+
+	movie := createTestMovie("ACT-TRANSLATED-001")
+	movie.Actresses = []models.Actress{{
+		ID: canonical.ID, DMMID: canonical.DMMID, JapaneseName: canonical.JapaneseName,
+		FirstName: "카나", LastName: "이가라시", ThumbURL: canonical.ThumbURL,
+	}}
+
+	saved, err := movieRepo.UpsertWithTranslations(context.Background(), movie, nil, nil)
+
+	require.NoError(t, err)
+	require.Len(t, saved.Actresses, 1)
+	assert.Equal(t, "五十嵐かな", saved.Actresses[0].JapaneseName)
+	assert.Equal(t, "카나", saved.Actresses[0].FirstName)
+	assert.Equal(t, "이가라시", saved.Actresses[0].LastName)
+	assert.Equal(t, "이가라시 카나", saved.Actresses[0].FullName())
+}
+
 // --- UpsertWithTranslations: actress with JapaneseName only (jpGroup) ---
 
 func TestMovieRepository_UpsertWithTranslations_WithActressesJPName_Partial(t *testing.T) {

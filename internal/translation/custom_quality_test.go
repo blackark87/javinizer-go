@@ -36,9 +36,9 @@ func TestTranslateMovie_DMMReadingProtectsActressName(t *testing.T) {
 	assert.NotContains(t, strings.Join(inputs[0], "\n"), "響蓮")
 	assert.Equal(t, "히비키 렌의 유혹", movie.Title)
 	assert.Equal(t, "히비키 렌이 등장하는 작품", movie.Description)
-	assert.Equal(t, "히비키 렌", movie.Actresses[0].JapaneseName)
-	assert.Empty(t, movie.Actresses[0].LastName)
-	assert.Empty(t, movie.Actresses[0].FirstName)
+	assert.Equal(t, "響蓮", movie.Actresses[0].JapaneseName)
+	assert.Equal(t, "히비키", movie.Actresses[0].LastName)
+	assert.Equal(t, "렌", movie.Actresses[0].FirstName)
 	require.NotNil(t, output)
 	require.Len(t, output.Movie.Actresses, 1)
 	assert.Equal(t, "히비키 렌", output.Movie.Actresses[0])
@@ -64,9 +64,9 @@ func TestTranslateMovie_RetriesNonHangulPersonSlot(t *testing.T) {
 	assert.Empty(t, warning)
 	assert.Equal(t, 2, calls)
 	assert.Equal(t, "히비키 렌", output.Movie.Actresses[0])
-	assert.Equal(t, "히비키 렌", movie.Actresses[0].JapaneseName)
-	assert.Empty(t, movie.Actresses[0].LastName)
-	assert.Empty(t, movie.Actresses[0].FirstName)
+	assert.Equal(t, "響蓮", movie.Actresses[0].JapaneseName)
+	assert.Equal(t, "히비키", movie.Actresses[0].LastName)
+	assert.Equal(t, "렌", movie.Actresses[0].FirstName)
 }
 
 func TestTranslateMovie_RetriesResidualJapaneseSlot(t *testing.T) {

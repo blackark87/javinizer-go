@@ -418,13 +418,8 @@ func applyTranslatedField(scraped *models.Movie, field TranslationField, transla
 			scraped.Genres[field.Index].Name = translated
 		}
 	case "actress":
-		first, last := models.SplitFullName(translated)
-		jName := ""
-		if strings.TrimSpace(scraped.Actresses[field.Index].JapaneseName) != "" || (strings.TrimSpace(scraped.Actresses[field.Index].FirstName) == "" && strings.TrimSpace(scraped.Actresses[field.Index].LastName) == "") {
-			jName = translated
-			first = ""
-			last = ""
-		}
+		first, last := models.SplitActressName(translated)
+		jName := strings.TrimSpace(scraped.Actresses[field.Index].JapaneseName)
 		state.actressTranslations = append(state.actressTranslations, models.ActressTranslationData{
 			ActressIndex: field.Index,
 			Language:     plan.TargetLang,
@@ -722,11 +717,9 @@ func actressDisplayTitle(actress models.Actress) string {
 }
 
 // replaceActressName updates an actress's name fields with the translated string.
-// The behavior depends on the current name state:
-//   - If the actress has a non-empty JapaneseName, the translated string overwrites
-//     JapaneseName and clears FirstName/LastName. This preserves the translated display
-//     order instead of allowing output.first_name_order to reverse it later.
-//   - Otherwise, multi-token names are stored as LastName FirstName components.
+// JapaneseName remains the authoritative source identity. Translated names are
+// split from Japanese display order (family name, given name) into LastName and
+// FirstName so downstream formatting can honor output.first_name_order.
 func replaceActressName(actress *models.Actress, translated string) {
 	translated = strings.TrimSpace(translated)
 	if actress == nil || translated == "" {
@@ -753,20 +746,7 @@ func replaceActressName(actress *models.Actress, translated string) {
 	} else if !containsHangul(translated) {
 		return
 	}
-	if strings.TrimSpace(actress.JapaneseName) != "" {
-		actress.JapaneseName = translated
-		actress.FirstName = ""
-		actress.LastName = ""
-		return
-	}
-	parts := strings.Fields(translated)
-	if len(parts) >= 2 {
-		actress.LastName = parts[0]
-		actress.FirstName = strings.Join(parts[1:], " ")
-	} else {
-		actress.FirstName = translated
-		actress.LastName = ""
-	}
+	actress.FirstName, actress.LastName = models.SplitActressName(translated)
 }
 
 const maxTranslationRetries = 3

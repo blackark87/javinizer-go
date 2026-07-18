@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -388,6 +389,64 @@ func TestActressSyncManagerLLMFailureKeepsVerifiedIdentityAndMapping(t *testing.
 	assert.Contains(t, tasks[0].Warning, "translation")
 }
 
+func TestActressSyncManagerNewDatabaseJobsPersistKoreanActressNames(t *testing.T) {
+	translationServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		response := map[string]any{
+			"choices": []map[string]any{{
+				"message": map[string]string{
+					"content": "<<<JZ_0>>>\n사쿠라 마히루\n<<<JZ_1>>>\n하타노 유이\n",
+				},
+			}},
+		}
+		require.NoError(t, json.NewEncoder(w).Encode(response))
+	}))
+	defer translationServer.Close()
+
+	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true}
+	resolver.resolveFn = func(_ context.Context, id string) (*models.ScraperResult, error) {
+		return &models.ScraperResult{ID: id, Actresses: []models.ActressInfo{
+			{DMMID: 1077521, JapaneseName: "櫻茉日", FirstName: "Mahiru", LastName: "Sakura"},
+			{DMMID: 123456, JapaneseName: "波多野結衣", FirstName: "Yui", LastName: "Hatano"},
+		}}, nil
+	}
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
+	cfg := &config.Config{}
+	cfg.Metadata.Translation = config.TranslationConfig{
+		Enabled: true, Provider: "openai", SourceLanguage: "ja", TargetLanguage: "ko", ApplyToPrimary: true,
+		Fields: config.TranslationFieldsConfig{Actresses: true},
+		OpenAI: config.OpenAITranslationConfig{BaseURL: translationServer.URL, APIKey: "test"},
+	}
+	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, cfg, registry)
+
+	placeholder := &models.Actress{JapaneseName: "仮名"}
+	require.NoError(t, actressRepo.Create(context.Background(), placeholder))
+	require.NoError(t, movieRepo.Create(context.Background(), &models.Movie{
+		ContentID: "new-database-job", ID: "TEST-001", Actresses: []models.Actress{*placeholder},
+	}))
+	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{
+		Scope: "selected", ActressIDs: []uint{placeholder.ID},
+	})
+	require.NoError(t, err)
+	completed := waitForActressSyncJob(t, manager, job.ID)
+	assert.Equal(t, 1, completed.Updated)
+	assert.Zero(t, completed.Failed)
+
+	movie, err := movieRepo.FindByContentID(context.Background(), "new-database-job")
+	require.NoError(t, err)
+	require.Len(t, movie.Actresses, 2)
+	byDMMID := make(map[int]models.Actress, len(movie.Actresses))
+	for _, actress := range movie.Actresses {
+		byDMMID[actress.DMMID] = actress
+	}
+	sakura := byDMMID[1077521]
+	yui := byDMMID[123456]
+	assert.Equal(t, "櫻茉日", sakura.JapaneseName)
+	assert.Equal(t, "사쿠라 마히루", sakura.FullName())
+	assert.Equal(t, "波多野結衣", yui.JapaneseName)
+	assert.Equal(t, "하타노 유이", yui.FullName())
+}
+
 func TestActressSyncManagerRepairsMissingDMMIDAndSkipsNormalExistingProfile(t *testing.T) {
 	resolver := &actressSyncTestScraper{name: "sougouwiki", enabled: true}
 	resolver.resolveFn = func(_ context.Context, id string) (*models.ScraperResult, error) {
@@ -549,6 +608,24 @@ func TestPreserveResolvedActressTranslationsNeverReturnsUnknownOrDowngradesHangu
 	assert.Equal(t, "이토", translated[0].LastName)
 	assert.Equal(t, "伊藤舞雪", translated[0].JapaneseName)
 	assert.Equal(t, "이토 마유키", records[0].Actresses[0])
+}
+
+func TestPreserveResolvedActressTranslationsKeepsKoreanDisplayNameAndJapaneseIdentity(t *testing.T) {
+	original := []models.Actress{{
+		ID: 1, DMMID: 1077521, JapaneseName: "櫻茉日", FirstName: "Mahiru", LastName: "Sakura",
+	}}
+	translated := []models.Actress{{
+		ID: 1, DMMID: 1077521, JapaneseName: "사쿠라 마히루",
+	}}
+	records := []models.MovieTranslation{{Language: "ko", Actresses: []string{"사쿠라 마히루"}}}
+
+	translated, records = preserveResolvedActressTranslations(original, translated, records)
+
+	assert.Equal(t, "櫻茉日", translated[0].JapaneseName)
+	assert.Equal(t, "사쿠라 마히루", translated[0].FirstName)
+	assert.Empty(t, translated[0].LastName)
+	assert.Equal(t, "사쿠라 마히루", translated[0].FullName())
+	assert.Equal(t, "사쿠라 마히루", records[0].Actresses[0])
 }
 
 func TestActressSyncManagerConcurrentLimiterDoesNotLeak(t *testing.T) {

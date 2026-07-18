@@ -983,7 +983,21 @@ func preserveResolvedActressTranslations(original, translated []models.Actress, 
 		translated = append([]models.Actress(nil), original...)
 	}
 	for i := range original {
+		// TranslateMovie stores a translated actress display name in
+		// JapaneseName when the source has a JapaneseName. Preserve the
+		// authoritative Japanese name, but move that translated display value
+		// into a single primary-name field so output.first_name_order cannot
+		// reverse it.
+		translatedDisplay := strings.TrimSpace(translated[i].JapaneseName)
 		translated[i].JapaneseName = original[i].JapaneseName
+		if translatedDisplay != "" && !models.IsUnknownActressName(translatedDisplay) &&
+			translatedDisplay != strings.TrimSpace(original[i].JapaneseName) {
+			originalHasHangul := containsHangul(translatedActressPrimaryName(original[i]))
+			if !originalHasHangul || containsHangul(translatedDisplay) {
+				translated[i].FirstName = translatedDisplay
+				translated[i].LastName = ""
+			}
+		}
 		translatedUnknown := models.IsUnknownActressFields(translated[i].LastName, translated[i].FirstName, translated[i].JapaneseName) ||
 			models.IsUnknownActressName(translated[i].FirstName) || models.IsUnknownActressName(translated[i].LastName)
 		originalHasHangul := containsHangul(translatedActressPrimaryName(original[i]))

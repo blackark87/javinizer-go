@@ -2138,6 +2138,58 @@ func TestTemplateEngine_NestedConditionals(t *testing.T) {
 	}
 }
 
+func TestTemplateEngine_GroupActressNestedConditionals(t *testing.T) {
+	engine := NewEngine()
+	tests := []struct {
+		name     string
+		template string
+		ctx      *Context
+		want     string
+	}{
+		{
+			name:     "ACTRESS does not leak closing IF",
+			template: "<IF:ACTRESS><ACTRESS><IF:MULTIPART>-pt<PART></IF></IF>",
+			ctx: &Context{
+				Actresses:        []string{"Actress One", "Actress Two"},
+				GroupActress:     true,
+				GroupActressName: "@Group",
+			},
+			want: "@Group",
+		},
+		{
+			name:     "ACTRESSES does not leak closing IF",
+			template: "<IF:ACTRESSES><ACTRESSES><IF:MULTIPART>-pt<PART></IF></IF>",
+			ctx: &Context{
+				Actresses:        []string{"Actress One", "Actress Two"},
+				GroupActress:     true,
+				GroupActressName: "@Group",
+			},
+			want: "@Group",
+		},
+		{
+			name:     "ACTRESSES keeps nested multipart branch",
+			template: "<IF:ACTRESSES><ACTRESSES><IF:MULTIPART>-pt<PART></IF></IF>",
+			ctx: &Context{
+				Actresses:        []string{"Actress One", "Actress Two"},
+				GroupActress:     true,
+				GroupActressName: "@Group",
+				IsMultiPart:      true,
+				PartNumber:       2,
+			},
+			want: "@Group-pt2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := engine.Execute(tt.template, tt.ctx)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+			assert.NotContains(t, SanitizeFolderPath(got), "(_IF)")
+		})
+	}
+}
+
 func TestTemplateEngine_CaseModifiers(t *testing.T) {
 	engine := NewEngine()
 

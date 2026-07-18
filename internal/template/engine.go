@@ -12,8 +12,9 @@ import (
 
 // Package-level compiled regexes for performance
 var (
-	cjkRegex              = regexp.MustCompile(`[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]`)
-	conditionalTokenRegex = regexp.MustCompile(`(?i)<IF:[A-Z_]+(?::[a-zA-Z]{2,5})?>|</IF>`)
+	cjkRegex                     = regexp.MustCompile(`[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]`)
+	conditionalTokenRegex        = regexp.MustCompile(`(?i)<IF:[A-Z_]+(?::[a-zA-Z]{2,5})?>|</IF>`)
+	conditionalControlTokenRegex = regexp.MustCompile(`(?i)<IF:([A-Z_]+(?::[a-zA-Z]{2,5})?)>|<ELSE>|</IF>`)
 )
 
 // DefaultMaxTemplateBytes, DefaultMaxOutputBytes, and DefaultMaxConditionalDepth are the default size and depth limits for template rendering.
@@ -63,9 +64,7 @@ const listDelimiterSentinel = "\x00SEP\x00"
 type Engine struct {
 	// Tag pattern matches: <TAG>, <TAG:modifier>, <TAG:value>
 	tagPattern *regexp.Regexp
-	// Conditional pattern matches: <IF:TAG>content</IF>
-	conditionalPattern *regexp.Regexp
-	options            engineOptions
+	options    engineOptions
 	// tagRegistry maps tag names to their resolver functions.
 	// Adding a new tag = adding a registry entry.
 	tagRegistry map[string]tagResolver
@@ -121,7 +120,6 @@ func newEngineWithOptions(opts engineOptions) *Engine {
 		tagPattern: regexp.MustCompile(`(?i)<([A-Z_]+)(?::([^>]+))?>`),
 		// Matches: <IF:TAG>content</IF> or <IF:TAG>true<ELSE>false</IF>
 		// Case-insensitive to allow <if:tag>, <IF:TAG>, etc.
-		conditionalPattern:  regexp.MustCompile(`(?i)<IF:([A-Z_]+(?::[a-zA-Z]{2,5})?)>(.*?)(?:<ELSE>(.*?))?</IF>`),
 		options:             opts,
 		tagRegistry:         newTagRegistry(),
 		translationResolver: newTranslationResolver(opts),
@@ -248,59 +246,86 @@ func (e *Engine) ExecuteWithContext(execCtx context.Context, template string, ct
 
 // processConditionals processes conditional blocks in the template
 func (e *Engine) processConditionalsWithContext(execCtx context.Context, template string, ctx *Context) (string, error) {
-	result := template
+	type conditionalFrame struct {
+		hasValue    bool
+		inElse      bool
+		seenElse    bool
+		trueContent strings.Builder
+		elseContent strings.Builder
+	}
 
-	// Find all conditional blocks
-	matches := e.conditionalPattern.FindAllStringSubmatch(result, -1)
+	var result strings.Builder
+	frames := make([]*conditionalFrame, 0, 4)
+	writeContent := func(value string) {
+		if len(frames) == 0 {
+			result.WriteString(value)
+			return
+		}
+		frame := frames[len(frames)-1]
+		if frame.inElse {
+			frame.elseContent.WriteString(value)
+		} else {
+			frame.trueContent.WriteString(value)
+		}
+	}
 
-	// Build replacement map to avoid quadratic string operations
-	blockReplacements := make(map[string]string)
-
+	matches := conditionalControlTokenRegex.FindAllStringSubmatchIndex(template, -1)
+	lastEnd := 0
 	for i, match := range matches {
 		if i%25 == 0 {
 			if err := e.checkExecutionContext(execCtx); err != nil {
 				return "", err
 			}
 		}
-		fullBlock := match[0] // e.g., "<IF:SERIES>Series: <SERIES></IF>" or "<if:series>..."
-		rawTag := match[1]
-		tagName := strings.ToUpper(rawTag)
-		modifier := ""
-		if idx := strings.Index(rawTag, ":"); idx >= 0 {
-			tagName = strings.ToUpper(rawTag[:idx])
-			modifier = strings.ToLower(rawTag[idx+1:])
-		}
-		trueContent := match[2] // e.g., "Series: <SERIES>"
-		falseContent := ""
-		if len(match) > 3 {
-			falseContent = match[3] // Content after <ELSE>
-		}
 
-		// Check if the tag has a value
-		value, _ := e.resolveTag(tagName, modifier, ctx)
-		hasValue := value != ""
-
-		// Choose which content to use
-		replacement := ""
-		if hasValue {
-			replacement = trueContent
-		} else {
-			replacement = falseContent
+		writeContent(template[lastEnd:match[0]])
+		token := strings.ToUpper(template[match[0]:match[1]])
+		switch token {
+		case "<ELSE>":
+			if len(frames) == 0 {
+				return "", fmt.Errorf("invalid template conditionals: unexpected <ELSE>")
+			}
+			frame := frames[len(frames)-1]
+			if frame.seenElse {
+				return "", fmt.Errorf("invalid template conditionals: duplicate <ELSE>")
+			}
+			frame.inElse = true
+			frame.seenElse = true
+		case "</IF>":
+			if len(frames) == 0 {
+				return "", fmt.Errorf("invalid template conditionals: unexpected closing </IF>")
+			}
+			frame := frames[len(frames)-1]
+			frames = frames[:len(frames)-1]
+			if frame.hasValue {
+				writeContent(frame.trueContent.String())
+			} else {
+				writeContent(frame.elseContent.String())
+			}
+		default:
+			rawTag := template[match[2]:match[3]]
+			tagName := strings.ToUpper(rawTag)
+			modifier := ""
+			if idx := strings.Index(rawTag, ":"); idx >= 0 {
+				tagName = strings.ToUpper(rawTag[:idx])
+				modifier = strings.ToLower(rawTag[idx+1:])
+			}
+			value, _ := e.resolveTag(tagName, modifier, ctx)
+			frames = append(frames, &conditionalFrame{hasValue: value != ""})
 		}
-
-		blockReplacements[fullBlock] = replacement
+		lastEnd = match[1]
+	}
+	writeContent(template[lastEnd:])
+	if len(frames) != 0 {
+		return "", fmt.Errorf("invalid template conditionals: unclosed <IF> block")
 	}
 
-	// Replace all conditional blocks at once using single-pass replacement
-	result = e.conditionalPattern.ReplaceAllStringFunc(result, func(match string) string {
-		return blockReplacements[match]
-	})
-
-	if err := e.ensureOutputWithinLimit(result); err != nil {
+	rendered := result.String()
+	if err := e.ensureOutputWithinLimit(rendered); err != nil {
 		return "", err
 	}
 
-	return result, nil
+	return rendered, nil
 }
 
 // Validate checks template shape and size before execution.
@@ -937,6 +962,22 @@ func (e *Engine) resolveActressNameTag(modifier string, ctx *Context) string {
 		return ctx.ActressName
 	}
 	pm := e.parseActressModifier(modifier)
+	if ctx.GroupActress {
+		names := e.resolveTranslatedActressNames(pm.languageSpec, ctx)
+		if len(names) == 0 {
+			preferJa := ctx.ActressLanguageJa
+			if pm.isLanguage {
+				preferJa = languageSpecPrefersJapanese(pm.languageSpec)
+			}
+			names = ctx.formatActressNamesLang(preferJa, pm.firstNameOrder)
+		}
+		if len(names) > 1 {
+			if ctx.GroupActressName != "" {
+				return ctx.GroupActressName
+			}
+			return "@Group"
+		}
+	}
 	if names := e.resolveTranslatedActressNames(pm.languageSpec, ctx); len(names) > 0 {
 		return names[0]
 	}

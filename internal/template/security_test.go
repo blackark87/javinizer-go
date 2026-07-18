@@ -372,7 +372,7 @@ func TestEngine_SecurityAuditFindings(t *testing.T) {
 
 		// Verify engine structure matches audit findings
 		assert.NotNil(t, engine.tagPattern, "Tag pattern regex exists")
-		assert.NotNil(t, engine.conditionalPattern, "Conditional pattern regex exists")
+		assert.NotNil(t, conditionalControlTokenRegex, "Conditional control-token regex exists")
 
 		// Document architecture: stateless engine (no cache map)
 		// This finding aligns with Story 4.3 discovery

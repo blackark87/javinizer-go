@@ -38,6 +38,7 @@ func (p *rescrapePhase) ScrapeSingle(ctx context.Context, inputs rescrapePhaseIn
 	if wf == nil {
 		return nil, nil, fmt.Errorf("job %s: cannot scrape — workflow not configured", inputs.JobID.String())
 	}
+	cmd.SourcePath = filePath
 
 	// direct scrape call with panic recovery, replacing the
 	// errgroup+callback+mutex pattern. Same recovery semantics as scrape phase.

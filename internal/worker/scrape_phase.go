@@ -196,6 +196,7 @@ func buildScrapeCmd(
 
 	return scrape.ScrapeCmd{
 		MovieID:          movieID,
+		SourcePath:       filePath,
 		RawInput:         rawInput,
 		ForceRefresh:     cfg.Force,
 		SelectedScrapers: scrapersToUse,

@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/javinizer/javinizer-go/internal/aggregator"
 	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/downloader"
 	httpclientiface "github.com/javinizer/javinizer-go/internal/httpclient"
+	"github.com/javinizer/javinizer-go/internal/mediainfo"
 	"github.com/javinizer/javinizer-go/internal/mocks"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/nfo"
@@ -30,6 +32,16 @@ type mockScraper struct {
 	enabled bool
 	result  *models.ScraperResult
 	err     error
+}
+
+type workflowPreloadedMediaEngine struct {
+	template.EngineInterface
+	info *mediainfo.VideoInfo
+}
+
+func (e workflowPreloadedMediaEngine) ExecuteWithContext(ctx context.Context, tmpl string, templateCtx *template.Context) (string, error) {
+	templateCtx.SetMediaInfo(e.info)
+	return e.EngineInterface.ExecuteWithContext(ctx, tmpl, templateCtx)
 }
 
 func (m *mockScraper) Search(_ context.Context, _ string) (*models.ScraperResult, error) {
@@ -62,6 +74,7 @@ type testFixture struct {
 	dl         downloader.DownloaderInterface
 	org        organizer.OrganizerInterface
 	nfoGen     *nfo.Generator
+	tmplEngine template.EngineInterface
 }
 
 func newFixture(t *testing.T) *testFixture {
@@ -117,6 +130,11 @@ func (f *testFixture) withDisplayTitle(template string) *testFixture {
 	return f
 }
 
+func (f *testFixture) withTemplateEngine(engine template.EngineInterface) *testFixture {
+	f.tmplEngine = engine
+	return f
+}
+
 func (f *testFixture) withSourceFile(path string) *testFixture {
 	dir := filepath.Dir(path)
 	require.NoError(f.t, f.fs.MkdirAll(dir, 0755))
@@ -131,7 +149,10 @@ func (f *testFixture) build() *Workflow {
 	aggCfg := aggregator.ConfigFromAppConfig(f.cfg)
 	nfoCfg := nfo.ConfigFromAppConfig(f.cfg, nfo.NFONameConfigFromAppConfig(f.cfg))
 	// workflowConfig removed — sub-configs are extracted inline
-	sharedEngine := template.NewEngine()
+	sharedEngine := f.tmplEngine
+	if sharedEngine == nil {
+		sharedEngine = template.NewEngine()
+	}
 
 	translator := scrape.NewTranslatorFromApp(&f.cfg.Metadata.Translation)
 	scraper, _, _ := buildScraper(scrapeCfg, aggCfg, translator, f.registry, f.httpClient, f.fs, f.db.Repositories().ContentRepos, f.db.Repositories().ReplacementRepos)
@@ -1022,6 +1043,28 @@ func TestNewRevertLogFromConfig_EnabledWhenConfigured(t *testing.T) {
 // --- DisplayTitle consistency tests ---
 
 func TestDisplayTitleConsistency_AcrossPaths(t *testing.T) {
+	t.Run("Scrape path uses source file for media tags", func(t *testing.T) {
+		releaseDate := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
+		engine := workflowPreloadedMediaEngine{
+			EngineInterface: template.NewEngine(),
+			info:            &mediainfo.VideoInfo{Width: 3840, Height: 1920},
+		}
+		s := newFixture(t).
+			withScraper("mock", &models.ScraperResult{ID: "TEST-001", Title: "Scrape Title", ReleaseDate: &releaseDate}, nil).
+			withDisplayTitle("<IF:RELEASEDATE>[<RELEASEDATE:YYYY>]<ELSE>[<YEAR>]</IF><IF:RESOLUTION>[<RESOLUTION>]</IF><IF:VR>[VR]</IF><TITLE>").
+			withTemplateEngine(engine).
+			build()
+
+		result, _, err := s.Scrape(context.Background(), scrape.ScrapeCmd{
+			MovieID:    "TEST-001",
+			SourcePath: "/videos/TEST-001.mp4",
+		}, nil)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.NotNil(t, result.Movie)
+		assert.Equal(t, "[2024][4K][VR]Scrape Title", result.Movie.DisplayTitle)
+	})
+
 	t.Run("Scrape path produces DisplayTitle from template", func(t *testing.T) {
 		s := newFixture(t).
 			withScraper("mock", &models.ScraperResult{ID: "TEST-001", Title: "Scrape Title"}, nil).

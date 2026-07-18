@@ -20,11 +20,13 @@ type stubRescrapeWorkflow struct {
 	scrapeErr    error
 	mu           sync.Mutex
 	scrapeCalled int
+	lastCmd      scrape.ScrapeCmd
 }
 
-func (s *stubRescrapeWorkflow) Scrape(_ context.Context, _ scrape.ScrapeCmd, _ scrape.ProgressFunc) (*scrape.ScrapeResult, *workflow.OrchestrationMeta, error) {
+func (s *stubRescrapeWorkflow) Scrape(_ context.Context, cmd scrape.ScrapeCmd, _ scrape.ProgressFunc) (*scrape.ScrapeResult, *workflow.OrchestrationMeta, error) {
 	s.mu.Lock()
 	s.scrapeCalled++
+	s.lastCmd = cmd
 	s.mu.Unlock()
 	return s.scrapeResult, nil, s.scrapeErr
 }
@@ -183,6 +185,9 @@ func TestRescrapePhase_ScrapeSingle_Success(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Equal(t, "IPX-777", result.Movie.ID)
+	wf.mu.Lock()
+	assert.Equal(t, "/source/IPX-777.mp4", wf.lastCmd.SourcePath)
+	wf.mu.Unlock()
 }
 
 func TestRescrapePhase_ScrapeSingle_Error(t *testing.T) {

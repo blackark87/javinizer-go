@@ -59,7 +59,7 @@ func newScrapeOrchestrator(scraper scrape.ScraperInterface, movieRepo database.M
 // Execute runs the 4-step Scrape sequence:
 //  1. ForceRefresh cache clear (if cmd.ForceRefresh && movieRepo != nil)
 //  2. Scrape via scraper.Scrape
-//  3. Apply DisplayTitle via ApplyDisplayTitleFromSource
+//  3. Apply DisplayTitle via ApplyDisplayTitleFromSourceFile
 //  4. Persist to DB via movieRepo.UpsertWithTranslations
 //
 // Poster generation has been moved to the worker's scrape phase
@@ -101,7 +101,7 @@ func (o *scrapeOrchImpl) Execute(ctx context.Context, cmd scrape.ScrapeCmd, prog
 
 	// Step 3: Apply DisplayTitle — sole application point for the scrape path.
 	if result != nil && result.Movie != nil {
-		ApplyDisplayTitleFromSource(ctx, result.Movie, result.Movie, o.displayTitle, o.templateEngine, o.nameCfg)
+		ApplyDisplayTitleFromSourceFile(ctx, result.Movie, result.Movie, o.displayTitle, o.templateEngine, o.nameCfg, cmd.SourcePath)
 		meta.DisplayTitleApplied = true
 	}
 

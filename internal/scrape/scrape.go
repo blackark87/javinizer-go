@@ -81,6 +81,7 @@ func (s *ScrapeStatus) UnmarshalJSON(data []byte) error {
 // ScrapeCmd holds the parameters for a single scrape operation.
 type ScrapeCmd struct {
 	MovieID          string
+	SourcePath       string // Local video path for media-backed template tags such as <RESOLUTION> and <VR>
 	ForceRefresh     bool
 	SelectedScrapers []string
 	PriorityOverride []string

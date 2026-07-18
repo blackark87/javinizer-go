@@ -61,6 +61,35 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestBuildLLMTranslationPrompts_KoreanJAVStudioRules(t *testing.T) {
+	systemPrompt, _, err := buildLLMTranslationPromptsWithMarkers("ja", "ko", []string{"テスト"}, []string{"<<<title>>>"})
+	require.NoError(t, err)
+
+	for _, expected := range []string{
+		"strictly with Japanese adult video (JAV)",
+		"actual AV production studio",
+		"corny, dated",
+		"faithful Hangul transliteration",
+		"数珠つなぎ", "たすきリレー", "芋づる式", "パパ活", "一本釣り", "箱入り娘", "逆指名",
+		"垢抜け", "初々しい", "玄人肌", "中出し", "顔射", "ぶっかけ", "ハメ撮り", "汁男優",
+		"ご開帳", "手取り足取り", "骨抜き", "毒牙", "生殺し",
+		"middle dot ・", "never turn it into a comma",
+	} {
+		assert.Contains(t, systemPrompt, expected)
+	}
+	assert.NotContains(t, systemPrompt, "sensual marketing copy")
+	assert.NotContains(t, systemPrompt, "パパ活 → 파파카츠")
+	assert.NotContains(t, systemPrompt, "ぶっかけ → 부카케")
+}
+
+func TestBuildLLMTranslationPrompts_KoreanRulesAreTargetSpecific(t *testing.T) {
+	systemPrompt, _, err := buildLLMTranslationPromptsWithMarkers("ja", "en", []string{"テスト"}, []string{"<<<title>>>"})
+	require.NoError(t, err)
+	assert.NotContains(t, systemPrompt, "Korean JAV rules")
+	assert.NotContains(t, systemPrompt, "질내사정")
+	assert.Contains(t, systemPrompt, "strictly with Japanese adult video (JAV)")
+}
+
 // =============================================================================
 // TranslateMovie tests - early returns and validation
 // =============================================================================

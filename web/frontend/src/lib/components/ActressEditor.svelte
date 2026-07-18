@@ -8,6 +8,7 @@
 	import { apiClient } from '$lib/api/client';
 	import type { Movie, Actress, ActressAliasGroup } from '$lib/api/types';
 	import { formatActressName } from '$lib/utils/actress';
+	import { previewImageUrl } from '$lib/utils/image';
 	import { createConfigQuery } from '$lib/query/queries';
 	import Button from './ui/Button.svelte';
 	import Card from './ui/Card.svelte';
@@ -360,7 +361,7 @@
 					<div class="space-y-2">
 						{#if actress.thumb_url}
 							<img
-								src={actress.thumb_url}
+								src={previewImageUrl(actress.thumb_url)}
 								alt={getFullName(actress)}
 								class="w-full aspect-2/3 object-cover rounded"
 								onerror={(e) => {
@@ -462,7 +463,7 @@
 										>
 											{#if actress.thumb_url}
 												<img
-													src={actress.thumb_url}
+													src={previewImageUrl(actress.thumb_url)}
 													alt={getFullName(actress)}
 													class="w-12 h-16 object-cover rounded"
 												/>
@@ -583,7 +584,7 @@
 							     'block'/'flex' on this <img> — display utilities override [hidden]. -->
 							{#if thumbPreviewSrc && !thumbPreviewError}
 								<img
-									src={thumbPreviewSrc}
+									src={previewImageUrl(thumbPreviewSrc)}
 									alt={getFullName(editingActress) || 'Preview'}
 									class="w-full aspect-2/3 object-cover rounded mb-2"
 									onerror={() => { thumbPreviewError = true; }}

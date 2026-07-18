@@ -91,17 +91,14 @@ func buildLLMTranslationPromptsWithMarkers(sourceLang, targetLang string, texts,
 		return "", "", fmt.Errorf("translation prompt requires one marker per text (%d markers for %d texts)", len(markers), len(texts))
 	}
 
-	terminologyRules := "(1) Body measurements: use natural target-language equivalents (e.g. 股下 → 다리 길이, not 가랑이 길이). " +
-		"(2) Translate adult slang by meaning using vocabulary natural to adult content — never merely read the characters (e.g. 美脚 → 각선미; 爆乳 → 폭유; 神乳 → 신의 가슴; 中出し → 질내 사정; 騎乗位 → 기승위; 背面騎乗位 → 후배위 기승위; 杭打ち騎乗位 → 말뚝박기 기승위; デカ尻 → 큰 엉덩이; 尻コキ → 엉덩이 성교). " +
-		"(3) Keep standard phonetic forms for borrowed JAV terms (e.g. パパ活 → 파파카츠; ぶっかけ → 부카케; フェラ → 펠라). " +
-		"(4) Translate every part of each item, including Latin or English portions and every Japanese word; leave no Japanese hiragana, katakana, or kanji in non-Japanese output. " +
-		"(5) Use correct standard target-language spelling and do not invent words. "
-	personNameRule := "Person-name rule: sections labeled <<<actress[N]>>> or <<<title_as_name>>> contain a performer's name. Transliterate phonetically, never translate the meaning. Keep Japanese order: FamilyName GivenName. Romaji input is the authoritative reading; do not re-derive it from kanji. For Korean, output Hangul and transliterate Hepburn syllables literally (Rena → 레나, Reina → 레이나; Yuu → 유, Tarou → 타로, Yui → 유이). Ignore age, cup size, height, and occupation extras; if no personal name remains, return an empty section. Also apply this rule to a short personal-name-like <<<title>>>. "
+	terminologyRules := "General terminology rules: use established, current terminology from the target language's JAV/adult-video industry. Decode JAV idioms and production tropes by their actual industry meaning, not their literal dictionary image. Do not invent vocabulary. If the target language has no exact established equivalent, transliterate the source term phonetically instead of forcing a literal translation or adding a long explanation. Translate every meaningful Latin, English, and Japanese portion; leave no Japanese script in non-Japanese output except protected person-name punctuation. "
+	personNameRule := "Person-name rule: sections labeled <<<actress[N]>>> or <<<title_as_name>>> contain one performer's name. Transliterate phonetically, never translate the meaning, and keep Japanese order: FamilyName GivenName. Romaji input is the authoritative reading; do not re-derive it from kanji. The Japanese middle dot ・ is punctuation inside one name: preserve it exactly, never turn it into a comma, and never split the name into multiple performers. For Korean, output Hangul and transliterate Hepburn syllables literally (Rena → 레나, Reina → 레이나; Yuu → 유, Tarou → 타로, Yui → 유이). Ignore age, cup size, height, and occupation extras; if no personal name remains, return an empty section. Also apply this rule to a short personal-name-like <<<title>>>. "
 	properNounRule := "Proper-noun rule: <<<maker>>>, <<<label>>>, and <<<director>>> are names. Transliterate them phonetically and do not embellish them. "
 	cleanupRules := "Title cleanup: remove bracketed VR/release labels such as [VR], 【VR】, and 【8K VR】. Description cleanup: remove playback/device notices, VR-only notices, platform notices, sales campaigns, and store promotions; if only excluded material remains, return an empty section. "
 	placeholderRule := "Any Hangul already present is final and must be copied verbatim. Protected tokens of the form ⟦N⟧ must be reproduced exactly and never translated, removed, or renumbered. "
+	koreanRules := koreanJAVPromptRules(targetLang)
 
-	systemPrompt := fmt.Sprintf("You are a translator specializing in Japanese adult video (JAV) metadata. Translate each labeled section into natural, engaging promotional copy rather than literal prose. Titles should be concise and enticing; descriptions should read as sensual marketing copy. Follow these rules: %s%s%s%s%sCRITICAL: return each translation under the same marker, never merge, omit, reorder, or swap sections. Return only markers and translated text; no JSON or commentary. Keep each translation on one logical line. Source language: %s. Target language: %s.", terminologyRules, personNameRule, properNounRule, cleanupRules, placeholderRule, sourceLang, targetLang)
+	systemPrompt := fmt.Sprintf("You are an expert translator working strictly with Japanese adult video (JAV) metadata and AV-studio metadata. Use the concise, direct, contemporary vocabulary an actual AV production studio would publish. Never use corny, dated, literary, moralizing, broadcast-style euphemistic, or exaggerated erotic-advertising language. Titles and tags must be sharp marketing-ready metadata; descriptions must remain complete, natural modern prose rather than being reduced to keyword lists. Follow these rules: %s%s%s%s%s%sCRITICAL: return each translation under the same marker, never merge, omit, reorder, or swap sections. Return only markers and translated text; no JSON or commentary. Keep each translation on one logical line. Source language: %s. Target language: %s.", terminologyRules, koreanRules, personNameRule, properNounRule, cleanupRules, placeholderRule, sourceLang, targetLang)
 
 	var userPrompt strings.Builder
 	userPrompt.WriteString("Translate each labeled section below:\n")
@@ -117,6 +114,20 @@ func buildLLMTranslationPromptsWithMarkers(sourceLang, targetLang string, texts,
 		userPrompt.WriteString("\n[translation]\n")
 	}
 	return systemPrompt, strings.TrimSpace(userPrompt.String()), nil
+}
+
+func koreanJAVPromptRules(targetLang string) string {
+	lang := strings.ToLower(strings.TrimSpace(targetLang))
+	if lang != "ko" && !strings.HasPrefix(lang, "ko-") && !strings.HasPrefix(lang, "ko_") {
+		return ""
+	}
+	return "Korean JAV rules: write natural, concise, current Korean used by real AV studios. Prefer, in order: an established Korean AV term; a widely used JAV loanword or acronym; otherwise faithful Hangul transliteration. Never replace a missing equivalent with a literal calque, verbose definition, or invented word. For mappings with alternatives, choose exactly one that fits the context and never output alternatives joined by a slash, parentheses, or '또는'. Strict contextual mappings: " +
+		"数珠つなぎ → 릴레이 or 연속; たすきリレー and バトンリレー → 바통 터치 or 릴레이; 芋づる式 → 연쇄 or 연속; " +
+		"パパ活 and Sugar Dating → 스폰 or 조건; 一本釣り → 독점 스카우트 or 길거리 캐스팅; 箱入り and 箱入り娘 → 아가씨 or 순진녀; 逆指名 → 여배우의 선택 or 역지명; " +
+		"垢抜け → 비주얼 업그레이드 or 세련된; 初々しい → 풋풋한 or 앳된; 玄人 and 玄人肌 → 프로 or 능숙한; " +
+		"中出し and Creampie → 질내사정; 顔射 and Facial → 안면사정; ぶっかけ and Bukkake → 정액 세례 or 붓카케; ハメ撮り and POV → POV or 셀프카메라; 汁男優 → 사정 전문 남배우. " +
+		"Interpret these JAV tropes by intent, using current Korean AV wording rather than literal imagery: ご開帳 means the full intimate reveal or unveiling; 手取り足取り means hands-on step-by-step intimate guidance; 骨抜き means being left weak from intense pleasure; 毒牙 means falling prey to predatory or corrupting seduction; 生殺し means edging or teasing without release. " +
+		"Additional established Korean terminology: 股下 → 다리 길이; 美脚 → 각선미; 爆乳 → 폭유; 神乳 → 신의 가슴; 騎乗位 → 기승위; 背面騎乗位 → 후배위 기승위; 杭打ち騎乗位 → 말뚝박기 기승위; デカ尻 → 큰 엉덩이; 尻コキ → 엉덩이 성교; フェラ → 펠라. "
 }
 
 // translationCompactOutputMarker returns the compact output marker for the given index.

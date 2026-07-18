@@ -361,9 +361,11 @@ func TestCleanActressNameForTranslation(t *testing.T) {
 		{"[田中香]", "田中香"},
 		// comma stripping (existing)
 		{"カレン, 25歳, 歯科衛生士", "カレン"},
-		// middle-dot stripping (new)
+		// middle-dot descriptor stripping
 		{"りむ・Hカップ 20歳 コンカフェ店員", "りむ"},
 		{"りむ・Hカップ", "りむ"},
+		// middle dots inside one stage name are identity punctuation
+		{"メロディー・雛・マークス", "メロディー・雛・マークス"},
 		// age suffix stripping + honorific removal (honorifics are now stripped)
 		{"カレン 25歳 歯科衛生士", "カレン"},
 		{"ひとみさん 27歳 探偵", "ひとみ"},
@@ -390,6 +392,15 @@ func TestCleanActressNameForTranslation(t *testing.T) {
 			assert.Equal(t, tt.expected, cleanActressNameForTranslation(tt.input))
 		})
 	}
+}
+
+func TestRestoreActressMiddleDots(t *testing.T) {
+	source := "メロディー・雛・マークス"
+	assert.Equal(t, "멜로디・히나・마크스", restoreActressMiddleDots(source, "멜로디, 히나, 마크스"))
+	assert.Equal(t, "멜로디・히나・마크스", restoreActressMiddleDots(source, "멜로디，히나，마크스"))
+	assert.Equal(t, "멜로디・히나・마크스", restoreActressMiddleDots(source, "멜로디・히나・마크스"))
+	assert.Equal(t, "미하마 유이", restoreActressMiddleDots("三浜唯", "미하마 유이"))
+	assert.Equal(t, "멜로디, 히나", restoreActressMiddleDots(source, "멜로디, 히나"), "mismatched structure must not be guessed")
 }
 
 // =============================================================================

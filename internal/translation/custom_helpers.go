@@ -10,6 +10,8 @@ import (
 
 var ageOccupationSuffixRE = regexp.MustCompile(`\s+[0-9０-９]+歳.*`)
 
+var actressCommaSeparatorRE = regexp.MustCompile(`\s*[,，、]\s*`)
+
 var actressNameHonorifics = []string{"ちゃん", "くん", "さん", "様", "氏", "君"}
 
 var nihonshikiToHepburn = strings.NewReplacer(
@@ -79,9 +81,7 @@ func cleanActressNameForTranslation(name string) string {
 	if idx := strings.Index(name, ","); idx >= 0 {
 		name = strings.TrimSpace(name[:idx])
 	}
-	if idx := strings.Index(name, "・"); idx >= 0 {
-		name = strings.TrimSpace(name[:idx])
-	}
+	name = trimMiddleDotDescriptorSuffix(name)
 	name = strings.TrimSpace(ageOccupationSuffixRE.ReplaceAllString(name, ""))
 	if honorificName, ok := extractHonorificNameToken(name); ok {
 		name = honorificName
@@ -106,6 +106,36 @@ func cleanActressNameForTranslation(name string) string {
 		}
 	}
 	return strings.TrimSpace(name)
+}
+
+// trimMiddleDotDescriptorSuffix preserves middle dots inside real performer
+// names while still dropping scraper-added attributes such as "・Hカップ".
+func trimMiddleDotDescriptorSuffix(name string) string {
+	parts := strings.Split(name, "・")
+	if len(parts) < 2 {
+		return name
+	}
+	for i := 1; i < len(parts); i++ {
+		part := strings.TrimSpace(parts[i])
+		if models.ContainsDescriptorKeyword(part) {
+			return strings.TrimSpace(strings.Join(parts[:i], "・"))
+		}
+	}
+	return name
+}
+
+// restoreActressMiddleDots repairs the common LLM failure where an intrinsic
+// Japanese middle dot in one performer name is rendered as a list comma.
+func restoreActressMiddleDots(source, translated string) string {
+	want := strings.Count(source, "・")
+	if want == 0 || strings.Count(translated, "・") == want {
+		return translated
+	}
+	restored := actressCommaSeparatorRE.ReplaceAllString(translated, "・")
+	if strings.Count(restored, "・") == want {
+		return restored
+	}
+	return translated
 }
 
 // extractHonorificNameToken finds a name token carrying a Japanese honorific

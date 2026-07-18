@@ -418,6 +418,7 @@ func applyTranslatedField(scraped *models.Movie, field TranslationField, transla
 			scraped.Genres[field.Index].Name = translated
 		}
 	case "actress":
+		translated = restoreActressMiddleDots(field.Text, translated)
 		first, last := models.SplitActressName(translated)
 		jName := strings.TrimSpace(scraped.Actresses[field.Index].JapaneseName)
 		state.actressTranslations = append(state.actressTranslations, models.ActressTranslationData{

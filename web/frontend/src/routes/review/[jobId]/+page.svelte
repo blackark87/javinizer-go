@@ -20,7 +20,6 @@
 	import ReviewMediaSidebar from './components/ReviewMediaSidebar.svelte';
 	import RescrapeModal from './components/RescrapeModal.svelte';
 	import BulkRescrapeProgress from './components/BulkRescrapeProgress.svelte';
-	import CandidatePreviewPanel from './components/CandidatePreviewPanel.svelte';
 	import SourceViewerModal from './components/SourceViewerModal.svelte';
 	import type { ScraperResult } from '$lib/api/types';
 	import SourceFilesCard from './components/SourceFilesCard.svelte';
@@ -311,26 +310,6 @@
 								/>
 							{/if}
 
-							{#if s.currentResult.has_conflict && (s.currentResult.candidates?.length ?? 0) > 1}
-								<div class="rounded-lg border-2 border-amber-500/50 bg-amber-500/5 p-4 space-y-3">
-									<div>
-										<h3 class="font-semibold text-amber-700 dark:text-amber-400">Multiple results found</h3>
-										<p class="text-sm text-muted-foreground">
-											Providers returned different movies. Pick one to use that provider's result, or keep the merged result below.
-										</p>
-									</div>
-									<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-										{#each s.currentResult.candidates ?? [] as candidate (candidate.source)}
-											<CandidatePreviewPanel
-												{candidate}
-												disabled={s.rescrapingStates.get(s.currentResult.result_id) || false}
-											onSelect={(source) => s.currentResult && s.selectCandidateProvider(s.currentResult.result_id, source)}
-											/>
-										{/each}
-									</div>
-								</div>
-							{/if}
-
 							<MovieMetadataCard
 								currentMovie={s.currentMovie}
 								currentResult={s.currentResult}
@@ -469,7 +448,6 @@
 	bind:manualSearchInput={s.manualSearchInput}
 	bind:rescrapePreset={s.rescrapePreset}
 	bind:rescrapeScalarStrategy={s.rescrapeScalarStrategy}
-	bind:selectedSections={s.rescrapeSelectedSections}
 	onApplyPreset={(preset) => s.applyRescrapePreset(preset)}
 	onExecute={s.bulkRescrapeMovieIds.length > 0 ? s.executeBulkRescrape : s.executeRescrape}
 />

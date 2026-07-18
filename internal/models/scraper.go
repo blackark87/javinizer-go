@@ -75,6 +75,9 @@ func (r *ScraperResult) Clone() *ScraperResult {
 	if r.Translations != nil {
 		copied.Translations = make([]MovieTranslation, len(r.Translations))
 		copy(copied.Translations, r.Translations)
+		for i := range copied.Translations {
+			copied.Translations[i].Actresses = append([]string(nil), r.Translations[i].Actresses...)
+		}
 	}
 	return &copied
 }

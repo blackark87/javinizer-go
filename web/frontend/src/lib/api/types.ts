@@ -167,14 +167,6 @@ export interface FieldOverrideResponse {
 	actress_sources?: Record<string, string>;
 }
 
-export interface CandidateSelectionResponse {
-	movie: Movie;
-	field_sources?: Record<string, string>;
-	actress_sources?: Record<string, string>;
-	candidates?: ScrapeCandidate[];
-	has_conflict: boolean;
-}
-
 export interface BatchRescrapeRequest {
 	force?: boolean;
 	selected_scrapers?: string[];
@@ -187,15 +179,12 @@ export interface BatchRescrapeRequest {
 		| 'fill-missing-only'
 		| 'merge-arrays';
 	array_strategy?: 'merge' | 'replace';
-	sections?: string[];
 }
 
 export interface BatchRescrapeResponse {
 	movie: Movie;
 	field_sources?: Record<string, string>;
 	actress_sources?: Record<string, string>;
-	candidates?: ScrapeCandidate[];
-	has_conflict?: boolean;
 }
 
 export interface BulkRescrapeRequest {
@@ -210,7 +199,6 @@ export interface BulkRescrapeRequest {
 		| 'fill-missing-only'
 		| 'merge-arrays';
 	array_strategy?: 'merge' | 'replace';
-	sections?: string[];
 }
 
 export interface BulkRescrapeMovieResult {
@@ -279,18 +267,6 @@ export interface BatchScrapeResponse {
 	job_id: string;
 }
 
-export interface ScrapeCandidate {
-	source: string;
-	movie_id?: string;
-	title?: string;
-	original_title?: string;
-	description?: string;
-	original_description?: string;
-	translations?: MovieTranslation[];
-	actress_count: number;
-	poster_url?: string;
-}
-
 export interface FileResult {
 	result_id: string;
 	file_path: string;
@@ -299,8 +275,6 @@ export interface FileResult {
 	error?: string;
 	field_sources?: Record<string, string>;
 	actress_sources?: Record<string, string>;
-	candidates?: ScrapeCandidate[];
-	has_conflict?: boolean;
 	movie?: Movie;
 	started_at: string;
 	ended_at?: string;

@@ -306,14 +306,12 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 			preset,
 			scalarStrategy,
 			arrayStrategy,
-			sections,
 		}: {
 			movieIds: string[];
 			selectedScrapers: string[];
 			preset?: string;
 			scalarStrategy?: string;
 			arrayStrategy?: string;
-			sections?: string[];
 		}) => {
 			return deps.bulkRescrapeMovies(deps.getJobId(), {
 				movie_ids: movieIds,
@@ -327,7 +325,6 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 					| 'merge-arrays'
 					| undefined,
 				array_strategy: arrayStrategy as 'merge' | 'replace' | undefined,
-				sections: sections && sections.length > 0 ? sections : undefined,
 			});
 		},
 		onSuccess: (data) => {

@@ -121,7 +121,6 @@ func batchRescrapeMovies(rt *core.APIRuntime) gin.HandlerFunc {
 			Preset:           req.Preset,
 			ScalarStrategy:   req.ScalarStrategy,
 			ArrayStrategy:    req.ArrayStrategy,
-			Sections:         append([]string(nil), req.Sections...),
 		}
 
 		if httpStatus, errMsg := validateRescrapeRequest(rescrapeReq); errMsg != "" {
@@ -198,7 +197,6 @@ func processBulkRescrapeMovie(ctx context.Context, movieID string, job worker.Ba
 		mergeOpts,
 	)
 	cmd.MergeEnabled = mergeEnabled
-	cmd.Sections = append([]string(nil), req.Sections...)
 	result, err := job.Rescrape(ctx, cmd)
 	if err != nil {
 		return &contracts.BulkRescrapeMovieResult{

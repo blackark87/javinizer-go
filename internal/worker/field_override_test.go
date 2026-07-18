@@ -33,7 +33,7 @@ func TestApplyFieldOverride_TitleLinksDisplayTitle(t *testing.T) {
 	assert.Equal(t, "javlibrary", prov.FieldSources["display_title"])
 }
 
-func TestApplyCandidateSelection_OnlyChangesTitleAndNonEmptyDescription(t *testing.T) {
+func TestApplyFieldOverride_UsesRetainedSourceTranslations(t *testing.T) {
 	movie := &models.Movie{
 		ID: "OLD-001", ContentID: "old001", Title: "Old title", DisplayTitle: "Old title",
 		Description: "Old description", Maker: "Keep maker",
@@ -41,16 +41,15 @@ func TestApplyCandidateSelection_OnlyChangesTitleAndNonEmptyDescription(t *testi
 		Translations: []models.MovieTranslation{{Language: "ko", Title: "이전 제목", Description: "이전 설명", Maker: "제작사 유지"}},
 	}
 	prov := &ProvenanceData{
-		FieldSources:   map[string]string{"title": "old", "description": "old", "maker": "old"},
-		ScraperResults: []*models.ScraperResult{{Source: "dmm", Title: "原題", Description: "説明"}},
-		Candidates: []models.ScrapeCandidate{{
-			Source: "dmm", Title: "새 제목", Description: "새 설명",
+		FieldSources: map[string]string{"title": "old", "description": "old", "maker": "old"},
+		ScraperResults: []*models.ScraperResult{{
+			Source: "dmm", Title: "原題", Description: "説明",
 			Translations: []models.MovieTranslation{{Language: "ko", Title: "새 제목", Description: "새 설명", SettingsHash: "newhash"}},
 		}},
-		HasConflict: true,
 	}
 
-	require.NoError(t, applyCandidateSelection(movie, prov, "dmm"))
+	require.NoError(t, applyFieldOverride(movie, prov, "title", "dmm"))
+	require.NoError(t, applyFieldOverride(movie, prov, "description", "dmm"))
 	assert.Equal(t, "새 제목", movie.Title)
 	assert.Equal(t, "새 제목", movie.DisplayTitle)
 	assert.Equal(t, "새 설명", movie.Description)
@@ -64,28 +63,18 @@ func TestApplyCandidateSelection_OnlyChangesTitleAndNonEmptyDescription(t *testi
 	assert.Equal(t, "dmm", movie.Translations[0].SourceName)
 	assert.Equal(t, "dmm", prov.FieldSources["title"])
 	assert.Equal(t, "dmm", prov.FieldSources["description"])
-	assert.False(t, prov.HasConflict)
 }
 
-func TestApplyCandidateSelection_EmptyDescriptionKeepsCurrent(t *testing.T) {
-	movie := &models.Movie{Title: "Old", DisplayTitle: "Old", Description: "Keep me"}
+func TestApplyFieldOverride_TranslationFallbackUsesRawValue(t *testing.T) {
+	movie := &models.Movie{Title: "Old", DisplayTitle: "Old", Description: "Old description"}
 	prov := &ProvenanceData{
-		FieldSources:   map[string]string{"description": "old"},
-		ScraperResults: []*models.ScraperResult{{Source: "dmm", Title: "New"}},
-		Candidates:     []models.ScrapeCandidate{{Source: "dmm", Title: "New"}},
-		HasConflict:    true,
+		ScraperResults: []*models.ScraperResult{{Source: "dmm", Title: "Raw title", Description: "Raw description"}},
 	}
 
-	require.NoError(t, applyCandidateSelection(movie, prov, "dmm"))
-	assert.Equal(t, "New", movie.Title)
-	assert.Equal(t, "Keep me", movie.Description)
-	assert.Equal(t, "old", prov.FieldSources["description"])
-}
-
-func TestApplyCandidateSelection_RejectsUnknownSource(t *testing.T) {
-	err := applyCandidateSelection(&models.Movie{}, &ProvenanceData{}, "missing")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "did not contribute")
+	require.NoError(t, applyFieldOverride(movie, prov, "title", "dmm"))
+	require.NoError(t, applyFieldOverride(movie, prov, "description", "dmm"))
+	assert.Equal(t, "Raw title", movie.Title)
+	assert.Equal(t, "Raw description", movie.Description)
 }
 
 func TestApplyFieldOverride_ActressesRebuildsActressSources(t *testing.T) {

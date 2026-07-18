@@ -28,21 +28,19 @@ type BatchScrapeResponse struct {
 // BatchFileResult represents a per-file result in a batch job response.
 // Flattened from FileMatchInfo to match the frontend FileResult contract.
 type BatchFileResult struct {
-	ResultID       string                   `json:"result_id"` // Stable UUID — survives movie_id changes
-	FilePath       string                   `json:"file_path"`
-	MovieID        string                   `json:"movie_id"`
-	IsMultiPart    bool                     `json:"is_multi_part"`
-	PartNumber     int                      `json:"part_number"`
-	PartSuffix     string                   `json:"part_suffix"`
-	Status         models.JobStatus         `json:"status"`
-	Error          string                   `json:"error,omitempty"`
-	FieldSources   map[string]string        `json:"field_sources,omitempty"`
-	ActressSources map[string]string        `json:"actress_sources,omitempty"`
-	Candidates     []models.ScrapeCandidate `json:"candidates,omitempty"`
-	HasConflict    bool                     `json:"has_conflict,omitempty"`
-	Movie          *MovieView               `json:"movie,omitempty"`
-	StartedAt      string                   `json:"started_at"`
-	EndedAt        *string                  `json:"ended_at,omitempty"`
+	ResultID       string            `json:"result_id"` // Stable UUID — survives movie_id changes
+	FilePath       string            `json:"file_path"`
+	MovieID        string            `json:"movie_id"`
+	IsMultiPart    bool              `json:"is_multi_part"`
+	PartNumber     int               `json:"part_number"`
+	PartSuffix     string            `json:"part_suffix"`
+	Status         models.JobStatus  `json:"status"`
+	Error          string            `json:"error,omitempty"`
+	FieldSources   map[string]string `json:"field_sources,omitempty"`
+	ActressSources map[string]string `json:"actress_sources,omitempty"`
+	Movie          *MovieView        `json:"movie,omitempty"`
+	StartedAt      string            `json:"started_at"`
+	EndedAt        *string           `json:"ended_at,omitempty"`
 }
 
 // BatchFileResultSlim is a lightweight per-file result without movie data.
@@ -121,19 +119,13 @@ type BatchRescrapeRequest struct {
 	Preset            string   `json:"preset,omitempty" example:"conservative"`        // Merge strategy preset: conservative, gap-fill, aggressive (overrides scalar/array strategies)
 	ScalarStrategy    string   `json:"scalar_strategy,omitempty" example:"prefer-nfo"` // For Update mode: prefer-nfo, prefer-scraper, preserve-existing, fill-missing-only
 	ArrayStrategy     string   `json:"array_strategy,omitempty" example:"merge"`       // For Update mode: merge, replace
-	// Sections limits the rescrape to specific metadata sections; unselected sections
-	// keep their current values. Empty/omitted means a full rescrape.
-	// Valid keys: title, actresses, genres, credits, rating, release, images, media.
-	Sections []string `json:"sections,omitempty" example:"actresses,images"`
 }
 
 // BatchRescrapeResponse represents a batch rescrape response with movie
 type BatchRescrapeResponse struct {
-	Movie          *MovieView               `json:"movie"`
-	FieldSources   map[string]string        `json:"field_sources,omitempty"`
-	ActressSources map[string]string        `json:"actress_sources,omitempty"`
-	Candidates     []models.ScrapeCandidate `json:"candidates,omitempty"`
-	HasConflict    bool                     `json:"has_conflict,omitempty"`
+	Movie          *MovieView        `json:"movie"`
+	FieldSources   map[string]string `json:"field_sources,omitempty"`
+	ActressSources map[string]string `json:"actress_sources,omitempty"`
 }
 
 // BatchExcludeRequest represents a request to exclude multiple movies from a batch job
@@ -162,10 +154,6 @@ type BulkRescrapeRequest struct {
 	Preset           string   `json:"preset,omitempty" example:"conservative"`
 	ScalarStrategy   string   `json:"scalar_strategy,omitempty" example:"prefer-nfo"`
 	ArrayStrategy    string   `json:"array_strategy,omitempty" example:"merge"`
-	// Sections limits each rescrape to specific metadata sections; unselected
-	// sections keep their current values. Empty/omitted means a full rescrape.
-	// Valid keys: title, actresses, genres, credits, rating, release, images, media.
-	Sections []string `json:"sections,omitempty" example:"actresses,images"`
 }
 
 // BulkRescrapeMovieResult represents the per-movie result of a bulk rescrape operation

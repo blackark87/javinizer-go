@@ -45,8 +45,6 @@ func TestMovieResultToBatchFileResultDriftGuard(t *testing.T) {
 	provenanceFields := map[string]string{
 		"FieldSources":   "from worker.ProvenanceData, not MovieResult",
 		"ActressSources": "from worker.ProvenanceData, not MovieResult",
-		"Candidates":     "from worker.ProvenanceData, not MovieResult",
-		"HasConflict":    "from worker.ProvenanceData, not MovieResult",
 		"FilePath":       "flattened from MovieResult.FileMatchInfo.Path",
 		"MovieID":        "flattened from MovieResult.FileMatchInfo.MovieID",
 		"IsMultiPart":    "flattened from MovieResult.FileMatchInfo.IsMultiPart",

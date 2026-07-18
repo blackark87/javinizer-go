@@ -172,8 +172,6 @@ func replaceRescrapeResult(outcome *RescrapeResult, filePath string, movieResult
 		outcome.FieldSources = prov.FieldSources
 		outcome.ActressSources = prov.ActressSources
 		outcome.ScraperResults = prov.ScraperResults
-		outcome.Candidates = prov.Candidates
-		outcome.HasConflict = prov.HasConflict
 	} else {
 		outcome.Movie = movieResult.Movie
 	}
@@ -290,7 +288,7 @@ func (p *rescrapePhase) Rescrape(ctx context.Context, inputs rescrapePhaseInputs
 
 		// A section-limited rescrape that does not include images must not
 		// generate a replacement poster only to discard it below.
-		if inputs.PosterGen != nil && movieResult.Movie != nil && rescrapeSectionSelected(cmd.Sections, "images") {
+		if inputs.PosterGen != nil && movieResult.Movie != nil {
 			if posterErr := inputs.PosterGen.GeneratePoster(ctx, inputs.JobID.String(), movieResult.Movie); posterErr != nil {
 				s := posterErr.Error()
 				movieResult.PosterError = &s
@@ -329,9 +327,6 @@ func (p *rescrapePhase) Rescrape(ctx context.Context, inputs rescrapePhaseInputs
 		if cmd.MergeEnabled && movieResult.Movie != nil && existingMovie != nil {
 			movieResult.Movie = mergeRescrapeMovie(existingMovie, movieResult.Movie, cmd.Merge, lookup.FilePath)
 			baselineFromScraped = false // mergeRescrapeMovie already established it
-		}
-		if applyRescrapeSectionMask(movieResult.Movie, existingMovie, cmd.Sections) {
-			logging.Infof("[Rescrape] Applied section mask for %s: sections=%v", lookup.FilePath, cmd.Sections)
 		}
 		if baselineFromScraped && movieResult.Movie != nil {
 			// Non-merge (wholesale-replace) path, or merge-enabled with no prior

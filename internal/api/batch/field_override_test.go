@@ -36,7 +36,10 @@ func setupOverrideJob(t *testing.T) (*core.APIDeps, *worker.BatchJob, string) {
 		FieldSources: map[string]string{"maker": "r18dev"},
 		ScraperResults: []*models.ScraperResult{
 			{Source: "r18dev", Maker: "R18Maker", Title: "R18Title"},
-			{Source: "dmm", Maker: "DMMMaker", Title: "DMMTitle"},
+			{
+				Source: "dmm", Maker: "DMMMaker", Title: "DMMTitle",
+				Translations: []models.MovieTranslation{{Language: "ko", Title: "DMM 번역 제목"}},
+			},
 		},
 	})
 	return deps, job, resultID
@@ -58,6 +61,8 @@ func TestGetBatchMovieSources_Success(t *testing.T) {
 	assert.Len(t, resp.Results, 2)
 	assert.Equal(t, "r18dev", resp.Results[0].Source)
 	assert.Equal(t, "dmm", resp.Results[1].Source)
+	require.Len(t, resp.Results[1].Translations, 1)
+	assert.Equal(t, "DMM 번역 제목", resp.Results[1].Translations[0].Title)
 }
 
 func TestGetBatchMovieSources_JobNotFound(t *testing.T) {
@@ -132,41 +137,37 @@ func TestOverrideBatchMovieField_Success(t *testing.T) {
 	assert.Equal(t, "dmm", resp.FieldSources["maker"])
 }
 
-func TestSelectBatchMovieCandidate_UsesRetainedMetadataWithoutRescrape(t *testing.T) {
+func TestOverrideBatchMovieField_UsesRetainedTranslation(t *testing.T) {
 	deps, job, resultID := setupOverrideJob(t)
 	filePath := "/path/to/IPX-535.mp4"
 	job.ResultsWriter().SetProvenance(filePath, &worker.ProvenanceData{
-		FieldSources: map[string]string{"title": "r18dev", "description": "r18dev", "maker": "r18dev"},
+		FieldSources: map[string]string{"title": "r18dev", "maker": "r18dev"},
 		ScraperResults: []*models.ScraperResult{
-			{Source: "r18dev", Title: "R18 title", Description: "R18 description"},
-			{Source: "dmm", Title: "DMM raw title", Description: "DMM raw description"},
+			{Source: "r18dev", Title: "R18 raw title"},
+			{
+				Source: "dmm", Title: "DMM raw title",
+				Translations: []models.MovieTranslation{{Language: "ko", Title: "DMM translated title"}},
+			},
 		},
-		Candidates: []models.ScrapeCandidate{
-			{Source: "r18dev", Title: "R18 title", Description: "R18 description"},
-			{Source: "dmm", Title: "DMM translated title", Description: "DMM translated description"},
-		},
-		HasConflict: true,
 	})
 
 	router := gin.New()
-	router.POST("/batch/:id/results/:resultId/candidate-selection", selectBatchMovieCandidate(testkit.GetTestRuntime(deps)))
-	body, err := json.Marshal(contracts.CandidateSelectionRequest{Source: "dmm"})
+	router.POST("/batch/:id/results/:resultId/field-override", overrideBatchMovieField(testkit.GetTestRuntime(deps)))
+	body, err := json.Marshal(contracts.FieldOverrideRequest{Field: "title", Source: "dmm"})
 	require.NoError(t, err)
-	req := httptest.NewRequest("POST", "/batch/"+job.GetID()+"/results/"+resultID+"/candidate-selection", bytes.NewReader(body))
+	req := httptest.NewRequest("POST", "/batch/"+job.GetID()+"/results/"+resultID+"/field-override", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, 200, w.Code, w.Body.String())
-	var response contracts.CandidateSelectionResponse
+	var response contracts.FieldOverrideResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
 	require.NotNil(t, response.Movie)
 	assert.Equal(t, "DMM translated title", response.Movie.Title)
-	assert.Equal(t, "DMM translated description", response.Movie.Description)
 	assert.Equal(t, "AggregatedMaker", response.Movie.Maker)
 	assert.Equal(t, "dmm", response.FieldSources["title"])
-	assert.False(t, response.HasConflict)
 }
 
 func TestOverrideBatchMovieField_BadJSON(t *testing.T) {

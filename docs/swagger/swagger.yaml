@@ -203,10 +203,6 @@ definitions:
         additionalProperties:
           type: string
         type: object
-      candidates:
-        items:
-          $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_models.ScrapeCandidate'
-        type: array
       ended_at:
         type: string
       error:
@@ -217,8 +213,6 @@ definitions:
         type: object
       file_path:
         type: string
-      has_conflict:
-        type: boolean
       is_multi_part:
         type: boolean
       movie:
@@ -312,17 +306,6 @@ definitions:
           fill-missing-only'
         example: prefer-nfo
         type: string
-      sections:
-        description: |-
-          Sections limits the rescrape to specific metadata sections; unselected sections
-          keep their current values. Empty/omitted means a full rescrape.
-          Valid keys: title, actresses, genres, credits, rating, release, images, media.
-        example:
-        - actresses
-        - images
-        items:
-          type: string
-        type: array
       selected_scrapers:
         example:
         - r18dev
@@ -337,16 +320,10 @@ definitions:
         additionalProperties:
           type: string
         type: object
-      candidates:
-        items:
-          $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_models.ScrapeCandidate'
-        type: array
       field_sources:
         additionalProperties:
           type: string
         type: object
-      has_conflict:
-        type: boolean
       movie:
         $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieView'
     type: object
@@ -436,33 +413,6 @@ definitions:
       parent_path:
         example: /path/to
         type: string
-    type: object
-  github_com_javinizer_javinizer-go_internal_api_contracts.CandidateSelectionRequest:
-    properties:
-      source:
-        example: dmm
-        type: string
-    required:
-    - source
-    type: object
-  github_com_javinizer_javinizer-go_internal_api_contracts.CandidateSelectionResponse:
-    properties:
-      actress_sources:
-        additionalProperties:
-          type: string
-        type: object
-      candidates:
-        items:
-          $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_models.ScrapeCandidate'
-        type: array
-      field_sources:
-        additionalProperties:
-          type: string
-        type: object
-      has_conflict:
-        type: boolean
-      movie:
-        $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieView'
     type: object
   github_com_javinizer_javinizer-go_internal_api_contracts.DataSource:
     properties:
@@ -2713,33 +2663,6 @@ definitions:
     - RevertStatusApplied
     - RevertStatusReverted
     - RevertStatusFailed
-  github_com_javinizer_javinizer-go_internal_models.ScrapeCandidate:
-    properties:
-      actress_count:
-        type: integer
-      description:
-        type: string
-      movie_id:
-        description: MovieID is the scraper-reported id for this candidate.
-        type: string
-      original_description:
-        type: string
-      original_title:
-        type: string
-      poster_url:
-        type: string
-      source:
-        type: string
-      title:
-        description: |-
-          Title is the display title — translated when translation is enabled, otherwise
-          the scraper's original title. OriginalTitle always holds the untranslated title.
-        type: string
-      translations:
-        items:
-          $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_models.MovieTranslation'
-        type: array
-    type: object
   github_com_javinizer_javinizer-go_internal_models.ScraperChoice:
     properties:
       label:
@@ -4304,47 +4227,6 @@ paths:
           schema:
             $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse'
       summary: Update movie in batch job
-      tags:
-      - web
-  /api/v1/batch/{id}/results/{resultId}/candidate-selection:
-    post:
-      consumes:
-      - application/json
-      description: Applies only the translated title and non-empty description retained
-        for a provider candidate without scraping again
-      parameters:
-      - description: Job ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Result ID
-        in: path
-        name: resultId
-        required: true
-        type: string
-      - description: Candidate source
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.CandidateSelectionRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.CandidateSelectionResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse'
-      summary: Select retained multi-source candidate
       tags:
       - web
   /api/v1/batch/{id}/results/{resultId}/exclude:

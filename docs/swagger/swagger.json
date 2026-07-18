@@ -1393,66 +1393,6 @@
                 }
             }
         },
-        "/api/v1/batch/{id}/results/{resultId}/candidate-selection": {
-            "post": {
-                "description": "Applies only the translated title and non-empty description retained for a provider candidate without scraping again",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "web"
-                ],
-                "summary": "Select retained multi-source candidate",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Job ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Result ID",
-                        "name": "resultId",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Candidate source",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.CandidateSelectionRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.CandidateSelectionResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/api/v1/batch/{id}/results/{resultId}/exclude": {
             "post": {
                 "description": "Mark a movie in a batch job as excluded from file organization",
@@ -4667,12 +4607,6 @@
                         "type": "string"
                     }
                 },
-                "candidates": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.ScrapeCandidate"
-                    }
-                },
                 "ended_at": {
                     "type": "string"
                 },
@@ -4687,9 +4621,6 @@
                 },
                 "file_path": {
                     "type": "string"
-                },
-                "has_conflict": {
-                    "type": "boolean"
                 },
                 "is_multi_part": {
                     "type": "boolean"
@@ -4824,17 +4755,6 @@
                     "type": "string",
                     "example": "prefer-nfo"
                 },
-                "sections": {
-                    "description": "Sections limits the rescrape to specific metadata sections; unselected sections\nkeep their current values. Empty/omitted means a full rescrape.\nValid keys: title, actresses, genres, credits, rating, release, images, media.",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "actresses",
-                        "images"
-                    ]
-                },
                 "selected_scrapers": {
                     "type": "array",
                     "items": {
@@ -4856,20 +4776,11 @@
                         "type": "string"
                     }
                 },
-                "candidates": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.ScrapeCandidate"
-                    }
-                },
                 "field_sources": {
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
                     }
-                },
-                "has_conflict": {
-                    "type": "boolean"
                 },
                 "movie": {
                     "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieView"
@@ -4986,47 +4897,6 @@
                 "parent_path": {
                     "type": "string",
                     "example": "/path/to"
-                }
-            }
-        },
-        "github_com_javinizer_javinizer-go_internal_api_contracts.CandidateSelectionRequest": {
-            "type": "object",
-            "required": [
-                "source"
-            ],
-            "properties": {
-                "source": {
-                    "type": "string",
-                    "example": "dmm"
-                }
-            }
-        },
-        "github_com_javinizer_javinizer-go_internal_api_contracts.CandidateSelectionResponse": {
-            "type": "object",
-            "properties": {
-                "actress_sources": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "candidates": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.ScrapeCandidate"
-                    }
-                },
-                "field_sources": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "has_conflict": {
-                    "type": "boolean"
-                },
-                "movie": {
-                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieView"
                 }
             }
         },
@@ -8264,43 +8134,6 @@
                 "RevertStatusReverted",
                 "RevertStatusFailed"
             ]
-        },
-        "github_com_javinizer_javinizer-go_internal_models.ScrapeCandidate": {
-            "type": "object",
-            "properties": {
-                "actress_count": {
-                    "type": "integer"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "movie_id": {
-                    "description": "MovieID is the scraper-reported id for this candidate.",
-                    "type": "string"
-                },
-                "original_description": {
-                    "type": "string"
-                },
-                "original_title": {
-                    "type": "string"
-                },
-                "poster_url": {
-                    "type": "string"
-                },
-                "source": {
-                    "type": "string"
-                },
-                "title": {
-                    "description": "Title is the display title — translated when translation is enabled, otherwise\nthe scraper's original title. OriginalTitle always holds the untranslated title.",
-                    "type": "string"
-                },
-                "translations": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.MovieTranslation"
-                    }
-                }
-            }
         },
         "github_com_javinizer_javinizer-go_internal_models.ScraperChoice": {
             "type": "object",

@@ -109,7 +109,6 @@ func (o *RescrapeOrchestrator) Rescrape(ctx context.Context, jobID, movieID, fil
 		mergeOpts,
 	)
 	cmd.MergeEnabled = mergeEnabled
-	cmd.Sections = append([]string(nil), req.Sections...)
 	result, err := job.Rescrape(ctx, cmd)
 	if err != nil {
 		return nil, err

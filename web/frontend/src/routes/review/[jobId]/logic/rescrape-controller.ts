@@ -1,7 +1,6 @@
 import type {
 	BatchJobResponse,
 	BatchRescrapeResponse,
-	CandidateSelectionResponse,
 	FileResult,
 	Movie,
 	Scraper,
@@ -40,8 +39,6 @@ interface RescrapeControllerDeps {
 	setRescrapeScalarStrategy: (strategy: ScalarStrategy) => void;
 	getRescrapeArrayStrategy: () => ArrayStrategy;
 	setRescrapeArrayStrategy: (strategy: ArrayStrategy) => void;
-	getRescrapeSelectedSections: () => string[];
-	setRescrapeSelectedSections: (sections: string[]) => void;
 	getRescrapingStates: () => Map<string, boolean>;
 	toastSuccess: (message: string, duration?: number) => void;
 	toastError: (message: string, duration?: number) => void;
@@ -57,14 +54,8 @@ interface RescrapeControllerDeps {
 				preset?: 'conservative' | 'gap-fill' | 'aggressive';
 				scalar_strategy?: Exclude<ScalarStrategy, ''>;
 				array_strategy?: Exclude<ArrayStrategy, ''>;
-				sections?: string[];
 			},
 		) => Promise<BatchRescrapeResponse>;
-		selectBatchMovieCandidate: (
-			jobId: string,
-			resultId: string,
-			source: string,
-		) => Promise<CandidateSelectionResponse>;
 	};
 }
 
@@ -115,7 +106,6 @@ export function createRescrapeController(deps: RescrapeControllerDeps) {
 		);
 		deps.setManualSearchMode(false);
 		deps.setManualSearchInput('');
-		deps.setRescrapeSelectedSections([]);
 		deps.setShowRescrapeModal(true);
 	}
 
@@ -150,8 +140,6 @@ export function createRescrapeController(deps: RescrapeControllerDeps) {
 		try {
 			const scalarStrategy = deps.getRescrapeScalarStrategy();
 			const arrayStrategy = deps.getRescrapeArrayStrategy();
-			const selectedSections = deps.getRescrapeSelectedSections();
-
 			const response = await deps.api.rescrapeBatchMovie(deps.getJobId(), rescrapeResultId, {
 				force: true,
 				selected_scrapers: selectedScrapers,
@@ -163,7 +151,6 @@ export function createRescrapeController(deps: RescrapeControllerDeps) {
 					scalarStrategy === '' ? undefined : (scalarStrategy as Exclude<ScalarStrategy, ''>),
 				array_strategy:
 					arrayStrategy === '' ? undefined : (arrayStrategy as Exclude<ArrayStrategy, ''>),
-				sections: selectedSections.length > 0 ? selectedSections : undefined,
 			});
 
 			const updatedMovie = response.movie;
@@ -177,8 +164,6 @@ export function createRescrapeController(deps: RescrapeControllerDeps) {
 					movie: updatedMovie,
 					field_sources: response.field_sources ?? newResults[filePath]?.field_sources,
 					actress_sources: response.actress_sources ?? newResults[filePath]?.actress_sources,
-					candidates: response.candidates,
-					has_conflict: response.has_conflict ?? false,
 				};
 				deps.setJob({ ...currentJob, results: newResults });
 			}
@@ -204,60 +189,9 @@ export function createRescrapeController(deps: RescrapeControllerDeps) {
 		}
 	}
 
-	async function selectCandidateProvider(resultId: string, provider: string) {
-		setRescrapingState(deps, resultId, true);
-		try {
-			const response = await deps.api.selectBatchMovieCandidate(
-				deps.getJobId(),
-				resultId,
-				provider,
-			);
-			const currentJob = deps.getJob();
-			if (currentJob) {
-				const newResults = { ...currentJob.results };
-				let selectedFilePath = '';
-				for (const [filePath, result] of Object.entries(newResults)) {
-					if (result.result_id !== resultId) continue;
-					selectedFilePath = filePath;
-					newResults[filePath] = {
-						...result,
-						movie: response.movie,
-						field_sources: response.field_sources ?? result.field_sources,
-						actress_sources: response.actress_sources ?? result.actress_sources,
-						candidates: response.candidates ?? result.candidates,
-						has_conflict: response.has_conflict,
-					};
-					break;
-				}
-				deps.setJob({ ...currentJob, results: newResults });
-
-				if (selectedFilePath) {
-					const editedMovies = deps.getEditedMovies();
-					const edited = editedMovies.get(selectedFilePath);
-					if (edited) {
-						editedMovies.set(selectedFilePath, {
-							...edited,
-							title: response.movie.title,
-							display_title: response.movie.display_title,
-							description: response.movie.description,
-							translations: response.movie.translations,
-						});
-					}
-				}
-			}
-			deps.toastSuccess(`Selected ${provider} title and description`);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : JSON.stringify(error);
-			deps.toastError(`Failed to select candidate: ${message}`);
-		} finally {
-			setRescrapingState(deps, resultId, false);
-		}
-	}
-
 	return {
 		applyRescrapePreset,
 		openRescrapeModal,
 		executeRescrape,
-		selectCandidateProvider,
 	};
 }

@@ -8,90 +8,40 @@ import (
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
-func buildScrapeCandidates(results []*models.ScraperResult) ([]models.ScrapeCandidate, bool) {
-	candidates := make([]models.ScrapeCandidate, 0, len(results))
-	identities := make(map[string]struct{})
-
-	for _, result := range results {
-		if result == nil {
-			continue
-		}
-		candidates = append(candidates, models.ScrapeCandidate{
-			Source:              result.Source,
-			MovieID:             result.ID,
-			Title:               result.Title,
-			OriginalTitle:       result.Title,
-			Description:         result.Description,
-			OriginalDescription: result.Description,
-			ActressCount:        len(result.Actresses),
-			PosterURL:           result.PosterURL,
-		})
-		if identity := scrapeCandidateIdentity(result); identity != "" {
-			identities[identity] = struct{}{}
-		}
-	}
-
-	return candidates, len(identities) > 1
-}
-
-func scrapeCandidateIdentity(result *models.ScraperResult) string {
-	if title := normalizeScrapeCandidateIdentity(result.Title); title != "" {
-		return title
-	}
-	return normalizeScrapeCandidateIdentity(result.ID)
-}
-
-func normalizeScrapeCandidateIdentity(value string) string {
-	return strings.ToLower(strings.Join(strings.Fields(value), " "))
-}
-
-func movieCandidateResults(results []*models.ScraperResult, resolverSource string) []*models.ScraperResult {
-	if strings.TrimSpace(resolverSource) == "" {
-		return results
-	}
-	candidates := make([]*models.ScraperResult, 0, len(results))
-	for _, result := range results {
-		if result == nil || strings.EqualFold(strings.TrimSpace(result.Source), strings.TrimSpace(resolverSource)) {
-			continue
-		}
-		candidates = append(candidates, result)
-	}
-	if len(candidates) == 0 {
-		return results
-	}
-	return candidates
-}
-
-func translateCandidateMetadata(ctx context.Context, translator Translator, candidates []models.ScrapeCandidate) string {
-	if translator == nil || len(candidates) == 0 {
+// translateSourceMetadata translates each retained scraper's title and
+// description once during the scrape. Raw source fields remain untouched;
+// Sources uses the attached language records for display and field overrides.
+func translateSourceMetadata(ctx context.Context, translator Translator, results []*models.ScraperResult) string {
+	if translator == nil || len(results) == 0 {
 		return ""
 	}
+
 	var warnings []string
-	for i := range candidates {
+	for _, result := range results {
+		if result == nil || (strings.TrimSpace(result.Title) == "" && strings.TrimSpace(result.Description) == "") {
+			continue
+		}
+
 		movie := &models.Movie{
-			ID:          candidates[i].MovieID,
-			Title:       candidates[i].OriginalTitle,
-			Description: candidates[i].OriginalDescription,
+			ID:          result.ID,
+			ContentID:   result.ContentID,
+			Title:       result.Title,
+			Description: result.Description,
 		}
 		warning, _, output := translator.Translate(ctx, movie)
 		if warning != "" {
-			warnings = append(warnings, candidates[i].Source+": "+warning)
-		}
-		if title := strings.TrimSpace(movie.Title); title != "" {
-			candidates[i].Title = title
-		}
-		if description := strings.TrimSpace(movie.Description); description != "" {
-			candidates[i].Description = description
+			warnings = append(warnings, result.Source+": "+warning)
 		}
 		if output != nil && len(output.Movies) > 0 {
-			candidates[i].Translations = cloneMovieTranslations(output.Movies)
+			result.Translations = cloneMovieTranslations(output.Movies)
 		} else if len(movie.Translations) > 0 {
-			candidates[i].Translations = cloneMovieTranslations(movie.Translations)
+			result.Translations = cloneMovieTranslations(movie.Translations)
 		}
 	}
+
 	if len(warnings) > 0 {
-		logging.Debugf("Candidate metadata translation warning: %s", strings.Join(warnings, "; "))
-		return "candidate metadata: " + strings.Join(warnings, "; ")
+		logging.Debugf("Source metadata translation warning: %s", strings.Join(warnings, "; "))
+		return "source metadata: " + strings.Join(warnings, "; ")
 	}
 	return ""
 }

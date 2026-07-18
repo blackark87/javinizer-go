@@ -129,8 +129,6 @@ func rescrapeBatchMovie(rt *core.APIRuntime) gin.HandlerFunc {
 			Movie:          contracts.MovieViewFromModel(rr.Movie),
 			FieldSources:   rr.FieldSources,
 			ActressSources: rr.ActressSources,
-			Candidates:     rr.Candidates,
-			HasConflict:    rr.HasConflict,
 		})
 	}
 }

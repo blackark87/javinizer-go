@@ -157,13 +157,11 @@ func (c *jobController) Rescrape(ctx context.Context, cmd RescrapeCmd) (*Rescrap
 	// This stays accessible through job.results because provenance propagation
 	// crosses the phase/results boundary.
 	if outcome.Status == models.RescrapeStatusSuccess && outcome.FilePath != "" &&
-		(outcome.FieldSources != nil || outcome.ActressSources != nil || outcome.ScraperResults != nil || outcome.Candidates != nil || outcome.HasConflict) {
+		(outcome.FieldSources != nil || outcome.ActressSources != nil || outcome.ScraperResults != nil) {
 		c.job.results.SetProvenance(outcome.FilePath, &ProvenanceData{
 			FieldSources:   outcome.FieldSources,
 			ActressSources: outcome.ActressSources,
 			ScraperResults: outcome.ScraperResults,
-			Candidates:     outcome.Candidates,
-			HasConflict:    outcome.HasConflict,
 		})
 	}
 

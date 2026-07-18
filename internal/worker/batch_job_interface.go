@@ -87,7 +87,6 @@ type RescrapeCmd struct {
 	MovieID           string   // JAV ID to rescrape
 	ManualSearchInput string   // Optional manual query or URL
 	SelectedScrapers  []string // Optional scraper filter
-	Sections          []string // Optional metadata sections; empty means full rescrape
 	Force             bool     // Force refresh
 
 	// FilePath is the pre-resolved file path for the movie being rescraped.
@@ -119,12 +118,10 @@ type RescrapeResult struct {
 	FieldSources     map[string]string       // Per-field scraper attribution
 	ActressSources   map[string]string       // Per-actress scraper attribution
 	ScraperResults   []*models.ScraperResult // Raw per-scraper results, retained in-memory for the review source viewer
-	Candidates       []models.ScrapeCandidate
-	HasConflict      bool
-	Status           models.RescrapeStatus // success, failed, gone, conflict
-	Error            string                // Human-readable error for "failed" status
-	OrphanedMovieIDs []string              // IDs that became orphaned during rescrape cleanup
-	FilePath         string                // File path that was rescraped (for provenance propagation)
+	Status           models.RescrapeStatus   // success, failed, gone, conflict
+	Error            string                  // Human-readable error for "failed" status
+	OrphanedMovieIDs []string                // IDs that became orphaned during rescrape cleanup
+	FilePath         string                  // File path that was rescraped (for provenance propagation)
 }
 
 // FileLookupResult holds the output of looking up a movie ID in job results.
@@ -184,10 +181,6 @@ type JobEditor interface {
 	// provenance attribution. Mirrors the original Javinizer "Replace" button.
 	// Returns the updated MovieResult and ProvenanceData (both clones).
 	ApplyFieldOverride(ctx context.Context, resultID, fieldKey, source string) (*MovieResult, *ProvenanceData, error)
-
-	// ApplyCandidateSelection selects a retained multi-source candidate without
-	// invoking any scraper. Only title and non-empty description are changed.
-	ApplyCandidateSelection(ctx context.Context, resultID, source string) (*MovieResult, *ProvenanceData, error)
 }
 
 // PhaseController provides phase execution and dependency-wiring operations
@@ -498,32 +491,6 @@ func (je *jobEditorImpl) ApplyFieldOverride(ctx context.Context, resultID, field
 	}
 	if err := je.UpdateMovie(ctx, filePath, movie); err != nil {
 		return nil, nil, fmt.Errorf("persist field override: %w", err)
-	}
-	je.updater.SetProvenance(filePath, prov)
-	updated, _, _ := je.tracker.GetFileResultByResultID(resultID)
-	updatedProv := je.tracker.GetProvenance(filePath)
-	return updated, updatedProv, nil
-}
-
-func (je *jobEditorImpl) ApplyCandidateSelection(ctx context.Context, resultID, source string) (*MovieResult, *ProvenanceData, error) {
-	mu, _ := je.overrideMu.LoadOrStore(resultID, &sync.Mutex{})
-	mu.(*sync.Mutex).Lock()
-	defer mu.(*sync.Mutex).Unlock()
-
-	result, filePath, found := je.tracker.GetFileResultByResultID(resultID)
-	if !found || result == nil || result.Movie == nil {
-		return nil, nil, fmt.Errorf("result %s not found or has no movie", resultID)
-	}
-	prov := je.tracker.GetProvenance(filePath)
-	if prov == nil {
-		return nil, nil, fmt.Errorf("result %s has no candidate provenance", resultID)
-	}
-	movie := result.Movie.Clone()
-	if err := applyCandidateSelection(movie, prov, source); err != nil {
-		return nil, nil, err
-	}
-	if err := je.UpdateMovie(ctx, filePath, movie); err != nil {
-		return nil, nil, fmt.Errorf("persist candidate selection: %w", err)
 	}
 	je.updater.SetProvenance(filePath, prov)
 	updated, _, _ := je.tracker.GetFileResultByResultID(resultID)

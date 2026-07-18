@@ -21,9 +21,7 @@ type ProvenanceData struct {
 	// original in-memory-only design) so the multi-scraper source view survives
 	// a backend restart — the review window routinely spans restarts. Served
 	// via the dedicated /sources endpoint, not the main job response.
-	ScraperResults []*models.ScraperResult  `json:"scraper_results,omitempty"`
-	Candidates     []models.ScrapeCandidate `json:"candidates,omitempty"`
-	HasConflict    bool                     `json:"has_conflict,omitempty"`
+	ScraperResults []*models.ScraperResult `json:"scraper_results,omitempty"`
 }
 
 // Clone returns a deep copy of the ProvenanceData.
@@ -48,15 +46,6 @@ func (p *ProvenanceData) Clone() *ProvenanceData {
 		copied.ScraperResults = make([]*models.ScraperResult, len(p.ScraperResults))
 		for i, sr := range p.ScraperResults {
 			copied.ScraperResults[i] = sr.Clone()
-		}
-	}
-	if p.Candidates != nil {
-		copied.Candidates = append([]models.ScrapeCandidate(nil), p.Candidates...)
-		for i := range copied.Candidates {
-			copied.Candidates[i].Translations = append([]models.MovieTranslation(nil), p.Candidates[i].Translations...)
-			for j := range copied.Candidates[i].Translations {
-				copied.Candidates[i].Translations[j].Actresses = append([]string(nil), p.Candidates[i].Translations[j].Actresses...)
-			}
 		}
 	}
 	return &copied
@@ -131,13 +120,11 @@ func scrapeResultToMovieResult(fmi models.FileMatchInfo, result *scrape.ScrapeRe
 	}
 
 	var prov *ProvenanceData
-	if result.FieldSources != nil || result.ActressSources != nil || result.ScraperResults != nil || result.Candidates != nil || result.HasConflict {
+	if result.FieldSources != nil || result.ActressSources != nil || result.ScraperResults != nil {
 		prov = &ProvenanceData{
 			FieldSources:   result.FieldSources,
 			ActressSources: result.ActressSources,
 			ScraperResults: result.ScraperResults,
-			Candidates:     result.Candidates,
-			HasConflict:    result.HasConflict,
 		}
 	}
 	return mr, prov

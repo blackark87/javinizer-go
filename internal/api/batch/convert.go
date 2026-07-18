@@ -69,8 +69,6 @@ func movieResultToResponse(mr *worker.MovieResult, prov *worker.ProvenanceData, 
 	if prov != nil {
 		result.FieldSources = prov.FieldSources
 		result.ActressSources = prov.ActressSources
-		result.Candidates = prov.Candidates
-		result.HasConflict = prov.HasConflict
 	}
 	return result
 }

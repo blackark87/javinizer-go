@@ -27,18 +27,6 @@ type FieldOverrideResponse struct {
 	ActressSources map[string]string `json:"actress_sources,omitempty"`
 }
 
-type CandidateSelectionRequest struct {
-	Source string `json:"source" binding:"required" example:"dmm"`
-}
-
-type CandidateSelectionResponse struct {
-	Movie          *MovieView               `json:"movie"`
-	FieldSources   map[string]string        `json:"field_sources,omitempty"`
-	ActressSources map[string]string        `json:"actress_sources,omitempty"`
-	Candidates     []models.ScrapeCandidate `json:"candidates,omitempty"`
-	HasConflict    bool                     `json:"has_conflict"`
-}
-
 // SourceResultsResponse is the raw per-scraper results for a movie, used by the
 // review-page source viewer to render each source's fields and offer per-field
 // "Use this" overrides. ScraperResults are persisted in the job envelope and

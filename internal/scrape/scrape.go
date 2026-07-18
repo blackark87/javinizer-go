@@ -107,8 +107,6 @@ type ScrapeResult struct {
 	ScraperResults []*models.ScraperResult
 	FieldSources   map[string]string
 	ActressSources map[string]string
-	Candidates     []models.ScrapeCandidate
-	HasConflict    bool
 	Status         ScrapeStatus
 	Message        string
 
@@ -266,14 +264,12 @@ func postProcessScraped(ctx context.Context, scraped *models.Movie, results []*m
 		translationWarning, translationOutput = applyTranslation(ctx, scraped, translator)
 	}
 
-	candidateResults := movieCandidateResults(results, actressResolverScraperName)
-	candidates, hasConflict := buildScrapeCandidates(candidateResults)
-	if hasConflict && cfg.TranslationEnabled {
-		if candidateWarning := translateCandidateMetadata(ctx, translator, candidates); candidateWarning != "" {
+	if cfg.TranslationEnabled {
+		if sourceWarning := translateSourceMetadata(ctx, translator, results); sourceWarning != "" {
 			if translationWarning != "" {
 				translationWarning += "; "
 			}
-			translationWarning += candidateWarning
+			translationWarning += sourceWarning
 		}
 	}
 
@@ -283,8 +279,6 @@ func postProcessScraped(ctx context.Context, scraped *models.Movie, results []*m
 		ScraperResults:     results,
 		FieldSources:       fieldSources,
 		ActressSources:     actressSources,
-		Candidates:         candidates,
-		HasConflict:        hasConflict,
 		TranslationWarning: translationWarning,
 		TranslationOutput:  translationOutput,
 		Message:            cmd.ParseWarning,

@@ -8,6 +8,7 @@
 	import Card from '$lib/components/ui/Card.svelte';
 	import { formatActressName } from '$lib/utils/actress';
 	import { createConfigQuery } from '$lib/query/queries';
+	import { translatedSourceValue } from '../logic/source-values';
 
 	interface FieldDef {
 		key: string;
@@ -18,9 +19,14 @@
 
 	const FIELDS: FieldDef[] = [
 		{ key: 'content_id', label: 'Content ID', kind: 'id', get: (r) => r.content_id ?? '' },
-		{ key: 'title', label: 'Title', kind: 'text', get: (r) => r.title ?? '' },
+		{ key: 'title', label: 'Title', kind: 'text', get: (r) => translatedSourceValue(r, 'title') },
 		{ key: 'original_title', label: 'Original Title', kind: 'text', get: (r) => r.original_title ?? '' },
-		{ key: 'description', label: 'Description', kind: 'text', get: (r) => r.description ?? '' },
+		{
+			key: 'description',
+			label: 'Description',
+			kind: 'text',
+			get: (r) => translatedSourceValue(r, 'description')
+		},
 		{ key: 'maker', label: 'Maker', kind: 'text', get: (r) => r.maker ?? '' },
 		{ key: 'label', label: 'Label', kind: 'text', get: (r) => r.label ?? '' },
 		{ key: 'series', label: 'Series', kind: 'text', get: (r) => r.series ?? '' },

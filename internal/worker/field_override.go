@@ -8,89 +8,6 @@ import (
 	"github.com/javinizer/javinizer-go/internal/scrape"
 )
 
-// applyCandidateSelection applies only the translated title and non-empty
-// description retained for a multi-source candidate. The raw scraper result is
-// also required so a stale or forged candidate source cannot be selected.
-func applyCandidateSelection(movie *models.Movie, prov *ProvenanceData, source string) error {
-	if movie == nil {
-		return fmt.Errorf("cannot select candidate on nil movie")
-	}
-	if prov == nil {
-		return fmt.Errorf("no provenance available for candidate selection")
-	}
-	if findScraperResult(prov.ScraperResults, source) == nil {
-		return fmt.Errorf("source %q did not contribute to this movie", source)
-	}
-	var candidate *models.ScrapeCandidate
-	for i := range prov.Candidates {
-		if prov.Candidates[i].Source == source {
-			candidate = &prov.Candidates[i]
-			break
-		}
-	}
-	if candidate == nil {
-		return fmt.Errorf("candidate source %q was not retained for this movie", source)
-	}
-
-	if title := strings.TrimSpace(candidate.Title); title != "" {
-		movie.Title = title
-		movie.DisplayTitle = title
-		setCandidateFieldSource(prov, "title", source)
-		setCandidateFieldSource(prov, "display_title", source)
-	}
-	if description := strings.TrimSpace(candidate.Description); description != "" {
-		movie.Description = description
-		setCandidateFieldSource(prov, "description", source)
-	}
-	mergeCandidateTranslations(movie, *candidate, source)
-	prov.HasConflict = false
-	return nil
-}
-
-func setCandidateFieldSource(prov *ProvenanceData, field, source string) {
-	if prov.FieldSources == nil {
-		prov.FieldSources = make(map[string]string)
-	}
-	prov.FieldSources[field] = source
-}
-
-func mergeCandidateTranslations(movie *models.Movie, candidate models.ScrapeCandidate, source string) {
-	for _, incoming := range candidate.Translations {
-		language := strings.TrimSpace(incoming.Language)
-		if language == "" {
-			continue
-		}
-		index := -1
-		for i := range movie.Translations {
-			if strings.EqualFold(strings.TrimSpace(movie.Translations[i].Language), language) {
-				index = i
-				break
-			}
-		}
-		if index < 0 {
-			movie.Translations = append(movie.Translations, models.MovieTranslation{
-				MovieID:      movie.ContentID,
-				Language:     language,
-				Title:        strings.TrimSpace(incoming.Title),
-				Description:  strings.TrimSpace(incoming.Description),
-				SourceName:   source,
-				SettingsHash: incoming.SettingsHash,
-			})
-			continue
-		}
-		if title := strings.TrimSpace(incoming.Title); title != "" {
-			movie.Translations[index].Title = title
-		}
-		if description := strings.TrimSpace(incoming.Description); description != "" {
-			movie.Translations[index].Description = description
-		}
-		movie.Translations[index].SourceName = source
-		if incoming.SettingsHash != "" {
-			movie.Translations[index].SettingsHash = incoming.SettingsHash
-		}
-	}
-}
-
 // fieldOverrideKeys is the canonical set of field-source keys a user may
 // re-pick from another scraper's raw results. It mirrors the keys emitted by
 // the aggregator (stringFieldSpecs + the dedicated assign* methods) and
@@ -126,11 +43,9 @@ func SupportedFieldOverrideKeys() []string {
 //	$cache:findData[$cache:index].Data.($prop.Name) = $prop.Value
 //	$cache:findData[$cache:index].Selected.($prop.Name) = $source
 //
-// This is a raw assignment from the chosen source — it does not re-run genre
-// replacement, actress alias resolution, or word processing. That matches the
-// original's semantics (the user explicitly cherry-picked this source's value)
-// and avoids re-instantiating the full Aggregator in the review path. movie and
-// prov are mutated in place; the caller is expected to persist both.
+// Title and description prefer the source's first retained translation and
+// fall back to its raw value. Other fields remain raw assignments. Selection
+// never invokes a scraper or translation provider.
 func applyFieldOverride(movie *models.Movie, prov *ProvenanceData, fieldKey, source string) error {
 	if movie == nil {
 		return fmt.Errorf("cannot override field on nil movie")
@@ -174,15 +89,18 @@ func applyFieldOverride(movie *models.Movie, prov *ProvenanceData, fieldKey, sou
 		// the same source, and the workflow derives DisplayTitle from Title.
 		// Keep them in sync so the review Title input (bound to display_title)
 		// and the persisted NFO <title> stay consistent.
-		movie.Title = result.Title
-		movie.DisplayTitle = result.Title
+		title := sourceTranslationValue(result, "title")
+		movie.Title = title
+		movie.DisplayTitle = title
+		mergeSourceFieldTranslations(movie, result, "title", source)
 		setFieldSource("title")
 		setFieldSource("display_title")
 	case "original_title":
 		movie.OriginalTitle = result.OriginalTitle
 		setFieldSource("original_title")
 	case "description":
-		movie.Description = result.Description
+		movie.Description = sourceTranslationValue(result, "description")
+		mergeSourceFieldTranslations(movie, result, "description", source)
 		setFieldSource("description")
 	case "director":
 		movie.Director = result.Director
@@ -239,6 +157,71 @@ func applyFieldOverride(movie *models.Movie, prov *ProvenanceData, fieldKey, sou
 		return fmt.Errorf("unhandled field: %s", fieldKey)
 	}
 	return nil
+}
+
+func sourceTranslationValue(result *models.ScraperResult, field string) string {
+	if result == nil {
+		return ""
+	}
+	if len(result.Translations) > 0 {
+		translated := result.Translations[0]
+		var value string
+		switch field {
+		case "title":
+			value = translated.Title
+		case "description":
+			value = translated.Description
+		}
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	if field == "description" {
+		return result.Description
+	}
+	return result.Title
+}
+
+func mergeSourceFieldTranslations(movie *models.Movie, result *models.ScraperResult, field, source string) {
+	for _, incoming := range result.Translations {
+		language := strings.TrimSpace(incoming.Language)
+		if language == "" {
+			continue
+		}
+		value := incoming.Title
+		if field == "description" {
+			value = incoming.Description
+		}
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+
+		index := -1
+		for i := range movie.Translations {
+			if strings.EqualFold(strings.TrimSpace(movie.Translations[i].Language), language) {
+				index = i
+				break
+			}
+		}
+		if index < 0 {
+			movie.Translations = append(movie.Translations, models.MovieTranslation{
+				MovieID:      movie.ContentID,
+				Language:     language,
+				SourceName:   source,
+				SettingsHash: incoming.SettingsHash,
+			})
+			index = len(movie.Translations) - 1
+		}
+		if field == "description" {
+			movie.Translations[index].Description = value
+		} else {
+			movie.Translations[index].Title = value
+		}
+		movie.Translations[index].SourceName = source
+		if incoming.SettingsHash != "" {
+			movie.Translations[index].SettingsHash = incoming.SettingsHash
+		}
+	}
 }
 
 // findScraperResult returns the first raw result whose Source matches, or nil.

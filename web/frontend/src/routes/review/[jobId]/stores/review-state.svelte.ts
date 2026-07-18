@@ -181,7 +181,6 @@ export function createReviewState(pageStore: Page) {
 	let rescrapePreset: string | undefined = $state(undefined);
 	let rescrapeScalarStrategy: ScalarStrategy = $state('prefer-nfo');
 	let rescrapeArrayStrategy: ArrayStrategy = $state('merge');
-	let rescrapeSelectedSections: string[] = $state([]);
 
 	let bulkRescraping = $state(false);
 	let bulkRescrapeProgress: { movie_id: string; status: string; error?: string }[] = $state([]);
@@ -581,7 +580,6 @@ export function createReviewState(pageStore: Page) {
 		rescrapePreset = undefined;
 		rescrapeScalarStrategy = 'prefer-nfo';
 		rescrapeArrayStrategy = 'merge';
-		rescrapeSelectedSections = [];
 		showRescrapeModal = true;
 	}
 
@@ -604,7 +602,6 @@ export function createReviewState(pageStore: Page) {
 				preset: rescrapePreset,
 				scalarStrategy: rescrapeScalarStrategy || undefined,
 				arrayStrategy: rescrapeArrayStrategy || undefined,
-				sections: rescrapeSelectedSections.length > 0 ? rescrapeSelectedSections : undefined,
 			});
 
 			bulkRescrapeProgress = result.results.map((r) => ({
@@ -856,10 +853,6 @@ export function createReviewState(pageStore: Page) {
 		setRescrapeArrayStrategy: (strategy) => {
 			rescrapeArrayStrategy = strategy;
 		},
-		getRescrapeSelectedSections: () => rescrapeSelectedSections,
-		setRescrapeSelectedSections: (sections) => {
-			rescrapeSelectedSections = sections;
-		},
 		getRescrapingStates: () => rescrapingStates,
 		toastSuccess: (message, duration) => toastStore.success(message, duration),
 		toastError: (message, duration) => toastStore.error(message, duration),
@@ -867,8 +860,6 @@ export function createReviewState(pageStore: Page) {
 			getScrapers: () => apiClient.getScrapers(),
 			rescrapeBatchMovie: (nextJobId, resultId, req) =>
 				apiClient.rescrapeBatchMovie(nextJobId, resultId, req),
-			selectBatchMovieCandidate: (nextJobId, resultId, source) =>
-				apiClient.selectBatchMovieCandidate(nextJobId, resultId, source),
 		},
 	});
 
@@ -1002,7 +993,6 @@ export function createReviewState(pageStore: Page) {
 		rescrapePreset = undefined;
 		rescrapeScalarStrategy = 'prefer-nfo';
 		rescrapeArrayStrategy = 'merge';
-		rescrapeSelectedSections = [];
 		showRescrapeModal = true;
 	}
 
@@ -1014,10 +1004,6 @@ export function createReviewState(pageStore: Page) {
 
 	async function executeRescrape(mode?: { manualSearchMode: boolean; manualSearchInput: string }) {
 		await rescrapeController.executeRescrape(mode);
-	}
-
-	async function selectCandidateProvider(resultId: string, provider: string) {
-		await rescrapeController.selectCandidateProvider(resultId, provider);
 	}
 
 	async function organizeAll() {
@@ -1508,12 +1494,6 @@ export function createReviewState(pageStore: Page) {
 		set rescrapeSelectedScrapers(v) {
 			rescrapeSelectedScrapers = v;
 		},
-		get rescrapeSelectedSections() {
-			return rescrapeSelectedSections;
-		},
-		set rescrapeSelectedSections(v) {
-			rescrapeSelectedSections = v;
-		},
 		get rescrapingStates() {
 			return rescrapingStates;
 		},
@@ -1656,7 +1636,6 @@ export function createReviewState(pageStore: Page) {
 		openRescrapeModal,
 		openRescrapeModalForFailed,
 		executeRescrape,
-		selectCandidateProvider,
 		organizeAll,
 		updateAll,
 		retryFailed,

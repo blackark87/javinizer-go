@@ -71,6 +71,12 @@ func needsActressResolution(results []*models.ScraperResult) bool {
 	return !hasActress
 }
 
+func (s *Scraper) enrichScrapedActressProfiles(ctx context.Context, results []*models.ScraperResult) {
+	for _, result := range results {
+		s.enrichResolvedActressProfiles(ctx, result)
+	}
+}
+
 func (s *Scraper) enrichResolvedActressProfiles(ctx context.Context, result *models.ScraperResult) {
 	if result == nil || s.registry == nil {
 		return
@@ -87,6 +93,9 @@ func (s *Scraper) enrichResolvedActressProfiles(ctx context.Context, result *mod
 	}
 	for i := range result.Actresses {
 		actress := &result.Actresses[i]
+		if actress.DMMID <= 0 {
+			continue
+		}
 		if profileResolver != nil {
 			if profile, err := safeActressProfile(ctx, profileResolver, *actress); err == nil && strings.TrimSpace(profile.JapaneseName) != "" {
 				actress.JapaneseName = strings.TrimSpace(profile.JapaneseName)

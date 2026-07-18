@@ -327,6 +327,11 @@ func (s *Scraper) Scrape(ctx context.Context, cmd ScrapeCmd, progress ProgressFu
 	scrapers := s.registry.GetInstancesByPriorityForInput(scraperNames, resolvedID)
 
 	results, failures := s.queryAll(ctx, cmd.MovieID, resolvedID, scrapers, startTime)
+	// DMM IDs can already be present in ordinary scraper results. Enrich those
+	// actresses before aggregation/translation as well; limiting profile
+	// resolution to the SougouWiki fallback left a freshly reset database with
+	// Japanese-only names and no Hepburn source for Korean transliteration.
+	s.enrichScrapedActressProfiles(ctx, results)
 	resolverResult, resolverFailure := s.resolveMissingActresses(ctx, resolvedID, results)
 	if resolverResult != nil {
 		results = append(results, resolverResult)

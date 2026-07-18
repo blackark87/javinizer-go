@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/scraperutil"
 	"github.com/stretchr/testify/assert"
@@ -84,6 +85,38 @@ func TestResolveMissingActressesRunsWhenAnyActressLacksVerifiedDMMIdentity(t *te
 	assert.Nil(t, result)
 	assert.Nil(t, failure)
 	assert.Equal(t, 2, resolver.calls)
+}
+
+func TestScrapeEnrichesRegularDMMActressesBeforeTranslationAfterDatabaseReset(t *testing.T) {
+	fixture := newFixture(t).withScraper("regular", &models.ScraperResult{
+		Source: "regular", ID: "TEST-001", Title: "Test",
+		Actresses: []models.ActressInfo{{DMMID: 1077521, JapaneseName: "櫻茉日"}},
+	}, nil)
+	profile := &actressResolverScraper{
+		name: "dmm-profile", enabled: false,
+		profile: models.ActressInfo{
+			DMMID: 1077521, JapaneseName: "櫻茉日",
+			ThumbURL: "https://pics.dmm.co.jp/mono/actjpgs/sakura_mahiru.jpg",
+		},
+	}
+	fixture.registry.RegisterInstance(profile)
+	s := fixture.build()
+	translationCfg := config.TranslationConfig{
+		Enabled: true, Provider: "openai", SourceLanguage: "ja", TargetLanguage: "ko", ApplyToPrimary: true,
+		Fields: config.TranslationFieldsConfig{Actresses: true},
+	}
+	s.cfg.TranslationEnabled = true
+	s.translator = NewTranslatorFromApp(&translationCfg)
+
+	result, err := s.Scrape(context.Background(), ScrapeCmd{MovieID: "TEST-001"}, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, result.Movie)
+	require.Len(t, result.Movie.Actresses, 1)
+	assert.Equal(t, 1, profile.profileCalls)
+	assert.Equal(t, 1077521, result.Movie.Actresses[0].DMMID)
+	assert.Equal(t, "사쿠라 마히루", result.Movie.Actresses[0].JapaneseName)
+	assert.Equal(t, "https://pics.dmm.co.jp/mono/actjpgs/sakura_mahiru.jpg", result.Movie.Actresses[0].ThumbURL)
 }
 
 func TestScrapeReplacesMixedVerifiedAndUnverifiedCastWithResolverCast(t *testing.T) {

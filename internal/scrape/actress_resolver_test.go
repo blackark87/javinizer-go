@@ -149,6 +149,91 @@ func TestScrapeReplacesMixedVerifiedAndUnverifiedCastWithResolverCast(t *testing
 	assert.NotContains(t, []string{result.Movie.Actresses[0].JapaneseName, result.Movie.Actresses[1].JapaneseName}, "남아 있으면 안 되는 이름")
 }
 
+func TestScrapeAllUnverifiedMultiCastRequiresCompleteSougouWikiCast(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		resolved    []models.ActressInfo
+		resolverErr error
+		wantUnknown bool
+	}{
+		{
+			name: "complete verified cast",
+			resolved: []models.ActressInfo{
+				{DMMID: 101, JapaneseName: "正式一"},
+				{DMMID: 102, JapaneseName: "正式二"},
+			},
+		},
+		{
+			name:        "partial verified cast",
+			resolved:    []models.ActressInfo{{DMMID: 101, JapaneseName: "正式一"}},
+			wantUnknown: true,
+		},
+		{
+			name:        "resolver failure",
+			resolverErr: errors.New("wiki unavailable"),
+			wantUnknown: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newFixture(t).withScraper("regular", &models.ScraperResult{
+				Source: "regular", ID: "MULTI-001", Title: "Multi",
+				Actresses: []models.ActressInfo{
+					{JapaneseName: "仮名一"},
+					{JapaneseName: "仮名二"},
+				},
+			}, nil)
+			resolver := &actressResolverScraper{
+				name: actressResolverScraperName, enabled: false,
+				result: &models.ScraperResult{Actresses: test.resolved}, err: test.resolverErr,
+			}
+			fixture.registry.RegisterInstance(resolver)
+
+			result, err := fixture.build().Scrape(context.Background(), ScrapeCmd{MovieID: "MULTI-001"}, nil)
+
+			require.NoError(t, err)
+			require.NotNil(t, result.Movie)
+			assert.Equal(t, 1, resolver.calls)
+			if test.wantUnknown {
+				require.Len(t, result.Movie.Actresses, 1)
+				assert.True(t, models.IsUnknownActressFields(
+					result.Movie.Actresses[0].LastName,
+					result.Movie.Actresses[0].FirstName,
+					result.Movie.Actresses[0].JapaneseName,
+				))
+				assert.Equal(t, "empty", result.FieldSources["actresses"])
+				assert.Nil(t, result.ActressSources)
+				return
+			}
+			require.Len(t, result.Movie.Actresses, 2)
+			assert.Equal(t, []int{101, 102}, []int{result.Movie.Actresses[0].DMMID, result.Movie.Actresses[1].DMMID})
+		})
+	}
+}
+
+func TestCachedAllUnverifiedMultiCastBecomesUnknownOnPartialResolution(t *testing.T) {
+	fixture := newFixture(t)
+	_, err := fixture.movieRepo.Upsert(context.Background(), &models.Movie{
+		ID: "MULTI-002", Title: "cached", SourceName: "regular",
+		Actresses: []models.Actress{{JapaneseName: "仮名一"}, {JapaneseName: "仮名二"}},
+	})
+	require.NoError(t, err)
+	resolver := &actressResolverScraper{
+		name: actressResolverScraperName, enabled: false,
+		result: &models.ScraperResult{Actresses: []models.ActressInfo{{DMMID: 101, JapaneseName: "正式一"}}},
+	}
+	fixture.registry.RegisterInstance(resolver)
+
+	result, err := fixture.build().Scrape(context.Background(), ScrapeCmd{MovieID: "MULTI-002"}, nil)
+
+	require.NoError(t, err)
+	require.True(t, result.Cached)
+	require.True(t, result.NeedsPersistence)
+	require.Len(t, result.Movie.Actresses, 1)
+	assert.Equal(t, models.UnknownActressName, result.Movie.Actresses[0].JapaneseName)
+	assert.Equal(t, "empty", result.FieldSources["actresses"])
+	assert.Nil(t, result.ActressSources)
+}
+
 func TestResolveMissingActressesUsesDedicatedResolverWhenDisabled(t *testing.T) {
 	resolver := &actressResolverScraper{name: actressResolverScraperName, enabled: false, result: &models.ScraperResult{
 		Actresses: []models.ActressInfo{{DMMID: 1054165, JapaneseName: "夏希まろん"}},

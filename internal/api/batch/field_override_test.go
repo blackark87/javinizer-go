@@ -132,6 +132,43 @@ func TestOverrideBatchMovieField_Success(t *testing.T) {
 	assert.Equal(t, "dmm", resp.FieldSources["maker"])
 }
 
+func TestSelectBatchMovieCandidate_UsesRetainedMetadataWithoutRescrape(t *testing.T) {
+	deps, job, resultID := setupOverrideJob(t)
+	filePath := "/path/to/IPX-535.mp4"
+	job.ResultsWriter().SetProvenance(filePath, &worker.ProvenanceData{
+		FieldSources: map[string]string{"title": "r18dev", "description": "r18dev", "maker": "r18dev"},
+		ScraperResults: []*models.ScraperResult{
+			{Source: "r18dev", Title: "R18 title", Description: "R18 description"},
+			{Source: "dmm", Title: "DMM raw title", Description: "DMM raw description"},
+		},
+		Candidates: []models.ScrapeCandidate{
+			{Source: "r18dev", Title: "R18 title", Description: "R18 description"},
+			{Source: "dmm", Title: "DMM translated title", Description: "DMM translated description"},
+		},
+		HasConflict: true,
+	})
+
+	router := gin.New()
+	router.POST("/batch/:id/results/:resultId/candidate-selection", selectBatchMovieCandidate(testkit.GetTestRuntime(deps)))
+	body, err := json.Marshal(contracts.CandidateSelectionRequest{Source: "dmm"})
+	require.NoError(t, err)
+	req := httptest.NewRequest("POST", "/batch/"+job.GetID()+"/results/"+resultID+"/candidate-selection", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, 200, w.Code, w.Body.String())
+	var response contracts.CandidateSelectionResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	require.NotNil(t, response.Movie)
+	assert.Equal(t, "DMM translated title", response.Movie.Title)
+	assert.Equal(t, "DMM translated description", response.Movie.Description)
+	assert.Equal(t, "AggregatedMaker", response.Movie.Maker)
+	assert.Equal(t, "dmm", response.FieldSources["title"])
+	assert.False(t, response.HasConflict)
+}
+
 func TestOverrideBatchMovieField_BadJSON(t *testing.T) {
 	deps, job, resultID := setupOverrideJob(t)
 	router := gin.New()

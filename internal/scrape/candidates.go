@@ -8,10 +8,6 @@ import (
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
-type candidateTitleTranslator interface {
-	TranslateTitles(ctx context.Context, titles []string) ([]string, error)
-}
-
 func buildScrapeCandidates(results []*models.ScraperResult) ([]models.ScrapeCandidate, bool) {
 	candidates := make([]models.ScrapeCandidate, 0, len(results))
 	identities := make(map[string]struct{})
@@ -21,12 +17,14 @@ func buildScrapeCandidates(results []*models.ScraperResult) ([]models.ScrapeCand
 			continue
 		}
 		candidates = append(candidates, models.ScrapeCandidate{
-			Source:        result.Source,
-			MovieID:       result.ID,
-			Title:         result.Title,
-			OriginalTitle: result.Title,
-			ActressCount:  len(result.Actresses),
-			PosterURL:     result.PosterURL,
+			Source:              result.Source,
+			MovieID:             result.ID,
+			Title:               result.Title,
+			OriginalTitle:       result.Title,
+			Description:         result.Description,
+			OriginalDescription: result.Description,
+			ActressCount:        len(result.Actresses),
+			PosterURL:           result.PosterURL,
 		})
 		if identity := scrapeCandidateIdentity(result); identity != "" {
 			identities[identity] = struct{}{}
@@ -64,23 +62,44 @@ func movieCandidateResults(results []*models.ScraperResult, resolverSource strin
 	return candidates
 }
 
-func translateCandidateTitles(ctx context.Context, translator Translator, candidates []models.ScrapeCandidate) {
-	titleTranslator, ok := translator.(candidateTitleTranslator)
-	if !ok || len(candidates) == 0 {
-		return
+func translateCandidateMetadata(ctx context.Context, translator Translator, candidates []models.ScrapeCandidate) string {
+	if translator == nil || len(candidates) == 0 {
+		return ""
 	}
-	titles := make([]string, len(candidates))
+	var warnings []string
 	for i := range candidates {
-		titles[i] = candidates[i].OriginalTitle
-	}
-	translated, err := titleTranslator.TranslateTitles(ctx, titles)
-	if err != nil || len(translated) != len(candidates) {
-		logging.Debugf("Candidate title translation skipped: err=%v", err)
-		return
-	}
-	for i := range candidates {
-		if title := strings.TrimSpace(translated[i]); title != "" {
+		movie := &models.Movie{
+			ID:          candidates[i].MovieID,
+			Title:       candidates[i].OriginalTitle,
+			Description: candidates[i].OriginalDescription,
+		}
+		warning, _, output := translator.Translate(ctx, movie)
+		if warning != "" {
+			warnings = append(warnings, candidates[i].Source+": "+warning)
+		}
+		if title := strings.TrimSpace(movie.Title); title != "" {
 			candidates[i].Title = title
 		}
+		if description := strings.TrimSpace(movie.Description); description != "" {
+			candidates[i].Description = description
+		}
+		if output != nil && len(output.Movies) > 0 {
+			candidates[i].Translations = cloneMovieTranslations(output.Movies)
+		} else if len(movie.Translations) > 0 {
+			candidates[i].Translations = cloneMovieTranslations(movie.Translations)
+		}
 	}
+	if len(warnings) > 0 {
+		logging.Debugf("Candidate metadata translation warning: %s", strings.Join(warnings, "; "))
+		return "candidate metadata: " + strings.Join(warnings, "; ")
+	}
+	return ""
+}
+
+func cloneMovieTranslations(translations []models.MovieTranslation) []models.MovieTranslation {
+	cloned := append([]models.MovieTranslation(nil), translations...)
+	for i := range cloned {
+		cloned[i].Actresses = append([]string(nil), translations[i].Actresses...)
+	}
+	return cloned
 }

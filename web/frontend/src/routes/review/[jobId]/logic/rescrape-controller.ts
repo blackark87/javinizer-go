@@ -1,6 +1,7 @@
 import type {
 	BatchJobResponse,
 	BatchRescrapeResponse,
+	CandidateSelectionResponse,
 	FileResult,
 	Movie,
 	Scraper,
@@ -59,6 +60,11 @@ interface RescrapeControllerDeps {
 				sections?: string[];
 			},
 		) => Promise<BatchRescrapeResponse>;
+		selectBatchMovieCandidate: (
+			jobId: string,
+			resultId: string,
+			source: string,
+		) => Promise<CandidateSelectionResponse>;
 	};
 }
 
@@ -199,20 +205,53 @@ export function createRescrapeController(deps: RescrapeControllerDeps) {
 	}
 
 	async function selectCandidateProvider(resultId: string, provider: string) {
-		if (deps.getAvailableScrapers().length === 0) {
-			try {
-				deps.setAvailableScrapers(await deps.api.getScrapers());
-			} catch {
-				deps.toastError('Failed to load scrapers');
-				return;
+		setRescrapingState(deps, resultId, true);
+		try {
+			const response = await deps.api.selectBatchMovieCandidate(
+				deps.getJobId(),
+				resultId,
+				provider,
+			);
+			const currentJob = deps.getJob();
+			if (currentJob) {
+				const newResults = { ...currentJob.results };
+				let selectedFilePath = '';
+				for (const [filePath, result] of Object.entries(newResults)) {
+					if (result.result_id !== resultId) continue;
+					selectedFilePath = filePath;
+					newResults[filePath] = {
+						...result,
+						movie: response.movie,
+						field_sources: response.field_sources ?? result.field_sources,
+						actress_sources: response.actress_sources ?? result.actress_sources,
+						candidates: response.candidates ?? result.candidates,
+						has_conflict: response.has_conflict,
+					};
+					break;
+				}
+				deps.setJob({ ...currentJob, results: newResults });
+
+				if (selectedFilePath) {
+					const editedMovies = deps.getEditedMovies();
+					const edited = editedMovies.get(selectedFilePath);
+					if (edited) {
+						editedMovies.set(selectedFilePath, {
+							...edited,
+							title: response.movie.title,
+							display_title: response.movie.display_title,
+							description: response.movie.description,
+							translations: response.movie.translations,
+						});
+					}
+				}
 			}
+			deps.toastSuccess(`Selected ${provider} title and description`);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : JSON.stringify(error);
+			deps.toastError(`Failed to select candidate: ${message}`);
+		} finally {
+			setRescrapingState(deps, resultId, false);
 		}
-		deps.setRescrapeResultId(resultId);
-		deps.setSelectedScrapers([provider]);
-		deps.setRescrapeSelectedSections([]);
-		deps.setManualSearchMode(false);
-		deps.setManualSearchInput('');
-		await executeRescrape({ manualSearchMode: false, manualSearchInput: '' });
 	}
 
 	return {

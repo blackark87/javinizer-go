@@ -254,6 +254,7 @@ func TestNewServer_RouteParity(t *testing.T) {
 		"POST /api/v1/batch/:id/movies/batch-rescrape",
 		"POST /api/v1/batch/:id/results/:resultId/exclude",
 		"POST /api/v1/batch/:id/results/:resultId/field-override",
+		"POST /api/v1/batch/:id/results/:resultId/candidate-selection",
 		"POST /api/v1/batch/:id/results/:resultId/poster-crop",
 		"POST /api/v1/batch/:id/results/:resultId/poster-from-url",
 		"POST /api/v1/batch/:id/results/:resultId/preview",

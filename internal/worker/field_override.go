@@ -2,10 +2,94 @@ package worker
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/scrape"
 )
+
+// applyCandidateSelection applies only the translated title and non-empty
+// description retained for a multi-source candidate. The raw scraper result is
+// also required so a stale or forged candidate source cannot be selected.
+func applyCandidateSelection(movie *models.Movie, prov *ProvenanceData, source string) error {
+	if movie == nil {
+		return fmt.Errorf("cannot select candidate on nil movie")
+	}
+	if prov == nil {
+		return fmt.Errorf("no provenance available for candidate selection")
+	}
+	if findScraperResult(prov.ScraperResults, source) == nil {
+		return fmt.Errorf("source %q did not contribute to this movie", source)
+	}
+	var candidate *models.ScrapeCandidate
+	for i := range prov.Candidates {
+		if prov.Candidates[i].Source == source {
+			candidate = &prov.Candidates[i]
+			break
+		}
+	}
+	if candidate == nil {
+		return fmt.Errorf("candidate source %q was not retained for this movie", source)
+	}
+
+	if title := strings.TrimSpace(candidate.Title); title != "" {
+		movie.Title = title
+		movie.DisplayTitle = title
+		setCandidateFieldSource(prov, "title", source)
+		setCandidateFieldSource(prov, "display_title", source)
+	}
+	if description := strings.TrimSpace(candidate.Description); description != "" {
+		movie.Description = description
+		setCandidateFieldSource(prov, "description", source)
+	}
+	mergeCandidateTranslations(movie, *candidate, source)
+	prov.HasConflict = false
+	return nil
+}
+
+func setCandidateFieldSource(prov *ProvenanceData, field, source string) {
+	if prov.FieldSources == nil {
+		prov.FieldSources = make(map[string]string)
+	}
+	prov.FieldSources[field] = source
+}
+
+func mergeCandidateTranslations(movie *models.Movie, candidate models.ScrapeCandidate, source string) {
+	for _, incoming := range candidate.Translations {
+		language := strings.TrimSpace(incoming.Language)
+		if language == "" {
+			continue
+		}
+		index := -1
+		for i := range movie.Translations {
+			if strings.EqualFold(strings.TrimSpace(movie.Translations[i].Language), language) {
+				index = i
+				break
+			}
+		}
+		if index < 0 {
+			movie.Translations = append(movie.Translations, models.MovieTranslation{
+				MovieID:      movie.ContentID,
+				Language:     language,
+				Title:        strings.TrimSpace(incoming.Title),
+				Description:  strings.TrimSpace(incoming.Description),
+				SourceName:   source,
+				SettingsHash: incoming.SettingsHash,
+			})
+			continue
+		}
+		if title := strings.TrimSpace(incoming.Title); title != "" {
+			movie.Translations[index].Title = title
+		}
+		if description := strings.TrimSpace(incoming.Description); description != "" {
+			movie.Translations[index].Description = description
+		}
+		movie.Translations[index].SourceName = source
+		if incoming.SettingsHash != "" {
+			movie.Translations[index].SettingsHash = incoming.SettingsHash
+		}
+	}
+}
 
 // fieldOverrideKeys is the canonical set of field-source keys a user may
 // re-pick from another scraper's raw results. It mirrors the keys emitted by

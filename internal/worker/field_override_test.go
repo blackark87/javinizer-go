@@ -33,6 +33,61 @@ func TestApplyFieldOverride_TitleLinksDisplayTitle(t *testing.T) {
 	assert.Equal(t, "javlibrary", prov.FieldSources["display_title"])
 }
 
+func TestApplyCandidateSelection_OnlyChangesTitleAndNonEmptyDescription(t *testing.T) {
+	movie := &models.Movie{
+		ID: "OLD-001", ContentID: "old001", Title: "Old title", DisplayTitle: "Old title",
+		Description: "Old description", Maker: "Keep maker",
+		Actresses:    []models.Actress{{DMMID: 1, JapaneseName: "保持女優"}},
+		Translations: []models.MovieTranslation{{Language: "ko", Title: "이전 제목", Description: "이전 설명", Maker: "제작사 유지"}},
+	}
+	prov := &ProvenanceData{
+		FieldSources:   map[string]string{"title": "old", "description": "old", "maker": "old"},
+		ScraperResults: []*models.ScraperResult{{Source: "dmm", Title: "原題", Description: "説明"}},
+		Candidates: []models.ScrapeCandidate{{
+			Source: "dmm", Title: "새 제목", Description: "새 설명",
+			Translations: []models.MovieTranslation{{Language: "ko", Title: "새 제목", Description: "새 설명", SettingsHash: "newhash"}},
+		}},
+		HasConflict: true,
+	}
+
+	require.NoError(t, applyCandidateSelection(movie, prov, "dmm"))
+	assert.Equal(t, "새 제목", movie.Title)
+	assert.Equal(t, "새 제목", movie.DisplayTitle)
+	assert.Equal(t, "새 설명", movie.Description)
+	assert.Equal(t, "OLD-001", movie.ID)
+	assert.Equal(t, "Keep maker", movie.Maker)
+	require.Len(t, movie.Actresses, 1)
+	assert.Equal(t, 1, movie.Actresses[0].DMMID)
+	assert.Equal(t, "제작사 유지", movie.Translations[0].Maker)
+	assert.Equal(t, "새 제목", movie.Translations[0].Title)
+	assert.Equal(t, "새 설명", movie.Translations[0].Description)
+	assert.Equal(t, "dmm", movie.Translations[0].SourceName)
+	assert.Equal(t, "dmm", prov.FieldSources["title"])
+	assert.Equal(t, "dmm", prov.FieldSources["description"])
+	assert.False(t, prov.HasConflict)
+}
+
+func TestApplyCandidateSelection_EmptyDescriptionKeepsCurrent(t *testing.T) {
+	movie := &models.Movie{Title: "Old", DisplayTitle: "Old", Description: "Keep me"}
+	prov := &ProvenanceData{
+		FieldSources:   map[string]string{"description": "old"},
+		ScraperResults: []*models.ScraperResult{{Source: "dmm", Title: "New"}},
+		Candidates:     []models.ScrapeCandidate{{Source: "dmm", Title: "New"}},
+		HasConflict:    true,
+	}
+
+	require.NoError(t, applyCandidateSelection(movie, prov, "dmm"))
+	assert.Equal(t, "New", movie.Title)
+	assert.Equal(t, "Keep me", movie.Description)
+	assert.Equal(t, "old", prov.FieldSources["description"])
+}
+
+func TestApplyCandidateSelection_RejectsUnknownSource(t *testing.T) {
+	err := applyCandidateSelection(&models.Movie{}, &ProvenanceData{}, "missing")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "did not contribute")
+}
+
 func TestApplyFieldOverride_ActressesRebuildsActressSources(t *testing.T) {
 	movie, prov := overrideFixture()
 	// Pre-existing attribution from r18dev should be replaced.

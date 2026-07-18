@@ -245,6 +245,9 @@ func postProcessScraped(ctx context.Context, scraped *models.Movie, results []*m
 	}
 
 	actressSources := buildActressSourcesFromScrapeResults(results, resolvedPriorities, cmd.SelectedScrapers, scraped.Actresses)
+	if hasCanonicalUnknownActressCast(scraped) {
+		actressSources = nil
+	}
 	if hasScraperSource(results, actressResolverScraperName) {
 		if err := reconcileVerifiedActresses(scraped, actressRepo); err != nil {
 			return nil, err
@@ -266,7 +269,12 @@ func postProcessScraped(ctx context.Context, scraped *models.Movie, results []*m
 	candidateResults := movieCandidateResults(results, actressResolverScraperName)
 	candidates, hasConflict := buildScrapeCandidates(candidateResults)
 	if hasConflict && cfg.TranslationEnabled {
-		translateCandidateTitles(ctx, translator, candidates)
+		if candidateWarning := translateCandidateMetadata(ctx, translator, candidates); candidateWarning != "" {
+			if translationWarning != "" {
+				translationWarning += "; "
+			}
+			translationWarning += candidateWarning
+		}
 	}
 
 	now := time.Now()
@@ -332,7 +340,13 @@ func (s *Scraper) Scrape(ctx context.Context, cmd ScrapeCmd, progress ProgressFu
 	// resolution to the SougouWiki fallback left a freshly reset database with
 	// Japanese-only names and no Hepburn source for Korean transliteration.
 	s.enrichScrapedActressProfiles(ctx, results)
+	unverifiedMultiCastCount := allUnverifiedMultiCastCount(results)
 	resolverResult, resolverFailure := s.resolveMissingActresses(ctx, resolvedID, results)
+	forceUnknownCast := unverifiedMultiCastCount > 0 && !hasCompleteVerifiedCast(resolverResult, unverifiedMultiCastCount)
+	if forceUnknownCast {
+		logging.Warnf("[scrape] SougouWiki verified fewer than %d actresses for %s; using Unknown cast", unverifiedMultiCastCount, resolvedID)
+		resolverResult = nil
+	}
 	if resolverResult != nil {
 		results = append(results, resolverResult)
 	}
@@ -362,6 +376,15 @@ func (s *Scraper) Scrape(ctx context.Context, cmd ScrapeCmd, progress ProgressFu
 	}
 	if err != nil {
 		return nil, err
+	}
+	if forceUnknownCast {
+		setUnknownActressCast(scraped)
+		if aggResult != nil {
+			if aggResult.FieldSources == nil {
+				aggResult.FieldSources = make(map[string]string)
+			}
+			aggResult.FieldSources["actresses"] = "empty"
+		}
 	}
 
 	if scraped.ContentID == "" && resolvedID != "" && resolvedID != cmd.MovieID {

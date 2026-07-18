@@ -66,7 +66,10 @@ func (s *Scraper) tryCache(ctx context.Context, cmd ScrapeCmd, actressRepo datab
 	scrapedToReturn := cached
 	fieldSources := buildFieldSourcesFromCachedMovie(cached)
 	actressSources := buildActressSourcesFromCachedMovie(cached)
-	if resolverResult != nil {
+	if hasCanonicalUnknownActressCast(cached) {
+		fieldSources["actresses"] = "empty"
+		actressSources = nil
+	} else if resolverResult != nil {
 		for _, actress := range cached.Actresses {
 			if key := ActressSourceKey(actress); key != "" {
 				if actressSources == nil {
@@ -114,18 +117,32 @@ func (s *Scraper) repairCachedActresses(
 	}
 
 	changed := normalizeCachedActresses(cached)
+	unverifiedMultiCastCount := allUnverifiedMultiCastCount([]*models.ScraperResult{cachedSourceResult})
 	queryID := strings.TrimSpace(cached.ID)
 	if queryID == "" {
 		queryID = strings.TrimSpace(cached.ContentID)
 	}
 	resolved, failure := s.resolveMissingActresses(ctx, queryID, []*models.ScraperResult{cachedSourceResult})
 	if failure != nil {
+		if unverifiedMultiCastCount > 0 {
+			setUnknownActressCast(cached)
+			return true, nil
+		}
 		logging.Warnf("[scrape] Cached actress verification failed (movie=%s resolver=%s): %v; cleaned cached cast was preserved",
 			queryID, failure.Scraper, failure.Cause)
 		return changed, nil
 	}
 	if resolved == nil {
+		if unverifiedMultiCastCount > 0 {
+			setUnknownActressCast(cached)
+			return true, nil
+		}
 		return changed, nil
+	}
+	if unverifiedMultiCastCount > 0 && !hasCompleteVerifiedCast(resolved, unverifiedMultiCastCount) {
+		logging.Warnf("[scrape] Cached SougouWiki result verified fewer than %d actresses for %s; using Unknown cast", unverifiedMultiCastCount, queryID)
+		setUnknownActressCast(cached)
+		return true, nil
 	}
 
 	verified := actressModelsFromInfo(resolved.Actresses)

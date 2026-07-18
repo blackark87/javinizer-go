@@ -52,6 +52,12 @@ func (p *ProvenanceData) Clone() *ProvenanceData {
 	}
 	if p.Candidates != nil {
 		copied.Candidates = append([]models.ScrapeCandidate(nil), p.Candidates...)
+		for i := range copied.Candidates {
+			copied.Candidates[i].Translations = append([]models.MovieTranslation(nil), p.Candidates[i].Translations...)
+			for j := range copied.Candidates[i].Translations {
+				copied.Candidates[i].Translations[j].Actresses = append([]string(nil), p.Candidates[i].Translations[j].Actresses...)
+			}
+		}
 	}
 	return &copied
 }

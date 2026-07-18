@@ -171,6 +171,9 @@ class APIClient {
 	) {
 		return this.jobs.overrideBatchMovieField(jobId, resultId, request);
 	}
+	async selectBatchMovieCandidate(jobId: string, resultId: string, source: string) {
+		return this.jobs.selectBatchMovieCandidate(jobId, resultId, source);
+	}
 	async excludeBatchMovie(jobId: string, resultId: string) {
 		return this.jobs.excludeBatchMovie(jobId, resultId);
 	}

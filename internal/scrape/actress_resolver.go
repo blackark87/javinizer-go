@@ -7,6 +7,7 @@ import (
 
 	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/models"
+	"github.com/javinizer/javinizer-go/internal/translation"
 )
 
 const actressResolverScraperName = "sougouwiki"
@@ -69,6 +70,84 @@ func needsActressResolution(results []*models.ScraperResult) bool {
 		}
 	}
 	return !hasActress
+}
+
+// allUnverifiedMultiCastCount returns the largest cleaned, distinct cast size
+// reported by one regular source when no regular source supplied any verified
+// DMM identity. Counting per source avoids treating the same actress reported
+// by several scrapers as a multi-actress movie.
+func allUnverifiedMultiCastCount(results []*models.ScraperResult) int {
+	for _, result := range results {
+		if result == nil || strings.EqualFold(strings.TrimSpace(result.Source), actressResolverScraperName) {
+			continue
+		}
+		for _, actress := range result.Actresses {
+			if actress.DMMID > 0 {
+				return 0
+			}
+		}
+	}
+
+	maxCount := 0
+	for _, result := range results {
+		if result == nil || strings.EqualFold(strings.TrimSpace(result.Source), actressResolverScraperName) {
+			continue
+		}
+		seen := make(map[string]struct{}, len(result.Actresses))
+		for _, raw := range result.Actresses {
+			actress := raw
+			translation.CleanActressInfo(&actress)
+			if models.IsUnknownActressFields(actress.LastName, actress.FirstName, actress.JapaneseName) {
+				continue
+			}
+			name := strings.TrimSpace(actress.JapaneseName)
+			if name == "" {
+				name = strings.TrimSpace(actress.LastName + " " + actress.FirstName)
+			}
+			key := models.NormalizeActressNameKey(name)
+			if key != "" {
+				seen[key] = struct{}{}
+			}
+		}
+		if len(seen) > maxCount {
+			maxCount = len(seen)
+		}
+	}
+	if maxCount < 2 {
+		return 0
+	}
+	return maxCount
+}
+
+func hasCompleteVerifiedCast(result *models.ScraperResult, expected int) bool {
+	if expected <= 0 || result == nil {
+		return expected <= 0
+	}
+	verified := make(map[int]struct{}, len(result.Actresses))
+	for _, actress := range result.Actresses {
+		if actress.DMMID > 0 {
+			verified[actress.DMMID] = struct{}{}
+		}
+	}
+	return len(verified) >= expected
+}
+
+func setUnknownActressCast(movie *models.Movie) {
+	if movie == nil {
+		return
+	}
+	movie.Actresses = []models.Actress{{
+		FirstName:    models.UnknownActressName,
+		JapaneseName: models.UnknownActressName,
+	}}
+}
+
+func hasCanonicalUnknownActressCast(movie *models.Movie) bool {
+	return movie != nil && len(movie.Actresses) == 1 && models.IsUnknownActressFields(
+		movie.Actresses[0].LastName,
+		movie.Actresses[0].FirstName,
+		movie.Actresses[0].JapaneseName,
+	)
 }
 
 func (s *Scraper) enrichScrapedActressProfiles(ctx context.Context, results []*models.ScraperResult) {

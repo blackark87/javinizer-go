@@ -40,25 +40,32 @@ func TestBuildScrapeCandidates(t *testing.T) {
 }
 
 type candidateTranslatorStub struct {
-	titles []string
+	movies []models.Movie
 }
 
-func (s *candidateTranslatorStub) Translate(_ context.Context, _ *models.Movie) (string, bool, *translation.TranslationOutput) {
-	return "", false, nil
+func (s *candidateTranslatorStub) Translate(_ context.Context, movie *models.Movie) (string, bool, *translation.TranslationOutput) {
+	s.movies = append(s.movies, *movie.Clone())
+	movie.Title = "번역 " + movie.Title
+	movie.Description = "번역 " + movie.Description
+	record := models.MovieTranslation{Language: "ko", Title: movie.Title, Description: movie.Description, SettingsHash: "hash"}
+	return "", true, &translation.TranslationOutput{Movie: &record, Movies: []models.MovieTranslation{record}}
 }
 
-func (s *candidateTranslatorStub) TranslateTitles(_ context.Context, titles []string) ([]string, error) {
-	s.titles = append([]string(nil), titles...)
-	return []string{"번역 A", "번역 B"}, nil
-}
-
-func TestTranslateCandidateTitles(t *testing.T) {
+func TestTranslateCandidateMetadata(t *testing.T) {
 	translator := &candidateTranslatorStub{}
-	candidates := []models.ScrapeCandidate{{OriginalTitle: "原題 A", Title: "原題 A"}, {OriginalTitle: "原題 B", Title: "原題 B"}}
-	translateCandidateTitles(context.Background(), translator, candidates)
-	assert.Equal(t, []string{"原題 A", "原題 B"}, translator.titles)
-	assert.Equal(t, "번역 A", candidates[0].Title)
-	assert.Equal(t, "번역 B", candidates[1].Title)
+	candidates := []models.ScrapeCandidate{
+		{Source: "a", OriginalTitle: "原題 A", Title: "原題 A", OriginalDescription: "説明 A", Description: "説明 A"},
+		{Source: "b", OriginalTitle: "原題 B", Title: "原題 B", OriginalDescription: "説明 B", Description: "説明 B"},
+	}
+	warning := translateCandidateMetadata(context.Background(), translator, candidates)
+	assert.Empty(t, warning)
+	require.Len(t, translator.movies, 2)
+	assert.Equal(t, "原題 A", translator.movies[0].Title)
+	assert.Equal(t, "説明 A", translator.movies[0].Description)
+	assert.Equal(t, "번역 原題 A", candidates[0].Title)
+	assert.Equal(t, "번역 説明 A", candidates[0].Description)
+	require.Len(t, candidates[0].Translations, 1)
+	assert.Equal(t, "ko", candidates[0].Translations[0].Language)
 }
 
 func TestMovieCandidateResults_ExcludesActressResolver(t *testing.T) {

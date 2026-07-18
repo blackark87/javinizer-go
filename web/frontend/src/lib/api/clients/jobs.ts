@@ -31,6 +31,7 @@ import type {
 	SourceResultsResponse,
 	FieldOverrideRequest,
 	FieldOverrideResponse,
+	CandidateSelectionResponse,
 } from '../types';
 import { BaseClient } from './common';
 
@@ -111,6 +112,20 @@ export class JobClient extends BaseClient {
 			{
 				method: 'POST',
 				body: JSON.stringify(request),
+			},
+		);
+	}
+
+	async selectBatchMovieCandidate(
+		jobId: string,
+		resultId: string,
+		source: string,
+	): Promise<CandidateSelectionResponse> {
+		return this.request<CandidateSelectionResponse>(
+			`/api/v1/batch/${jobId}/results/${resultId}/candidate-selection`,
+			{
+				method: 'POST',
+				body: JSON.stringify({ source }),
 			},
 		);
 	}

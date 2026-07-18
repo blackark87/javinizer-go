@@ -867,6 +867,8 @@ export function createReviewState(pageStore: Page) {
 			getScrapers: () => apiClient.getScrapers(),
 			rescrapeBatchMovie: (nextJobId, resultId, req) =>
 				apiClient.rescrapeBatchMovie(nextJobId, resultId, req),
+			selectBatchMovieCandidate: (nextJobId, resultId, source) =>
+				apiClient.selectBatchMovieCandidate(nextJobId, resultId, source),
 		},
 	});
 

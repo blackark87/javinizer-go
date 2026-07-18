@@ -121,3 +121,57 @@ func overrideBatchMovieField(rt *core.APIRuntime) gin.HandlerFunc {
 		})
 	}
 }
+
+// selectBatchMovieCandidate godoc
+// @Summary Select retained multi-source candidate
+// @Description Applies only the translated title and non-empty description retained for a provider candidate without scraping again
+// @Tags web
+// @Accept json
+// @Produce json
+// @Param id path string true "Job ID"
+// @Param resultId path string true "Result ID"
+// @Param request body contracts.CandidateSelectionRequest true "Candidate source"
+// @Success 200 {object} contracts.CandidateSelectionResponse
+// @Failure 400 {object} contracts.ErrorResponse
+// @Failure 404 {object} contracts.ErrorResponse
+// @Router /api/v1/batch/{id}/results/{resultId}/candidate-selection [post]
+func selectBatchMovieCandidate(rt *core.APIRuntime) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		deps := rt.Deps()
+		jobID := c.Param("id")
+		resultID := c.Param("resultId")
+
+		var req contracts.CandidateSelectionRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: err.Error()})
+			return
+		}
+		job, ok := deps.GetJobStore().GetBatchJob(jobID)
+		if !ok {
+			c.JSON(http.StatusNotFound, contracts.ErrorResponse{Error: "Job not found"})
+			return
+		}
+		result, prov, err := job.ApplyCandidateSelection(c.Request.Context(), resultID, strings.TrimSpace(req.Source))
+		if err != nil {
+			status := http.StatusBadRequest
+			if strings.Contains(err.Error(), "not found") {
+				status = http.StatusNotFound
+			}
+			c.JSON(status, contracts.ErrorResponse{Error: err.Error()})
+			return
+		}
+		deps.GetJobStore().PersistJobByID(jobID)
+
+		response := contracts.CandidateSelectionResponse{}
+		if result != nil && result.Movie != nil {
+			response.Movie = contracts.MovieViewFromModel(result.Movie)
+		}
+		if prov != nil {
+			response.FieldSources = prov.FieldSources
+			response.ActressSources = prov.ActressSources
+			response.Candidates = prov.Candidates
+			response.HasConflict = prov.HasConflict
+		}
+		c.JSON(http.StatusOK, response)
+	}
+}

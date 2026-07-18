@@ -8,8 +8,11 @@ type ScrapeCandidate struct {
 	MovieID string `json:"movie_id,omitempty"`
 	// Title is the display title — translated when translation is enabled, otherwise
 	// the scraper's original title. OriginalTitle always holds the untranslated title.
-	Title         string `json:"title,omitempty"`
-	OriginalTitle string `json:"original_title,omitempty"`
-	ActressCount  int    `json:"actress_count"`
-	PosterURL     string `json:"poster_url,omitempty"`
+	Title               string             `json:"title,omitempty"`
+	OriginalTitle       string             `json:"original_title,omitempty"`
+	Description         string             `json:"description,omitempty"`
+	OriginalDescription string             `json:"original_description,omitempty"`
+	Translations        []MovieTranslation `json:"translations,omitempty"`
+	ActressCount        int                `json:"actress_count"`
+	PosterURL           string             `json:"poster_url,omitempty"`
 }

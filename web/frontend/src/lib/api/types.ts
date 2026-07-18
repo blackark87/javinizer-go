@@ -167,6 +167,14 @@ export interface FieldOverrideResponse {
 	actress_sources?: Record<string, string>;
 }
 
+export interface CandidateSelectionResponse {
+	movie: Movie;
+	field_sources?: Record<string, string>;
+	actress_sources?: Record<string, string>;
+	candidates?: ScrapeCandidate[];
+	has_conflict: boolean;
+}
+
 export interface BatchRescrapeRequest {
 	force?: boolean;
 	selected_scrapers?: string[];
@@ -276,6 +284,9 @@ export interface ScrapeCandidate {
 	movie_id?: string;
 	title?: string;
 	original_title?: string;
+	description?: string;
+	original_description?: string;
+	translations?: MovieTranslation[];
 	actress_count: number;
 	poster_url?: string;
 }

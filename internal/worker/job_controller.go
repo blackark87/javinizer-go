@@ -245,7 +245,7 @@ func (c *jobController) setDepsFromConfig(cfg *JobConfig) {
 	if cfg.Matcher != nil {
 		c.job.deps.Matcher = cfg.Matcher
 	}
-	if cfg.BatchCfg.MaxWorkers > 0 || cfg.BatchCfg.WorkerTimeout > 0 || len(cfg.BatchCfg.ScraperPriority) > 0 {
+	if !cfg.BatchCfg.isZero() {
 		c.job.deps.BatchCfg = cfg.BatchCfg
 	}
 	if cfg.BatchFileOpRepo != nil {

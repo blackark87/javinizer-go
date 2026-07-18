@@ -167,7 +167,7 @@ func (s *JobStore) reconstructBatchJob(dbJob *models.Job) *BatchJob {
 	// BatchCfg is a value type — only overwrite if non-zero to avoid writing
 	// a zero-value config before SetReconstructionDeps has been called.
 	// SetReconstructionDeps always overwrites BatchCfg unconditionally.
-	if s.reconBatchCfg.MaxWorkers > 0 || s.reconBatchCfg.WorkerTimeout > 0 || len(s.reconBatchCfg.ScraperPriority) > 0 || s.reconBatchCfg.NFOEnabled {
+	if !s.reconBatchCfg.isZero() {
 		batchJob.deps.BatchCfg = s.reconBatchCfg
 	}
 	batchJob.mu.Unlock()

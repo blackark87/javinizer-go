@@ -5,6 +5,7 @@ import (
 
 	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/models"
+	"github.com/javinizer/javinizer-go/internal/nfo"
 )
 
 // APIConfig holds the subset of application configuration consumed by the API layer.
@@ -41,6 +42,7 @@ type APIConfig struct {
 	NFOFilenameTemplate string                   // cfg.Metadata.NFO.Format.FilenameTemplate
 	NFOPerFile          bool                     // cfg.Metadata.NFO.Feature.PerFile
 	NFODisplayTitle     string                   // cfg.Metadata.NFO.Format.DisplayTitle
+	NFONameConfig       nfo.NFONameConfig        // resolved actress rendering options for templates
 	MaxPosterHeight     int                      // cfg.Output.MediaFormat.MaxPosterHeight (0 = no cap)
 	TranslationConfig   config.TranslationConfig // cfg.Metadata.Translation — whole struct for validation in config update handler
 
@@ -83,17 +85,19 @@ type SecurityNarrowConfig struct {
 // Batch handlers read these fields (plus SecurityNarrowConfig for path validation)
 // instead of the full APIConfig, reducing coupling to ~10 fields from 42.
 type BatchNarrowConfig struct {
-	OperationMode      string        // resolved operation mode for batch execution
-	MaxWorkers         int           // worker pool concurrency
-	WorkerTimeout      time.Duration // worker execution timeout
-	ScraperPriority    []string      // scraper source ordering
-	NFOEnabled         bool          // whether NFO generation is active
-	ScraperUserAgent   string        // user-agent for poster downloads
-	ScraperReferer     string        // referer for poster downloads
-	ScanTimeoutSeconds int           // timeout for file discovery
-	MaxFilesPerScan    int           // max files per scan operation
-	TempDir            string        // temp directory for batch artifacts
-	MaxPosterHeight    int           // cfg.Output.MediaFormat.MaxPosterHeight (0 = no cap)
+	OperationMode        string            // resolved operation mode for batch execution
+	MaxWorkers           int               // worker pool concurrency
+	WorkerTimeout        time.Duration     // worker execution timeout
+	ScraperPriority      []string          // scraper source ordering
+	NFOEnabled           bool              // whether NFO generation is active
+	ScraperUserAgent     string            // user-agent for poster downloads
+	ScraperReferer       string            // referer for poster downloads
+	ScanTimeoutSeconds   int               // timeout for file discovery
+	MaxFilesPerScan      int               // max files per scan operation
+	TempDir              string            // temp directory for batch artifacts
+	MaxPosterHeight      int               // cfg.Output.MediaFormat.MaxPosterHeight (0 = no cap)
+	DisplayTitleTemplate string            // configured NFO display-title template
+	NFONameCfg           nfo.NFONameConfig // actress rendering options for display-title templates
 }
 
 // ScannerNarrowConfig holds the fields consumed by scanner/file handlers.
@@ -135,17 +139,19 @@ func (c APIConfig) SecurityConfig() *SecurityNarrowConfig {
 // Batch handlers should also call SecurityConfig() for path validation.
 func (c APIConfig) BatchConfig() *BatchNarrowConfig {
 	return &BatchNarrowConfig{
-		OperationMode:      c.OperationMode,
-		MaxWorkers:         c.MaxWorkers,
-		WorkerTimeout:      c.WorkerTimeout,
-		ScraperPriority:    c.ScraperPriority,
-		NFOEnabled:         c.NFOEnabled,
-		ScraperUserAgent:   c.ScraperUserAgent,
-		ScraperReferer:     c.ScraperReferer,
-		ScanTimeoutSeconds: c.ScanTimeoutSeconds,
-		MaxFilesPerScan:    c.MaxFilesPerScan,
-		TempDir:            c.TempDir,
-		MaxPosterHeight:    c.MaxPosterHeight,
+		OperationMode:        c.OperationMode,
+		MaxWorkers:           c.MaxWorkers,
+		WorkerTimeout:        c.WorkerTimeout,
+		ScraperPriority:      c.ScraperPriority,
+		NFOEnabled:           c.NFOEnabled,
+		ScraperUserAgent:     c.ScraperUserAgent,
+		ScraperReferer:       c.ScraperReferer,
+		ScanTimeoutSeconds:   c.ScanTimeoutSeconds,
+		MaxFilesPerScan:      c.MaxFilesPerScan,
+		TempDir:              c.TempDir,
+		MaxPosterHeight:      c.MaxPosterHeight,
+		DisplayTitleTemplate: c.NFODisplayTitle,
+		NFONameCfg:           c.NFONameConfig,
 	}
 }
 
@@ -226,6 +232,7 @@ func ConfigFromAppConfig(cfg *config.Config) APIConfig {
 		NFOFilenameTemplate: cfg.Metadata.NFO.Format.FilenameTemplate,
 		NFOPerFile:          cfg.Metadata.NFO.Feature.PerFile,
 		NFODisplayTitle:     cfg.Metadata.NFO.Format.DisplayTitle,
+		NFONameConfig:       nfo.NFONameConfigFromAppConfig(cfg),
 		MaxPosterHeight:     cfg.Output.MediaFormat.MaxPosterHeight,
 		TranslationConfig:   cfg.Metadata.Translation,
 		OperationMode:       string(cfg.Output.GetOperationMode()),

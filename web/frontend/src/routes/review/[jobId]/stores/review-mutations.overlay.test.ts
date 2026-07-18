@@ -19,10 +19,10 @@ function makeMovie(overrides: Partial<Movie> = {}): Movie {
 describe('overlayFieldOverride', () => {
 	it('title sets both target.title and target.display_title', () => {
 		const target = makeMovie();
-		const src = makeMovie({ title: 'New Title', display_title: 'New Title' });
+		const src = makeMovie({ title: 'New Title', display_title: '[2024][4K][VR]New Title' });
 		overlayFieldOverride(target, 'title', src);
 		expect(target.title).toBe('New Title');
-		expect(target.display_title).toBe('New Title');
+		expect(target.display_title).toBe('[2024][4K][VR]New Title');
 	});
 
 	it('content_id sets target.code (NOT target.content_id)', () => {
@@ -34,17 +34,23 @@ describe('overlayFieldOverride', () => {
 
 	it('release_date sets both target.release_date and target.release_year', () => {
 		const target = makeMovie({ release_date: '2020-01-01', release_year: 2020 });
-		const src = makeMovie({ release_date: '2023-06-15', release_year: 2023 });
+		const src = makeMovie({
+			release_date: '2023-06-15',
+			release_year: 2023,
+			display_title: '[2023]Orig Title'
+		});
 		overlayFieldOverride(target, 'release_date', src);
 		expect(target.release_date).toBe('2023-06-15');
 		expect(target.release_year).toBe(2023);
+		expect(target.display_title).toBe('[2023]Orig Title');
 	});
 
 	it('default branch (e.g. maker) copies src.maker to target.maker', () => {
 		const target = makeMovie({ maker: 'Orig Maker' });
-		const src = makeMovie({ maker: 'New Maker' });
+		const src = makeMovie({ maker: 'New Maker', display_title: '[New Maker]Orig Title' });
 		overlayFieldOverride(target, 'maker', src);
 		expect(target.maker).toBe('New Maker');
+		expect(target.display_title).toBe('[New Maker]Orig Title');
 	});
 
 	it('unrelated fields on target are preserved when overriding maker', () => {

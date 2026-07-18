@@ -11,6 +11,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/logging"
 	"github.com/javinizer/javinizer-go/internal/matcher"
 	"github.com/javinizer/javinizer-go/internal/models"
+	"github.com/javinizer/javinizer-go/internal/nfo"
 	"github.com/javinizer/javinizer-go/internal/poster"
 	"github.com/javinizer/javinizer-go/internal/template"
 	"github.com/spf13/afero"
@@ -248,13 +249,18 @@ func buildAdapters(job *BatchJob) *jobAdapters {
 		},
 		canceller: job.lifecycle,
 		editor: &jobEditorImpl{
-			updater:      job.results,
-			accessor:     job.results,
-			tracker:      job.results,
-			lifecycle:    job.lifecycle,
-			posterEditor: job.posterEditor,
-			movieRepo:    job.deps.MovieRepo,
-			actressRepo:  job.deps.ActressRepo,
+			updater:        job.results,
+			accessor:       job.results,
+			tracker:        job.results,
+			lifecycle:      job.lifecycle,
+			posterEditor:   job.posterEditor,
+			movieRepo:      job.deps.MovieRepo,
+			actressRepo:    job.deps.ActressRepo,
+			templateEngine: job.TemplateEngine(),
+			displayTitleConfig: func() (string, nfo.NFONameConfig) {
+				cfg := job.controller.resolveBatchCfg()
+				return cfg.DisplayTitleTemplate, cfg.NFONameCfg
+			},
 		},
 	}
 }

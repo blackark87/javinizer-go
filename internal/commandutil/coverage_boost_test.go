@@ -78,6 +78,8 @@ func TestBatchJobConfigFromAppConfig_Defaults(t *testing.T) {
 	assert.Equal(t, time.Duration(cfg.Performance.WorkerTimeout)*time.Second, result.WorkerTimeout)
 	assert.Equal(t, cfg.Scrapers.Priority, result.ScraperPriority)
 	assert.Equal(t, cfg.Metadata.NFO.Feature.Enabled, result.NFOEnabled)
+	assert.Equal(t, cfg.Metadata.NFO.Format.DisplayTitle, result.DisplayTitleTemplate)
+	assert.Equal(t, cfg.Metadata.NFO.Format.FirstNameOrder, result.NFONameCfg.FirstNameOrder)
 }
 
 // TestCLIApplyOptions_ToApplyPhaseConfig_NilExtrafanart tests that an unset

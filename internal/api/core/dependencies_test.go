@@ -683,6 +683,7 @@ func TestConfigFromAppConfig(t *testing.T) {
 					Format: config.NFOFormatConfig{
 						FilenameTemplate: "{id}.nfo",
 						DisplayTitle:     "original",
+						FirstNameOrder:   true,
 					},
 				},
 				Translation: config.TranslationConfig{
@@ -747,6 +748,10 @@ func TestConfigFromAppConfig(t *testing.T) {
 		assert.Equal(t, "{id}.nfo", result.NFOFilenameTemplate)
 		assert.True(t, result.NFOPerFile)
 		assert.Equal(t, "original", result.NFODisplayTitle)
+		assert.True(t, result.NFONameConfig.FirstNameOrder)
+		batchCfg := result.BatchConfig()
+		assert.Equal(t, "original", batchCfg.DisplayTitleTemplate)
+		assert.True(t, batchCfg.NFONameCfg.FirstNameOrder)
 		assert.True(t, result.TranslationConfig.Enabled)
 		assert.Equal(t, "openai", result.TranslationConfig.Provider)
 

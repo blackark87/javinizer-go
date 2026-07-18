@@ -17,12 +17,16 @@ func TestBatchJobConfigFromAppConfig(t *testing.T) {
 	cfg.Performance.WorkerTimeout = 30
 	cfg.Scrapers.Priority = []string{"r18dev", "dmm"}
 	cfg.Metadata.NFO.Feature.Enabled = true
+	cfg.Metadata.NFO.Format.DisplayTitle = "[<YEAR>]<TITLE>"
+	cfg.Metadata.NFO.Format.FirstNameOrder = true
 
 	result := BatchJobConfigFromAppConfig(cfg)
 	assert.Equal(t, 4, result.MaxWorkers)
 	assert.Equal(t, 30*time.Second, result.WorkerTimeout)
 	assert.Equal(t, []string{"r18dev", "dmm"}, result.ScraperPriority)
 	assert.True(t, result.NFOEnabled)
+	assert.Equal(t, "[<YEAR>]<TITLE>", result.DisplayTitleTemplate)
+	assert.True(t, result.NFONameCfg.FirstNameOrder)
 }
 
 func TestCLIApplyOptions_ToApplyPhaseConfig(t *testing.T) {

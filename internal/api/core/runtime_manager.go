@@ -407,10 +407,12 @@ func (s *RuntimeSnapshot) BatchJobFactory() worker.BatchJobFactoryInterface {
 	}
 	matcherIface := s.Matcher()
 	workerBatchCfg := worker.BatchJobConfig{
-		MaxWorkers:      batchCfg.MaxWorkers,
-		WorkerTimeout:   batchCfg.WorkerTimeout,
-		ScraperPriority: batchCfg.ScraperPriority,
-		NFOEnabled:      batchCfg.NFOEnabled,
+		MaxWorkers:           batchCfg.MaxWorkers,
+		WorkerTimeout:        batchCfg.WorkerTimeout,
+		ScraperPriority:      batchCfg.ScraperPriority,
+		NFOEnabled:           batchCfg.NFOEnabled,
+		DisplayTitleTemplate: batchCfg.DisplayTitleTemplate,
+		NFONameCfg:           batchCfg.NFONameCfg,
 	}
 	return worker.NewBatchJobFactory(
 		r.deps.JobStore,
@@ -546,10 +548,12 @@ func (r *APIRuntime) buildBatchJobFactory() any {
 
 	matcher := r.NewMatcher()
 	workerBatchCfg := worker.BatchJobConfig{
-		MaxWorkers:      batchCfg.MaxWorkers,
-		WorkerTimeout:   batchCfg.WorkerTimeout,
-		ScraperPriority: batchCfg.ScraperPriority,
-		NFOEnabled:      batchCfg.NFOEnabled,
+		MaxWorkers:           batchCfg.MaxWorkers,
+		WorkerTimeout:        batchCfg.WorkerTimeout,
+		ScraperPriority:      batchCfg.ScraperPriority,
+		NFOEnabled:           batchCfg.NFOEnabled,
+		DisplayTitleTemplate: batchCfg.DisplayTitleTemplate,
+		NFONameCfg:           batchCfg.NFONameCfg,
 	}
 
 	// Re-hydrate reconstructed jobs with infrastructure deps (matcher, posterGen,

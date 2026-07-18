@@ -7,13 +7,26 @@ import (
 	"testing"
 	"time"
 
+	"github.com/javinizer/javinizer-go/internal/mediainfo"
 	"github.com/javinizer/javinizer-go/internal/mocks"
 	"github.com/javinizer/javinizer-go/internal/models"
+	"github.com/javinizer/javinizer-go/internal/nfo"
 	"github.com/javinizer/javinizer-go/internal/scrape"
+	templatepkg "github.com/javinizer/javinizer-go/internal/template"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+type preloadedMediaTemplateEngine struct {
+	templatepkg.EngineInterface
+	info *mediainfo.VideoInfo
+}
+
+func (e preloadedMediaTemplateEngine) ExecuteWithContext(ctx context.Context, tmpl string, templateCtx *templatepkg.Context) (string, error) {
+	templateCtx.SetMediaInfo(e.info)
+	return e.EngineInterface.ExecuteWithContext(ctx, tmpl, templateCtx)
+}
 
 func TestApplyFieldOverride_StringFields(t *testing.T) {
 	movie, prov := overrideFixture()
@@ -31,6 +44,79 @@ func TestApplyFieldOverride_TitleLinksDisplayTitle(t *testing.T) {
 	assert.Equal(t, "JavLibrary Title", movie.DisplayTitle)
 	assert.Equal(t, "javlibrary", prov.FieldSources["title"])
 	assert.Equal(t, "javlibrary", prov.FieldSources["display_title"])
+}
+
+func TestJobEditorApplyFieldOverride_RegeneratesConfiguredDisplayTitle(t *testing.T) {
+	tests := []struct {
+		name        string
+		releaseDate *time.Time
+		releaseYear int
+		mediaInfo   *mediainfo.VideoInfo
+		wantDisplay string
+	}{
+		{
+			name:        "release date with resolution and VR",
+			releaseDate: func() *time.Time { v := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC); return &v }(),
+			mediaInfo:   &mediainfo.VideoInfo{Width: 3840, Height: 1920},
+			wantDisplay: "[2024][4K][VR]선택한 제목",
+		},
+		{
+			name:        "release year fallback without VR",
+			releaseYear: 2023,
+			mediaInfo:   &mediainfo.VideoInfo{Width: 1920, Height: 1080},
+			wantDisplay: "[2023][1080p]선택한 제목",
+		},
+	}
+
+	const displayTitleTemplate = "<IF:RELEASEDATE>[<RELEASEDATE:YYYY>]<ELSE>[<YEAR>]</IF><IF:RESOLUTION>[<RESOLUTION>]</IF><IF:VR>[VR]</IF><TITLE>"
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			const filePath = "SMUK-102.mp4"
+			const resultID = "result-display-title"
+			movie := &models.Movie{
+				ID:           "SMUK-102",
+				Title:        "기존 제목",
+				DisplayTitle: "기존 제목",
+				ReleaseDate:  tt.releaseDate,
+				ReleaseYear:  tt.releaseYear,
+			}
+			prov := &ProvenanceData{ScraperResults: []*models.ScraperResult{{
+				Source: "dmm",
+				Title:  "原題",
+				Translations: []models.MovieTranslation{{
+					Language: "ko",
+					Title:    "선택한 제목",
+				}},
+			}}}
+			tracker := NewResultTracker(1, []string{filePath})
+			tracker.Updater().UpdateFileResult(filePath, &MovieResult{
+				ResultID: resultID,
+				Movie:    movie,
+				Status:   models.JobStatusCompleted,
+			})
+			tracker.Updater().SetProvenance(filePath, prov)
+			engine := preloadedMediaTemplateEngine{
+				EngineInterface: templatepkg.NewEngine(),
+				info:            tt.mediaInfo,
+			}
+			editor := &jobEditorImpl{
+				updater:        tracker.Updater(),
+				accessor:       tracker,
+				tracker:        tracker,
+				templateEngine: engine,
+				displayTitleConfig: func() (string, nfo.NFONameConfig) {
+					return displayTitleTemplate, nfo.NFONameConfig{}
+				},
+			}
+
+			updated, _, err := editor.ApplyFieldOverride(context.Background(), resultID, "title", "dmm")
+			require.NoError(t, err)
+			require.NotNil(t, updated)
+			require.NotNil(t, updated.Movie)
+			assert.Equal(t, "선택한 제목", updated.Movie.Title)
+			assert.Equal(t, tt.wantDisplay, updated.Movie.DisplayTitle)
+		})
+	}
 }
 
 func TestApplyFieldOverride_UsesRetainedSourceTranslations(t *testing.T) {

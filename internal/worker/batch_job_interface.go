@@ -8,7 +8,9 @@ import (
 
 	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/models"
+	"github.com/javinizer/javinizer-go/internal/nfo"
 	"github.com/javinizer/javinizer-go/internal/operationmode"
+	"github.com/javinizer/javinizer-go/internal/template"
 	"github.com/javinizer/javinizer-go/internal/workflow"
 )
 
@@ -29,12 +31,19 @@ type ApplyFileResult struct {
 
 // BatchJobConfig holds the narrow configuration fields BatchJob actually consumes
 // from *config.Config. Instead of passing the full config monolith (200+ fields),
-// callers provide only the 4 fields BatchJob reads during scrape and apply phases.
+// callers provide only the fields BatchJob reads during scrape, apply, and review-edit phases.
 type BatchJobConfig struct {
-	MaxWorkers      int           // cfg.Performance.MaxWorkers → pool sizing
-	WorkerTimeout   time.Duration // cfg.Performance.WorkerTimeout → per-task timeout
-	ScraperPriority []string      // cfg.Scrapers.Priority → selected scrapers
-	NFOEnabled      bool          // cfg.Metadata.NFO.Feature.Enabled → NFO generation toggle
+	MaxWorkers           int               // cfg.Performance.MaxWorkers → pool sizing
+	WorkerTimeout        time.Duration     // cfg.Performance.WorkerTimeout → per-task timeout
+	ScraperPriority      []string          // cfg.Scrapers.Priority → selected scrapers
+	NFOEnabled           bool              // cfg.Metadata.NFO.Feature.Enabled → NFO generation toggle
+	DisplayTitleTemplate string            // cfg.Metadata.NFO.Format.DisplayTitle → review/source title rendering
+	NFONameCfg           nfo.NFONameConfig // actress rendering options used by DisplayTitle templates
+}
+
+func (c BatchJobConfig) isZero() bool {
+	return c.MaxWorkers == 0 && c.WorkerTimeout == 0 && len(c.ScraperPriority) == 0 &&
+		!c.NFOEnabled && c.DisplayTitleTemplate == "" && c.NFONameCfg == (nfo.NFONameConfig{})
 }
 
 // batchJobBase holds the 19 shared snapshot fields common to both BatchJobStatus
@@ -362,14 +371,16 @@ func (jr *jobReaderImpl) Subscribe() JobEventSubscriber { return jr.subscribeFn(
 // exclusionChecker merged into ResultMapAccessor (IsAllExcluded exported).
 // poster DB persistence is handled by PosterEditor, not by this adapter.
 type jobEditorImpl struct {
-	updater      ResultUpdater
-	accessor     ResultMapAccessor
-	tracker      *ResultTracker
-	lifecycle    *JobLifecycle
-	posterEditor *PosterEditor
-	movieRepo    database.MovieRepositoryInterface
-	actressRepo  database.ActressRepositoryInterface
-	overrideMu   sync.Map // resultID -> *sync.Mutex
+	updater            ResultUpdater
+	accessor           ResultMapAccessor
+	tracker            *ResultTracker
+	lifecycle          *JobLifecycle
+	posterEditor       *PosterEditor
+	movieRepo          database.MovieRepositoryInterface
+	actressRepo        database.ActressRepositoryInterface
+	templateEngine     template.EngineInterface
+	displayTitleConfig func() (string, nfo.NFONameConfig)
+	overrideMu         sync.Map // resultID -> *sync.Mutex
 }
 
 func (je *jobEditorImpl) UpdateMovie(ctx context.Context, filePath string, movie *models.Movie) error {
@@ -488,6 +499,16 @@ func (je *jobEditorImpl) ApplyFieldOverride(ctx context.Context, resultID, field
 	movie := result.Movie.Clone()
 	if err := applyFieldOverride(movie, prov, fieldKey, source); err != nil {
 		return nil, nil, err
+	}
+	// DisplayTitle is derived metadata. A source selection can change any tag
+	// referenced by its template (title, release date, maker, actresses, etc.),
+	// so regenerate it after every override using the actual source file. This
+	// also restores media-backed tags such as <RESOLUTION> and <VR>.
+	if je.templateEngine != nil && je.displayTitleConfig != nil {
+		displayTitleTemplate, nameCfg := je.displayTitleConfig()
+		workflow.ApplyDisplayTitleFromSourceFile(
+			ctx, movie, movie, displayTitleTemplate, je.templateEngine, nameCfg, filePath,
+		)
 	}
 	if err := je.UpdateMovie(ctx, filePath, movie); err != nil {
 		return nil, nil, fmt.Errorf("persist field override: %w", err)

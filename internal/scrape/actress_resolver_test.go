@@ -50,7 +50,7 @@ func (s *actressResolverScraper) ResolveActressProfile(context.Context, models.A
 	return s.profile, s.profileErr
 }
 
-func TestResolveMissingActressesRunsWhenAnyActressLacksVerifiedDMMIdentity(t *testing.T) {
+func TestResolveMissingActressesRunsWhenAnyActressLacksVerifiedDMMProfile(t *testing.T) {
 	resolver := &actressResolverScraper{name: actressResolverScraperName, enabled: true, result: &models.ScraperResult{
 		Actresses: []models.ActressInfo{{DMMID: 777, JapaneseName: "正式名"}},
 	}}
@@ -85,6 +85,52 @@ func TestResolveMissingActressesRunsWhenAnyActressLacksVerifiedDMMIdentity(t *te
 	assert.Nil(t, result)
 	assert.Nil(t, failure)
 	assert.Equal(t, 2, resolver.calls)
+
+	result, failure = s.resolveMissingActresses(context.Background(), "SMUK-102", []*models.ScraperResult{{
+		Source: "regular", Actresses: []models.ActressInfo{{
+			DMMID: 777, ThumbURL: "https://pics.dmm.co.jp/mono/actjpgs/mei.jpg",
+		}},
+	}})
+	require.Nil(t, failure)
+	require.NotNil(t, result)
+	assert.Equal(t, 3, resolver.calls)
+	assert.Equal(t, "https://pics.dmm.co.jp/mono/actjpgs/mei.jpg", result.Actresses[0].ThumbURL)
+}
+
+func TestScrapeFallsBackToSougouWikiWhenDMMProfileNameIsMissing(t *testing.T) {
+	const thumbURL = "https://pics.dmm.co.jp/mono/actjpgs/mei.jpg"
+	fixture := newFixture(t).withScraper("regular", &models.ScraperResult{
+		Source: "regular", ID: "SMUK-102", Title: "Test",
+		Actresses: []models.ActressInfo{{DMMID: 777, FirstName: "Mei", ThumbURL: thumbURL}},
+	}, nil)
+	resolver := &actressResolverScraper{name: actressResolverScraperName, enabled: true, result: &models.ScraperResult{
+		Actresses: []models.ActressInfo{{DMMID: 777, JapaneseName: "深月めい"}},
+	}}
+	dmm := &actressResolverScraper{name: "dmm", enabled: true, profileErr: errors.New("DMM profile unavailable")}
+	fixture.registry.RegisterInstance(resolver)
+	fixture.registry.RegisterInstance(dmm)
+
+	s := fixture.build()
+	translationCfg := config.TranslationConfig{
+		Enabled: true, Provider: "openai", SourceLanguage: "ja", TargetLanguage: "ko", ApplyToPrimary: true,
+		Fields: config.TranslationFieldsConfig{Actresses: true},
+	}
+	s.cfg.TranslationEnabled = true
+	s.translator = NewTranslatorFromApp(&translationCfg)
+
+	result, err := s.Scrape(context.Background(), ScrapeCmd{MovieID: "SMUK-102"}, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, result.Movie)
+	require.Len(t, result.Movie.Actresses, 1)
+	actress := result.Movie.Actresses[0]
+	assert.Equal(t, 777, actress.DMMID)
+	assert.Equal(t, "深月めい", actress.JapaneseName)
+	assert.Equal(t, "메이", actress.FirstName)
+	assert.Empty(t, actress.LastName)
+	assert.Equal(t, thumbURL, actress.ThumbURL)
+	assert.Equal(t, 1, resolver.calls)
+	assert.GreaterOrEqual(t, dmm.profileCalls, 1)
 }
 
 func TestScrapeEnrichesRegularDMMActressesBeforeTranslationAfterDatabaseReset(t *testing.T) {

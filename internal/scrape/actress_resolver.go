@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/javinizer/javinizer-go/internal/database"
+	"github.com/javinizer/javinizer-go/internal/logging"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/translation"
 )
@@ -14,8 +15,8 @@ const actressResolverScraperName = "sougouwiki"
 
 // resolveMissingActresses asks the dedicated actress resolver when the regular
 // results contain no cast or at least one actress without a verified DMM
-// identity. Resolver failures are optional when another scraper returned movie
-// metadata, and fatal only when no result remains at all.
+// identity or usable Japanese name. Resolver failures are optional when another
+// scraper returned movie metadata, and fatal only when no result remains at all.
 func (s *Scraper) resolveMissingActresses(ctx context.Context, movieID string, results []*models.ScraperResult) (*models.ScraperResult, *models.ScraperError) {
 	if !needsActressResolution(results) || s.registry == nil {
 		return nil, nil
@@ -42,6 +43,7 @@ func (s *Scraper) resolveMissingActresses(ctx context.Context, movieID string, r
 	if strings.TrimSpace(resolved.ID) == "" {
 		resolved.ID = movieID
 	}
+	inheritResolvedActressAssets(resolved, results)
 	s.enrichResolvedActressProfiles(ctx, resolved)
 	return resolved, nil
 }
@@ -64,12 +66,47 @@ func needsActressResolution(results []*models.ScraperResult) bool {
 		}
 		for _, actress := range result.Actresses {
 			hasActress = true
-			if actress.DMMID <= 0 {
+			if actress.DMMID <= 0 || !hasUsableResolvedJapaneseName(actress) {
 				return true
 			}
 		}
 	}
 	return !hasActress
+}
+
+func hasUsableResolvedJapaneseName(actress models.ActressInfo) bool {
+	name := translation.CleanActressName(actress.JapaneseName)
+	return name != "" && !models.IsUnknownActressName(name) &&
+		!models.IsDescriptiveNonName(actress.LastName, actress.FirstName, name)
+}
+
+// inheritResolvedActressAssets keeps source assets that SougouWiki does not
+// provide. Identity fields remain resolver-owned, while a matching verified
+// DMM ID can safely retain its already-scraped thumbnail.
+func inheritResolvedActressAssets(resolved *models.ScraperResult, results []*models.ScraperResult) {
+	if resolved == nil {
+		return
+	}
+	thumbByDMMID := make(map[int]string)
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		for _, actress := range result.Actresses {
+			if actress.DMMID <= 0 || strings.TrimSpace(actress.ThumbURL) == "" {
+				continue
+			}
+			if _, exists := thumbByDMMID[actress.DMMID]; !exists {
+				thumbByDMMID[actress.DMMID] = strings.TrimSpace(actress.ThumbURL)
+			}
+		}
+	}
+	for i := range resolved.Actresses {
+		actress := &resolved.Actresses[i]
+		if strings.TrimSpace(actress.ThumbURL) == "" {
+			actress.ThumbURL = thumbByDMMID[actress.DMMID]
+		}
+	}
 }
 
 // allUnverifiedMultiCastCount returns the largest cleaned, distinct cast size
@@ -176,13 +213,22 @@ func (s *Scraper) enrichResolvedActressProfiles(ctx context.Context, result *mod
 			continue
 		}
 		if profileResolver != nil {
-			if profile, err := safeActressProfile(ctx, profileResolver, *actress); err == nil && strings.TrimSpace(profile.JapaneseName) != "" {
+			profile, err := safeActressProfile(ctx, profileResolver, *actress)
+			if err == nil && strings.TrimSpace(profile.JapaneseName) != "" {
 				actress.JapaneseName = strings.TrimSpace(profile.JapaneseName)
 				actress.FirstName = strings.TrimSpace(profile.FirstName)
 				actress.LastName = strings.TrimSpace(profile.LastName)
 				if strings.TrimSpace(profile.ThumbURL) != "" {
 					actress.ThumbURL = strings.TrimSpace(profile.ThumbURL)
 				}
+			} else if strings.TrimSpace(actress.JapaneseName) == "" {
+				if err != nil {
+					logging.Warnf("Actress profile lookup failed for DMM ID %d; SougouWiki fallback required: %v", actress.DMMID, err)
+				} else {
+					logging.Warnf("Actress profile lookup returned no usable name for DMM ID %d; SougouWiki fallback required", actress.DMMID)
+				}
+			} else if err != nil {
+				logging.Debugf("Actress profile lookup failed for DMM ID %d; keeping existing Japanese name: %v", actress.DMMID, err)
 			}
 		}
 		if strings.TrimSpace(actress.ThumbURL) == "" && thumbnailResolver != nil {

@@ -45,6 +45,11 @@ type Scraper struct {
 	settings    models.ScraperSettings
 }
 
+type actressCandidate struct {
+	URL      string
+	PageName string
+}
+
 // New constructs a SougouWiki actress resolver from scraper settings.
 func New(settings models.ScraperSettings, globalProxy *models.ProxyConfig, flareSolverr models.FlareSolverrConfig) *Scraper {
 	base := strings.TrimSpace(settings.BaseURL)
@@ -132,24 +137,24 @@ func (s *Scraper) ResolveActresses(ctx context.Context, id string) (*models.Scra
 		return nil, err
 	}
 
-	candidates := s.extractCandidateURLs(searchDoc)
+	candidates := s.extractCandidates(searchDoc)
 	actresses := make([]models.ActressInfo, 0)
 	seenDMMIDs := make(map[int]struct{})
-	for _, candidateURL := range candidates {
+	for _, candidate := range candidates {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 
-		candidateDoc, fetchErr := s.fetchDocument(ctx, candidateURL)
+		candidateDoc, fetchErr := s.fetchDocument(ctx, candidate.URL)
 		if fetchErr != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			logging.Debugf("SougouWiki: candidate %s could not be read: %v", candidateURL, fetchErr)
+			logging.Debugf("SougouWiki: candidate %s could not be read: %v", candidate.URL, fetchErr)
 			continue
 		}
 
-		actress, ok := parseVerifiedActressPage(candidateDoc, id)
+		actress, ok := parseVerifiedActressPage(candidateDoc, id, candidate.PageName)
 		if !ok {
 			continue
 		}
@@ -266,6 +271,15 @@ func (s *Scraper) fetchDocument(ctx context.Context, targetURL string) (*goquery
 }
 
 func (s *Scraper) extractCandidateURLs(doc *goquery.Document) []string {
+	candidates := s.extractCandidates(doc)
+	urls := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		urls = append(urls, candidate.URL)
+	}
+	return urls
+}
+
+func (s *Scraper) extractCandidates(doc *goquery.Document) []actressCandidate {
 	base, err := url.Parse(s.baseURL)
 	if err != nil || doc == nil {
 		return nil
@@ -273,7 +287,7 @@ func (s *Scraper) extractCandidateURLs(doc *goquery.Document) []string {
 	allowedPrefix := strings.TrimRight(base.Path, "/") + "/d/"
 
 	seen := make(map[string]struct{})
-	candidates := make([]string, 0)
+	candidates := make([]actressCandidate, 0)
 	doc.Find("div.result-box div.body h3.keyword a").Each(func(_ int, link *goquery.Selection) {
 		href, ok := link.Attr("href")
 		if !ok {
@@ -293,7 +307,11 @@ func (s *Scraper) extractCandidateURLs(doc *goquery.Document) []string {
 			return
 		}
 		seen[normalized] = struct{}{}
-		candidates = append(candidates, normalized)
+		pageName := cleanCanonicalActressName(link.Text())
+		if pageName == "" {
+			return
+		}
+		candidates = append(candidates, actressCandidate{URL: normalized, PageName: pageName})
 	})
 	return candidates
 }
@@ -387,7 +405,7 @@ func normalizeIdentityName(name string) string {
 	return strings.ToLower(scraperutil.CleanActressName(cleanCanonicalActressName(name)))
 }
 
-func parseVerifiedActressPage(doc *goquery.Document, movieID string) (models.ActressInfo, bool) {
+func parseVerifiedActressPage(doc *goquery.Document, movieID, fallbackName string) (models.ActressInfo, bool) {
 	if doc == nil || !pageContainsMovieID(doc.Text(), movieID) {
 		return models.ActressInfo{}, false
 	}
@@ -395,6 +413,9 @@ func parseVerifiedActressPage(doc *goquery.Document, movieID string) (models.Act
 	heading := doc.Find("#content_block_1 h3#content_1").First()
 	if heading.Length() == 0 {
 		return models.ActressInfo{}, false
+	}
+	if pageName := cleanCanonicalActressName(doc.Find("div.title h2").First().Clone().Children().Remove().End().Text()); pageName != "" {
+		fallbackName = pageName
 	}
 
 	var result models.ActressInfo
@@ -411,7 +432,10 @@ func parseVerifiedActressPage(doc *goquery.Document, movieID string) (models.Act
 		if err != nil || dmmID <= 0 {
 			return true
 		}
-		name := cleanCanonicalActressName(link.Text())
+		// The DMM link label may span several aliases. SougouWiki's search
+		// result/page title is the safe fallback; DMM profile enrichment later
+		// replaces it whenever DMM exposes an authoritative name.
+		name := cleanCanonicalActressName(fallbackName)
 		if name == "" {
 			return true
 		}

@@ -401,7 +401,7 @@ func (m *ActressSyncManager) processActress(ctx context.Context, task *models.Ac
 	}
 	canonical := result.Actress
 
-	if !preserveExistingProfile {
+	if !preserveExistingProfile || containsAnyField(result.UpdatedFields, "japanese_name") {
 		m.setStage(task, "romanizing")
 		if translation.ApplyDMMHepburnName(&canonical) {
 			if err := m.deps.ActressRepo.Update(ctx, &canonical); err != nil {
@@ -484,6 +484,23 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 	if err != nil {
 		return fmt.Errorf("movie %s via sougouwiki at resolving stage: %w", queryID, err)
 	}
+	profileResolver := findActressProfileResolver(registry)
+	profileResolved := make(map[int]bool, len(resolved.Actresses))
+	if profileResolver != nil {
+		for index := range resolved.Actresses {
+			profile, profileErr := safeResolveActressProfile(ctx, profileResolver, resolved.Actresses[index])
+			if profileErr != nil || strings.TrimSpace(profile.JapaneseName) == "" {
+				continue
+			}
+			resolved.Actresses[index].JapaneseName = strings.TrimSpace(profile.JapaneseName)
+			resolved.Actresses[index].FirstName = strings.TrimSpace(profile.FirstName)
+			resolved.Actresses[index].LastName = strings.TrimSpace(profile.LastName)
+			if strings.TrimSpace(profile.ThumbURL) != "" {
+				resolved.Actresses[index].ThumbURL = strings.TrimSpace(profile.ThumbURL)
+			}
+			profileResolved[profile.DMMID] = true
+		}
+	}
 	verified := verifiedActresses(resolved)
 	if len(verified) == 0 {
 		return m.cleanFallbackMovieActresses(ctx, task, *movie)
@@ -499,10 +516,22 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 		if findErr != nil && !database.IsNotFound(findErr) {
 			return findErr
 		}
+		nameRepaired := false
+		if existing != nil && profileResolved[info.DMMID] && strings.TrimSpace(info.JapaneseName) != "" &&
+			strings.TrimSpace(existing.JapaneseName) != strings.TrimSpace(info.JapaneseName) {
+			existing.JapaneseName = strings.TrimSpace(info.JapaneseName)
+			existing.FirstName = ""
+			existing.LastName = ""
+			if updateErr := m.deps.ActressRepo.Update(ctx, existing); updateErr != nil {
+				return updateErr
+			}
+			nameRepaired = true
+			task.UpdatedFields = appendUnique(task.UpdatedFields, "japanese_name")
+		}
 		if info.ThumbURL == "" && thumbnailResolver != nil && (existing == nil || strings.TrimSpace(existing.ThumbURL) == "") {
 			info.ThumbURL = safeResolveActressThumbnail(ctx, thumbnailResolver, info)
 		}
-		needsNameEnrichment := existing == nil || !hasUsableActressIdentityProfile(*existing)
+		needsNameEnrichment := nameRepaired || existing == nil || !hasUsableActressIdentityProfile(*existing)
 		resolution, resolveErr := m.deps.ActressRepo.ResolveVerifiedIdentity(0, actressModelFromInfo(info), true)
 		if resolveErr != nil {
 			return resolveErr

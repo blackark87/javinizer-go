@@ -12,14 +12,17 @@ import (
 )
 
 type actressResolverScraper struct {
-	name       string
-	enabled    bool
-	result     *models.ScraperResult
-	err        error
-	calls      int
-	thumbnail  string
-	thumbCalls int
-	resolveID  string
+	name         string
+	enabled      bool
+	result       *models.ScraperResult
+	err          error
+	calls        int
+	thumbnail    string
+	thumbCalls   int
+	resolveID    string
+	profile      models.ActressInfo
+	profileErr   error
+	profileCalls int
 }
 
 func (s *actressResolverScraper) Name() string { return s.name }
@@ -40,6 +43,10 @@ func (s *actressResolverScraper) ResolveActresses(_ context.Context, id string) 
 func (s *actressResolverScraper) ResolveActressThumbnail(context.Context, models.ActressInfo) string {
 	s.thumbCalls++
 	return s.thumbnail
+}
+func (s *actressResolverScraper) ResolveActressProfile(context.Context, models.ActressInfo) (models.ActressInfo, error) {
+	s.profileCalls++
+	return s.profile, s.profileErr
 }
 
 func TestResolveMissingActressesRunsWhenAnyActressLacksVerifiedDMMIdentity(t *testing.T) {
@@ -255,6 +262,35 @@ func TestResolveMissingActressesEnrichesThumbnail(t *testing.T) {
 	require.NotNil(t, result)
 	assert.Equal(t, "https://example.com/actress.jpg", result.Actresses[0].ThumbURL)
 	assert.Equal(t, 1, thumbnail.thumbCalls)
+}
+
+func TestResolveMissingActressesPrefersDMMProfileNameAndFallsBackToSougouWiki(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		profile    models.ActressInfo
+		profileErr error
+		want       string
+	}{
+		{name: "DMM name", profile: models.ActressInfo{DMMID: 1077521, JapaneseName: "櫻茉日"}, want: "櫻茉日"},
+		{name: "SougouWiki fallback", profileErr: errors.New("DMM unavailable"), want: "SougouWiki名"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			resolver := &actressResolverScraper{name: actressResolverScraperName, enabled: true, result: &models.ScraperResult{
+				Actresses: []models.ActressInfo{{DMMID: 1077521, JapaneseName: "SougouWiki名"}},
+			}}
+			dmm := &actressResolverScraper{name: "dmm", enabled: true, profile: test.profile, profileErr: test.profileErr}
+			registry := scraperutil.NewScraperRegistry()
+			registry.RegisterInstance(resolver)
+			registry.RegisterInstance(dmm)
+			s := &Scraper{registry: registry}
+
+			result, failure := s.resolveMissingActresses(context.Background(), "MIUM-951", nil)
+			require.Nil(t, failure)
+			require.NotNil(t, result)
+			assert.Equal(t, test.want, result.Actresses[0].JapaneseName)
+			assert.Equal(t, 1, dmm.profileCalls)
+		})
+	}
 }
 
 func TestActressOverrideResultsPreservesRawMetadata(t *testing.T) {

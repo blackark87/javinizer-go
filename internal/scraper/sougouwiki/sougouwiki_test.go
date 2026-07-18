@@ -143,6 +143,29 @@ func TestResolveActressesMultipleAndDuplicateDMMIDs(t *testing.T) {
 	}
 }
 
+func TestResolveActressesUsesPageNameInsteadOfCompositeDMMLinkText(t *testing.T) {
+	server := newFixtureServer(t, func(_ string, request *http.Request) (string, int) {
+		switch request.URL.Path {
+		case "/search":
+			return identitySearchFixture("/d/mahiru", "櫻茉日"), http.StatusOK
+		case "/d/mahiru":
+			dmmURL := "https://www.dmm.co.jp/mono/dvd/-/list/=/article=actress/id=1077521/sort=date/"
+			return fmt.Sprintf(`<html><body><div class="title"><h2>櫻茉日</h2></div><div id="content_block_1"><h3 id="content_1">さくらまひる／<a href="%s">櫻茉日（さくらまひる）／堀北実来（ほりきたみくる）</a>／篠崎メイカ</h3><p>300MIUM-951</p></div></body></html>`, dmmURL), http.StatusOK
+		default:
+			return "not found", http.StatusNotFound
+		}
+	})
+	defer server.Close()
+
+	scraper := New(models.ScraperSettings{Enabled: true, BaseURL: server.URL + "/"}, nil, models.FlareSolverrConfig{})
+	result, err := scraper.ResolveActresses(context.Background(), "MIUM-951")
+	require.NoError(t, err)
+	require.Len(t, result.Actresses, 1)
+	assert.Equal(t, 1077521, result.Actresses[0].DMMID)
+	assert.Equal(t, "櫻茉日", result.Actresses[0].JapaneseName)
+	assert.NotContains(t, result.Actresses[0].JapaneseName, "堀北実来")
+}
+
 func TestResolveActressesNoVerifiedPage(t *testing.T) {
 	server := newFixtureServer(t, func(_ string, request *http.Request) (string, int) {
 		if request.URL.Path == "/search" {
@@ -224,7 +247,7 @@ func TestParseVerifiedActressPageRequiresFirstInformationBlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse fixture: %v", err)
 	}
-	if actress, ok := parseVerifiedActressPage(doc, "300MIUM-834"); ok {
+	if actress, ok := parseVerifiedActressPage(doc, "300MIUM-834", "300MIUMその他"); ok {
 		t.Fatalf("non-actress page accepted: %+v", actress)
 	}
 }
@@ -266,7 +289,7 @@ func identitySearchFixture(values ...string) string {
 
 func actressFixture(movieID, name string, dmmID int) string {
 	dmmURL := fmt.Sprintf("https://www.dmm.co.jp/mono/dvd/-/list/=/article=actress/id=%d/sort=date/", dmmID)
-	return fmt.Sprintf(`<html><body><div id="content_block_1"><h3 id="content_1"><a href="%s">%s</a></h3><p>%s</p></div></body></html>`, dmmURL, name, movieID)
+	return fmt.Sprintf(`<html><body><div class="title"><h2>%s</h2></div><div id="content_block_1"><h3 id="content_1"><a href="%s">%s</a></h3><p>%s</p></div></body></html>`, name, dmmURL, name, movieID)
 }
 
 func invalidFirstBlockFixture(title, movieID string) string {

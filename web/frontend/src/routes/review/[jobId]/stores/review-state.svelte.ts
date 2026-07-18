@@ -1044,6 +1044,11 @@ export function createReviewState(pageStore: Page) {
 		showFullSourcePath = false;
 	});
 
+	function navigateToMovieIndex(index: number): void {
+		if (movieResults.length === 0) return;
+		currentMovieIndex = Math.min(movieResults.length - 1, Math.max(0, index));
+	}
+
 	$effect(() => {
 		if (!browser) return;
 		localStorage.setItem(
@@ -1245,8 +1250,9 @@ export function createReviewState(pageStore: Page) {
 		get currentMovieIndex() {
 			return currentMovieIndex;
 		},
+		navigateToMovieIndex,
 		set currentMovieIndex(v) {
-			currentMovieIndex = v;
+			navigateToMovieIndex(v);
 		},
 		get editedMovies() {
 			return editedMovies;

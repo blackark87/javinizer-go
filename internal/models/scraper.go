@@ -157,6 +157,13 @@ type ActressIdentityResolver interface {
 	ResolveActressIdentity(ctx context.Context, query ActressIdentityQuery) (*ScraperResult, error)
 }
 
+// ActressProfileResolver resolves the authoritative DMM profile for an
+// already-known actress identity. Callers may retain their existing name as a
+// fallback when the profile cannot be read.
+type ActressProfileResolver interface {
+	ResolveActressProfile(ctx context.Context, actress ActressInfo) (ActressInfo, error)
+}
+
 // ActressThumbnailResolver resolves a profile image independently of a movie.
 type ActressThumbnailResolver interface {
 	ResolveActressThumbnail(ctx context.Context, actress ActressInfo) string

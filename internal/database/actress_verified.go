@@ -238,6 +238,15 @@ func applyVerifiedActress(verified, canonical *models.Actress) (bool, []string) 
 	switch {
 	case !isUsableVerifiedJapaneseName(oldJapanese) && isUsableVerifiedJapaneseName(newJapanese):
 		canonical.JapaneseName = newJapanese
+	case isMalformedCompositeActressName(oldJapanese) && isUsableVerifiedJapaneseName(newJapanese) &&
+		strings.Contains(oldJapanese, newJapanese):
+		// Older SougouWiki resolution accidentally persisted the text of a DMM
+		// link that spanned readings and aliases. A clean verified DMM name is
+		// authoritative and the polluted composite must not be retained as an
+		// alias.
+		canonical.JapaneseName = newJapanese
+		canonical.FirstName = strings.TrimSpace(verified.FirstName)
+		canonical.LastName = strings.TrimSpace(verified.LastName)
 	case isUsableVerifiedJapaneseName(oldJapanese) && isUsableVerifiedJapaneseName(newJapanese) &&
 		normalizeExactActressName(oldJapanese) != normalizeExactActressName(newJapanese):
 		canonical.Aliases, aliasesAdded = mergeVerifiedAliasValues(canonical.Aliases, []string{newJapanese}, oldJapanese)
@@ -258,6 +267,10 @@ func applyVerifiedActress(verified, canonical *models.Actress) (bool, []string) 
 	profileChanged := before.DMMID != canonical.DMMID || before.JapaneseName != canonical.JapaneseName ||
 		before.FirstName != canonical.FirstName || before.LastName != canonical.LastName || before.ThumbURL != canonical.ThumbURL
 	return profileChanged, aliasesAdded
+}
+
+func isMalformedCompositeActressName(name string) bool {
+	return strings.ContainsAny(name, "/／") || strings.ContainsAny(name, "(（")
 }
 
 func mergeVerifiedAliasValues(existing string, candidates []string, canonicalName string) (string, []string) {

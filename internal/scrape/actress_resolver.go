@@ -41,7 +41,7 @@ func (s *Scraper) resolveMissingActresses(ctx context.Context, movieID string, r
 	if strings.TrimSpace(resolved.ID) == "" {
 		resolved.ID = movieID
 	}
-	s.enrichResolvedActressThumbnails(ctx, resolved)
+	s.enrichResolvedActressProfiles(ctx, resolved)
 	return resolved, nil
 }
 
@@ -71,26 +71,46 @@ func needsActressResolution(results []*models.ScraperResult) bool {
 	return !hasActress
 }
 
-func (s *Scraper) enrichResolvedActressThumbnails(ctx context.Context, result *models.ScraperResult) {
+func (s *Scraper) enrichResolvedActressProfiles(ctx context.Context, result *models.ScraperResult) {
 	if result == nil || s.registry == nil {
 		return
 	}
+	var profileResolver models.ActressProfileResolver
 	var thumbnailResolver models.ActressThumbnailResolver
 	for _, instance := range s.registry.GetAllInstances() {
-		if resolver, ok := instance.(models.ActressThumbnailResolver); ok {
-			thumbnailResolver = resolver
-			break
+		if resolver, ok := instance.(models.ActressProfileResolver); ok && profileResolver == nil {
+			profileResolver = resolver
 		}
-	}
-	if thumbnailResolver == nil {
-		return
+		if resolver, ok := instance.(models.ActressThumbnailResolver); ok && thumbnailResolver == nil {
+			thumbnailResolver = resolver
+		}
 	}
 	for i := range result.Actresses {
-		if strings.TrimSpace(result.Actresses[i].ThumbURL) != "" {
-			continue
+		actress := &result.Actresses[i]
+		if profileResolver != nil {
+			if profile, err := safeActressProfile(ctx, profileResolver, *actress); err == nil && strings.TrimSpace(profile.JapaneseName) != "" {
+				actress.JapaneseName = strings.TrimSpace(profile.JapaneseName)
+				actress.FirstName = strings.TrimSpace(profile.FirstName)
+				actress.LastName = strings.TrimSpace(profile.LastName)
+				if strings.TrimSpace(profile.ThumbURL) != "" {
+					actress.ThumbURL = strings.TrimSpace(profile.ThumbURL)
+				}
+			}
 		}
-		result.Actresses[i].ThumbURL = safeActressThumbnail(ctx, thumbnailResolver, result.Actresses[i])
+		if strings.TrimSpace(actress.ThumbURL) == "" && thumbnailResolver != nil {
+			actress.ThumbURL = safeActressThumbnail(ctx, thumbnailResolver, *actress)
+		}
 	}
+}
+
+func safeActressProfile(ctx context.Context, resolver models.ActressProfileResolver, actress models.ActressInfo) (profile models.ActressInfo, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			profile = models.ActressInfo{}
+			err = fmt.Errorf("actress profile resolver panicked: %v", recovered)
+		}
+	}()
+	return resolver.ResolveActressProfile(ctx, actress)
 }
 
 func safeActressThumbnail(ctx context.Context, resolver models.ActressThumbnailResolver, actress models.ActressInfo) (thumbnail string) {

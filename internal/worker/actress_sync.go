@@ -66,6 +66,32 @@ func SyncActressMetadata(
 		return result, nil
 	}
 
+	if profileResolver := findActressProfileResolver(registry); profileResolver != nil {
+		profile, profileErr := safeResolveActressProfile(ctx, profileResolver, actressInfoForThumbnail(*actress))
+		if profileErr == nil && strings.TrimSpace(profile.JapaneseName) != "" {
+			profileChanged := false
+			if name := strings.TrimSpace(profile.JapaneseName); name != strings.TrimSpace(actress.JapaneseName) {
+				actress.JapaneseName = name
+				actress.FirstName = strings.TrimSpace(profile.FirstName)
+				actress.LastName = strings.TrimSpace(profile.LastName)
+				result.UpdatedFields = append(result.UpdatedFields, "japanese_name")
+				profileChanged = true
+			}
+			if strings.TrimSpace(actress.ThumbURL) == "" && strings.TrimSpace(profile.ThumbURL) != "" {
+				actress.ThumbURL = strings.TrimSpace(profile.ThumbURL)
+				result.UpdatedFields = append(result.UpdatedFields, "thumb_url")
+				profileChanged = true
+			}
+			if profileChanged {
+				if err := actressRepo.Update(ctx, actress); err != nil {
+					return nil, err
+				}
+			}
+		} else if profileErr != nil {
+			result.Messages = append(result.Messages, "DMM actress profile could not be resolved; existing name was retained")
+		}
+	}
+
 	if strings.TrimSpace(actress.ThumbURL) == "" {
 		thumbnailResolver := findActressThumbnailResolver(registry)
 		thumbnail := ""
@@ -108,6 +134,31 @@ func findActressThumbnailResolver(registry scraperutil.ScraperInstancesInterface
 		}
 	}
 	return nil
+}
+
+func findActressProfileResolver(registry scraperutil.ScraperInstancesInterface) models.ActressProfileResolver {
+	if registry == nil {
+		return nil
+	}
+	for _, instance := range registry.GetAllInstances() {
+		if resolver, ok := instance.(models.ActressProfileResolver); ok {
+			return resolver
+		}
+	}
+	return nil
+}
+
+func safeResolveActressProfile(ctx context.Context, resolver models.ActressProfileResolver, actress models.ActressInfo) (result models.ActressInfo, err error) {
+	if resolver == nil {
+		return models.ActressInfo{}, errors.New("actress profile resolver is unavailable")
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			result = models.ActressInfo{}
+			err = fmt.Errorf("actress profile resolver panicked: %v", recovered)
+		}
+	}()
+	return resolver.ResolveActressProfile(ctx, actress)
 }
 
 func safeResolveActressThumbnail(ctx context.Context, resolver models.ActressThumbnailResolver, actress models.ActressInfo) (result string) {

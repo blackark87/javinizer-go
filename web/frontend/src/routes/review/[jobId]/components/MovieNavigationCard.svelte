@@ -12,11 +12,11 @@
 		isSelected?: boolean;
 		onExclude: () => void;
 		onToggleSelection?: () => void;
-		onNavigate?: (index: number) => void | Promise<void>;
+		onNavigate: (index: number) => void | Promise<void>;
 	}
 
 	let {
-		currentMovieIndex = $bindable(0),
+		currentMovieIndex,
 		movieResultsLength,
 		currentMovieId,
 		hasChanges,
@@ -36,7 +36,7 @@
 		const selectedIndex = Number.parseInt(target.value, 10) - 1;
 		if (Number.isNaN(selectedIndex)) return;
 
-		onNavigate?.(Math.min(movieResultsLength - 1, Math.max(0, selectedIndex)));
+		onNavigate(Math.min(movieResultsLength - 1, Math.max(0, selectedIndex)));
 	}
 </script>
 
@@ -44,7 +44,7 @@
 	<div class="flex items-center justify-between">
 		<Button
 			variant="outline"
-			onclick={() => onNavigate?.(Math.max(0, currentMovieIndex - 1))}
+			onclick={() => onNavigate(Math.max(0, currentMovieIndex - 1))}
 			disabled={currentMovieIndex === 0}
 		>
 			{#snippet children()}
@@ -102,7 +102,7 @@
 
 			<Button
 				variant="outline"
-				onclick={() => onNavigate?.(Math.min(movieResultsLength - 1, currentMovieIndex + 1))}
+				onclick={() => onNavigate(Math.min(movieResultsLength - 1, currentMovieIndex + 1))}
 				disabled={currentMovieIndex === movieResultsLength - 1}
 			>
 				{#snippet children()}

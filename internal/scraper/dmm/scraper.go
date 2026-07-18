@@ -34,7 +34,7 @@ var (
 	cleanPrefixRegex        = regexp.MustCompile(`^(?:\d+|h_\d+)?([a-z]+\d+.*)$`)
 	actressIDRegex          = regexp.MustCompile(`[?&]actress=(\d+)`)
 	actressArticleIDRegex   = regexp.MustCompile(`/article=actress/id=(\d+)`)
-	actressParenRegex       = regexp.MustCompile(`\(.*\)|（.*）`)
+	actressParenRegex       = regexp.MustCompile(`\([^)]*\)|（[^）]*）`)
 	actressJapaneseCharRe   = regexp.MustCompile(`\p{Hiragana}|\p{Katakana}|\p{Han}`)
 	dmmCIDRegex             = regexp.MustCompile(`cid=([^/?&]+)`)
 	dmmIDRegex              = regexp.MustCompile(`[?&]id=([^/?&]+)`)

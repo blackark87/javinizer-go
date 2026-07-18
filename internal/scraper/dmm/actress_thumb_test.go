@@ -224,6 +224,21 @@ func TestExtractRomajiVariants(t *testing.T) {
 	}
 }
 
+func TestExtractActressProfileNameRemovesReadings(t *testing.T) {
+	for _, test := range []struct {
+		title string
+		want  string
+	}{
+		{title: "櫻茉日（さくらまひる） - FANZA", want: "櫻茉日"},
+		{title: "櫻茉日(さくらまひる) - DMM", want: "櫻茉日"},
+		{title: "名前（よみ） 別表記(べつひょうき) - DMM", want: "名前 別表記"},
+		{title: "このページはお住まいの地域からご利用になれません。 - FANZA", want: ""},
+	} {
+		doc := docFromHTMLDMM(t, "<html><head><title>"+test.title+"</title></head></html>")
+		assert.Equal(t, test.want, extractActressProfileName(doc))
+	}
+}
+
 func TestTryActressThumbURLs_VariantGeneration(t *testing.T) {
 	// This tests the URL generation logic without actually making HTTP requests
 	tests := []struct {

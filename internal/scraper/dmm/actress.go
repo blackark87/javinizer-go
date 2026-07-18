@@ -512,25 +512,72 @@ func (s *scraper) ResolveActressThumbnail(ctx context.Context, actress models.Ac
 
 var _ models.ActressThumbnailResolver = (*scraper)(nil)
 
+// ResolveActressProfile reads the authoritative actress name and profile image
+// from the DMM actress page identified by a verified DMM ID.
+func (s *scraper) ResolveActressProfile(ctx context.Context, actress models.ActressInfo) (models.ActressInfo, error) {
+	if actress.DMMID <= 0 {
+		return models.ActressInfo{}, fmt.Errorf("DMM actress profile requires a positive DMM ID")
+	}
+	doc, err := s.fetchActressPageDocResult(ctx, actress.DMMID)
+	if err != nil {
+		return models.ActressInfo{}, err
+	}
+	name := extractActressProfileName(doc)
+	if name == "" || shouldSkipActressName(name) {
+		return models.ActressInfo{}, fmt.Errorf("DMM actress profile %d has no usable name", actress.DMMID)
+	}
+	profile := models.ActressInfo{DMMID: actress.DMMID, JapaneseName: name}
+	if candidates := extractActressProfileImageCandidates(doc); len(candidates) > 0 {
+		profile.ThumbURL = candidates[0]
+	}
+	return profile, nil
+}
+
+var _ models.ActressProfileResolver = (*scraper)(nil)
+
 func (s *scraper) fetchActressPageDoc(ctx context.Context, dmmID int) *goquery.Document {
+	doc, _ := s.fetchActressPageDocResult(ctx, dmmID)
+	return doc
+}
+
+func (s *scraper) fetchActressPageDocResult(ctx context.Context, dmmID int) (*goquery.Document, error) {
 	url := fmt.Sprintf("https://www.dmm.co.jp/mono/dvd/-/list/=/article=actress/id=%d/", dmmID)
 
 	if err := s.rateLimiter.Wait(ctx); err != nil {
 		logging.Debugf("DMM: Rate limit wait failed for actress page: %v", err)
-		return nil
+		return nil, err
 	}
 
 	resp, err := s.client.R().SetContext(ctx).Get(url)
-	if err != nil || resp.StatusCode() != 200 {
+	if err != nil {
 		logging.Debugf("DMM: Failed to fetch actress page for ID %d", dmmID)
-		return nil
+		return nil, err
+	}
+	if resp.StatusCode() != http.StatusOK {
+		logging.Debugf("DMM: Failed to fetch actress page for ID %d", dmmID)
+		return nil, models.NewScraperStatusError("DMM", resp.StatusCode(), fmt.Sprintf("DMM actress profile returned status code %d", resp.StatusCode()))
 	}
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(resp.String()))
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	return doc
+	return doc, nil
+}
+
+func extractActressProfileName(doc *goquery.Document) string {
+	if doc == nil {
+		return ""
+	}
+	title := scraperutil.CleanString(doc.Find("title").First().Text())
+	lowerTitle := strings.ToLower(title)
+	if strings.Contains(title, "ご利用になれません") || strings.Contains(lowerTitle, "not available in your region") {
+		return ""
+	}
+	if idx := strings.Index(title, " - "); idx >= 0 {
+		title = strings.TrimSpace(title[:idx])
+	}
+	return cleanActressName(title)
 }
 
 func extractRomajiVariantsFromActressDoc(doc *goquery.Document) []string {

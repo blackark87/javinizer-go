@@ -83,6 +83,24 @@ func TestResolveVerifiedIdentityKeepsDMMOwnerProfileAndAddsVerifiedActivityNameA
 	assert.Equal(t, polluted.ID, movie.Actresses[0].ID)
 }
 
+func TestResolveVerifiedIdentityRepairsMalformedCompositeNameFromCleanDMMProfile(t *testing.T) {
+	_, actressRepo, _ := newVerifiedActressTestRepos(t)
+	owner := &models.Actress{
+		DMMID:        1077521,
+		JapaneseName: "櫻茉日（さくらまひる）／堀北実来",
+		FirstName:    "polluted",
+	}
+	require.NoError(t, actressRepo.Create(context.Background(), owner))
+
+	resolution, err := actressRepo.ResolveVerifiedIdentity(0, models.Actress{
+		DMMID: 1077521, JapaneseName: "櫻茉日",
+	}, true)
+	require.NoError(t, err)
+	assert.Equal(t, "櫻茉日", resolution.Actress.JapaneseName)
+	assert.NotContains(t, resolution.Actress.Aliases, "櫻茉日（さくらまひる）／堀北実来")
+	assert.True(t, resolution.NameChanged)
+}
+
 func TestResolveVerifiedIdentityDeduplicatesNormalizedActivityNameAlias(t *testing.T) {
 	_, actressRepo, _ := newVerifiedActressTestRepos(t)
 	owner := &models.Actress{DMMID: 778, JapaneseName: "既存正名", Aliases: "弥生 みづき"}

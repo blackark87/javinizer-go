@@ -127,10 +127,11 @@ type RescrapeResult struct {
 	FieldSources     map[string]string       // Per-field scraper attribution
 	ActressSources   map[string]string       // Per-actress scraper attribution
 	ScraperResults   []*models.ScraperResult // Raw per-scraper results, retained in-memory for the review source viewer
-	Status           models.RescrapeStatus   // success, failed, gone, conflict
-	Error            string                  // Human-readable error for "failed" status
-	OrphanedMovieIDs []string                // IDs that became orphaned during rescrape cleanup
-	FilePath         string                  // File path that was rescraped (for provenance propagation)
+	SourceOutcomes   []*models.ScraperOutcome
+	Status           models.RescrapeStatus // success, failed, gone, conflict
+	Error            string                // Human-readable error for "failed" status
+	OrphanedMovieIDs []string              // IDs that became orphaned during rescrape cleanup
+	FilePath         string                // File path that was rescraped (for provenance propagation)
 }
 
 // FileLookupResult holds the output of looking up a movie ID in job results.

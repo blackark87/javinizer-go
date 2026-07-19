@@ -164,6 +164,10 @@ func TestUpdateAtomicallyModifiesSingleField(t *testing.T) {
 // read-modify-write: 100 concurrent increments of a counter field must all
 // survive (no lost updates). With an unlocked Load+Save, many increments
 // would be lost. This is the TOCTOU regression test for issue #36.
+// TODO: Replace this 100-writer stress test with a deterministic two-writer
+// regression test and assert every Update error. The current test can exhaust
+// the 10-second file-lock deadline on slower filesystems and misreport timed-out
+// writers as lost updates because it discards their errors.
 func TestUpdateConcurrentWritersNoLostUpdates(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping concurrency test in short mode")

@@ -86,7 +86,6 @@ scrapers:
     request_timeout_seconds: 60
     priority:
         - r18dev
-        - sougouwiki
         - libredmm
         - dmm
         - javlibrary
@@ -99,6 +98,7 @@ scrapers:
         - caribbeancom
         - dlgetchu
         - fc2
+        - paipancon
         - javstash
     # NEW: Global scrape_actress default (opt-out behavior)
     scrape_actress: true
@@ -163,10 +163,14 @@ scrapers:
     libredmm:
         enabled: false
         base_url: "https://www.libredmm.com"
-    # Actress identity resolver. Missing-DMM verification runs automatically even
-    # when enabled is false; enabled only controls ordinary metadata scraping.
+    paipancon:
+        enabled: true
+        rate_limit: 1000
+        base_url: "https://paipancon.com"
+    # Internal actress identity resolver. It is not shown as a movie metadata
+    # provider; missing-DMM verification runs automatically even when disabled.
     sougouwiki:
-        enabled: false            # Keep disabled unless it should be a regular source
+        enabled: false            # Retained for config compatibility; resolver calls are automatic
         request_delay: 1000
         base_url: "https://seesaawiki.jp/w/sougouwiki/"
     mgstage:

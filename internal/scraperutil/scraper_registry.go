@@ -62,12 +62,13 @@ type ScraperConstructor func(deps ScraperDeps) (models.Scraper, error)
 
 // ScraperRegistration holds the metadata for one scraper in the registry.
 type ScraperRegistration struct {
-	Name        string
-	Description string
-	Constructor ScraperConstructor
-	Defaults    models.ScraperSettings
-	Priority    int
-	Options     []models.ScraperOption
+	Name         string
+	Description  string
+	Constructor  ScraperConstructor
+	Defaults     models.ScraperSettings
+	Priority     int
+	Options      []models.ScraperOption
+	InternalOnly bool
 
 	// ValidateFn performs scraper-specific validation on the settings.
 	// The framework calls ScraperSettings.Validate(name) as a base check first,
@@ -183,7 +184,7 @@ func (r *ScraperRegistry) GetEnabledInstances() []models.Scraper {
 // If the priority list is empty or nil, returns all enabled instances in sorted key order.
 // Only returns instances that are both in the priority list AND enabled.
 func (r *ScraperRegistry) GetInstancesByPriority(priority []string) []models.Scraper {
-	return r.store.GetInstancesByPriority(priority)
+	return r.filterInternal(r.store.GetInstancesByPriority(priority))
 }
 
 // GetInstancesByPriorityForInput returns enabled instances in priority order, but moves
@@ -192,7 +193,24 @@ func (r *ScraperRegistry) GetInstancesByPriority(priority []string) []models.Scr
 // If no instance resolver matches, the original GetInstancesByPriority ordering is
 // returned unchanged.
 func (r *ScraperRegistry) GetInstancesByPriorityForInput(priority []string, input string) []models.Scraper {
-	return r.store.GetInstancesByPriorityForInput(priority, input)
+	return r.filterInternal(r.store.GetInstancesByPriorityForInput(priority, input))
+}
+
+// IsInternalOnly reports whether a registered scraper is an implementation
+// detail rather than a user-selectable movie metadata provider.
+func (r *ScraperRegistry) IsInternalOnly(name string) bool {
+	reg, ok := r.catalog.Get(name)
+	return ok && reg.InternalOnly
+}
+
+func (r *ScraperRegistry) filterInternal(scrapers []models.Scraper) []models.Scraper {
+	filtered := make([]models.Scraper, 0, len(scrapers))
+	for _, scraper := range scrapers {
+		if scraper != nil && !r.IsInternalOnly(scraper.Name()) {
+			filtered = append(filtered, scraper)
+		}
+	}
+	return filtered
 }
 
 // --- Config concern (operates on catalog directly) ---

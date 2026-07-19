@@ -2,6 +2,7 @@ package database
 
 import (
 	"errors"
+	"fmt"
 
 	"gorm.io/gorm"
 )
@@ -31,8 +32,8 @@ func IsNotFound(err error) bool {
 // otherwise returns err unchanged. Use this at the repository boundary so that
 // callers outside the database package never depend on gorm error types.
 func WrapDuplicateKey(err error) error {
-	if err != nil && errors.Is(err, gorm.ErrDuplicatedKey) {
-		return ErrDuplicateKey
+	if isDuplicateKey(err) {
+		return fmt.Errorf("%w: %v", ErrDuplicateKey, err)
 	}
 	return err
 }

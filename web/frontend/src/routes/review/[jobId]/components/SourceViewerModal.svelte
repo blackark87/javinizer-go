@@ -3,7 +3,7 @@
 	import { fade, scale, slide } from 'svelte/transition';
 	import { Check, ChevronRight, Columns3, LoaderCircle, Minus, X } from 'lucide-svelte';
 	import { portalToBody } from '$lib/actions/portal';
-	import type { ScraperResult } from '$lib/api/types';
+	import type { ScraperOutcome, ScraperResult } from '$lib/api/types';
 	import Button from '$lib/components/ui/Button.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 	import { formatActressName } from '$lib/utils/actress';
@@ -70,6 +70,7 @@
 		show: boolean;
 		loading: boolean;
 		results: ScraperResult[];
+		outcomes?: ScraperOutcome[];
 		fieldSources: Record<string, string> | undefined;
 		pendingField: string | null;
 		onLoad: () => void;
@@ -80,6 +81,7 @@
 		show = $bindable(false),
 		loading,
 		results,
+		outcomes = [],
 		fieldSources,
 		pendingField,
 		onLoad,
@@ -151,16 +153,37 @@
 
 	const conflictCount = $derived(FIELDS.filter((f) => statusFor(f).conflict).length);
 
+	const MEDIA_FIELDS = new Set(['poster_url', 'cover_url', 'trailer_url', 'screenshot_urls']);
+
 	function sourceCandidates(field: FieldDef) {
 		const seen = new Set<string>();
-		return results
-			.map((r) => ({ source: r.source ?? 'unknown', value: valueOf(field, r) }))
+		const recorded: ScraperOutcome[] = outcomes.length
+			? outcomes
+			: results.map((result) => ({ source: result.source ?? 'unknown', status: 'success', result }));
+		return recorded
+			.map((outcome) => ({
+				source: outcome.source ?? 'unknown',
+				value: outcome.result ? valueOf(field, outcome.result) : '',
+				status: outcome.status,
+				error: outcome.error ?? ''
+			}))
 			.filter((c) => {
-				if (!c.value) return false;
+				if (!c.value && !MEDIA_FIELDS.has(field.key)) return false;
 				if (seen.has(c.source)) return false;
 				seen.add(c.source);
 				return true;
 			});
+	}
+
+	function unavailableText(candidate: ReturnType<typeof sourceCandidates>[number]): string {
+		if (candidate.status === 'no_match') return 'Movie not found by this provider';
+		if (candidate.status === 'failed') return candidate.error ? `Request failed: ${candidate.error}` : 'Request failed';
+		if (candidate.status === 'cancelled') return 'Request cancelled';
+		return 'Unavailable from this provider';
+	}
+
+	function availableSourceCount(field: FieldDef): number {
+		return sourceCandidates(field).filter((candidate) => Boolean(candidate.value)).length;
 	}
 
 	function handleKey(e: KeyboardEvent) {
@@ -235,7 +258,7 @@
 						<LoaderCircle class="h-5 w-5 mr-2 animate-spin" />
 						Loading scraper results…
 					</div>
-				{:else if results.length === 0}
+				{:else if results.length === 0 && outcomes.length === 0}
 					<div class="text-center py-20 text-muted-foreground">
 						<p class="font-medium">No scraper results in memory</p>
 						<p class="text-xs mt-2 max-w-sm mx-auto">
@@ -298,11 +321,8 @@
 										<div>
 											<h3 class="text-base font-semibold tracking-tight">{focusedField.label}</h3>
 											<p class="text-xs text-muted-foreground mt-0.5">
-												{sourceCandidates(focusedField).length} source{sourceCandidates(
-													focusedField
-												).length === 1
-													? ''
-													: 's'} provided a value
+												{availableSourceCount(focusedField)} of {sourceCandidates(focusedField).length}
+												sources provided a value
 											</p>
 										</div>
 										{#if activeSourceFor(focusedField.key)}
@@ -330,7 +350,8 @@
 											aria-busy={pendingField === focusedField.key}
 										>
 											{#each candidates as c (c.source)}
-												{@const active = activeSourceFor(focusedField.key) === c.source}
+												{@const available = Boolean(c.value)}
+												{@const active = available && activeSourceFor(focusedField.key) === c.source}
 												{@const isPending = pendingField === focusedField.key}
 												{@const isMonospace =
 													focusedField.kind === 'url' ||
@@ -339,18 +360,19 @@
 												{@const isClamped = isLongText(c.value) && !expandedSources.has(c.source)}
 												<li>
 													<div
-														class="group relative rounded-lg border transition-all cursor-pointer
+														class="group relative rounded-lg border transition-all
 															focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
+															{available ? 'cursor-pointer' : 'cursor-default opacity-70'}
 															{active
 															? 'border-green-500/50 bg-green-500/[0.04] dark:bg-green-500/[0.06]'
 															: 'border-border hover:border-primary/40 hover:bg-accent/40'}"
 														role="radio"
 														aria-checked={active}
-														aria-disabled={isPending}
+														aria-disabled={isPending || !available}
 														tabindex="0"
 														onclick={() => {
 															if (window.getSelection()?.toString().trim()) return;
-															if (!active && !isPending) {
+															if (available && !active && !isPending) {
 																applyingSource = c.source;
 																onApply(focusedField.key, c.source);
 															}
@@ -359,7 +381,7 @@
 															if (e.key === ' ') e.preventDefault();
 															if (
 																(e.key === 'Enter' || e.key === ' ') &&
-																!active &&
+																available &&
 																!isPending
 															) {
 																applyingSource = c.source;
@@ -410,7 +432,7 @@
 																{isMonospace ? 'font-mono text-xs' : ''}
 																{isClamped ? 'line-clamp-4' : ''}"
 															>
-																{c.value}
+																{available ? c.value : unavailableText(c)}
 															</p>
 															{#if isLongText(c.value)}
 																<button

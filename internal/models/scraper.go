@@ -43,6 +43,26 @@ type ScraperResult struct {
 	Translations     []MovieTranslation `json:"translations,omitempty"` // Additional language translations (optional)
 }
 
+// ScraperOutcome records what happened when a configured scraper was queried.
+// Result is populated only when the scraper returned metadata; aggregation
+// continues to consume ScraperResult values exclusively.
+type ScraperOutcome struct {
+	Source string         `json:"source"`
+	Status string         `json:"status"` // success | no_match | failed | cancelled
+	Result *ScraperResult `json:"result,omitempty"`
+	Error  string         `json:"error,omitempty"`
+}
+
+// Clone returns a deep copy suitable for persisted batch provenance.
+func (o *ScraperOutcome) Clone() *ScraperOutcome {
+	if o == nil {
+		return nil
+	}
+	copied := *o
+	copied.Result = o.Result.Clone()
+	return &copied
+}
+
 // Clone returns a deep copy of the ScraperResult, including all slice and
 // pointer fields. Used by ProvenanceData.Clone to isolate the raw per-scraper
 // results retained for the review-page source viewer from the scrape path's

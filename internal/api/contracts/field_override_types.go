@@ -34,5 +34,6 @@ type FieldOverrideResponse struct {
 // only for legacy envelopes persisted before this feature or when provenance
 // was never set.
 type SourceResultsResponse struct {
-	Results []*models.ScraperResult `json:"results"`
+	Results  []*models.ScraperResult  `json:"results"`
+	Outcomes []*models.ScraperOutcome `json:"outcomes,omitempty"`
 }

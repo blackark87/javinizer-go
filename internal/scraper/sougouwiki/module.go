@@ -5,13 +5,14 @@ import (
 	"github.com/javinizer/javinizer-go/internal/scraperutil"
 )
 
-// Register adds the SougouWiki actress identity resolver to the built-in
-// scraper catalog. It is disabled by default and therefore never participates
-// in normal movie scraping unless explicitly configured.
+// Register adds SougouWiki as an internal actress resolver. It is called
+// automatically for unresolved cast identities and never queried as a normal
+// movie metadata provider.
 func Register(reg scraperutil.ScraperRegistrar) {
 	reg.Register(scraperutil.ScraperRegistration{
-		Name:        scraperName,
-		Description: "SougouWiki actress resolver",
+		Name:         scraperName,
+		Description:  "SougouWiki actress resolver",
+		InternalOnly: true,
 		Options: []models.ScraperOption{
 			{
 				Key:         "base_url",

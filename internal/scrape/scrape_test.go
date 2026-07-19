@@ -603,6 +603,33 @@ func TestQuerySingle_ResolverReturnsNoMatch(t *testing.T) {
 	assert.Nil(t, outcome.failure)
 }
 
+func TestBuildSourceOutcomes_PreservesUnavailableProviders(t *testing.T) {
+	scrapers := []models.Scraper{
+		&mockScraper{name: "dmm"},
+		&mockScraper{name: "javlibrary"},
+		&mockScraper{name: "javbus"},
+	}
+	javbus := &models.ScraperResult{Source: "javbus", PosterURL: "https://javbus.example/poster.jpg"}
+	outcomes := buildSourceOutcomes(scrapers, []*models.ScraperResult{javbus}, []models.ScraperError{{Scraper: "dmm", Cause: errors.New("blocked")}})
+
+	require.Len(t, outcomes, 3)
+	assert.Equal(t, "failed", outcomes[0].Status)
+	assert.Equal(t, "blocked", outcomes[0].Error)
+	assert.Equal(t, "no_match", outcomes[1].Status)
+	assert.Equal(t, "success", outcomes[2].Status)
+	assert.Same(t, javbus, outcomes[2].Result)
+}
+
+func TestBuildSourceOutcomes_ClassifiesTypedNotFoundAsNoMatch(t *testing.T) {
+	scrapers := []models.Scraper{&mockScraper{name: "dmm"}}
+	failures := []models.ScraperError{{Scraper: "dmm", Cause: models.NewScraperNotFoundError("DMM", "movie not found")}}
+
+	outcomes := buildSourceOutcomes(scrapers, nil, failures)
+	require.Len(t, outcomes, 1)
+	assert.Equal(t, "no_match", outcomes[0].Status)
+	assert.Empty(t, outcomes[0].Error)
+}
+
 func TestScrape_ActressEnrichment(t *testing.T) {
 	f := newFixture(t)
 	actressRepo := database.NewActressRepository(f.db)

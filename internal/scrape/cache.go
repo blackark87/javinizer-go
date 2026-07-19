@@ -96,6 +96,7 @@ func (s *Scraper) tryCache(ctx context.Context, cmd ScrapeCmd, actressRepo datab
 		FieldSources:       fieldSources,
 		ActressSources:     actressSources,
 		ScraperResults:     scraperResults,
+		SourceOutcomes:     cachedSourceOutcomes(scraperResults),
 		Cached:             true,
 		TranslationWarning: translationWarning,
 		TranslationOutput:  translationOutput,
@@ -104,6 +105,16 @@ func (s *Scraper) tryCache(ctx context.Context, cmd ScrapeCmd, actressRepo datab
 		StartedAt:          startTime,
 		EndedAt:            now,
 	}
+}
+
+func cachedSourceOutcomes(results []*models.ScraperResult) []*models.ScraperOutcome {
+	outcomes := make([]*models.ScraperOutcome, 0, len(results))
+	for _, result := range results {
+		if result != nil {
+			outcomes = append(outcomes, &models.ScraperOutcome{Source: result.Source, Status: "success", Result: result})
+		}
+	}
+	return outcomes
 }
 
 func (s *Scraper) repairCachedActresses(

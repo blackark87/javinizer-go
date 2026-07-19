@@ -52,6 +52,7 @@ func (m *actressMerger) Merge(sources []actressSource, opts actressMergeOptions)
 	// Phase 1: Collect + Dedup
 	actressByDMMID := make(map[int]*models.Actress)
 	actressByName := make(map[string]*models.Actress)
+	actressOrder := make([]*models.Actress, 0)
 
 	// Pre-process unknownText for case-insensitive comparison.
 	// The original text is preserved for the fallback actress placeholder.
@@ -142,8 +143,10 @@ func (m *actressMerger) Merge(sources []actressSource, opts actressMergeOptions)
 
 				if info.DMMID != 0 {
 					actressByDMMID[info.DMMID] = actress
+					actressOrder = append(actressOrder, actress)
 				} else if nameKey != "" {
 					actressByName[nameKey] = actress
+					actressOrder = append(actressOrder, actress)
 				}
 				// Skip actresses with no DMMID and no name
 			}
@@ -151,21 +154,14 @@ func (m *actressMerger) Merge(sources []actressSource, opts actressMergeOptions)
 	}
 
 	// Phase 2: Resolve aliases + collect results
-	totalActresses := len(actressByDMMID) + len(actressByName)
+	totalActresses := len(actressOrder)
 	if totalActresses > 0 {
 		actresses := make([]models.Actress, 0, totalActresses)
 
-		// Add actresses with DMMID first (primary source)
-		for _, actress := range actressByDMMID {
-			// Apply alias conversion if resolver is available
-			if opts.AliasResolver != nil {
-				opts.AliasResolver.Resolve(actress)
-			}
-			actresses = append(actresses, *actress)
-		}
-
-		// Add actresses without DMMID (fallback)
-		for _, actress := range actressByName {
+		// Preserve the order reported by the highest-priority source. Iterating
+		// the deduplication maps here made the primary actress nondeterministic,
+		// which could select a different folder name in otherwise identical jobs.
+		for _, actress := range actressOrder {
 			// Apply alias conversion if resolver is available
 			if opts.AliasResolver != nil {
 				opts.AliasResolver.Resolve(actress)

@@ -154,6 +154,14 @@ export interface ScraperResult {
 
 export interface SourceResultsResponse {
 	results: ScraperResult[];
+	outcomes?: ScraperOutcome[];
+}
+
+export interface ScraperOutcome {
+	source: string;
+	status: 'success' | 'no_match' | 'failed' | 'cancelled';
+	result?: ScraperResult;
+	error?: string;
 }
 
 export interface FieldOverrideRequest {

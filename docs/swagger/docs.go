@@ -6241,6 +6241,12 @@ const docTemplate = `{
         "github_com_javinizer_javinizer-go_internal_api_contracts.SourceResultsResponse": {
             "type": "object",
             "properties": {
+                "outcomes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.ScraperOutcome"
+                    }
+                },
                 "results": {
                     "type": "array",
                     "items": {
@@ -8147,6 +8153,24 @@ const docTemplate = `{
                 "value": {
                     "type": "string",
                     "example": "en"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_models.ScraperOutcome": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "result": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.ScraperResult"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "success | no_match | failed | cancelled",
+                    "type": "string"
                 }
             }
         },

@@ -34,6 +34,11 @@ func setupOverrideJob(t *testing.T) (*core.APIDeps, *worker.BatchJob, string) {
 	})
 	job.ResultsWriter().SetProvenance(filePath, &worker.ProvenanceData{
 		FieldSources: map[string]string{"maker": "r18dev"},
+		SourceOutcomes: []*models.ScraperOutcome{
+			{Source: "r18dev", Status: "success", Result: &models.ScraperResult{Source: "r18dev", Maker: "R18Maker", Title: "R18Title"}},
+			{Source: "javlibrary", Status: "no_match"},
+			{Source: "dmm", Status: "failed", Error: "request failed"},
+		},
 		ScraperResults: []*models.ScraperResult{
 			{Source: "r18dev", Maker: "R18Maker", Title: "R18Title"},
 			{
@@ -63,6 +68,9 @@ func TestGetBatchMovieSources_Success(t *testing.T) {
 	assert.Equal(t, "dmm", resp.Results[1].Source)
 	require.Len(t, resp.Results[1].Translations, 1)
 	assert.Equal(t, "DMM 번역 제목", resp.Results[1].Translations[0].Title)
+	require.Len(t, resp.Outcomes, 3)
+	assert.Equal(t, "no_match", resp.Outcomes[1].Status)
+	assert.Equal(t, "request failed", resp.Outcomes[2].Error)
 }
 
 func TestGetBatchMovieSources_JobNotFound(t *testing.T) {

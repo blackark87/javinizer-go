@@ -35,7 +35,7 @@ func TestConfigYAMLLoadAndRoundTrip(t *testing.T) {
 		t.Error("Scrapers.Priority should not be empty")
 	}
 
-	expectedScrapers := []string{"r18dev", "sougouwiki", "dmm", "mgstage", "javlibrary", "javdb", "javbus", "jav321", "tokyohot", "aventertainment", "dlgetchu", "libredmm", "caribbeancom", "fc2", "javstash"}
+	expectedScrapers := []string{"r18dev", "sougouwiki", "dmm", "mgstage", "javlibrary", "javdb", "javbus", "jav321", "tokyohot", "aventertainment", "dlgetchu", "libredmm", "caribbeancom", "fc2", "paipancon", "javstash"}
 	for _, scraper := range expectedScrapers {
 		if _, ok := cfg.Scrapers.Overrides[scraper]; !ok {
 			t.Errorf("Scraper %q not found in Overrides", scraper)

@@ -2,11 +2,12 @@ package database
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"time"
 
 	"github.com/javinizer/javinizer-go/internal/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ActressTranslationRepository persists localized name translations for actresses.
@@ -53,33 +54,31 @@ func (r *ActressTranslationRepository) Upsert(ctx context.Context, translation *
 
 // UpsertTx inserts or updates the actress translation within the provided transaction.
 func (r *ActressTranslationRepository) UpsertTx(tx *gorm.DB, translation *models.ActressTranslation) error {
-	var existing models.ActressTranslation
-	err := tx.First(&existing, "actress_id = ? AND language = ?", translation.ActressID, translation.Language).Error
-	if err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return wrapDBErr("find", actressTranslationEntityID(translation.ActressID, translation.Language), err)
+	incoming := *translation
+	if err := tx.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "actress_id"}, {Name: "language"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"first_name", "last_name", "japanese_name", "display_name",
+			"source_name", "settings_hash", "updated_at",
+		}),
+	}).Create(&incoming).Error; err != nil {
+		if !isDuplicateKey(err) {
+			return wrapDBErr("upsert", actressTranslationEntityID(translation.ActressID, translation.Language), err)
 		}
-		if err := tx.Create(translation).Error; err != nil {
-			if errors.Is(err, gorm.ErrDuplicatedKey) {
-				loadErr := tx.First(&existing, "actress_id = ? AND language = ?", translation.ActressID, translation.Language).Error
-				if loadErr == nil {
-					translation.ID = existing.ID
-					translation.CreatedAt = existing.CreatedAt
-					if saveErr := tx.Save(translation).Error; saveErr != nil {
-						return wrapDBErr("update", actressTranslationEntityID(translation.ActressID, translation.Language), saveErr)
-					}
-					return nil
-				}
-				return fmt.Errorf("create duplicate key, then reload also failed: create=%w, reload=%w", err, loadErr)
-			}
-			return wrapDBErr("create", actressTranslationEntityID(translation.ActressID, translation.Language), err)
+		updates := map[string]any{
+			"first_name": incoming.FirstName, "last_name": incoming.LastName,
+			"japanese_name": incoming.JapaneseName, "display_name": incoming.DisplayName,
+			"source_name": incoming.SourceName, "settings_hash": incoming.SettingsHash,
+			"updated_at": time.Now(),
 		}
-		return nil
+		if updateErr := tx.Model(&models.ActressTranslation{}).
+			Where("actress_id = ? AND language = ?", incoming.ActressID, incoming.Language).
+			Updates(updates).Error; updateErr != nil {
+			return wrapDBErr("update", actressTranslationEntityID(translation.ActressID, translation.Language), updateErr)
+		}
 	}
-	translation.ID = existing.ID
-	translation.CreatedAt = existing.CreatedAt
-	if err := tx.Save(translation).Error; err != nil {
-		return wrapDBErr("update", actressTranslationEntityID(translation.ActressID, translation.Language), err)
+	if err := tx.First(translation, "actress_id = ? AND language = ?", incoming.ActressID, incoming.Language).Error; err != nil {
+		return wrapDBErr("reload", actressTranslationEntityID(incoming.ActressID, incoming.Language), err)
 	}
 	return nil
 }

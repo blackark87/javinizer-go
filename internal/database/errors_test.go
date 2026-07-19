@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/javinizer/javinizer-go/internal/models"
+	"github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -43,6 +44,12 @@ func TestIsNotFound(t *testing.T) {
 			assert.Equal(t, tc.expected, IsNotFound(tc.err))
 		})
 	}
+}
+
+func TestIsDuplicateKeyRecognizesSQLiteConstraint(t *testing.T) {
+	assert.True(t, isDuplicateKey(sqlite3.Error{Code: sqlite3.ErrConstraint, ExtendedCode: sqlite3.ErrConstraintUnique}))
+	assert.True(t, isDuplicateKey(errors.New("UNIQUE constraint failed: actresses.dmm_id")))
+	assert.False(t, isDuplicateKey(errors.New("database is locked")))
 }
 
 func TestFindByID_ErrNotFound(t *testing.T) {

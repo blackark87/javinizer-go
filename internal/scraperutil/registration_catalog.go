@@ -106,6 +106,9 @@ func (c *registrationCatalog) Priorities() []string {
 	}
 	pairs := make([]pair, 0, len(c.scrapers))
 	for name, reg := range c.scrapers {
+		if reg.InternalOnly {
+			continue
+		}
 		pairs = append(pairs, pair{name: name, priority: reg.Priority})
 	}
 

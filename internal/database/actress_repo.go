@@ -2,7 +2,6 @@ package database
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/javinizer/javinizer-go/internal/models"
@@ -249,7 +248,7 @@ func (r *ActressRepository) FindOrCreate(ctx context.Context, actress *models.Ac
 		}
 
 		if createErr := db.Create(&candidate).Error; createErr != nil {
-			if errors.Is(createErr, gorm.ErrDuplicatedKey) && candidate.DMMID > 0 {
+			if isDuplicateKey(createErr) && candidate.DMMID > 0 {
 				existing, found, findErr = lookupActressByDMMID(db, &candidate)
 				if findErr != nil {
 					return findErr

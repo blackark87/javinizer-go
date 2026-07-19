@@ -36,6 +36,24 @@ func TestActressMerger_SingleSource(t *testing.T) {
 	assert.Equal(t, "波多野結衣", actresses[0].JapaneseName)
 }
 
+func TestActressMerger_PreservesPrimarySourceCastOrder(t *testing.T) {
+	merger := newActressMerger()
+	sources := []actressSource{{
+		Source: "dmm",
+		Actresses: []models.ActressInfo{
+			{DMMID: 303, JapaneseName: "三番"},
+			{DMMID: 101, JapaneseName: "一番"},
+			{DMMID: 202, JapaneseName: "二番"},
+		},
+	}}
+
+	for iteration := 0; iteration < 100; iteration++ {
+		actresses := merger.Merge(sources, actressMergeOptions{Priority: []string{"dmm"}})
+		require.Len(t, actresses, 3)
+		assert.Equal(t, []int{303, 101, 202}, []int{actresses[0].DMMID, actresses[1].DMMID, actresses[2].DMMID})
+	}
+}
+
 // TestActressMerger_MultipleSourcesPriority tests that two sources with the same
 // actress (different DMMID) deduplicate, keep higher-priority fields, and fill
 // empty fields from lower priority.

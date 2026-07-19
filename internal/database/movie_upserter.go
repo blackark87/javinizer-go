@@ -90,6 +90,7 @@ func (u *MovieUpserter) UpsertWithTranslations(ctx context.Context, movie *model
 			if err := tx.Preload("Actresses").Preload("Genres").Preload("Translations", func(db *gorm.DB) *gorm.DB { return db.Order("language ASC") }).First(&loaded, "content_id = ?", movie.ContentID).Error; err != nil {
 				return wrapDBErr("reload", fmt.Sprintf("movie %s", movie.ContentID), err)
 			}
+			loaded.Actresses = actressesInReferenceOrder(loaded.Actresses, movie.Actresses)
 			result = &loaded
 			return nil
 		})
@@ -169,9 +170,39 @@ func (u *MovieUpserter) insertOrHandleDuplicateTx(tx *gorm.DB, movie *models.Mov
 		if err := tx.Preload("Actresses").Preload("Genres").Preload("Translations", func(db *gorm.DB) *gorm.DB { return db.Order("language ASC") }).First(&loaded, "content_id = ?", movie.ContentID).Error; err != nil {
 			return wrapDBErr("reload", fmt.Sprintf("movie %s", movie.ContentID), err)
 		}
+		loaded.Actresses = actressesInReferenceOrder(loaded.Actresses, movie.Actresses)
 		*result = &loaded
 	}
 	return nil
+}
+
+// actressesInReferenceOrder restores the scraper's cast order after a GORM
+// many-to-many preload. SQL rows from movie_actresses have no implicit order,
+// so relying on preload order can change the primary actress used by templates.
+func actressesInReferenceOrder(loaded, reference []models.Actress) []models.Actress {
+	if len(loaded) < 2 || len(reference) == 0 {
+		return loaded
+	}
+	byID := make(map[uint]models.Actress, len(loaded))
+	for _, actress := range loaded {
+		if actress.ID > 0 {
+			byID[actress.ID] = actress
+		}
+	}
+	ordered := make([]models.Actress, 0, len(loaded))
+	used := make(map[uint]struct{}, len(loaded))
+	for _, actress := range reference {
+		if matched, ok := byID[actress.ID]; ok {
+			ordered = append(ordered, matched)
+			used[matched.ID] = struct{}{}
+		}
+	}
+	for _, actress := range loaded {
+		if _, ok := used[actress.ID]; !ok {
+			ordered = append(ordered, actress)
+		}
+	}
+	return ordered
 }
 
 // upsertGenresTx ensures all genre records exist in the database before

@@ -149,13 +149,12 @@ func TestGetAvailableScrapers_AdditionalOptionSets(t *testing.T) {
 			},
 		},
 		{
-			name:        "sougouwiki options",
-			scraperName: "sougouwiki",
-			wantLabel:   "SougouWiki actress resolver",
+			name:        "paipancon options",
+			scraperName: "paipancon",
+			wantLabel:   "Paipancon FC2 Daily",
 			wantKeys: []string{
+				"rate_limit",
 				"base_url",
-				"request_delay",
-				"user_agent",
 				"proxy.enabled",
 				"proxy.profile",
 				"download_proxy.enabled",
@@ -212,6 +211,20 @@ func TestGetAvailableScrapers_AdditionalOptionSets(t *testing.T) {
 			}, proxyProfile.Choices)
 		})
 	}
+}
+
+func TestGetAvailableScrapers_HidesInternalSougouWiki(t *testing.T) {
+	registry := newTestRegistry()
+	registry.RegisterInstance(&mockScraper{name: "sougouwiki", enabled: true})
+	deps := newTestDeps(config.DefaultConfig(nil, nil), withRegistry(registry))
+	router := gin.New()
+	router.GET("/scrapers", getAvailableScrapers(testkit.GetTestRuntime(deps)))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/scrapers", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+	var response contracts.AvailableScrapersResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	assert.Empty(t, response.Scrapers)
 }
 
 func TestProxyProfileChoices(t *testing.T) {

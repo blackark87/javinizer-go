@@ -27,6 +27,18 @@ func isLocked(err error) bool {
 	return err != nil && (strings.Contains(err.Error(), "database is locked") || strings.Contains(err.Error(), "database table is locked"))
 }
 
+func isDuplicateKey(err error) bool {
+	if err == nil || errors.Is(err, gorm.ErrDuplicatedKey) {
+		return err != nil
+	}
+	var sqliteErr sqlite3.Error
+	if errors.As(err, &sqliteErr) {
+		return sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique ||
+			sqliteErr.ExtendedCode == sqlite3.ErrConstraintPrimaryKey
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "unique constraint failed")
+}
+
 const defaultLockRetries = 10
 
 func retryOnLocked(fn func() error) error {
@@ -43,7 +55,7 @@ func retryOnLocked(fn func() error) error {
 
 func raceRetryCreate(tx *gorm.DB, entity any, findExisting func(tx *gorm.DB) error) error {
 	if err := tx.Create(entity).Error; err != nil {
-		if errors.Is(err, gorm.ErrDuplicatedKey) {
+		if isDuplicateKey(err) {
 			if findErr := findExisting(tx); findErr != nil {
 				return fmt.Errorf("create duplicate key, then reload also failed: create=%w, reload=%w", err, findErr)
 			}

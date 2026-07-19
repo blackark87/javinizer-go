@@ -21,7 +21,7 @@
 	import RescrapeModal from './components/RescrapeModal.svelte';
 	import BulkRescrapeProgress from './components/BulkRescrapeProgress.svelte';
 	import SourceViewerModal from './components/SourceViewerModal.svelte';
-	import type { ScraperResult } from '$lib/api/types';
+	import type { ScraperOutcome, ScraperResult } from '$lib/api/types';
 	import SourceFilesCard from './components/SourceFilesCard.svelte';
 	import UnidentifiedFilesCard from './components/UnidentifiedFilesCard.svelte';
 	import { createReviewState } from './stores/review-state.svelte';
@@ -57,6 +57,7 @@
 
 	let sourceViewerLoading = $state(false);
 	let sourceViewerResults: ScraperResult[] = $state([]);
+	let sourceViewerOutcomes: ScraperOutcome[] = $state([]);
 	let pendingOverrideField = $state<string | null>(null);
 
 	async function loadSourcesForCurrent() {
@@ -65,8 +66,10 @@
 		try {
 			const resp = await s.loadSources(s.currentResult.result_id);
 			sourceViewerResults = resp.results ?? [];
+			sourceViewerOutcomes = resp.outcomes ?? [];
 		} catch (err) {
 			sourceViewerResults = [];
+			sourceViewerOutcomes = [];
 			console.error('Failed to load sources', err);
 		} finally {
 			sourceViewerLoading = false;
@@ -76,6 +79,7 @@
 	function openSourceViewer() {
 		if (!s.currentResult) return;
 		sourceViewerResults = [];
+		sourceViewerOutcomes = [];
 		s.openSourceViewerModal();
 		void loadSourcesForCurrent();
 	}
@@ -470,6 +474,7 @@
 	bind:show={s.showSourceViewerModal}
 	loading={sourceViewerLoading}
 	results={sourceViewerResults}
+	outcomes={sourceViewerOutcomes}
 	fieldSources={s.currentResult?.field_sources}
 	pendingField={pendingOverrideField}
 	onLoad={loadSourcesForCurrent}

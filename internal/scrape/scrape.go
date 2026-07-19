@@ -106,6 +106,7 @@ type ScrapeResult struct {
 	// Nil when Status != StatusSuccess.
 	Movie          *models.Movie `json:"movie,omitempty"`
 	ScraperResults []*models.ScraperResult
+	SourceOutcomes []*models.ScraperOutcome `json:"source_outcomes,omitempty"`
 	FieldSources   map[string]string
 	ActressSources map[string]string
 	Status         ScrapeStatus
@@ -330,6 +331,7 @@ func (s *Scraper) Scrape(ctx context.Context, cmd ScrapeCmd, progress ProgressFu
 	scrapers := s.registry.GetInstancesByPriorityForInput(scraperNames, resolvedID)
 
 	results, failures := s.queryAll(ctx, cmd.MovieID, resolvedID, scrapers, startTime)
+	sourceOutcomes := buildSourceOutcomes(scrapers, results, failures)
 	// DMM IDs can already be present in ordinary scraper results. Enrich those
 	// actresses before aggregation/translation as well; limiting profile
 	// resolution to the SougouWiki fallback left a freshly reset database with
@@ -349,7 +351,9 @@ func (s *Scraper) Scrape(ctx context.Context, cmd ScrapeCmd, progress ProgressFu
 		failures = append(failures, *resolverFailure)
 	}
 	if len(results) == 0 {
-		return failedResult(cmd.MovieID, buildNoResultsError(failures), startTime), nil
+		failed := failedResult(cmd.MovieID, buildNoResultsError(failures), startTime)
+		failed.SourceOutcomes = sourceOutcomes
+		return failed, nil
 	}
 
 	prog(progress, ProgressStepScrape, 0.7, "Aggregating metadata...")
@@ -392,6 +396,7 @@ func (s *Scraper) Scrape(ctx context.Context, cmd ScrapeCmd, progress ProgressFu
 	if err != nil {
 		return nil, err
 	}
+	result.SourceOutcomes = sourceOutcomes
 
 	prog(progress, ProgressStepScrape, 1.0, "Completed")
 	return result, nil

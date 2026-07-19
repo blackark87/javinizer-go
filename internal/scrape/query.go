@@ -19,6 +19,62 @@ type queryOutcome struct {
 	failure *models.ScraperError
 }
 
+func buildSourceOutcomes(scrapers []models.Scraper, results []*models.ScraperResult, failures []models.ScraperError) []*models.ScraperOutcome {
+	resultBySource := make(map[string]*models.ScraperResult, len(results))
+	for _, result := range results {
+		if result != nil {
+			resultBySource[result.Source] = result
+		}
+	}
+	failureBySource := make(map[string]models.ScraperError, len(failures))
+	for _, failure := range failures {
+		failureBySource[failure.Scraper] = failure
+	}
+
+	outcomes := make([]*models.ScraperOutcome, 0, len(scrapers))
+	for _, scraper := range scrapers {
+		if scraper == nil {
+			continue
+		}
+		name := scraper.Name()
+		outcome := &models.ScraperOutcome{Source: name, Status: "no_match"}
+		if result := resultBySource[name]; result != nil {
+			outcome.Status = "success"
+			outcome.Result = result
+		} else if failure, ok := failureBySource[name]; ok {
+			if scraperErr, typed := models.AsScraperError(failure.Cause); typed && scraperErr.Kind == models.ScraperErrorKindNotFound {
+				outcome.Status = "no_match"
+			} else if errors.Is(failure.Cause, context.Canceled) || errors.Is(failure.Cause, context.DeadlineExceeded) {
+				outcome.Status = "cancelled"
+				outcome.Error = sourceOutcomeError(failure)
+			} else {
+				outcome.Status = "failed"
+				outcome.Error = sourceOutcomeError(failure)
+			}
+		}
+		outcomes = append(outcomes, outcome)
+	}
+	return outcomes
+}
+
+func sourceOutcomeError(failure models.ScraperError) string {
+	if strings.TrimSpace(failure.Message) == "" && failure.Cause != nil {
+		return sanitizeSourceOutcomeError(failure.Cause.Error())
+	}
+	return sanitizeSourceOutcomeError(failure.Error())
+}
+
+func sanitizeSourceOutcomeError(message string) string {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return "request failed"
+	}
+	if len(message) > 300 {
+		message = message[:300]
+	}
+	return RedactURLQuery(message)
+}
+
 func resolveScraperNames(selectedScrapers, priorityOverride []string, cfg *Config) []string {
 	if len(selectedScrapers) > 0 {
 		return selectedScrapers
@@ -258,7 +314,7 @@ func querySingle(ctx context.Context, movieID string, scraper models.Scraper) (o
 				outcome = queryOutcome{result: retryResult}
 				return
 			}
-			outcome = queryOutcome{failure: &models.ScraperError{Scraper: scraper.Name(), Message: fmt.Sprintf("%v (mapped query: %v)", retryErr, err)}}
+			outcome = queryOutcome{failure: &models.ScraperError{Scraper: scraper.Name(), Message: fmt.Sprintf("%v (mapped query: %v)", retryErr, err), Cause: retryErr}}
 			return
 		}
 

@@ -89,9 +89,10 @@ func TestActressTranslationUpsertIsAtomic(t *testing.T) {
 	require.NoError(t, actressRepo.Create(context.Background(), actress))
 	repo := NewActressTranslationRepository(db)
 
+	const workers = 128
 	var wg sync.WaitGroup
-	errs := make(chan error, 8)
-	for index := 0; index < 8; index++ {
+	errs := make(chan error, workers)
+	for index := 0; index < workers; index++ {
 		wg.Add(1)
 		go func(value int) {
 			defer wg.Done()
@@ -106,4 +107,33 @@ func TestActressTranslationUpsertIsAtomic(t *testing.T) {
 	var count int64
 	require.NoError(t, db.Model(&models.ActressTranslation{}).Count(&count).Error)
 	assert.EqualValues(t, 1, count)
+}
+
+func TestMovieActressTranslationsStayMappedToOriginalActressIndex(t *testing.T) {
+	db := newDatabaseTestDB(t)
+	repo := NewMovieRepository(db)
+	movie := &models.Movie{
+		ID:        "MAP-001",
+		ContentID: "map001",
+		Actresses: []models.Actress{
+			{DMMID: 2002, JapaneseName: "二人目"},
+			{DMMID: 1001, JapaneseName: "一人目"},
+		},
+	}
+	translations := []models.ActressTranslationData{
+		{ActressIndex: 0, Language: "ko", DisplayName: "두 번째"},
+		{ActressIndex: 1, Language: "ko", DisplayName: "첫 번째"},
+	}
+
+	_, err := repo.UpsertWithTranslations(context.Background(), movie, nil, translations)
+	require.NoError(t, err)
+
+	var actresses []models.Actress
+	require.NoError(t, db.Order("dmm_id ASC").Find(&actresses).Error)
+	require.Len(t, actresses, 2)
+	var first, second models.ActressTranslation
+	require.NoError(t, db.First(&first, "actress_id = ? AND language = ?", actresses[0].ID, "ko").Error)
+	require.NoError(t, db.First(&second, "actress_id = ? AND language = ?", actresses[1].ID, "ko").Error)
+	assert.Equal(t, "첫 번째", first.DisplayName)
+	assert.Equal(t, "두 번째", second.DisplayName)
 }

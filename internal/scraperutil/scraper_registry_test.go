@@ -111,6 +111,23 @@ func TestRegistry_GetInstancesByPriority(t *testing.T) {
 	})
 }
 
+func TestRegistry_InternalOnlyInstanceRemainsDirectlyResolvableButIsNotQueried(t *testing.T) {
+	reg := scraperutil.NewScraperRegistry()
+	reg.Register(scraperutil.ScraperRegistration{Name: "internal", InternalOnly: true})
+	reg.Register(scraperutil.ScraperRegistration{Name: "public"})
+	reg.RegisterInstance(&mockScraper{name: "internal", enabled: true})
+	reg.RegisterInstance(&mockScraper{name: "public", enabled: true})
+
+	resolved, ok := reg.GetInstance("internal")
+	require.True(t, ok)
+	assert.Equal(t, "internal", resolved.Name())
+
+	prioritized := reg.GetInstancesByPriority([]string{"internal", "public"})
+	require.Len(t, prioritized, 1)
+	assert.Equal(t, "public", prioritized[0].Name())
+	assert.Equal(t, []string{"public"}, reg.Priorities())
+}
+
 type queryResolverScraper struct {
 	mockScraper
 	resolveQuery string

@@ -1348,6 +1348,10 @@ definitions:
     type: object
   github_com_javinizer_javinizer-go_internal_api_contracts.SourceResultsResponse:
     properties:
+      outcomes:
+        items:
+          $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_models.ScraperOutcome'
+        type: array
       results:
         items:
           $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_models.ScraperResult'
@@ -2670,6 +2674,18 @@ definitions:
         type: string
       value:
         example: en
+        type: string
+    type: object
+  github_com_javinizer_javinizer-go_internal_models.ScraperOutcome:
+    properties:
+      error:
+        type: string
+      result:
+        $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_models.ScraperResult'
+      source:
+        type: string
+      status:
+        description: success | no_match | failed | cancelled
         type: string
     type: object
   github_com_javinizer_javinizer-go_internal_models.ScraperResult:

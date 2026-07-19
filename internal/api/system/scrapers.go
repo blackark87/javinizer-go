@@ -32,9 +32,11 @@ func getAvailableScrapers(rt *core.APIRuntime) gin.HandlerFunc {
 		// Use getter to get current registry (respects config reloads)
 		registry := deps.GetScraperLister()
 		registered := registry.GetAllInstances()
+		type internalOnlyLister interface{ IsInternalOnly(string) bool }
+		internalLister, _ := registry.(internalOnlyLister)
 		scraperByName := make(map[string]models.Scraper, len(registered))
 		for _, scraper := range registered {
-			if scraper != nil {
+			if scraper != nil && (internalLister == nil || !internalLister.IsInternalOnly(scraper.Name())) {
 				scraperByName[scraper.Name()] = scraper
 			}
 		}

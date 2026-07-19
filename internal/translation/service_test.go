@@ -73,7 +73,7 @@ func TestBuildLLMTranslationPrompts_KoreanJAVStudioRules(t *testing.T) {
 		"never merely spell their Japanese pronunciation",
 		"数珠つなぎ", "たすきリレー", "芋づる式", "ハシゴ酒", "朝までハシゴ酒", "밤새 술집 투어", "never 아침까지 하시고주",
 		"パパ活", "一本釣り", "箱入り娘", "逆指名",
-		"垢抜け", "初々しい", "玄人肌", "中出し", "顔射", "ぶっかけ", "ハメ撮り", "汁男優",
+		"垢抜け", "初々しい", "玄人肌", "中出し", "顔射", "ぶっかけ", "個撮", "개인촬영", "ハメ撮り", "汁男優",
 		"ご開帳", "手取り足取り", "骨抜き", "毒牙", "生殺し",
 		"middle dot ・", "never turn it into a comma",
 	} {
@@ -82,6 +82,7 @@ func TestBuildLLMTranslationPrompts_KoreanJAVStudioRules(t *testing.T) {
 	assert.NotContains(t, systemPrompt, "sensual marketing copy")
 	assert.NotContains(t, systemPrompt, "パパ活 → 파파카츠")
 	assert.NotContains(t, systemPrompt, "ぶっかけ → 부카케")
+	assert.Contains(t, systemPrompt, "bracketed 個撮 must become [개인촬영], never [POV]")
 }
 
 func TestBuildLLMTranslationPrompts_KoreanRulesAreTargetSpecific(t *testing.T) {

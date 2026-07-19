@@ -30,6 +30,16 @@ type actressSyncTestScraper struct {
 	resolveQueries  []string
 }
 
+type actressProfileSyncTestScraper struct {
+	*actressSyncTestScraper
+	profile    models.ActressInfo
+	profileErr error
+}
+
+func (s *actressProfileSyncTestScraper) ResolveActressProfile(context.Context, models.ActressInfo) (models.ActressInfo, error) {
+	return s.profile, s.profileErr
+}
+
 func (s *actressSyncTestScraper) Name() string { return s.name }
 func (s *actressSyncTestScraper) Search(context.Context, string) (*models.ScraperResult, error) {
 	return nil, nil
@@ -97,6 +107,33 @@ func TestSyncActressMetadataThumbnailOnlyDoesNotLookupIdentityOrOverwriteNames(t
 	assert.Equal(t, "Existing", result.Actress.FirstName)
 	assert.Empty(t, thumbnail.identityQueries)
 	assert.Empty(t, thumbnail.resolveQueries)
+}
+
+func TestSyncActressMetadataDMMProfileOverwritesExistingThumbnail(t *testing.T) {
+	actressRepo := newActressSyncTestRepo(t)
+	actress := &models.Actress{
+		DMMID: 321, FirstName: "레나", LastName: "미야시타", JapaneseName: "宮下玲奈",
+		ThumbURL: "https://pics.dmm.co.jp/mono/actjpgs/miyasita_rena.jpg",
+	}
+	require.NoError(t, actressRepo.Create(context.Background(), actress))
+	resolver := &actressProfileSyncTestScraper{
+		actressSyncTestScraper: &actressSyncTestScraper{name: "dmm", enabled: true},
+		profile: models.ActressInfo{
+			DMMID: 321, JapaneseName: "宮下玲奈",
+			ThumbURL: "https://awsimgsrc.dmm.co.jp/mono/actjpgs/miyasita_rena2.jpg",
+		},
+	}
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
+
+	result, err := SyncActressMetadata(context.Background(), actress.ID, actressRepo, registry, nil)
+	require.NoError(t, err)
+	assert.Equal(t, ActressSyncUpdated, result.Status)
+	assert.Contains(t, result.UpdatedFields, "thumb_url")
+	assert.Equal(t, "https://awsimgsrc.dmm.co.jp/mono/actjpgs/miyasita_rena2.jpg", result.Actress.ThumbURL)
+	stored, err := actressRepo.FindByID(context.Background(), actress.ID)
+	require.NoError(t, err)
+	assert.Equal(t, result.Actress.ThumbURL, stored.ThumbURL)
 }
 
 func TestSyncActressMetadataRequiresDurableMovieJobForMissingDMMID(t *testing.T) {

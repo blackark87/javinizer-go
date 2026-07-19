@@ -265,7 +265,7 @@ func (s *Service) BuildTranslationPlan(scraped *models.Movie, targetLang, source
 	}
 
 	if fields.Title {
-		cleaned := cleanTitleForTranslation(scraped.Title)
+		cleaned := prepareTitleForTranslation(scraped.Title, targetLang)
 		direct, protected, placeholders := protectNames(cleaned)
 		titleField := "title"
 		if romanized := romanizedByJapaneseName[strings.TrimSpace(cleaned)]; romanized != "" {
@@ -373,6 +373,7 @@ func applyTranslatedField(scraped *models.Movie, field TranslationField, transla
 
 	switch field.FieldName {
 	case "title", "title_as_name":
+		translated = finalizeTitleTranslation(field.Text, translated, plan.TargetLang)
 		translatedRecord.Title = translated
 		if plan.ApplyToPrimary {
 			scraped.Title = translated
@@ -661,10 +662,19 @@ func (s *Service) TranslateTitles(ctx context.Context, titles []string) ([]strin
 		return result, nil
 	}
 	fields := make([]string, len(titles))
+	prepared := make([]string, len(titles))
 	for i := range fields {
 		fields[i] = fmt.Sprintf("title[%d]", i)
+		prepared[i] = prepareTitleForTranslation(titles[i], targets[0])
 	}
-	return s.translateTexts(ctx, source, targets[0], titles, fields)
+	translated, err := s.translateTexts(ctx, source, targets[0], prepared, fields)
+	if err != nil {
+		return nil, err
+	}
+	for i := range translated {
+		translated[i] = finalizeTitleTranslation(prepared[i], cleanTitleForTranslation(translated[i]), targets[0])
+	}
+	return translated, nil
 }
 
 // TranslateActresses runs the movie translation pipeline for actress names

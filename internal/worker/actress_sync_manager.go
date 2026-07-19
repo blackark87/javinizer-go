@@ -422,14 +422,15 @@ func (m *ActressSyncManager) processActress(ctx context.Context, task *models.Ac
 
 	displayChanged := containsAnyField(task.UpdatedFields, "hepburn_name", "translated_name", "japanese_name", "first_name", "last_name")
 	translationChanged := containsAnyField(task.UpdatedFields, "actress_translations")
-	if displayChanged || translationChanged {
+	thumbnailChanged := containsAnyField(task.UpdatedFields, "thumb_url")
+	if displayChanged || translationChanged || thumbnailChanged {
 		m.setStage(task, "mapping")
 		movies, listErr := m.deps.MovieRepo.ListByActressID(ctx, canonical.ID, 0, 0)
 		if listErr != nil {
 			return listErr
 		}
 		nfoMovieIDs := make(map[string]struct{})
-		if displayChanged {
+		if displayChanged || thumbnailChanged {
 			for _, movie := range movies {
 				nfoMovieIDs[movie.ContentID] = struct{}{}
 			}

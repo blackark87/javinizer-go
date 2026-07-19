@@ -189,8 +189,38 @@ func cleanDescriptionForTranslation(description string) string {
 var vrMarkerRE = regexp.MustCompile(`[\[【［(（][\s　]*(?:\d+[\s　]*[KkＫｋ][\s　]*)?[VvＶｖ][RrＲｒ](?:[\s　]*(?:専用|動画|作品))?[\s　]*[\]】］)）]`)
 var promoMarkerRE = regexp.MustCompile(`[\[【［(（][^\]】］)）]*(?:限定|特典|セール|キャンペーン|独占|割引)[^\]】］)）]*[\]】］)）]`)
 var asciiSpaceRunRE = regexp.MustCompile(`[ \t]{2,}`)
+var bracketedPrivateShootRE = regexp.MustCompile(`[\[【［][\s　]*(?:個撮|個人撮影)[\s　]*[\]】］]`)
+var bracketedKoreanPrivateShootRE = regexp.MustCompile(`[\[【［][\s　]*개인\s*촬영[\s　]*[\]】］]`)
+var bracketedPOVRE = regexp.MustCompile(`(?i)[\[【［][\s　]*POV[\s　]*[\]】］]`)
 
 func cleanTitleForTranslation(title string) string { return stripPromoMarkers(stripVRMarkers(title)) }
+
+// prepareTitleForTranslation protects Korean title terminology whose source
+// punctuation is semantically significant. LLMs otherwise tend to conflate
+// bracketed 個撮 with the metadata-looking tag [POV].
+func prepareTitleForTranslation(title, targetLang string) string {
+	title = cleanTitleForTranslation(title)
+	if normalizeLanguage(targetLang) == "ko" {
+		title = bracketedPrivateShootRE.ReplaceAllString(title, "[개인촬영]")
+	}
+	return title
+}
+
+// finalizeTitleTranslation enforces the source-aware half of the rule: only a
+// source bracketed as 個撮 owns the [개인촬영] marker. Literal source [POV]
+// remains untouched, while an LLM-generated [POV] for 個撮 is corrected.
+func finalizeTitleTranslation(source, translated, targetLang string) string {
+	translated = strings.TrimSpace(translated)
+	if normalizeLanguage(targetLang) != "ko" || !strings.Contains(source, "[개인촬영]") {
+		return translated
+	}
+	translated = bracketedPOVRE.ReplaceAllString(translated, "[개인촬영]")
+	translated = bracketedKoreanPrivateShootRE.ReplaceAllString(translated, "[개인촬영]")
+	if !strings.Contains(translated, "[개인촬영]") {
+		translated = strings.TrimSpace("[개인촬영] " + translated)
+	}
+	return translated
+}
 
 func stripVRMarkers(title string) string {
 	cleaned := vrMarkerRE.ReplaceAllString(title, "")

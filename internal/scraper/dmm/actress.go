@@ -456,26 +456,16 @@ func upsertActressInfo(actresses *[]models.ActressInfo, indexByID map[int]int, a
 
 func (s *scraper) tryActressThumbURLs(ctx context.Context, firstName, lastName string, dmmID int) string {
 	candidates := make([]string, 0)
-	var romajiVariants []string
 	if dmmID > 0 {
 		doc := s.fetchActressPageDoc(ctx, dmmID)
 		candidates = append(candidates, extractActressProfileImageCandidates(doc)...)
-		romajiVariants = extractRomajiVariantsFromActressDoc(doc)
-	}
-
-	if firstName != "" && lastName != "" {
+	} else if firstName != "" && lastName != "" {
 		firstLower := strings.ToLower(firstName)
 		lastLower := strings.ToLower(lastName)
 
 		candidates = append(candidates,
 			fmt.Sprintf("https://pics.dmm.co.jp/mono/actjpgs/%s_%s.jpg", lastLower, firstLower),
 			fmt.Sprintf("https://pics.dmm.co.jp/mono/actjpgs/%s_%s.jpg", firstLower, lastLower),
-		)
-	}
-
-	for _, romaji := range romajiVariants {
-		candidates = append(candidates,
-			fmt.Sprintf("https://pics.dmm.co.jp/mono/actjpgs/%s.jpg", romaji),
 		)
 	}
 	candidates = dedupeActressImageCandidates(candidates)
@@ -504,6 +494,12 @@ func (s *scraper) tryActressThumbURLs(ctx context.Context, firstName, lastName s
 // ResolveActressThumbnail exposes DMM's profile-page and actjpgs lookup to
 // actress synchronization without requiring a movie detail scrape.
 func (s *scraper) ResolveActressThumbnail(ctx context.Context, actress models.ActressInfo) string {
+	if actress.DMMID > 0 {
+		// A verified DMM identity must use that exact profile. Falling back to a
+		// guessed last_first.jpg can select an older namesake (for example,
+		// miyasita_rena.jpg instead of miyasita_rena2.jpg).
+		return s.tryActressThumbURLs(ctx, actress.FirstName, actress.LastName, actress.DMMID)
+	}
 	if actress.ThumbURL != "" {
 		return normalizeActressThumbURL(actress.ThumbURL)
 	}

@@ -463,6 +463,16 @@ func TestCleanTitleForTranslation(t *testing.T) {
 	}
 }
 
+func TestKoreanPrivateShootTitleMarkers(t *testing.T) {
+	prepared := prepareTitleForTranslation("【個撮】県立商業科。週末の家出をハメ撮り支援", "ko")
+	assert.Equal(t, "[개인촬영]県立商業科。週末の家出をハメ撮り支援", prepared)
+	assert.Equal(t, "[개인촬영] 현립상업과. 주말 가출 POV 지원",
+		finalizeTitleTranslation(prepared, "[POV] 현립상업과. 주말 가출 POV 지원", "ko"))
+
+	literalPOV := prepareTitleForTranslation("[POV] オリジナルタイトル", "ko")
+	assert.Equal(t, "[POV] 오리지널 타이틀", finalizeTitleTranslation(literalPOV, "[POV] 오리지널 타이틀", "ko"))
+}
+
 // =============================================================================
 // stripVRMarkers tests
 // =============================================================================

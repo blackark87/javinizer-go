@@ -66,6 +66,7 @@ func SyncActressMetadata(
 		return result, nil
 	}
 
+	profileThumbnailResolved := false
 	if profileResolver := findActressProfileResolver(registry); profileResolver != nil {
 		profile, profileErr := safeResolveActressProfile(ctx, profileResolver, actressInfoForThumbnail(*actress))
 		if profileErr == nil && strings.TrimSpace(profile.JapaneseName) != "" {
@@ -77,10 +78,13 @@ func SyncActressMetadata(
 				result.UpdatedFields = append(result.UpdatedFields, "japanese_name")
 				profileChanged = true
 			}
-			if strings.TrimSpace(actress.ThumbURL) == "" && strings.TrimSpace(profile.ThumbURL) != "" {
-				actress.ThumbURL = strings.TrimSpace(profile.ThumbURL)
-				result.UpdatedFields = append(result.UpdatedFields, "thumb_url")
-				profileChanged = true
+			if thumbnail := strings.TrimSpace(profile.ThumbURL); thumbnail != "" {
+				profileThumbnailResolved = true
+				if thumbnail != strings.TrimSpace(actress.ThumbURL) {
+					actress.ThumbURL = thumbnail
+					result.UpdatedFields = appendUnique(result.UpdatedFields, "thumb_url")
+					profileChanged = true
+				}
 			}
 			if profileChanged {
 				if err := actressRepo.Update(ctx, actress); err != nil {
@@ -92,7 +96,7 @@ func SyncActressMetadata(
 		}
 	}
 
-	if strings.TrimSpace(actress.ThumbURL) == "" {
+	if !profileThumbnailResolved {
 		thumbnailResolver := findActressThumbnailResolver(registry)
 		thumbnail := ""
 		if thumbnailResolver == nil {
@@ -103,12 +107,12 @@ func SyncActressMetadata(
 				return nil, err
 			}
 		}
-		if thumbnail != "" {
+		if thumbnail != "" && thumbnail != strings.TrimSpace(actress.ThumbURL) {
 			actress.ThumbURL = thumbnail
 			if err := actressRepo.Update(ctx, actress); err != nil {
 				return nil, err
 			}
-			result.UpdatedFields = append(result.UpdatedFields, "thumb_url")
+			result.UpdatedFields = appendUnique(result.UpdatedFields, "thumb_url")
 		} else if thumbnailResolver != nil {
 			result.Messages = append(result.Messages, "Profile thumbnail could not be resolved")
 		}

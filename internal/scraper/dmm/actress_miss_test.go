@@ -188,6 +188,29 @@ func TestTryActressThumbURLs_NoCandidatesWhenNoNames(t *testing.T) {
 	assert.Empty(t, result)
 }
 
+func TestResolveActressProfilePrefersDMMIDSuffixedProfileImage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<html><head><title>宮下玲奈（みやしたれな） - FANZA</title></head><body>
+			<img src="https://pics.dmm.co.jp/mono/actjpgs/miyasita_rena.jpg">
+			<img src="https://awsimgsrc.dmm.co.jp/pics_dig/mono/actjpgs/miyasita_rena2.jpg?resize=125:*">
+		</body></html>`))
+	}))
+	defer server.Close()
+
+	client := resty.New()
+	client.SetTransport(&dmmTestTransport{server: server})
+	s := &scraper{
+		enabled: true, client: client, rateLimiter: ratelimit.NewLimiter(0),
+		settings: models.ScraperSettings{Enabled: true},
+	}
+
+	profile, err := s.ResolveActressProfile(context.Background(), models.ActressInfo{DMMID: 321})
+	require.NoError(t, err)
+	assert.Equal(t, "宮下玲奈", profile.JapaneseName)
+	assert.Equal(t, "https://awsimgsrc.dmm.co.jp/mono/actjpgs/miyasita_rena2.jpg", profile.ThumbURL)
+}
+
 // --- extractRomajiVariantsFromActressPageCtx: httptest server-based test ---
 
 func TestExtractRomajiVariantsFromActressPageCtx_Success(t *testing.T) {

@@ -63,7 +63,20 @@ func lookupActress(ctx context.Context, actressRepo database.ActressRepositoryIn
 
 func enrichActressFields(actress *models.Actress, dbActress *models.Actress) bool {
 	changed := false
-	if actress.ThumbURL == "" && dbActress.ThumbURL != "" {
+	// A scraper that only knows an actress name (for example Paipancon) must
+	// not replace the identity assets of an actress that is already verified
+	// in the database. Promote the name match to its existing DMM identity and
+	// use the thumbnail belonging to that identity, even when the scraper
+	// supplied a guessed thumbnail.
+	matchedVerifiedIdentity := actress.DMMID <= 0 && dbActress.DMMID > 0
+	if matchedVerifiedIdentity {
+		actress.DMMID = dbActress.DMMID
+		changed = true
+	}
+	if matchedVerifiedIdentity && dbActress.ThumbURL != "" && actress.ThumbURL != dbActress.ThumbURL {
+		actress.ThumbURL = dbActress.ThumbURL
+		changed = true
+	} else if actress.ThumbURL == "" && dbActress.ThumbURL != "" {
 		actress.ThumbURL = dbActress.ThumbURL
 		changed = true
 	}

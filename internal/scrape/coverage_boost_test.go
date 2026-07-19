@@ -151,6 +151,24 @@ func TestEnrichActressFields_JapaneseNameAdded(t *testing.T) {
 	assert.Equal(t, "鈴村あいり", actress.JapaneseName)
 }
 
+func TestEnrichActressFields_NameOnlySourceUsesVerifiedDMMIdentity(t *testing.T) {
+	actress := &models.Actress{
+		JapaneseName: "宮下玲奈",
+		ThumbURL:     "https://pics.dmm.co.jp/mono/actjpgs/miyasita_rena.jpg",
+	}
+	dbActress := &models.Actress{
+		DMMID:        12345,
+		JapaneseName: "宮下玲奈",
+		ThumbURL:     "https://pics.dmm.co.jp/mono/actjpgs/miyasita_rena2.jpg",
+	}
+
+	changed := enrichActressFields(actress, dbActress)
+
+	assert.True(t, changed)
+	assert.Equal(t, 12345, actress.DMMID)
+	assert.Equal(t, "https://pics.dmm.co.jp/mono/actjpgs/miyasita_rena2.jpg", actress.ThumbURL)
+}
+
 // --- ConfigFromAppConfig with translation enabled ---
 
 func TestConfigFromAppConfig_TranslationEnabledWithHash(t *testing.T) {

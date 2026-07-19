@@ -181,10 +181,6 @@ func (s *Scraper) ResolveActresses(ctx context.Context, id string) (*models.Scra
 // ResolveActressIdentity searches actress page names directly. It never
 // fetches or re-scrapes linked movie metadata.
 func (s *Scraper) ResolveActressIdentity(ctx context.Context, query models.ActressIdentityQuery) (*models.ScraperResult, error) {
-	if !s.enabled {
-		return nil, fmt.Errorf("%s scraper is disabled", displayName)
-	}
-
 	names := uniqueIdentityNames(query.Names)
 	if len(names) == 0 {
 		return nil, models.NewScraperNotFoundError(displayName, "no actress name is available")

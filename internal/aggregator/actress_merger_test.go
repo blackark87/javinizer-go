@@ -78,7 +78,7 @@ func TestActressMerger_LowerPriorityDistinctCastRemainsSourceOnly(t *testing.T) 
 	assert.Equal(t, "AIKA", actresses[0].JapaneseName)
 }
 
-func TestActressMerger_LowerPriorityMatchingActressEnrichesPrimary(t *testing.T) {
+func TestActressMerger_LowerPriorityMatchingActressDoesNotEnrichPrimary(t *testing.T) {
 	merger := newActressMerger()
 	sources := []actressSource{
 		{
@@ -98,13 +98,12 @@ func TestActressMerger_LowerPriorityMatchingActressEnrichesPrimary(t *testing.T)
 	actresses := merger.Merge(sources, actressMergeOptions{Priority: []string{"javbus", "dmm"}})
 
 	require.Len(t, actresses, 1)
-	assert.Equal(t, 12345, actresses[0].DMMID)
-	assert.Equal(t, "https://pics.dmm.co.jp/mono/actjpgs/aika.jpg", actresses[0].ThumbURL)
+	assert.Zero(t, actresses[0].DMMID)
+	assert.Empty(t, actresses[0].ThumbURL)
 }
 
-// TestActressMerger_MultipleSourcesPriority tests that two sources with the same
-// actress (different DMMID) deduplicate, keep higher-priority fields, and fill
-// empty fields from lower priority.
+// TestActressMerger_MultipleSourcesPriority verifies that even matching actress
+// data from a lower-priority provider is not merged into the selected cast.
 func TestActressMerger_MultipleSourcesPriority(t *testing.T) {
 	merger := newActressMerger()
 	sources := []actressSource{
@@ -139,8 +138,8 @@ func TestActressMerger_MultipleSourcesPriority(t *testing.T) {
 	assert.Equal(t, "Yui", actresses[0].FirstName)
 	assert.Equal(t, "Hatano", actresses[0].LastName)
 	assert.Equal(t, "波多野結衣", actresses[0].JapaneseName)
-	assert.Equal(t, 12345, actresses[0].DMMID)
-	assert.Equal(t, "https://example.com/thumb.jpg", actresses[0].ThumbURL)
+	assert.Zero(t, actresses[0].DMMID)
+	assert.Empty(t, actresses[0].ThumbURL)
 }
 
 // TestActressMerger_DMMIDDeduplicationSameIDDifferentNames tests that actresses
@@ -188,11 +187,9 @@ func TestActressMerger_DMMIDDeduplicationSameIDDifferentNames(t *testing.T) {
 	assert.Equal(t, "https://r18dev.example.com/thumb.jpg", actresses[0].ThumbURL, "Should use r18dev ThumbURL (higher priority)")
 }
 
-// TestActressMerger_DMMIDUpgradeScenario tests the DMMID upgrade scenario where
-// the first source provides an actress without DMMID, the second provides the same
-// actress with DMMID — the actress should be upgraded with the DMMID and fields
-// from the first source preserved.
-func TestActressMerger_DMMIDUpgradeScenario(t *testing.T) {
+// TestActressMerger_DMMIDIsNotBorrowedFromAnotherProvider verifies that DMM
+// identity enrichment is reserved for the dedicated resolver.
+func TestActressMerger_DMMIDIsNotBorrowedFromAnotherProvider(t *testing.T) {
 	merger := newActressMerger()
 	sources := []actressSource{
 		{
@@ -226,8 +223,8 @@ func TestActressMerger_DMMIDUpgradeScenario(t *testing.T) {
 
 	actresses := merger.Merge(sources, opts)
 
-	require.Len(t, actresses, 1, "Should merge actress and upgrade with DMMID")
-	assert.Equal(t, 12345, actresses[0].DMMID, "Should upgrade actress with DMMID from dmm")
+	require.Len(t, actresses, 1)
+	assert.Zero(t, actresses[0].DMMID)
 	assert.Equal(t, "Yui", actresses[0].FirstName, "Should keep r18dev FirstName")
 	assert.Equal(t, "Hatano", actresses[0].LastName, "Should keep r18dev LastName")
 	assert.Equal(t, "波多野結衣", actresses[0].JapaneseName, "Should keep JapaneseName")
@@ -286,9 +283,9 @@ func TestActressMerger_DMMIDPartialDataMerging(t *testing.T) {
 	require.Len(t, actresses, 1, "Should deduplicate actresses with same DMMID")
 	assert.Equal(t, 12345, actresses[0].DMMID)
 	assert.Equal(t, "Yui", actresses[0].FirstName, "Should use r18dev FirstName (highest priority)")
-	assert.Equal(t, "Hatano", actresses[0].LastName, "Should use dmm LastName (r18dev had empty)")
+	assert.Empty(t, actresses[0].LastName, "Should not fill LastName from another provider")
 	assert.Equal(t, "波多野結衣", actresses[0].JapaneseName, "Should use r18dev JapaneseName (highest priority)")
-	assert.Equal(t, "https://dmm.example.com/thumb.jpg", actresses[0].ThumbURL, "Should use dmm ThumbURL (r18dev had empty)")
+	assert.Empty(t, actresses[0].ThumbURL, "Should not fill ThumbURL from another provider")
 }
 
 // TestActressMerger_DMMIDZeroNotDeduplicated tests that actresses with DMMID=0

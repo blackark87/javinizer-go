@@ -263,8 +263,9 @@ func TestMergeActresses_BothHaveData_MergeArrays_Partial(t *testing.T) {
 
 	result, err := MergeMovieMetadataWithOptions(scraped, nfo, MergeArrays, true)
 	require.NoError(t, err)
-	// Both actresses should be present when mergeArrays=true
-	assert.GreaterOrEqual(t, len(result.Merged.Actresses), 2)
+	// Actress arrays are authoritative even when other arrays are merged.
+	require.Len(t, result.Merged.Actresses, 1)
+	assert.Equal(t, "Scraper", result.Merged.Actresses[0].FirstName)
 }
 
 // TestMergeActresses_BothHaveData_PreferNFO covers PreferNFO strategy for actresses

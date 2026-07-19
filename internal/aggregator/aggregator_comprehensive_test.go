@@ -180,7 +180,7 @@ func TestGetRatingByPriority(t *testing.T) {
 	assert.Equal(t, 100, votes)
 }
 
-// TestGetActressesByPriority tests actress aggregation and merging
+// TestGetActressesByPriority tests authoritative provider selection.
 func TestGetActressesByPriority(t *testing.T) {
 	merger := newActressMerger()
 	sources := []actressSource{
@@ -212,12 +212,12 @@ func TestGetActressesByPriority(t *testing.T) {
 
 	actresses := merger.Merge(sources, opts)
 
-	// Should merge data from both sources
+	// Only the highest-priority provider contributes actress data.
 	assert.Equal(t, "Yui", actresses[0].FirstName)
 	assert.Equal(t, "Hatano", actresses[0].LastName)
 	assert.Equal(t, "波多野結衣", actresses[0].JapaneseName)
-	assert.Equal(t, 12345, actresses[0].DMMID)
-	assert.Equal(t, "https://example.com/thumb.jpg", actresses[0].ThumbURL)
+	assert.Zero(t, actresses[0].DMMID)
+	assert.Empty(t, actresses[0].ThumbURL)
 }
 
 // TestGetActressesByPriorityMultiple tests multiple actresses
@@ -920,13 +920,13 @@ func TestAggregateActressMergingByJapaneseName(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, movie)
 
-	// Should have merged into one actress
+	// The lower-priority provider must not enrich the selected cast.
 	require.Len(t, movie.Actresses, 1)
 	assert.Equal(t, "波多野結衣", movie.Actresses[0].JapaneseName)
 	assert.Equal(t, "Yui", movie.Actresses[0].FirstName)
 	assert.Equal(t, "Hatano", movie.Actresses[0].LastName)
-	assert.Equal(t, 12345, movie.Actresses[0].DMMID)
-	assert.Equal(t, "https://example.com/thumb.jpg", movie.Actresses[0].ThumbURL)
+	assert.Zero(t, movie.Actresses[0].DMMID)
+	assert.Empty(t, movie.Actresses[0].ThumbURL)
 }
 
 func TestAggregateActressMergingJapaneseNameVsFirstName(t *testing.T) {
@@ -1373,11 +1373,9 @@ func TestActressDMMIDUpgradeScenario(t *testing.T) {
 
 	actresses := merger.Merge(sources, opts)
 
-	// Should have exactly 1 actress (merged by name, then upgraded with DMMID)
-	require.Len(t, actresses, 1, "Should merge actress and upgrade with DMMID")
+	require.Len(t, actresses, 1)
 
-	// Should have DMMID from dmm
-	assert.Equal(t, 12345, actresses[0].DMMID, "Should upgrade actress with DMMID from dmm")
+	assert.Zero(t, actresses[0].DMMID, "Should not borrow DMMID from another provider")
 
 	// Should keep data from r18dev (higher priority)
 	assert.Equal(t, "Yui", actresses[0].FirstName, "Should keep r18dev FirstName")
@@ -1437,12 +1435,12 @@ func TestActressDMMIDPartialDataMerging(t *testing.T) {
 	// Should have exactly 1 actress (deduplicated by DMMID)
 	require.Len(t, actresses, 1, "Should deduplicate actresses with same DMMID")
 
-	// Should merge data respecting priority order
+	// Only the highest-priority provider contributes actress data.
 	assert.Equal(t, 12345, actresses[0].DMMID)
 	assert.Equal(t, "Yui", actresses[0].FirstName, "Should use r18dev FirstName (highest priority)")
-	assert.Equal(t, "Hatano", actresses[0].LastName, "Should use dmm LastName (r18dev had empty)")
+	assert.Empty(t, actresses[0].LastName)
 	assert.Equal(t, "波多野結衣", actresses[0].JapaneseName, "Should use r18dev JapaneseName (highest priority)")
-	assert.Equal(t, "https://dmm.example.com/thumb.jpg", actresses[0].ThumbURL, "Should use dmm ThumbURL (r18dev had empty)")
+	assert.Empty(t, actresses[0].ThumbURL)
 }
 
 // TestActressDMMIDZeroNotDeduplicated tests that actresses with DMMID=0 are NOT deduplicated

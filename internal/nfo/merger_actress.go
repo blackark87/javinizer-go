@@ -37,11 +37,10 @@ func mergeActresses(fieldName string, scraped, nfo []models.Actress, strategy Me
 		fm.recordConflict()
 		return merged
 	case MergeArrays:
-		// Merge and deduplicate with cross-source matching.
-		// Unlike the naive key-based approach, this matches actresses across
-		// sources using all available identifiers (JapaneseName, DMMID, romanized name)
-		// to avoid creating duplicate entries for the same person.
-		merged := mergeActressSlices(scraped, nfo, false)
+		// The freshly scraped provider cast is authoritative. Existing NFO actors
+		// may enrich a matching actress but must not append stale, unmatched cast
+		// entries and turn a single-actress title into @Group.
+		merged := mergeAuthoritativeScrapedActresses(scraped, nfo)
 		fm.recordMerged(fieldName, 0.9)
 		return merged
 	default: // PreferScraper
@@ -49,6 +48,17 @@ func mergeActresses(fieldName string, scraped, nfo []models.Actress, strategy Me
 		fm.recordConflict()
 		return scraped
 	}
+}
+
+func mergeAuthoritativeScrapedActresses(scraped, nfo []models.Actress) []models.Actress {
+	matches := deduplicateActresses(scraped, nfo)
+	scrapedMatches := make([]actressMatch, 0, len(scraped))
+	for _, match := range matches {
+		if match.fromScraper {
+			scrapedMatches = append(scrapedMatches, match)
+		}
+	}
+	return applyActressMergeStrategy(scrapedMatches, false)
 }
 
 // actressMatch represents a matched or unmatched actress from the deduplication phase.

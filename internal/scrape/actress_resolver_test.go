@@ -29,17 +29,21 @@ func TestReconcileVerifiedActressesSkipsUnverifiedCastEntries(t *testing.T) {
 }
 
 type actressResolverScraper struct {
-	name         string
-	enabled      bool
-	result       *models.ScraperResult
-	err          error
-	calls        int
-	thumbnail    string
-	thumbCalls   int
-	resolveID    string
-	profile      models.ActressInfo
-	profileErr   error
-	profileCalls int
+	name          string
+	enabled       bool
+	result        *models.ScraperResult
+	err           error
+	calls         int
+	thumbnail     string
+	thumbCalls    int
+	resolveID     string
+	profile       models.ActressInfo
+	profileErr    error
+	profileCalls  int
+	identity      *models.ScraperResult
+	identityErr   error
+	identityCalls int
+	identityQuery models.ActressIdentityQuery
 }
 
 func (s *actressResolverScraper) Name() string { return s.name }
@@ -64,6 +68,12 @@ func (s *actressResolverScraper) ResolveActressThumbnail(context.Context, models
 func (s *actressResolverScraper) ResolveActressProfile(context.Context, models.ActressInfo) (models.ActressInfo, error) {
 	s.profileCalls++
 	return s.profile, s.profileErr
+}
+
+func (s *actressResolverScraper) ResolveActressIdentity(_ context.Context, query models.ActressIdentityQuery) (*models.ScraperResult, error) {
+	s.identityCalls++
+	s.identityQuery = query
+	return s.identity, s.identityErr
 }
 
 func TestEnrichResolvedActressProfilesPreservesObservedActivityName(t *testing.T) {
@@ -544,4 +554,89 @@ func TestActressOverrideResultsPreservesRawMetadata(t *testing.T) {
 	resolverOnly := actressOverrideResults(raw[1:], actressResolverScraperName)
 	assert.Same(t, raw[1], resolverOnly[0])
 	assert.Equal(t, "RAW-001", resolverOnly[0].ID)
+}
+
+func TestActressOverrideResultsConstrainsAmbiguousMAG001ResolverCast(t *testing.T) {
+	raw := []*models.ScraperResult{
+		{Source: "libredmm", ID: "MAG-001"},
+		{Source: "javbus", ID: "MAG-001", Actresses: []models.ActressInfo{{JapaneseName: "AIKA"}}},
+		{Source: "r18dev", ID: "MAG-001", Actresses: []models.ActressInfo{{DMMID: 1058164, JapaneseName: "佐々木あき"}}},
+		{Source: actressResolverScraperName, ID: "MAG-001", Actresses: []models.ActressInfo{
+			{DMMID: 101, JapaneseName: "AIKA"},
+			{DMMID: 1058164, JapaneseName: "佐々木あき"},
+		}},
+	}
+
+	overrides := actressOverrideResults(raw, actressResolverScraperName)
+	require.Len(t, overrides, 4)
+	assert.Empty(t, overrides[1].Actresses)
+	assert.Empty(t, overrides[2].Actresses)
+	require.Len(t, overrides[3].Actresses, 1)
+	assert.Equal(t, "AIKA", overrides[3].Actresses[0].JapaneseName)
+	assert.Equal(t, 101, overrides[3].Actresses[0].DMMID)
+
+	// Source records shown in review remain unmodified.
+	require.Len(t, raw[3].Actresses, 2)
+}
+
+func TestActressOverrideResultsKeepsSingleSougouWikiFallback(t *testing.T) {
+	raw := []*models.ScraperResult{
+		{Source: "libredmm", ID: "JNT-042", Actresses: []models.ActressInfo{{JapaneseName: "マヒロ"}}},
+		{Source: actressResolverScraperName, ID: "JNT-042", Actresses: []models.ActressInfo{{DMMID: 1054165, JapaneseName: "夏希まろん"}}},
+	}
+
+	overrides := actressOverrideResults(raw, actressResolverScraperName)
+	assert.Empty(t, overrides[0].Actresses)
+	require.Len(t, overrides[1].Actresses, 1)
+	assert.Equal(t, "夏希まろん", overrides[1].Actresses[0].JapaneseName)
+}
+
+func TestScrapeMAG001UsesOnlyHighestPriorityProviderCast(t *testing.T) {
+	const movieID = "MAG-001"
+	fixture := newFixture(t).
+		withScraper("libredmm", &models.ScraperResult{
+			Source: "libredmm", ID: movieID, Title: "MAG-001",
+		}, nil).
+		withScraper("javbus", &models.ScraperResult{
+			Source: "javbus", ID: movieID,
+			Actresses: []models.ActressInfo{{JapaneseName: "AIKA"}},
+		}, nil).
+		withScraper("r18dev", &models.ScraperResult{
+			Source: "r18dev", ID: movieID,
+			Actresses: []models.ActressInfo{{DMMID: 1058164, JapaneseName: "佐々木あき"}},
+		}, nil).
+		withPriority([]string{"libredmm", "javbus", "r18dev"})
+
+	resolver := &actressResolverScraper{
+		name:    actressResolverScraperName,
+		enabled: false,
+		identity: &models.ScraperResult{
+			Source: actressResolverScraperName,
+			Actresses: []models.ActressInfo{{
+				DMMID: 1100001, JapaneseName: "AIKA",
+			}},
+		},
+		// A broad movie-ID search would reproduce the collision. It must not run
+		// when the selected provider actress can be resolved by identity.
+		result: &models.ScraperResult{
+			Source: actressResolverScraperName,
+			Actresses: []models.ActressInfo{
+				{DMMID: 1100001, JapaneseName: "AIKA"},
+				{DMMID: 1058164, JapaneseName: "佐々木あき"},
+			},
+		},
+	}
+	fixture.registry.RegisterInstance(resolver)
+
+	result, err := fixture.build().Scrape(context.Background(), ScrapeCmd{MovieID: movieID}, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, result.Movie)
+	require.Len(t, result.Movie.Actresses, 1)
+	assert.Equal(t, "AIKA", result.Movie.Actresses[0].JapaneseName)
+	assert.Equal(t, 1100001, result.Movie.Actresses[0].DMMID)
+	assert.Equal(t, actressResolverScraperName, result.FieldSources["actresses"])
+	assert.Equal(t, 1, resolver.identityCalls)
+	assert.Equal(t, []string{"AIKA"}, resolver.identityQuery.Names)
+	assert.Zero(t, resolver.calls, "broad movie-ID lookup must not merge a colliding product cast")
 }

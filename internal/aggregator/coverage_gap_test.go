@@ -152,8 +152,7 @@ func TestActressMerger_DifferentDMMIDsBothNonZero(t *testing.T) {
 	}
 }
 
-func TestActressMerger_SameDMMIDMergeFillFields(t *testing.T) {
-	// When same DMMID from two sources, fill empty fields from lower priority
+func TestActressMerger_SameDMMIDDoesNotMergeFields(t *testing.T) {
 	merger := newActressMerger()
 	sources := []actressSource{
 		{
@@ -184,9 +183,9 @@ func TestActressMerger_SameDMMIDMergeFillFields(t *testing.T) {
 	actresses := merger.Merge(sources, opts)
 	require.Len(t, actresses, 1)
 	assert.Equal(t, 12345, actresses[0].DMMID)
-	assert.Equal(t, "Yui", actresses[0].FirstName, "should fill FirstName from dmm")
-	assert.Equal(t, "Hatano", actresses[0].LastName, "should fill LastName from dmm")
-	assert.Equal(t, "波多野結衣", actresses[0].JapaneseName, "should fill JapaneseName from dmm")
+	assert.Empty(t, actresses[0].FirstName)
+	assert.Empty(t, actresses[0].LastName)
+	assert.Empty(t, actresses[0].JapaneseName)
 	assert.Equal(t, "https://r18dev.example.com/thumb.jpg", actresses[0].ThumbURL, "should keep ThumbURL from r18dev")
 }
 

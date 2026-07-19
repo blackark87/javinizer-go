@@ -91,7 +91,26 @@ func TestMergeActresses_MergeArraysStrategy(t *testing.T) {
 	nfo := []models.Actress{{JapaneseName: "Actress3"}}
 
 	result := mergeActresses("actresses", scraped, nfo, MergeArrays, fm)
-	assert.GreaterOrEqual(t, len(result), 3)
+	require.Len(t, result, 2)
+	assert.Equal(t, []string{"Actress1", "Actress2"}, []string{result[0].JapaneseName, result[1].JapaneseName})
+}
+
+func TestMergeActresses_MergeArraysDoesNotRestoreStaleUnmatchedActress(t *testing.T) {
+	scraped := []models.Actress{{DMMID: 101, JapaneseName: "AIKA"}}
+	existing := []models.Actress{
+		{JapaneseName: "AIKA"},
+		{DMMID: 1058164, JapaneseName: "佐々木あき"},
+	}
+	stats := &MergeStats{}
+	provenance := make(map[string]DataSource)
+	now := time.Now()
+	fm := newFieldMerger(stats, provenance, now, now)
+
+	result := mergeActresses("actresses", scraped, existing, MergeArrays, fm)
+
+	require.Len(t, result, 1)
+	assert.Equal(t, "AIKA", result[0].JapaneseName)
+	assert.Equal(t, 101, result[0].DMMID)
 }
 
 func TestMergeActresses_PreserveExistingStrategy(t *testing.T) {

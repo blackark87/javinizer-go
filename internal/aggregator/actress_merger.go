@@ -39,15 +39,15 @@ func newActressMerger() *actressMerger {
 	return &actressMerger{}
 }
 
-// Merge selects the first usable cast in source-priority order, deduplicates
-// that authoritative cast, and fills empty fields only from matching actresses
-// in lower-priority sources. A distinct actress reported only by a lower source
-// is deliberately not appended: users can still select that source explicitly
-// from the raw source records.
+// Merge selects the first usable cast in source-priority order and deduplicates
+// only that authoritative cast. Actress data from different providers is never
+// combined, even when names or DMM IDs appear to match. Missing DMM identity is
+// enriched later by the dedicated actress resolver, not by another metadata
+// provider.
 //
 // The method has 3 phases:
-//  1. Select + Dedup: select the first source with a usable actress, deduplicate
-//     its cast, then enrich matching entries from lower-priority sources.
+//  1. Select + Dedup: select the first source with a usable actress and
+//     deduplicate only its cast.
 //  2. Resolve: apply alias resolution to each actress if a resolver is provided.
 //  3. Fallback: if no actresses were found and fallback mode is enabled, add
 //     unknown actress text as a placeholder.
@@ -168,6 +168,9 @@ func (m *actressMerger) Merge(sources []actressSource, opts actressMergeOptions)
 				}
 				// Skip actresses with no DMMID and no name
 			}
+		}
+		if isPrimary {
+			break
 		}
 	}
 

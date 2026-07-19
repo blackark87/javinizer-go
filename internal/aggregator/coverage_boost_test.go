@@ -403,7 +403,7 @@ func TestAggregate_ActressesFromMultipleSources(t *testing.T) {
 	assert.Equal(t, "Yui", movie.Actresses[0].FirstName)
 	assert.Equal(t, "Hatano", movie.Actresses[0].LastName)
 	assert.Equal(t, "波多野結衣", movie.Actresses[0].JapaneseName)
-	assert.Equal(t, "https://example.com/thumb.jpg", movie.Actresses[0].ThumbURL)
+	assert.Empty(t, movie.Actresses[0].ThumbURL)
 }
 
 // --- Aggregate: Unknown actress fallback ---

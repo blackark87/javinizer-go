@@ -73,7 +73,7 @@ func TestMergeMovieMetadataWithOptions_AllCombinations(t *testing.T) {
 			mergeArrays:     true,
 			expectedTitle:   "NFO Title",
 			expectedMaker:   "NFO Studio",
-			actressCount:    3, // Yui Hatano (dedupe), Mika Sumire (NFO), Akari Asagiri (scraped)
+			actressCount:    2, // Scraped cast is authoritative; stale NFO-only actresses are not restored
 			genreCount:      3, // Drama (dedupe), Comedy (NFO), Romance (scraped)
 			screenshotCount: 4, // All combined
 			description:     "Keep NFO scalar fields, combine array fields",
@@ -95,7 +95,7 @@ func TestMergeMovieMetadataWithOptions_AllCombinations(t *testing.T) {
 			mergeArrays:     true,
 			expectedTitle:   "Scraped Title",
 			expectedMaker:   "Scraped Studio",
-			actressCount:    3, // Yui Hatano (dedupe), Akari Asagiri (scraped), Mika Sumire (NFO)
+			actressCount:    2, // Scraped cast is authoritative; stale NFO-only actresses are not restored
 			genreCount:      3, // Drama (dedupe), Romance (scraped), Comedy (NFO)
 			screenshotCount: 4, // All combined
 			description:     "Use scraped scalar fields, combine array fields",
@@ -262,8 +262,8 @@ func TestMergeMovieMetadataWithOptions_ArrayDeduplication(t *testing.T) {
 	result, err := MergeMovieMetadataWithOptions(scraped, nfoData, PreferNFO, true)
 	require.NoError(t, err)
 
-	// Check that arrays are merged without duplicates
-	assert.Len(t, result.Merged.Actresses, 3, "Should have 3 unique actresses (Yui Hatano appears once)")
+	// Actress cast follows the fresh scrape; other arrays retain merge behavior.
+	assert.Len(t, result.Merged.Actresses, 2)
 	assert.Len(t, result.Merged.Genres, 3, "Should have 3 unique genres (Drama appears once)")
 
 	// Verify the specific actresses
@@ -274,7 +274,7 @@ func TestMergeMovieMetadataWithOptions_ArrayDeduplication(t *testing.T) {
 	}
 	assert.True(t, actressNames["Yui Hatano"], "Should have Yui Hatano")
 	assert.True(t, actressNames["Akari Asagiri"], "Should have Akari Asagiri")
-	assert.True(t, actressNames["Mika Sumire"], "Should have Mika Sumire")
+	assert.False(t, actressNames["Mika Sumire"], "Should not restore an NFO-only actress")
 
 	// Verify the specific genres
 	genreNames := make(map[string]bool)

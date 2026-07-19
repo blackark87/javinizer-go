@@ -212,7 +212,8 @@ func TestResolveActressIdentityUsesExactEUCJPPageNameSearch(t *testing.T) {
 	})
 	defer server.Close()
 
-	scraper := New(models.ScraperSettings{Enabled: true, BaseURL: server.URL + "/"}, nil, models.FlareSolverrConfig{})
+	scraper := New(models.ScraperSettings{Enabled: false, BaseURL: server.URL + "/"}, nil, models.FlareSolverrConfig{})
+	assert.False(t, scraper.IsEnabled(), "resolver should remain hidden from ordinary metadata providers")
 	result, err := scraper.ResolveActressIdentity(context.Background(), models.ActressIdentityQuery{
 		Names: []string{"波多野結衣", "Alias"},
 	})

@@ -29,6 +29,14 @@ func (s *Scraper) resolveMissingActresses(ctx context.Context, movieID string, r
 	if !ok {
 		return nil, nil
 	}
+	if identityResolver, identityOK := instance.(models.ActressIdentityResolver); identityOK {
+		primaryCast := firstUsableRegularCast(results, actressResolverScraperName)
+		if resolvedByName, complete := resolvePrimaryCastIdentities(ctx, identityResolver, movieID, primaryCast); complete {
+			inheritResolvedActressAssets(resolvedByName, results)
+			s.enrichResolvedActressProfiles(ctx, resolvedByName)
+			return resolvedByName, nil
+		}
+	}
 
 	resolved, err := callActressResolver(ctx, resolver, movieID)
 	if err != nil {
@@ -46,6 +54,98 @@ func (s *Scraper) resolveMissingActresses(ctx context.Context, movieID string, r
 	inheritResolvedActressAssets(resolved, results)
 	s.enrichResolvedActressProfiles(ctx, resolved)
 	return resolved, nil
+}
+
+func resolvePrimaryCastIdentities(
+	ctx context.Context,
+	resolver models.ActressIdentityResolver,
+	movieID string,
+	primary []models.ActressInfo,
+) (*models.ScraperResult, bool) {
+	if resolver == nil || len(primary) == 0 {
+		return nil, false
+	}
+	resolved := make([]models.ActressInfo, 0, len(primary))
+	seenPrimary := make(map[string]struct{}, len(primary))
+	var sourceURL string
+	for _, actress := range primary {
+		keys := actressIdentityKeys(actress)
+		primaryKey := ""
+		if len(keys) > 0 {
+			primaryKey = keys[0]
+		}
+		if primaryKey != "" {
+			if _, exists := seenPrimary[primaryKey]; exists {
+				continue
+			}
+			seenPrimary[primaryKey] = struct{}{}
+		}
+		if actress.DMMID > 0 && hasUsableResolvedJapaneseName(actress) {
+			resolved = append(resolved, actress)
+			continue
+		}
+
+		identity, err := callActressIdentityResolver(ctx, resolver, models.ActressIdentityQuery{
+			Names:    actressIdentityNames(actress),
+			ThumbURL: strings.TrimSpace(actress.ThumbURL),
+		})
+		if err != nil || identity == nil || len(identity.Actresses) != 1 || identity.Actresses[0].DMMID <= 0 {
+			return nil, false
+		}
+		verified := identity.Actresses[0]
+		if observed := strings.TrimSpace(actress.JapaneseName); isObservedActressAlias(observed, verified.JapaneseName) {
+			verified.ObservedAliases = appendUniqueActressAlias(verified.ObservedAliases, observed)
+		}
+		if strings.TrimSpace(verified.ThumbURL) == "" {
+			verified.ThumbURL = strings.TrimSpace(actress.ThumbURL)
+		}
+		resolved = append(resolved, verified)
+		if sourceURL == "" {
+			sourceURL = identity.SourceURL
+		}
+	}
+	if len(resolved) == 0 {
+		return nil, false
+	}
+	return &models.ScraperResult{
+		Source:    actressResolverScraperName,
+		SourceURL: sourceURL,
+		Language:  "ja",
+		ID:        movieID,
+		Actresses: resolved,
+	}, true
+}
+
+func callActressIdentityResolver(ctx context.Context, resolver models.ActressIdentityResolver, query models.ActressIdentityQuery) (result *models.ScraperResult, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			result = nil
+			err = fmt.Errorf("actress identity resolver panicked: %v", recovered)
+		}
+	}()
+	return resolver.ResolveActressIdentity(ctx, query)
+}
+
+func actressIdentityNames(actress models.ActressInfo) []string {
+	values := []string{
+		strings.TrimSpace(actress.JapaneseName),
+		strings.TrimSpace(actress.LastName + " " + actress.FirstName),
+		strings.TrimSpace(actress.FirstName + " " + actress.LastName),
+	}
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		key := models.NormalizeActressNameKey(value)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 
 func callActressResolver(ctx context.Context, resolver models.ActressResolver, movieID string) (result *models.ScraperResult, err error) {
@@ -367,6 +467,9 @@ func actressOverrideResults(results []*models.ScraperResult, resolverSource stri
 		return results
 	}
 
+	primaryCast := firstUsableRegularCast(results, resolverSource)
+	resolverCast, useResolverCast := constrainedResolverCast(results, resolverSource, primaryCast)
+
 	overrides := make([]*models.ScraperResult, 0, len(results))
 	for _, result := range results {
 		if result == nil {
@@ -392,10 +495,118 @@ func actressOverrideResults(results []*models.ScraperResult, resolverSource stri
 			copy.ScreenshotURL = nil
 			copy.TrailerURL = ""
 			copy.Genres = nil
-		} else {
+			if useResolverCast {
+				copy.Actresses = append([]models.ActressInfo(nil), resolverCast...)
+			} else {
+				copy.Actresses = nil
+			}
+		} else if useResolverCast {
 			copy.Actresses = nil
 		}
 		overrides = append(overrides, copy)
 	}
 	return overrides
+}
+
+// firstUsableRegularCast returns the cast from the highest-priority regular
+// provider. queryAll preserves provider order, so this is the same cast source
+// the aggregator would select without the automatic resolver.
+func firstUsableRegularCast(results []*models.ScraperResult, resolverSource string) []models.ActressInfo {
+	for _, result := range results {
+		if result == nil || strings.EqualFold(strings.TrimSpace(result.Source), resolverSource) {
+			continue
+		}
+		usable := make([]models.ActressInfo, 0, len(result.Actresses))
+		for _, raw := range result.Actresses {
+			actress := raw
+			translation.CleanActressInfo(&actress)
+			if models.IsUnknownActressFields(actress.LastName, actress.FirstName, actress.JapaneseName) {
+				continue
+			}
+			if len(actressIdentityKeys(actress)) > 0 || actress.DMMID > 0 {
+				usable = append(usable, actress)
+			}
+		}
+		if len(usable) > 0 {
+			return usable
+		}
+	}
+	return nil
+}
+
+// constrainedResolverCast prevents a broad movie-ID search from adding cast
+// belonging to another product with the same catalog number. A single resolver
+// result remains a valid fallback (for example JNT-042); when multiple results
+// are returned, only identities matching the primary provider cast are used.
+func constrainedResolverCast(results []*models.ScraperResult, resolverSource string, primary []models.ActressInfo) ([]models.ActressInfo, bool) {
+	var resolved []models.ActressInfo
+	for _, result := range results {
+		if result != nil && strings.EqualFold(strings.TrimSpace(result.Source), resolverSource) {
+			resolved = result.Actresses
+			break
+		}
+	}
+	if len(resolved) == 0 {
+		return nil, false
+	}
+	if len(resolved) == 1 || len(primary) == 0 {
+		return append([]models.ActressInfo(nil), resolved...), true
+	}
+	// For a multi-actress primary cast, the existing completeness guard verifies
+	// that SougouWiki resolved the full selected cast. The names may legitimately
+	// be aliases and therefore need not match before reconciliation.
+	if len(primary) > 1 && len(resolved) == len(primary) {
+		return append([]models.ActressInfo(nil), resolved...), true
+	}
+
+	primaryDMMIDs := make(map[int]struct{})
+	primaryKeys := make(map[string]struct{})
+	for _, actress := range primary {
+		if actress.DMMID > 0 {
+			primaryDMMIDs[actress.DMMID] = struct{}{}
+		}
+		for _, key := range actressIdentityKeys(actress) {
+			primaryKeys[key] = struct{}{}
+		}
+	}
+
+	matched := make([]models.ActressInfo, 0, len(primary))
+	for _, actress := range resolved {
+		if _, ok := primaryDMMIDs[actress.DMMID]; actress.DMMID > 0 && ok {
+			matched = append(matched, actress)
+			continue
+		}
+		for _, key := range actressIdentityKeys(actress) {
+			if _, ok := primaryKeys[key]; ok {
+				matched = append(matched, actress)
+				break
+			}
+		}
+	}
+	if len(matched) == 0 {
+		return nil, false
+	}
+	return matched, true
+}
+
+func actressIdentityKeys(actress models.ActressInfo) []string {
+	values := []string{
+		actress.JapaneseName,
+		strings.TrimSpace(actress.LastName + " " + actress.FirstName),
+		strings.TrimSpace(actress.FirstName + " " + actress.LastName),
+	}
+	keys := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		key := models.NormalizeActressNameKey(value)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		keys = append(keys, key)
+	}
+	return keys
 }

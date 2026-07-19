@@ -97,8 +97,8 @@ func TestMergeActresses_NormalizedDeduplication(t *testing.T) {
 	result, err := MergeMovieMetadataWithOptions(scraped, nfo, PreferScraper, true)
 	require.NoError(t, err)
 
-	// Should have 3 actresses (case/whitespace variants deduplicated)
-	assert.Len(t, result.Merged.Actresses, 3)
+	// Only actresses from the fresh scrape remain.
+	assert.Len(t, result.Merged.Actresses, 2)
 
 	// Verify the unique actresses
 	actressNames := make(map[string]bool)
@@ -109,7 +109,7 @@ func TestMergeActresses_NormalizedDeduplication(t *testing.T) {
 
 	assert.True(t, actressNames["yui hatano"])
 	assert.True(t, actressNames["ai sayama"] || actressNames[" ai   sayama "])
-	assert.True(t, actressNames["tia bejean"])
+	assert.False(t, actressNames["tia bejean"])
 }
 
 func TestMergeGenres_NormalizedDeduplication(t *testing.T) {

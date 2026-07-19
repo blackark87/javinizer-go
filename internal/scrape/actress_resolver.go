@@ -339,6 +339,22 @@ func (s *Scraper) enrichResolvedActressProfiles(ctx context.Context, result *mod
 		if strings.TrimSpace(actress.ThumbURL) == "" && thumbnailResolver != nil {
 			actress.ThumbURL = safeActressThumbnail(ctx, thumbnailResolver, *actress)
 		}
+		for aliasIndex := range actress.AliasIdentities {
+			alias := &actress.AliasIdentities[aliasIndex]
+			if alias.DMMID <= 0 || profileResolver == nil {
+				continue
+			}
+			profile, err := safeActressProfile(ctx, profileResolver, models.ActressInfo{
+				DMMID: alias.DMMID, JapaneseName: alias.JapaneseName,
+			})
+			if err != nil || strings.TrimSpace(profile.JapaneseName) == "" {
+				continue
+			}
+			alias.JapaneseName = strings.TrimSpace(profile.JapaneseName)
+			alias.FirstName = strings.TrimSpace(profile.FirstName)
+			alias.LastName = strings.TrimSpace(profile.LastName)
+			alias.ThumbURL = strings.TrimSpace(profile.ThumbURL)
+		}
 	}
 }
 
@@ -367,6 +383,42 @@ type verifiedActressIdentityResolver interface {
 
 type verifiedActressProfileResolver interface {
 	ResolveVerifiedProfile(sourceID uint, verified models.Actress, observedAliases []string, allowCreate bool) (*database.VerifiedActressResolution, error)
+}
+
+type verifiedActressAliasGroupResolver interface {
+	ResolveVerifiedAliasGroup(canonical models.Actress, aliases []models.Actress) error
+}
+
+func reconcileVerifiedAliasGroups(results []*models.ScraperResult, repo database.ActressRepositoryInterface) error {
+	resolver, ok := repo.(verifiedActressAliasGroupResolver)
+	if !ok {
+		return nil
+	}
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		for _, info := range result.Actresses {
+			if info.DMMID <= 0 || len(info.AliasIdentities) == 0 {
+				continue
+			}
+			canonical := models.Actress{
+				DMMID: info.DMMID, FirstName: info.FirstName, LastName: info.LastName,
+				JapaneseName: info.JapaneseName, ThumbURL: info.ThumbURL,
+			}
+			aliases := make([]models.Actress, 0, len(info.AliasIdentities))
+			for _, alias := range info.AliasIdentities {
+				aliases = append(aliases, models.Actress{
+					DMMID: alias.DMMID, FirstName: alias.FirstName, LastName: alias.LastName,
+					JapaneseName: alias.JapaneseName, ThumbURL: alias.ThumbURL,
+				})
+			}
+			if err := resolver.ResolveVerifiedAliasGroup(canonical, aliases); err != nil {
+				return fmt.Errorf("reconcile actress alias group %q: %w", canonical.JapaneseName, err)
+			}
+		}
+	}
+	return nil
 }
 
 func hasScraperSource(results []*models.ScraperResult, source string) bool {

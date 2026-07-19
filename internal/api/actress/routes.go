@@ -23,6 +23,7 @@ func RegisterRoutes(protected *gin.RouterGroup, deps ActressDeps, runtimes ...*c
 		return
 	}
 	rt := runtimes[0]
+	protected.POST("/actresses/resolve-alias-choice", resolveAliasChoice(rt))
 	if rt.Deps() != nil && rt.Deps().CoreDeps != nil && rt.Deps().CoreDeps.DB != nil {
 		actressRepo := database.NewActressRepository(rt.Deps().CoreDeps.DB)
 		movieRepo := database.NewMovieRepository(rt.Deps().CoreDeps.DB)

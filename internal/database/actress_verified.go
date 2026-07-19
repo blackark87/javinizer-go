@@ -28,6 +28,75 @@ type VerifiedActressResolution struct {
 	AliasConflicts     []string
 }
 
+// ResolveVerifiedAliasGroup persists separate DMM-backed activity-name rows
+// while linking them as one performer. It deliberately does not merge rows
+// with different positive DMM IDs.
+func (r *ActressRepository) ResolveVerifiedAliasGroup(canonical models.Actress, aliases []models.Actress) error {
+	canonicalResolution, err := r.ResolveVerifiedProfile(0, canonical, nil, true)
+	if err != nil {
+		return err
+	}
+	if canonicalResolution == nil || canonicalResolution.Actress.ID == 0 {
+		return fmt.Errorf("resolve canonical actress alias identity")
+	}
+	canonical = canonicalResolution.Actress
+
+	resolvedAliases := make([]models.Actress, 0, len(aliases))
+	for _, alias := range aliases {
+		if alias.DMMID <= 0 || alias.DMMID == canonical.DMMID {
+			continue
+		}
+		resolution, resolveErr := r.ResolveVerifiedProfile(0, alias, nil, true)
+		if resolveErr != nil {
+			return resolveErr
+		}
+		if resolution != nil && resolution.Actress.ID > 0 {
+			resolvedAliases = append(resolvedAliases, resolution.Actress)
+		}
+	}
+	if len(resolvedAliases) == 0 {
+		return nil
+	}
+
+	return retryOnLocked(func() error {
+		return r.GetDB().Transaction(func(tx *gorm.DB) error {
+			aliasNames := make([]string, 0, len(resolvedAliases))
+			for _, alias := range resolvedAliases {
+				aliasName := strings.TrimSpace(alias.JapaneseName)
+				if aliasName == "" || normalizeExactActressName(aliasName) == normalizeExactActressName(canonical.JapaneseName) {
+					continue
+				}
+				aliasNames = append(aliasNames, aliasName)
+				var existing models.ActressAlias
+				findErr := tx.Where("alias_name = ?", aliasName).First(&existing).Error
+				switch {
+				case errors.Is(findErr, gorm.ErrRecordNotFound):
+					existing = models.ActressAlias{AliasName: aliasName}
+				case findErr != nil:
+					return findErr
+				case existing.CanonicalName != "" && normalizeExactActressName(existing.CanonicalName) != normalizeExactActressName(canonical.JapaneseName):
+					// Preserve an explicit conflicting mapping instead of silently
+					// moving an alias between performers.
+					continue
+				}
+				existing.CanonicalName = canonical.JapaneseName
+				existing.AliasActressID = alias.ID
+				existing.CanonicalActressID = canonical.ID
+				if err := tx.Save(&existing).Error; err != nil {
+					return err
+				}
+			}
+			merged, _ := mergeVerifiedAliasValues(canonical.Aliases, aliasNames, canonical.JapaneseName)
+			if merged != canonical.Aliases {
+				if err := tx.Model(&models.Actress{}).Where("id = ?", canonical.ID).Update("aliases", merged).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	})
+}
+
 // ResolveVerifiedIdentity reconciles a positive DMM identity with existing
 // name-only or duplicate actress rows in one transaction.
 func (r *ActressRepository) ResolveVerifiedIdentity(sourceID uint, verified models.Actress, allowCreate bool) (*VerifiedActressResolution, error) {
@@ -328,11 +397,19 @@ func syncVerifiedAliasMappingsTx(tx *gorm.DB, canonical models.Actress, previous
 		if normalizeExactActressName(alias) == normalizeExactActressName(canonicalName) {
 			continue
 		}
+		var aliasActress models.Actress
+		aliasActressID := uint(0)
+		if findAliasErr := tx.Where("TRIM(japanese_name) = ?", strings.TrimSpace(alias)).Order("CASE WHEN dmm_id > 0 THEN 0 ELSE 1 END, id").First(&aliasActress).Error; findAliasErr == nil {
+			aliasActressID = aliasActress.ID
+		}
 		var existing models.ActressAlias
 		err := tx.Where("alias_name = ?", alias).First(&existing).Error
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
-			if createErr := tx.Create(&models.ActressAlias{AliasName: alias, CanonicalName: canonicalName}).Error; createErr != nil {
+			if createErr := tx.Create(&models.ActressAlias{
+				AliasName: alias, CanonicalName: canonicalName,
+				AliasActressID: aliasActressID, CanonicalActressID: canonical.ID,
+			}).Error; createErr != nil {
 				return nil, nil, wrapDBErr("create", fmt.Sprintf("actress alias %s", alias), createErr)
 			}
 			added = append(added, alias)
@@ -340,6 +417,14 @@ func syncVerifiedAliasMappingsTx(tx *gorm.DB, canonical models.Actress, previous
 			return nil, nil, wrapDBErr("find", fmt.Sprintf("actress alias %s", alias), err)
 		case normalizeExactActressName(existing.CanonicalName) != normalizeExactActressName(canonicalName):
 			conflicts = append(conflicts, alias)
+		default:
+			updates := map[string]interface{}{"canonical_actress_id": canonical.ID}
+			if aliasActressID > 0 {
+				updates["alias_actress_id"] = aliasActressID
+			}
+			if updateErr := tx.Model(&existing).Updates(updates).Error; updateErr != nil {
+				return nil, nil, wrapDBErr("update", fmt.Sprintf("actress alias identity %s", alias), updateErr)
+			}
 		}
 	}
 	return added, conflicts, nil

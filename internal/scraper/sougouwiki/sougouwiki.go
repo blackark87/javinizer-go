@@ -359,24 +359,65 @@ func parseActressIdentityPage(doc *goquery.Document, matchedName string) (models
 	if heading.Length() == 0 {
 		return models.ActressInfo{}, false
 	}
-	var result models.ActressInfo
-	heading.Find("a").EachWithBreak(func(_ int, link *goquery.Selection) bool {
+	identities := extractHeadingActressIdentities(heading, matchedName)
+	if len(identities) == 0 {
+		return models.ActressInfo{}, false
+	}
+	primary := identities[0]
+	return models.ActressInfo{
+		DMMID: primary.DMMID, JapaneseName: primary.JapaneseName,
+		AliasIdentities: append([]models.ActressIdentity(nil), identities[1:]...),
+	}, true
+}
+
+func extractHeadingActressIdentities(heading *goquery.Selection, fallbackName string) []models.ActressIdentity {
+	if heading == nil {
+		return nil
+	}
+	type candidate struct {
+		id   int
+		name string
+	}
+	candidates := make([]candidate, 0)
+	seen := make(map[int]struct{})
+	heading.Find("a").Each(func(_ int, link *goquery.Selection) {
 		href, ok := link.Attr("href")
 		if !ok || !isDMMActressURL(href) {
-			return true
+			return
 		}
 		match := dmmActressIDPattern.FindStringSubmatch(href)
 		if len(match) < 2 {
-			return true
+			return
 		}
 		dmmID, err := strconv.Atoi(match[1])
 		if err != nil || dmmID <= 0 {
-			return true
+			return
 		}
-		result = models.ActressInfo{DMMID: dmmID, JapaneseName: strings.TrimSpace(matchedName)}
-		return false
+		if _, exists := seen[dmmID]; exists {
+			return
+		}
+		seen[dmmID] = struct{}{}
+		candidates = append(candidates, candidate{id: dmmID, name: cleanCanonicalActressName(link.Text())})
 	})
-	return result, result.DMMID > 0
+	if len(candidates) == 0 {
+		return nil
+	}
+	fallbackName = cleanCanonicalActressName(fallbackName)
+	identities := make([]models.ActressIdentity, 0, len(candidates))
+	for _, item := range candidates {
+		name := item.name
+		// A single DMM link sometimes wraps readings and several aliases. In
+		// that layout the page/search name is safer. Multiple DMM links, however,
+		// intentionally describe separate activity-name identities in order.
+		if len(candidates) == 1 || name == "" || strings.ContainsAny(name, "/／") {
+			name = fallbackName
+		}
+		if name == "" {
+			continue
+		}
+		identities = append(identities, models.ActressIdentity{DMMID: item.id, JapaneseName: name})
+	}
+	return identities
 }
 
 func uniqueIdentityNames(names []string) []string {
@@ -414,31 +455,15 @@ func parseVerifiedActressPage(doc *goquery.Document, movieID, fallbackName strin
 		fallbackName = pageName
 	}
 
-	var result models.ActressInfo
-	heading.Find("a").EachWithBreak(func(_ int, link *goquery.Selection) bool {
-		href, ok := link.Attr("href")
-		if !ok || !isDMMActressURL(href) {
-			return true
-		}
-		match := dmmActressIDPattern.FindStringSubmatch(href)
-		if len(match) < 2 {
-			return true
-		}
-		dmmID, err := strconv.Atoi(match[1])
-		if err != nil || dmmID <= 0 {
-			return true
-		}
-		// The DMM link label may span several aliases. SougouWiki's search
-		// result/page title is the safe fallback; DMM profile enrichment later
-		// replaces it whenever DMM exposes an authoritative name.
-		name := cleanCanonicalActressName(fallbackName)
-		if name == "" {
-			return true
-		}
-		result = models.ActressInfo{DMMID: dmmID, JapaneseName: name}
-		return false
-	})
-	return result, result.DMMID > 0 && result.JapaneseName != ""
+	identities := extractHeadingActressIdentities(heading, fallbackName)
+	if len(identities) == 0 {
+		return models.ActressInfo{}, false
+	}
+	primary := identities[0]
+	return models.ActressInfo{
+		DMMID: primary.DMMID, JapaneseName: primary.JapaneseName,
+		AliasIdentities: append([]models.ActressIdentity(nil), identities[1:]...),
+	}, true
 }
 
 func isDMMActressURL(raw string) bool {

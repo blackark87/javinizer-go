@@ -237,6 +237,9 @@ func resolveScrapeInput(ctx context.Context, cmd ScrapeCmd, registry ScraperInst
 // postProcessScraped enriches the aggregated movie with actress DB data,
 // translation, and assembles the final ScrapeResult.
 func postProcessScraped(ctx context.Context, scraped *models.Movie, results []*models.ScraperResult, aggResult *aggregator.AggregateResult, cfg *Config, translator Translator, actressRepo database.ActressRepositoryInterface, cmd ScrapeCmd, startTime time.Time) (*ScrapeResult, error) {
+	if err := reconcileVerifiedAliasGroups(results, actressRepo); err != nil {
+		return nil, err
+	}
 	var fieldSources map[string]string
 	var resolvedPriorities map[string][]string
 	if aggResult != nil {

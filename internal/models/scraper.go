@@ -85,6 +85,7 @@ func (r *ScraperResult) Clone() *ScraperResult {
 		copy(copied.Actresses, r.Actresses)
 		for i := range copied.Actresses {
 			copied.Actresses[i].ObservedAliases = append([]string(nil), r.Actresses[i].ObservedAliases...)
+			copied.Actresses[i].AliasIdentities = append([]ActressIdentity(nil), r.Actresses[i].AliasIdentities...)
 		}
 	}
 	if r.Genres != nil {
@@ -171,6 +172,21 @@ type ActressInfo struct {
 	// ObservedAliases contains activity names seen before an authoritative DMM
 	// profile replaced JapaneseName. Raw scraper results leave this empty.
 	ObservedAliases []string `json:"observed_aliases,omitempty"`
+	// AliasIdentities contains other DMM-backed activity names that a trusted
+	// identity source explicitly groups with this actress. They are identities,
+	// not additional cast members.
+	AliasIdentities []ActressIdentity `json:"alias_identities,omitempty"`
+}
+
+// ActressIdentity is one DMM-backed activity name within a performer's alias
+// group. Different identities remain separate actress rows because FANZA may
+// issue a new DMM ID when the performer changes her activity name.
+type ActressIdentity struct {
+	DMMID        int    `json:"dmm_id"`
+	FirstName    string `json:"first_name,omitempty"`
+	LastName     string `json:"last_name,omitempty"`
+	JapaneseName string `json:"japanese_name"`
+	ThumbURL     string `json:"thumb_url,omitempty"`
 }
 
 // ActressIdentityQuery contains identity hints available before a verified DMM

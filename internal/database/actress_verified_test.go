@@ -126,6 +126,32 @@ func TestResolveVerifiedProfilePreservesConflictingManualAliasMapping(t *testing
 	assert.Equal(t, "手動設定", stored.CanonicalName)
 }
 
+func TestResolveVerifiedAliasGroupKeepsDistinctDMMRecordsAndLinksChoices(t *testing.T) {
+	_, actressRepo, _ := newVerifiedActressTestRepos(t)
+
+	err := actressRepo.ResolveVerifiedAliasGroup(
+		models.Actress{DMMID: 1083266, JapaneseName: "星まりあ", FirstName: "마리아", LastName: "호시", ThumbURL: "hoshi.jpg"},
+		[]models.Actress{{DMMID: 1061509, JapaneseName: "天音まひな", FirstName: "마히나", LastName: "아마네", ThumbURL: "amane.jpg"}},
+	)
+	require.NoError(t, err)
+
+	canonical, err := actressRepo.FindByDMMID(context.Background(), 1083266)
+	require.NoError(t, err)
+	alias, err := actressRepo.FindByDMMID(context.Background(), 1061509)
+	require.NoError(t, err)
+	assert.NotEqual(t, canonical.ID, alias.ID, "different activity-name DMM IDs must never be merged")
+
+	group, err := NewActressAliasRepository(actressRepo.GetDB()).GetAliasGroup(context.Background(), "天音まひな")
+	require.NoError(t, err)
+	assert.Equal(t, "星まりあ", group.Canonical)
+	require.Len(t, group.Members, 2)
+	assert.True(t, group.Members[0].Available)
+	assert.Equal(t, canonical.ID, group.Members[0].Actress.ID)
+	assert.True(t, group.Members[1].Available)
+	assert.Equal(t, alias.ID, group.Members[1].Actress.ID)
+	assert.Equal(t, "마히나", group.Members[1].Actress.FirstName)
+}
+
 func TestResolveVerifiedIdentityRepairsMalformedCompositeNameFromCleanDMMProfile(t *testing.T) {
 	_, actressRepo, _ := newVerifiedActressTestRepos(t)
 	owner := &models.Actress{

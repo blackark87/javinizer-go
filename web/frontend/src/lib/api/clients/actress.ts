@@ -141,4 +141,11 @@ export class ActressClient extends BaseClient {
 		const query = new URLSearchParams({ name });
 		return this.request<ActressAliasGroup>(`/api/v1/actresses/alias-group?${query}`);
 	}
+
+	async resolveAliasChoice(actressID: number): Promise<Actress> {
+		return this.request<Actress>('/api/v1/actresses/resolve-alias-choice', {
+			method: 'POST',
+			body: JSON.stringify({ actress_id: actressID }),
+		});
+	}
 }

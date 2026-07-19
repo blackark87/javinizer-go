@@ -224,11 +224,15 @@ type WordReplacement struct {
 // ActressAlias represents an alternate name mapping for an actress
 // This allows users to consolidate multiple actress names into a canonical one
 type ActressAlias struct {
-	ID            uint      `json:"id" gorm:"primaryKey"`
-	AliasName     string    `json:"alias_name" gorm:"uniqueIndex;not null"` // The alternate name (e.g., "Yui Hatano")
-	CanonicalName string    `json:"canonical_name" gorm:"index;not null"`   // The canonical/preferred name (e.g., "Hatano Yui")
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID            uint   `json:"id" gorm:"primaryKey"`
+	AliasName     string `json:"alias_name" gorm:"uniqueIndex;not null"` // The alternate name (e.g., "Yui Hatano")
+	CanonicalName string `json:"canonical_name" gorm:"index;not null"`   // The canonical/preferred name (e.g., "Hatano Yui")
+	// Actress IDs make the alias mapping identity-aware without merging the
+	// separate DMM records used for different activity names.
+	AliasActressID     uint      `json:"alias_actress_id" gorm:"index;not null;default:0"`
+	CanonicalActressID uint      `json:"canonical_actress_id" gorm:"index;not null;default:0"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 // MovieTag represents a custom user-defined tag for a specific movie

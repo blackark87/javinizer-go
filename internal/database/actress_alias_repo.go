@@ -107,6 +107,17 @@ func (r *ActressAliasRepository) GetAliasMap(ctx context.Context) (map[string]st
 type AliasGroup struct {
 	Canonical string   // The canonical (preferred) name; empty when name is unknown.
 	Names     []string // Canonical first, then aliases, deduplicated, order-stable.
+	Members   []AliasGroupMember
+}
+
+// AliasGroupMember connects an activity name to its persisted actress/DMM
+// identity. Available is false for legacy name-only mappings with no actress
+// record, which lets the review UI display but disable that choice.
+type AliasGroupMember struct {
+	Name      string
+	Canonical bool
+	Available bool
+	Actress   models.Actress
 }
 
 // GetAliasGroup resolves a name to its full known-names group. The input may
@@ -170,7 +181,42 @@ func (r *ActressAliasRepository) GetAliasGroup(ctx context.Context, name string)
 		add(a.AliasName)
 	}
 
-	return AliasGroup{Canonical: canonical, Names: names}, nil
+	members := make([]AliasGroupMember, 0, len(names))
+	for _, memberName := range names {
+		member := AliasGroupMember{Name: memberName, Canonical: memberName == canonical}
+		var actressID uint
+		if member.Canonical {
+			for _, mapping := range matching {
+				if mapping.CanonicalActressID > 0 {
+					actressID = mapping.CanonicalActressID
+					break
+				}
+			}
+		} else {
+			for _, mapping := range matching {
+				if mapping.AliasName == memberName && mapping.AliasActressID > 0 {
+					actressID = mapping.AliasActressID
+					break
+				}
+			}
+		}
+		var actress models.Actress
+		var findErr error
+		if actressID > 0 {
+			findErr = r.GetDB().WithContext(ctx).First(&actress, actressID).Error
+		} else {
+			findErr = r.GetDB().WithContext(ctx).
+				Where("TRIM(japanese_name) = ?", strings.TrimSpace(memberName)).
+				Order("CASE WHEN dmm_id > 0 THEN 0 ELSE 1 END, id").First(&actress).Error
+		}
+		if findErr == nil {
+			member.Available = true
+			member.Actress = actress
+		}
+		members = append(members, member)
+	}
+
+	return AliasGroup{Canonical: canonical, Names: names, Members: members}, nil
 }
 
 var defaultActressAliases []models.ActressAlias

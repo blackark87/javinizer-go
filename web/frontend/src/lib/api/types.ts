@@ -452,6 +452,7 @@ export interface MovieTranslation {
 	maker?: string;
 	label?: string;
 	series?: string;
+	actresses?: string[];
 	source_name?: string;
 	created_at?: string;
 	updated_at?: string;
@@ -465,6 +466,16 @@ export interface Actress {
 	japanese_name?: string;
 	thumb_url?: string;
 	aliases?: string;
+	translations?: ActressTranslation[];
+}
+
+export interface ActressTranslation {
+	language?: string;
+	first_name?: string;
+	last_name?: string;
+	japanese_name?: string;
+	display_name?: string;
+	settings_hash?: string;
 }
 
 export interface ActressListParams {
@@ -597,6 +608,14 @@ export type ActressMergeResolution = 'target' | 'source';
 export interface ActressAliasGroup {
 	canonical: string;
 	names: string[];
+	members: ActressAliasGroupMember[];
+}
+
+export interface ActressAliasGroupMember {
+	name: string;
+	canonical: boolean;
+	available: boolean;
+	actress?: Actress;
 }
 
 export interface ActressMergePreviewRequest {

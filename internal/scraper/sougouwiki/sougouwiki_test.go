@@ -166,6 +166,33 @@ func TestResolveActressesUsesPageNameInsteadOfCompositeDMMLinkText(t *testing.T)
 	assert.NotContains(t, result.Actresses[0].JapaneseName, "堀北実来")
 }
 
+func TestResolveActressesReturnsSeparateDMMIdentitiesForActivityNameAliases(t *testing.T) {
+	server := newFixtureServer(t, func(_ string, request *http.Request) (string, int) {
+		switch request.URL.Path {
+		case "/search":
+			return identitySearchFixture("/d/amane", "天音まひな"), http.StatusOK
+		case "/d/amane":
+			return `<html><body><div class="title"><h2>天音まひな</h2></div><div id="content_block_1"><h3 id="content_1">` +
+				`<a href="https://www.dmm.co.jp/mono/dvd/-/list/=/article=actress/id=1083266/sort=date/">星まりあ</a>／` +
+				`<a href="https://www.dmm.co.jp/mono/dvd/-/list/=/article=actress/id=1061509/sort=date/">天音まひな</a>` +
+				`</h3><p>SSIS-411</p></div></body></html>`, http.StatusOK
+		default:
+			return "not found", http.StatusNotFound
+		}
+	})
+	defer server.Close()
+
+	scraper := New(models.ScraperSettings{Enabled: true, BaseURL: server.URL + "/"}, nil, models.FlareSolverrConfig{})
+	result, err := scraper.ResolveActresses(context.Background(), "SSIS-411")
+	require.NoError(t, err)
+	require.Len(t, result.Actresses, 1, "aliases of one performer must not become additional cast members")
+	assert.Equal(t, 1083266, result.Actresses[0].DMMID)
+	assert.Equal(t, "星まりあ", result.Actresses[0].JapaneseName)
+	require.Len(t, result.Actresses[0].AliasIdentities, 1)
+	assert.Equal(t, 1061509, result.Actresses[0].AliasIdentities[0].DMMID)
+	assert.Equal(t, "天音まひな", result.Actresses[0].AliasIdentities[0].JapaneseName)
+}
+
 func TestResolveActressesNoVerifiedPage(t *testing.T) {
 	server := newFixtureServer(t, func(_ string, request *http.Request) (string, int) {
 		if request.URL.Path == "/search" {

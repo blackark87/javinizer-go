@@ -58,9 +58,11 @@
 	// Alias group for the actress currently being edited. When the resolver
 	// knows more than one name for this performer (canonical + aliases), a
 	// "Write to NFO as" dropdown is shown so the user can pick which name the
-	// NFO <name> tag gets. The chosen value is written to japanese_name.
+	// NFO <name> tag gets. A choice swaps the complete persisted actress
+	// identity, including its DMM ID and translated names.
 	let aliasGroup = $state<ActressAliasGroup | null>(null);
 	let aliasGroupFetching = $state(false);
+	let aliasChoiceResolving = $state(false);
 	let aliasRequestId = 0;
 
 	async function searchActresses(query: string) {
@@ -139,6 +141,19 @@
 		}
 	}
 
+	async function selectAliasMember(actressID: number) {
+		if (!actressID || aliasChoiceResolving) return;
+		aliasChoiceResolving = true;
+		try {
+			editingActress = await apiClient.actresses.resolveAliasChoice(actressID);
+		} catch (error) {
+			console.error('Failed to resolve actress alias choice:', error);
+			await alertDialog('Translation Error', error instanceof Error ? error.message : 'Failed to resolve the selected actress name');
+		} finally {
+			aliasChoiceResolving = false;
+		}
+	}
+
 	// Debounce the alias fetch so manual typing does not hit the API per
 	// keystroke.
 	let aliasDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -196,7 +211,21 @@
 	}
 
 	function notifyParent() {
-		onUpdate({ ...movie, actresses });
+		let translations = movie.translations;
+		if (editingIndex !== null && editingActress.translations?.length && translations?.length) {
+			const actressIndex = editingIndex;
+			translations = translations.map((record) => {
+				const actressTranslation = editingActress.translations?.find(
+					(item) => item.language?.toLowerCase() === record.language?.toLowerCase()
+				);
+				if (!actressTranslation?.display_name) return record;
+				const names = [...(record.actresses ?? actresses.map((actress) => formatActressName(actress, { firstNameOrder, japaneseNames })))];
+				while (names.length < actresses.length) names.push('');
+				names[actressIndex] = actressTranslation.display_name;
+				return { ...record, actresses: names };
+			});
+		}
+		onUpdate({ ...movie, actresses, translations });
 		void Promise.resolve(onPersistEdits?.()).catch(() => {});
 	}
 
@@ -546,16 +575,17 @@
 								<label class="mt-2 text-xs font-medium block" for="actress-nfo-name">Write to NFO as</label>
 								<select
 									id="actress-nfo-name"
-									value={editingActress.japanese_name}
-									onchange={(event) => {
-										editingActress.japanese_name = (event.currentTarget as HTMLSelectElement).value;
-									}}
+									value={editingActress.id ?? ''}
+									onchange={(event) => void selectAliasMember(Number((event.currentTarget as HTMLSelectElement).value))}
+									disabled={aliasChoiceResolving}
 									class="mt-1 w-full px-3 py-2 border rounded-md bg-background text-sm focus:ring-2 focus:ring-primary focus:border-primary transition-all"
 									title="This actress has multiple known names; pick the one to write to the NFO"
 								>
-								{#each aliasGroup.names as name}
-										<option value={name}>{name}{name === aliasGroup.canonical ? ' (canonical)' : ''}</option>
-									{/each}
+								{#each aliasGroup.members as member}
+									<option value={member.actress?.id ?? ''} disabled={!member.available}>
+										{member.name}{member.canonical ? ' (canonical)' : ''}{member.actress?.dmm_id ? ` [DMM ${member.actress.dmm_id}]` : ''}
+									</option>
+								{/each}
 								</select>
 								<p class="mt-1 text-xs text-muted-foreground">
 									{aliasGroup.names.length} known names for this performer. Selected name is written to the NFO &lt;name&gt; tag.

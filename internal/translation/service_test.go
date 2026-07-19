@@ -75,6 +75,9 @@ func TestBuildLLMTranslationPrompts_KoreanJAVStudioRules(t *testing.T) {
 		"パパ活", "一本釣り", "箱入り娘", "逆指名",
 		"垢抜け", "初々しい", "玄人肌", "中出し", "顔射", "ぶっかけ", "個撮", "개인촬영", "ハメ撮り", "汁男優",
 		"パイパンま〇こ", "백보지", "never 무모 소중이", "소중이", "まんこ", "보지", "チンポ", "자지",
+		"おま●こ", "マン汁", "애액", "never 보짓물", "クンニ", "보빨", "never 쿤니", "アクメ", "절정", "never 아크메",
+		"レ×プ", "강간", "never 레프", "デカチン", "巨根", "대물", "never 대물 자지", "왕자지", "デカチン緩急ピストン → 대물 완급 피스톤",
+		"compressed headline style", "short, forceful noun phrases", "~을 조절하는",
 		"ご開帳", "手取り足取り", "骨抜き", "毒牙", "生殺し",
 		"middle dot ・", "never turn it into a comma",
 	} {
@@ -85,6 +88,10 @@ func TestBuildLLMTranslationPrompts_KoreanJAVStudioRules(t *testing.T) {
 	assert.NotContains(t, systemPrompt, "ぶっかけ → 부카케")
 	assert.Contains(t, systemPrompt, "bracketed 個撮 must become [개인촬영], never [POV]")
 	assert.Contains(t, systemPrompt, "パイパンま〇こから溢れ出る精子 → 백보지에서 흘러넘치는 정액")
+	assert.Contains(t, systemPrompt, "マン汁 and 本気マン汁 → 애액 (never 보짓물)")
+	assert.Contains(t, systemPrompt, "クンニ and クンニリングス → 보빨")
+	assert.Contains(t, systemPrompt, "アクメ → 절정 or 오르가슴")
+	assert.Contains(t, systemPrompt, "デカチン and 巨根 → 대물")
 }
 
 func TestBuildLLMTranslationPrompts_KoreanRulesAreTargetSpecific(t *testing.T) {

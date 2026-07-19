@@ -97,6 +97,38 @@ func TestResolveMissingActressesRunsWhenAnyActressLacksVerifiedDMMProfile(t *tes
 	assert.Equal(t, "https://pics.dmm.co.jp/mono/actjpgs/mei.jpg", result.Actresses[0].ThumbURL)
 }
 
+func TestScrapePaipanconDescriptiveActressFallsBackToUnknown(t *testing.T) {
+	const movieID = "FC2-PPV-2733270"
+	fixture := newFixture(t).withScraper("paipancon", &models.ScraperResult{
+		Source: "paipancon",
+		ID:     movieID,
+		Title:  "高飛車でプライドの高い美しい美女が快楽に溺れ従順な女の子に変貌していく様",
+		Actresses: []models.ActressInfo{{
+			JapaneseName: "高飛車でプライドの高い美しい美女",
+		}},
+	}, nil)
+	fixture.cfg.Metadata.NFO.Format.UnknownActressMode = models.UnknownActressModeFallback
+	fixture.cfg.Metadata.NFO.Format.UnknownActressText = models.UnknownActressName
+	resolver := &actressResolverScraper{
+		name: actressResolverScraperName,
+		err:  errors.New("actress not found"),
+	}
+	fixture.registry.RegisterInstance(resolver)
+
+	result, err := fixture.build().Scrape(context.Background(), ScrapeCmd{MovieID: movieID}, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, result.Movie)
+	assert.Equal(t, 1, resolver.calls, "descriptive Paipancon actress should request verification")
+	require.Len(t, result.Movie.Actresses, 1)
+	assert.Equal(t, models.UnknownActressName, result.Movie.Actresses[0].JapaneseName)
+	assert.True(t, models.IsUnknownActressFields(
+		result.Movie.Actresses[0].LastName,
+		result.Movie.Actresses[0].FirstName,
+		result.Movie.Actresses[0].JapaneseName,
+	))
+}
+
 func TestScrapeFallsBackToSougouWikiWhenDMMProfileNameIsMissing(t *testing.T) {
 	const thumbURL = "https://pics.dmm.co.jp/mono/actjpgs/mei.jpg"
 	fixture := newFixture(t).withScraper("regular", &models.ScraperResult{

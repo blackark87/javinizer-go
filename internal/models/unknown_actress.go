@@ -81,6 +81,7 @@ var descriptorKeywords = []string{
 	"セレブ", "嬢", "キャバ", "ラウンジ", "勤務", "経営", "社長", // occupation / venue
 	"女子大生", "大学", "年生", "専門学生", "職業", // student / occupation
 	"OL", "ＯＬ", "素人", // office lady / amateur
+	"美女", "美人", "美少女", "高飛車", "プライド", // appearance / personality blurbs
 }
 
 // ContainsDescriptorKeyword reports whether s contains any relation/occupation/

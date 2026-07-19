@@ -27,6 +27,13 @@ func TestCleanActressInfoName(t *testing.T) {
 		assert.True(t, models.IsUnknownActressFields(info.LastName, info.FirstName, info.JapaneseName))
 	})
 
+	t.Run("short appearance and personality blurb becomes Unknown", func(t *testing.T) {
+		info := models.ActressInfo{JapaneseName: "高飛車でプライドの高い美しい美女"}
+		cleanActressInfoName(&info)
+		assert.Equal(t, models.UnknownActressName, info.JapaneseName)
+		assert.True(t, models.IsUnknownActressFields(info.LastName, info.FirstName, info.JapaneseName))
+	})
+
 	t.Run("real name unchanged", func(t *testing.T) {
 		info := models.ActressInfo{JapaneseName: "波多野結衣"}
 		cleanActressInfoName(&info)

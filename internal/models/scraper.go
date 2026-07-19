@@ -83,6 +83,9 @@ func (r *ScraperResult) Clone() *ScraperResult {
 	if r.Actresses != nil {
 		copied.Actresses = make([]ActressInfo, len(r.Actresses))
 		copy(copied.Actresses, r.Actresses)
+		for i := range copied.Actresses {
+			copied.Actresses[i].ObservedAliases = append([]string(nil), r.Actresses[i].ObservedAliases...)
+		}
 	}
 	if r.Genres != nil {
 		copied.Genres = make([]string, len(r.Genres))
@@ -165,6 +168,9 @@ type ActressInfo struct {
 	LastName     string `json:"last_name"`
 	JapaneseName string `json:"japanese_name"`
 	ThumbURL     string `json:"thumb_url"`
+	// ObservedAliases contains activity names seen before an authoritative DMM
+	// profile replaced JapaneseName. Raw scraper results leave this empty.
+	ObservedAliases []string `json:"observed_aliases,omitempty"`
 }
 
 // ActressIdentityQuery contains identity hints available before a verified DMM

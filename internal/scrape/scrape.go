@@ -248,7 +248,7 @@ func postProcessScraped(ctx context.Context, scraped *models.Movie, results []*m
 	if hasCanonicalUnknownActressCast(scraped) {
 		actressSources = nil
 	}
-	if hasScraperSource(results, actressResolverScraperName) {
+	if hasScraperSource(results, actressResolverScraperName) || hasVerifiedActress(movieActresses(scraped)) {
 		if err := reconcileVerifiedActresses(scraped, actressRepo); err != nil {
 			return nil, err
 		}
@@ -290,6 +290,22 @@ func postProcessScraped(ctx context.Context, scraped *models.Movie, results []*m
 	}
 
 	return result, nil
+}
+
+func movieActresses(movie *models.Movie) []models.Actress {
+	if movie == nil {
+		return nil
+	}
+	return movie.Actresses
+}
+
+func hasVerifiedActress(actresses []models.Actress) bool {
+	for _, actress := range actresses {
+		if actress.DMMID > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // Scrape runs the cache-aware scrape pipeline for the given command and returns the aggregated result.

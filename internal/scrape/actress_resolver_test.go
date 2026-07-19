@@ -50,6 +50,25 @@ func (s *actressResolverScraper) ResolveActressProfile(context.Context, models.A
 	return s.profile, s.profileErr
 }
 
+func TestEnrichResolvedActressProfilesPreservesObservedActivityName(t *testing.T) {
+	dmm := &actressResolverScraper{name: "dmm", enabled: true, profile: models.ActressInfo{
+		DMMID: 411, JapaneseName: "星まりあ", ThumbURL: "current.jpg",
+	}}
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(dmm)
+	s := &Scraper{registry: registry}
+	result := &models.ScraperResult{Actresses: []models.ActressInfo{{
+		DMMID: 411, JapaneseName: "天音まひな", ThumbURL: "old.jpg",
+	}}}
+
+	s.enrichResolvedActressProfiles(context.Background(), result)
+
+	require.Len(t, result.Actresses, 1)
+	assert.Equal(t, "星まりあ", result.Actresses[0].JapaneseName)
+	assert.Equal(t, "current.jpg", result.Actresses[0].ThumbURL)
+	assert.Equal(t, []string{"天音まひな"}, result.Actresses[0].ObservedAliases)
+}
+
 func TestResolveMissingActressesRunsWhenAnyActressLacksVerifiedDMMProfile(t *testing.T) {
 	resolver := &actressResolverScraper{name: actressResolverScraperName, enabled: true, result: &models.ScraperResult{
 		Actresses: []models.ActressInfo{{DMMID: 777, JapaneseName: "正式名"}},

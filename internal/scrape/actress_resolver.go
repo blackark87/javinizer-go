@@ -215,7 +215,12 @@ func (s *Scraper) enrichResolvedActressProfiles(ctx context.Context, result *mod
 		if profileResolver != nil {
 			profile, err := safeActressProfile(ctx, profileResolver, *actress)
 			if err == nil && strings.TrimSpace(profile.JapaneseName) != "" {
-				actress.JapaneseName = strings.TrimSpace(profile.JapaneseName)
+				observedName := strings.TrimSpace(actress.JapaneseName)
+				profileName := strings.TrimSpace(profile.JapaneseName)
+				if isObservedActressAlias(observedName, profileName) {
+					actress.ObservedAliases = appendUniqueActressAlias(actress.ObservedAliases, observedName)
+				}
+				actress.JapaneseName = profileName
 				actress.FirstName = strings.TrimSpace(profile.FirstName)
 				actress.LastName = strings.TrimSpace(profile.LastName)
 				if strings.TrimSpace(profile.ThumbURL) != "" {
@@ -260,6 +265,10 @@ type verifiedActressIdentityResolver interface {
 	ResolveVerifiedIdentity(sourceID uint, verified models.Actress, allowCreate bool) (*database.VerifiedActressResolution, error)
 }
 
+type verifiedActressProfileResolver interface {
+	ResolveVerifiedProfile(sourceID uint, verified models.Actress, observedAliases []string, allowCreate bool) (*database.VerifiedActressResolution, error)
+}
+
 func hasScraperSource(results []*models.ScraperResult, source string) bool {
 	for _, result := range results {
 		if result != nil && strings.EqualFold(strings.TrimSpace(result.Source), strings.TrimSpace(source)) {
@@ -277,7 +286,14 @@ func reconcileVerifiedActresses(movie *models.Movie, repo database.ActressReposi
 	canonical := make([]models.Actress, 0, len(movie.Actresses))
 	seen := make(map[uint]struct{}, len(movie.Actresses))
 	for _, actress := range movie.Actresses {
-		resolution, err := resolver.ResolveVerifiedIdentity(0, actress, true)
+		var resolution *database.VerifiedActressResolution
+		var err error
+		observedAliases := splitActressAliases(actress.Aliases)
+		if profileResolver, profileOK := repo.(verifiedActressProfileResolver); profileOK && len(observedAliases) > 0 {
+			resolution, err = profileResolver.ResolveVerifiedProfile(0, actress, observedAliases, true)
+		} else {
+			resolution, err = resolver.ResolveVerifiedIdentity(0, actress, true)
+		}
 		if err != nil {
 			return fmt.Errorf("reconcile verified actress %q (DMM ID %d): %w", actress.JapaneseName, actress.DMMID, err)
 		}
@@ -292,6 +308,35 @@ func reconcileVerifiedActresses(movie *models.Movie, repo database.ActressReposi
 	}
 	movie.Actresses = canonical
 	return nil
+}
+
+func isObservedActressAlias(observed, canonical string) bool {
+	observed = strings.TrimSpace(observed)
+	canonical = strings.TrimSpace(canonical)
+	return observed != "" && canonical != "" &&
+		!models.IsUnknownActressName(observed) && !models.IsDescriptiveNonName("", "", observed) &&
+		!strings.EqualFold(observed, canonical)
+}
+
+func appendUniqueActressAlias(existing []string, value string) []string {
+	value = strings.TrimSpace(value)
+	for _, current := range existing {
+		if strings.EqualFold(strings.TrimSpace(current), value) {
+			return existing
+		}
+	}
+	return append(existing, value)
+}
+
+func splitActressAliases(value string) []string {
+	aliases := make([]string, 0)
+	for _, alias := range strings.Split(value, "|") {
+		alias = strings.TrimSpace(alias)
+		if alias != "" {
+			aliases = append(aliases, alias)
+		}
+	}
+	return aliases
 }
 
 // actressOverrideResults creates aggregation-only copies. Raw scraper results

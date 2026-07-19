@@ -1,6 +1,8 @@
 package aggregator
 
 import (
+	"strings"
+
 	"github.com/javinizer/javinizer-go/internal/models"
 )
 
@@ -131,6 +133,9 @@ func (m *actressMerger) Merge(sources []actressSource, opts actressMergeOptions)
 				if existing.ThumbURL == "" && info.ThumbURL != "" {
 					existing.ThumbURL = info.ThumbURL
 				}
+				for _, alias := range info.ObservedAliases {
+					existing.Aliases = appendActressAliasValue(existing.Aliases, alias)
+				}
 			} else {
 				// New actress - add to appropriate map
 				actress := &models.Actress{
@@ -139,6 +144,7 @@ func (m *actressMerger) Merge(sources []actressSource, opts actressMergeOptions)
 					LastName:     info.LastName,
 					JapaneseName: info.JapaneseName,
 					ThumbURL:     info.ThumbURL,
+					Aliases:      strings.Join(info.ObservedAliases, "|"),
 				}
 
 				if info.DMMID != 0 {
@@ -183,6 +189,22 @@ func (m *actressMerger) Merge(sources []actressSource, opts actressMergeOptions)
 	}
 
 	return []models.Actress{}
+}
+
+func appendActressAliasValue(existing, candidate string) string {
+	candidate = strings.TrimSpace(candidate)
+	if candidate == "" {
+		return existing
+	}
+	for _, alias := range strings.Split(existing, "|") {
+		if strings.EqualFold(strings.TrimSpace(alias), candidate) {
+			return existing
+		}
+	}
+	if strings.TrimSpace(existing) == "" {
+		return candidate
+	}
+	return existing + "|" + candidate
 }
 
 // Compile-time interface check

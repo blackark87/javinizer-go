@@ -83,6 +83,49 @@ func TestResolveVerifiedIdentityKeepsDMMOwnerProfileAndAddsVerifiedActivityNameA
 	assert.Equal(t, polluted.ID, movie.Actresses[0].ID)
 }
 
+func TestResolveVerifiedProfilePromotesCurrentNameThumbnailAndAliases(t *testing.T) {
+	_, actressRepo, _ := newVerifiedActressTestRepos(t)
+	owner := &models.Actress{
+		DMMID: 411, JapaneseName: "天音まひな", FirstName: "마히나", LastName: "아마네",
+		ThumbURL: "old.jpg", Aliases: "過去名",
+	}
+	require.NoError(t, actressRepo.Create(context.Background(), owner))
+
+	resolution, err := actressRepo.ResolveVerifiedProfile(owner.ID, models.Actress{
+		DMMID: 411, JapaneseName: "星まりあ", ThumbURL: "current.jpg",
+	}, []string{"天音まひな"}, false)
+	require.NoError(t, err)
+	assert.Equal(t, "星まりあ", resolution.Actress.JapaneseName)
+	assert.Empty(t, resolution.Actress.FirstName, "a changed canonical name must be translated again")
+	assert.Empty(t, resolution.Actress.LastName)
+	assert.Equal(t, "current.jpg", resolution.Actress.ThumbURL)
+	assert.ElementsMatch(t, []string{"過去名", "天音まひな"}, strings.Split(resolution.Actress.Aliases, "|"))
+	assert.ElementsMatch(t, []string{"天音まひな"}, resolution.AliasesAdded)
+
+	aliasRepo := NewActressAliasRepository(actressRepo.GetDB())
+	group, err := aliasRepo.GetAliasGroup(context.Background(), "天音まひな")
+	require.NoError(t, err)
+	assert.Equal(t, "星まりあ", group.Canonical)
+	assert.ElementsMatch(t, []string{"星まりあ", "天音まひな", "過去名"}, group.Names)
+}
+
+func TestResolveVerifiedProfilePreservesConflictingManualAliasMapping(t *testing.T) {
+	_, actressRepo, _ := newVerifiedActressTestRepos(t)
+	owner := &models.Actress{DMMID: 412, JapaneseName: "旧名"}
+	require.NoError(t, actressRepo.Create(context.Background(), owner))
+	aliasRepo := NewActressAliasRepository(actressRepo.GetDB())
+	require.NoError(t, aliasRepo.Create(context.Background(), &models.ActressAlias{AliasName: "旧名", CanonicalName: "手動設定"}))
+
+	resolution, err := actressRepo.ResolveVerifiedProfile(owner.ID, models.Actress{
+		DMMID: 412, JapaneseName: "現在名",
+	}, []string{"旧名"}, false)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"旧名"}, resolution.AliasConflicts)
+	stored, err := aliasRepo.FindByAliasName(context.Background(), "旧名")
+	require.NoError(t, err)
+	assert.Equal(t, "手動設定", stored.CanonicalName)
+}
+
 func TestResolveVerifiedIdentityRepairsMalformedCompositeNameFromCleanDMMProfile(t *testing.T) {
 	_, actressRepo, _ := newVerifiedActressTestRepos(t)
 	owner := &models.Actress{

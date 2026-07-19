@@ -487,8 +487,10 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 	}
 	profileResolver := findActressProfileResolver(registry)
 	profileResolved := make(map[int]bool, len(resolved.Actresses))
+	observedAliasesByDMMID := make(map[int][]string, len(resolved.Actresses))
 	if profileResolver != nil {
 		for index := range resolved.Actresses {
+			observedName := strings.TrimSpace(resolved.Actresses[index].JapaneseName)
 			profile, profileErr := safeResolveActressProfile(ctx, profileResolver, resolved.Actresses[index])
 			if profileErr != nil || strings.TrimSpace(profile.JapaneseName) == "" {
 				continue
@@ -498,6 +500,9 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 			resolved.Actresses[index].LastName = strings.TrimSpace(profile.LastName)
 			if strings.TrimSpace(profile.ThumbURL) != "" {
 				resolved.Actresses[index].ThumbURL = strings.TrimSpace(profile.ThumbURL)
+			}
+			if isObservedSyncAlias(observedName, profile.JapaneseName) {
+				observedAliasesByDMMID[profile.DMMID] = append(observedAliasesByDMMID[profile.DMMID], observedName)
 			}
 			profileResolved[profile.DMMID] = true
 		}
@@ -517,32 +522,41 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 		if findErr != nil && !database.IsNotFound(findErr) {
 			return findErr
 		}
-		nameRepaired := false
-		if existing != nil && profileResolved[info.DMMID] && strings.TrimSpace(info.JapaneseName) != "" &&
-			strings.TrimSpace(existing.JapaneseName) != strings.TrimSpace(info.JapaneseName) {
-			existing.JapaneseName = strings.TrimSpace(info.JapaneseName)
-			existing.FirstName = ""
-			existing.LastName = ""
-			if updateErr := m.deps.ActressRepo.Update(ctx, existing); updateErr != nil {
-				return updateErr
-			}
-			nameRepaired = true
-			task.UpdatedFields = appendUnique(task.UpdatedFields, "japanese_name")
-		}
 		if info.ThumbURL == "" && thumbnailResolver != nil && (existing == nil || strings.TrimSpace(existing.ThumbURL) == "") {
 			info.ThumbURL = safeResolveActressThumbnail(ctx, thumbnailResolver, info)
 		}
-		needsNameEnrichment := nameRepaired || existing == nil || !hasUsableActressIdentityProfile(*existing)
-		resolution, resolveErr := m.deps.ActressRepo.ResolveVerifiedIdentity(0, actressModelFromInfo(info), true)
+		needsNameEnrichment := existing == nil || !hasUsableActressIdentityProfile(*existing)
+		var resolution *database.VerifiedActressResolution
+		var resolveErr error
+		if profileResolved[info.DMMID] {
+			observedAliases := append([]string(nil), observedAliasesByDMMID[info.DMMID]...)
+			if existing != nil {
+				observedAliases = append(observedAliases, splitStoredActressAliases(existing.Aliases)...)
+				observedAliases = append(observedAliases, existing.JapaneseName)
+			}
+			resolution, resolveErr = m.deps.ActressRepo.ResolveVerifiedProfile(0, actressModelFromInfo(info), observedAliases, true)
+		} else {
+			resolution, resolveErr = m.deps.ActressRepo.ResolveVerifiedIdentity(0, actressModelFromInfo(info), true)
+		}
 		if resolveErr != nil {
 			return resolveErr
+		}
+		if resolution.NameChanged {
+			task.UpdatedFields = appendUnique(task.UpdatedFields, "japanese_name")
+			needsNameEnrichment = true
+		}
+		if existing != nil && strings.TrimSpace(existing.ThumbURL) != strings.TrimSpace(resolution.Actress.ThumbURL) {
+			task.UpdatedFields = appendUnique(task.UpdatedFields, "thumb_url")
 		}
 		canonical = append(canonical, resolution.Actress)
 		if resolution.Created || resolution.Promoted {
 			task.UpdatedFields = appendUnique(task.UpdatedFields, "dmm_id")
 		}
-		if len(resolution.AliasesAdded) > 0 {
+		if len(resolution.AliasesAdded) > 0 || len(resolution.AliasMappingsAdded) > 0 {
 			task.UpdatedFields = appendUnique(task.UpdatedFields, "aliases")
+		}
+		if len(resolution.AliasConflicts) > 0 {
+			task.Warning = appendWarning(task.Warning, "Existing manual alias mappings were retained for: "+strings.Join(resolution.AliasConflicts, ", "))
 		}
 		if resolution.NameChanged || len(resolution.MergedFromIDs) > 0 {
 			refreshCanonicalIDs[resolution.Actress.ID] = struct{}{}

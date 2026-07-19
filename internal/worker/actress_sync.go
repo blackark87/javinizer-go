@@ -70,27 +70,32 @@ func SyncActressMetadata(
 	if profileResolver := findActressProfileResolver(registry); profileResolver != nil {
 		profile, profileErr := safeResolveActressProfile(ctx, profileResolver, actressInfoForThumbnail(*actress))
 		if profileErr == nil && strings.TrimSpace(profile.JapaneseName) != "" {
-			profileChanged := false
-			if name := strings.TrimSpace(profile.JapaneseName); name != strings.TrimSpace(actress.JapaneseName) {
-				actress.JapaneseName = name
-				actress.FirstName = strings.TrimSpace(profile.FirstName)
-				actress.LastName = strings.TrimSpace(profile.LastName)
-				result.UpdatedFields = append(result.UpdatedFields, "japanese_name")
-				profileChanged = true
-			}
-			if thumbnail := strings.TrimSpace(profile.ThumbURL); thumbnail != "" {
+			profile.DMMID = actress.DMMID
+			profile.ThumbURL = strings.TrimSpace(profile.ThumbURL)
+			if profile.ThumbURL != "" {
 				profileThumbnailResolved = true
-				if thumbnail != strings.TrimSpace(actress.ThumbURL) {
-					actress.ThumbURL = thumbnail
-					result.UpdatedFields = appendUnique(result.UpdatedFields, "thumb_url")
-					profileChanged = true
-				}
 			}
-			if profileChanged {
-				if err := actressRepo.Update(ctx, actress); err != nil {
-					return nil, err
-				}
+			observedAliases := splitStoredActressAliases(actress.Aliases)
+			if oldName := strings.TrimSpace(actress.JapaneseName); oldName != "" {
+				observedAliases = append(observedAliases, oldName)
 			}
+			resolution, resolveErr := actressRepo.ResolveVerifiedProfile(actress.ID, actressModelFromInfo(profile), observedAliases, false)
+			if resolveErr != nil {
+				return nil, resolveErr
+			}
+			if resolution.NameChanged {
+				result.UpdatedFields = appendUnique(result.UpdatedFields, "japanese_name")
+			}
+			if strings.TrimSpace(resolution.Actress.ThumbURL) != strings.TrimSpace(actress.ThumbURL) {
+				result.UpdatedFields = appendUnique(result.UpdatedFields, "thumb_url")
+			}
+			if len(resolution.AliasesAdded) > 0 || len(resolution.AliasMappingsAdded) > 0 {
+				result.UpdatedFields = appendUnique(result.UpdatedFields, "aliases")
+			}
+			if len(resolution.AliasConflicts) > 0 {
+				result.Messages = append(result.Messages, "Existing manual alias mappings were retained for: "+strings.Join(resolution.AliasConflicts, ", "))
+			}
+			*actress = resolution.Actress
 		} else if profileErr != nil {
 			result.Messages = append(result.Messages, "DMM actress profile could not be resolved; existing name was retained")
 		}
@@ -120,7 +125,6 @@ func SyncActressMetadata(
 
 	if len(result.UpdatedFields) > 0 {
 		result.Status = ActressSyncUpdated
-		result.Messages = nil
 	} else if len(result.Messages) == 0 {
 		result.Messages = append(result.Messages, "No metadata could be safely updated")
 	}
@@ -198,6 +202,25 @@ func actressModelFromInfo(info models.ActressInfo) models.Actress {
 		JapaneseName: strings.TrimSpace(info.JapaneseName),
 		ThumbURL:     strings.TrimSpace(info.ThumbURL),
 	}
+}
+
+func splitStoredActressAliases(value string) []string {
+	aliases := make([]string, 0)
+	for _, alias := range strings.Split(value, "|") {
+		alias = strings.TrimSpace(alias)
+		if alias != "" {
+			aliases = append(aliases, alias)
+		}
+	}
+	return aliases
+}
+
+func isObservedSyncAlias(observed, canonical string) bool {
+	observed = strings.TrimSpace(observed)
+	canonical = strings.TrimSpace(canonical)
+	return observed != "" && canonical != "" &&
+		!models.IsUnknownActressName(observed) && !models.IsDescriptiveNonName("", "", observed) &&
+		!strings.EqualFold(observed, canonical)
 }
 
 func actressInfoForThumbnail(actress models.Actress) models.ActressInfo {

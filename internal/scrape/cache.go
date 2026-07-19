@@ -193,6 +193,7 @@ func actressModelsFromInfo(infos []models.ActressInfo) []models.Actress {
 		actresses = append(actresses, models.Actress{
 			DMMID: info.DMMID, FirstName: strings.TrimSpace(info.FirstName), LastName: strings.TrimSpace(info.LastName),
 			JapaneseName: strings.TrimSpace(info.JapaneseName), ThumbURL: strings.TrimSpace(info.ThumbURL),
+			Aliases: strings.Join(info.ObservedAliases, "|"),
 		})
 	}
 	return actresses

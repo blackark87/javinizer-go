@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -134,6 +135,63 @@ func TestSyncActressMetadataDMMProfileOverwritesExistingThumbnail(t *testing.T) 
 	stored, err := actressRepo.FindByID(context.Background(), actress.ID)
 	require.NoError(t, err)
 	assert.Equal(t, result.Actress.ThumbURL, stored.ThumbURL)
+}
+
+func TestSyncActressMetadataDMMProfileUpdatesCanonicalNameAndAliasMappings(t *testing.T) {
+	actressRepo := newActressSyncTestRepo(t)
+	actress := &models.Actress{
+		DMMID: 411, FirstName: "마히나", LastName: "아마네", JapaneseName: "天音まひな",
+		ThumbURL: "old.jpg", Aliases: "기존별명",
+	}
+	require.NoError(t, actressRepo.Create(context.Background(), actress))
+	resolver := &actressProfileSyncTestScraper{
+		actressSyncTestScraper: &actressSyncTestScraper{name: "dmm", enabled: true},
+		profile:                models.ActressInfo{DMMID: 411, JapaneseName: "星まりあ", ThumbURL: "current.jpg"},
+	}
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
+
+	result, err := SyncActressMetadata(context.Background(), actress.ID, actressRepo, registry, nil)
+	require.NoError(t, err)
+	assert.Equal(t, ActressSyncUpdated, result.Status)
+	assert.Contains(t, result.UpdatedFields, "japanese_name")
+	assert.Contains(t, result.UpdatedFields, "thumb_url")
+	assert.Contains(t, result.UpdatedFields, "aliases")
+	assert.Equal(t, "星まりあ", result.Actress.JapaneseName)
+	assert.Equal(t, "current.jpg", result.Actress.ThumbURL)
+	assert.ElementsMatch(t, []string{"기존별명", "天音まひな"}, strings.Split(result.Actress.Aliases, "|"))
+
+	aliasRepo := database.NewActressAliasRepository(actressRepo.GetDB())
+	group, err := aliasRepo.GetAliasGroup(context.Background(), "天音まひな")
+	require.NoError(t, err)
+	assert.Equal(t, "星まりあ", group.Canonical)
+}
+
+func TestSyncActressMetadataRepairsMissingAliasTableMappingWithoutProfileChanges(t *testing.T) {
+	actressRepo := newActressSyncTestRepo(t)
+	actress := &models.Actress{
+		DMMID: 413, JapaneseName: "現在名", FirstName: "현재", LastName: "이름",
+		ThumbURL: "current.jpg", Aliases: "旧名",
+	}
+	require.NoError(t, actressRepo.Create(context.Background(), actress))
+	resolver := &actressProfileSyncTestScraper{
+		actressSyncTestScraper: &actressSyncTestScraper{name: "dmm", enabled: true},
+		profile:                models.ActressInfo{DMMID: 413, JapaneseName: "現在名", ThumbURL: "current.jpg"},
+	}
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
+
+	result, err := SyncActressMetadata(context.Background(), actress.ID, actressRepo, registry, nil)
+	require.NoError(t, err)
+	assert.Equal(t, ActressSyncUpdated, result.Status)
+	assert.Equal(t, []string{"aliases"}, result.UpdatedFields)
+	assert.Equal(t, "현재", result.Actress.FirstName)
+	assert.Equal(t, "이름", result.Actress.LastName)
+
+	aliasRepo := database.NewActressAliasRepository(actressRepo.GetDB())
+	stored, err := aliasRepo.FindByAliasName(context.Background(), "旧名")
+	require.NoError(t, err)
+	assert.Equal(t, "現在名", stored.CanonicalName)
 }
 
 func TestSyncActressMetadataRequiresDurableMovieJobForMissingDMMID(t *testing.T) {

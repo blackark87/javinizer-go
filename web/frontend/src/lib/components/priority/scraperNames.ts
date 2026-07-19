@@ -36,6 +36,8 @@ export function formatScraperName(name: string): string {
 			return 'FC2';
 		case 'javstash':
 			return 'JAVStash';
+		case '123av':
+			return '123AV';
 		default:
 			return name;
 	}

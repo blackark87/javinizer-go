@@ -99,6 +99,7 @@ scrapers:
         - dlgetchu
         - fc2
         - paipancon
+        - 123av
         - javstash
     # NEW: Global scrape_actress default (opt-out behavior)
     scrape_actress: true
@@ -167,6 +168,11 @@ scrapers:
         enabled: true
         rate_limit: 1000
         base_url: "https://paipancon.com"
+    123av:
+        enabled: true
+        language: ja
+        rate_limit: 1000
+        base_url: "https://123av.com"
     # Internal actress identity resolver. It is not shown as a movie metadata
     # provider; missing-DMM verification runs automatically even when disabled.
     sougouwiki:

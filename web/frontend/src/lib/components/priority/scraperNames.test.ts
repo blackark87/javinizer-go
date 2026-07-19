@@ -6,6 +6,7 @@ describe('formatScraperName', () => {
 		expect(formatScraperName('dmm')).toBe('DMM/Fanza');
 		expect(formatScraperName('libredmm')).toBe('LibreDMM (Fanza, MGStage, SOD, FC2)');
 		expect(formatScraperName('r18dev')).toBe('R18.dev');
+		expect(formatScraperName('123av')).toBe('123AV');
 		expect(formatScraperName('javlibrary')).toBe('JavLibrary');
 		expect(formatScraperName('javdb')).toBe('JavDB');
 		expect(formatScraperName('javbus')).toBe('JavBus');

@@ -13,6 +13,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/scraper/javstash"
 	"github.com/javinizer/javinizer-go/internal/scraper/libredmm"
 	"github.com/javinizer/javinizer-go/internal/scraper/mgstage"
+	"github.com/javinizer/javinizer-go/internal/scraper/one23av"
 	"github.com/javinizer/javinizer-go/internal/scraper/paipancon"
 	"github.com/javinizer/javinizer-go/internal/scraper/r18dev"
 	"github.com/javinizer/javinizer-go/internal/scraper/sougouwiki"
@@ -30,6 +31,7 @@ func RegisterAll(reg scraperutil.ScraperRegistrar) {
 	mgstage.Register(reg)
 	fc2.Register(reg)
 	paipancon.Register(reg)
+	one23av.Register(reg)
 	jav321.Register(reg)
 	javstash.Register(reg)
 	aventertainment.Register(reg)

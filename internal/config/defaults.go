@@ -11,7 +11,7 @@ import "github.com/javinizer/javinizer-go/internal/models"
 var defaultScraperPriority = []string{
 	"r18dev", "libredmm", "dmm", "javlibrary",
 	"javdb", "javbus", "jav321", "mgstage", "tokyohot", "aventertainment",
-	"caribbeancom", "dlgetchu", "fc2", "paipancon", "javstash",
+	"caribbeancom", "dlgetchu", "fc2", "paipancon", "123av", "javstash",
 }
 
 // getFirstScraperPriorityStatic returns the first element of the hardcoded

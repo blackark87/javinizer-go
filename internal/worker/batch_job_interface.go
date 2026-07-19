@@ -385,6 +385,11 @@ type jobEditorImpl struct {
 }
 
 func (je *jobEditorImpl) UpdateMovie(ctx context.Context, filePath string, movie *models.Movie) error {
+	if movie != nil && je.displayTitleConfig != nil {
+		_, nameCfg := je.displayTitleConfig()
+		models.ApplyUnknownActressMode(movie, nameCfg.UnknownActressMode, nameCfg.UnknownActressText)
+	}
+
 	// Preserve the original cover snapshot from the existing in-memory movie
 	// before persisting, so the cover/fanart reset survives server restarts
 	// and the DB/in-memory states stay in sync. Read-only pass: does not mutate

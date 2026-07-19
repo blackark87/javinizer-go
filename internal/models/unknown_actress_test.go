@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestIsDescriptiveNonName(t *testing.T) {
@@ -74,4 +75,51 @@ func TestCanonicalizeUnknownActress(t *testing.T) {
 	assert.Equal(t, UnknownActressName, actress.FirstName)
 	assert.Empty(t, actress.LastName)
 	assert.Equal(t, UnknownActressName, actress.JapaneseName)
+}
+
+func TestApplyUnknownActressMode(t *testing.T) {
+	t.Run("fallback adds canonical actress to empty cast", func(t *testing.T) {
+		movie := &Movie{}
+
+		changed := ApplyUnknownActressMode(movie, UnknownActressModeFallback, "Unknown")
+
+		assert.True(t, changed)
+		require.Len(t, movie.Actresses, 1)
+		assert.Equal(t, UnknownActressName, movie.Actresses[0].FirstName)
+		assert.Equal(t, UnknownActressName, movie.Actresses[0].JapaneseName)
+	})
+
+	t.Run("fallback preserves one existing placeholder identity", func(t *testing.T) {
+		movie := &Movie{Actresses: []Actress{{ID: 42, FirstName: "미상", JapaneseName: "알 수 없음"}}}
+
+		changed := ApplyUnknownActressMode(movie, UnknownActressModeFallback, "Unknown")
+
+		assert.True(t, changed)
+		require.Len(t, movie.Actresses, 1)
+		assert.Equal(t, uint(42), movie.Actresses[0].ID)
+		assert.Equal(t, UnknownActressName, movie.Actresses[0].FirstName)
+		assert.Equal(t, UnknownActressName, movie.Actresses[0].JapaneseName)
+	})
+
+	t.Run("real actress removes redundant placeholder", func(t *testing.T) {
+		movie := &Movie{Actresses: []Actress{
+			{FirstName: UnknownActressName, JapaneseName: UnknownActressName},
+			{FirstName: "레나", LastName: "미야시타", JapaneseName: "宮下玲奈"},
+		}}
+
+		changed := ApplyUnknownActressMode(movie, UnknownActressModeFallback, "Unknown")
+
+		assert.True(t, changed)
+		require.Len(t, movie.Actresses, 1)
+		assert.Equal(t, "宮下玲奈", movie.Actresses[0].JapaneseName)
+	})
+
+	t.Run("skip removes placeholder", func(t *testing.T) {
+		movie := &Movie{Actresses: []Actress{{FirstName: UnknownActressName, JapaneseName: UnknownActressName}}}
+
+		changed := ApplyUnknownActressMode(movie, UnknownActressModeSkip, "Unknown")
+
+		assert.True(t, changed)
+		assert.Empty(t, movie.Actresses)
+	})
 }

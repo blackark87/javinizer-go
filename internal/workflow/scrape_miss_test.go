@@ -31,6 +31,25 @@ func TestScrapeOrchImpl_Miss_NilCtx(t *testing.T) {
 	assert.NotNil(t, meta)
 }
 
+func TestScrapeOrchImpl_AppliesUnknownActressFallbackBeforePersistence(t *testing.T) {
+	mockScraper := &mockScraperScrape{
+		result: &scrape.ScrapeResult{Movie: &models.Movie{ID: "UNKNOWN-001"}, Status: testStatusCompleted},
+	}
+	mockRepo := &mockMovieRepoScrape{}
+	orch := newScrapeOrchestrator(mockScraper, mockRepo, "", nil, nfo.NFONameConfig{
+		UnknownActressMode: models.UnknownActressModeFallback,
+		UnknownActressText: models.UnknownActressName,
+	}, nil)
+
+	result, meta, err := orch.Execute(context.Background(), scrape.ScrapeCmd{}, nil)
+
+	require.NoError(t, err)
+	require.True(t, meta.Persisted)
+	require.Len(t, result.Movie.Actresses, 1)
+	assert.Equal(t, models.UnknownActressName, result.Movie.Actresses[0].FirstName)
+	assert.Equal(t, models.UnknownActressName, result.Movie.Actresses[0].JapaneseName)
+}
+
 // --- scrapeOrchImpl: ForceRefresh with movie repo ---
 
 func TestScrapeOrchImpl_Miss_ForceRefresh(t *testing.T) {

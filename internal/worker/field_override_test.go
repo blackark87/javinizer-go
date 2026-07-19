@@ -500,6 +500,16 @@ func TestApplyFieldOverride_EmptyActressListClearsSources(t *testing.T) {
 	assert.Nil(t, prov.ActressSources)
 }
 
+func TestActressesFromScraperInfo_CleansDescriptiveName(t *testing.T) {
+	actresses := actressesFromScraperInfo([]models.ActressInfo{{
+		JapaneseName: "高飛車でプライドの高い美しい美女",
+	}})
+
+	require.Len(t, actresses, 1)
+	assert.Equal(t, models.UnknownActressName, actresses[0].FirstName)
+	assert.Equal(t, models.UnknownActressName, actresses[0].JapaneseName)
+}
+
 func TestApplyFieldOverride_EmptyGenreList(t *testing.T) {
 	movie, prov := overrideFixture()
 	dmm := findScraperResult(prov.ScraperResults, "dmm")
@@ -583,6 +593,35 @@ func TestUpdateMovie_DBPersistError(t *testing.T) {
 	err := je.UpdateMovie(context.Background(), filePath, movie)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "persist movie update")
+}
+
+func TestUpdateMovie_AppliesUnknownActressFallback(t *testing.T) {
+	filePath := "unknown.mp4"
+	tracker := NewResultTracker(1, []string{filePath})
+	tracker.Updater().UpdateFileResult(filePath, &MovieResult{
+		ResultID: "unknown-result",
+		Movie:    &models.Movie{ID: "UNKNOWN-001"},
+		Status:   models.JobStatusCompleted,
+	})
+	editor := &jobEditorImpl{
+		updater:  tracker.Updater(),
+		accessor: tracker,
+		tracker:  tracker,
+		displayTitleConfig: func() (string, nfo.NFONameConfig) {
+			return "", nfo.NFONameConfig{
+				UnknownActressMode: models.UnknownActressModeFallback,
+				UnknownActressText: models.UnknownActressName,
+			}
+		},
+	}
+
+	err := editor.UpdateMovie(context.Background(), filePath, &models.Movie{ID: "UNKNOWN-001"})
+
+	require.NoError(t, err)
+	updated, err := tracker.GetMovieResult(filePath)
+	require.NoError(t, err)
+	require.Len(t, updated.Movie.Actresses, 1)
+	assert.Equal(t, models.UnknownActressName, updated.Movie.Actresses[0].FirstName)
 }
 
 func TestApplyFieldOverride_PersistErrorWrapped(t *testing.T) {

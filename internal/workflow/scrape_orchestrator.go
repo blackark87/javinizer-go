@@ -101,6 +101,11 @@ func (o *scrapeOrchImpl) Execute(ctx context.Context, cmd scrape.ScrapeCmd, prog
 
 	// Step 3: Apply DisplayTitle — sole application point for the scrape path.
 	if result != nil && result.Movie != nil {
+		models.ApplyUnknownActressMode(
+			result.Movie,
+			o.nameCfg.UnknownActressMode,
+			o.nameCfg.UnknownActressText,
+		)
 		ApplyDisplayTitleFromSourceFile(ctx, result.Movie, result.Movie, o.displayTitle, o.templateEngine, o.nameCfg, cmd.SourcePath)
 		meta.DisplayTitleApplied = true
 	}

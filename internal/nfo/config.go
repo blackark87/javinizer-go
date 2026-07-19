@@ -23,6 +23,8 @@ type NFONameConfig struct {
 	GroupUnknownActressName string
 	ActressDelimiter        string
 	ActressLanguageJA       bool
+	UnknownActressMode      models.UnknownActressMode
+	UnknownActressText      string
 }
 
 // Config holds NFO generation settings.
@@ -123,6 +125,8 @@ func (c *Config) ToNFONameConfig(isMultiPart bool, partSuffix string) NFONameCon
 		GroupUnknownActressName: c.GroupUnknownActressName,
 		ActressDelimiter:        c.ActressDelimiter,
 		ActressLanguageJA:       c.ActressLanguageJA,
+		UnknownActressMode:      c.UnknownActressMode,
+		UnknownActressText:      c.UnknownActressText,
 	}
 }
 
@@ -134,7 +138,8 @@ func (c *Config) ToNFONameConfig(isMultiPart bool, partSuffix string) NFONameCon
 // Config-bridge reads: cfg.Metadata.NFO.Format.FilenameTemplate, cfg.Metadata.NFO.Format.FirstNameOrder,
 // cfg.Metadata.NFO.Feature.PerFile, cfg.Output.Operation.GroupActress, cfg.Output.Operation.GroupActressName,
 // cfg.Output.Operation.GroupUnknownActressName, cfg.Output.Template, cfg.Output.Template.ActressDelimiter,
-// cfg.Metadata.NFO.Format.ActressLanguageJA
+// cfg.Metadata.NFO.Format.ActressLanguageJA, cfg.Metadata.NFO.Format.UnknownActressMode,
+// cfg.Metadata.NFO.Format.UnknownActressText
 func NFONameConfigFromAppConfig(cfg *config.Config) NFONameConfig {
 	if cfg == nil {
 		return NFONameConfig{}
@@ -148,5 +153,7 @@ func NFONameConfigFromAppConfig(cfg *config.Config) NFONameConfig {
 		GroupUnknownActressName: cfg.Output.Operation.GroupUnknownActressName,
 		ActressDelimiter:        cfg.Output.Template.ActressDelimiter,
 		ActressLanguageJA:       cfg.Metadata.NFO.Format.ActressLanguageJA,
+		UnknownActressMode:      cfg.Metadata.NFO.Format.UnknownActressMode,
+		UnknownActressText:      cfg.Metadata.NFO.Format.UnknownActressText,
 	}
 }

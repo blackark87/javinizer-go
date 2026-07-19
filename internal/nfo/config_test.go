@@ -18,8 +18,10 @@ func TestConfigFromAppConfig_NFO(t *testing.T) {
 			Metadata: config.MetadataConfig{
 				NFO: config.NFOConfig{
 					Format: config.NFOFormatConfig{
-						FilenameTemplate: "{id}",
-						FirstNameOrder:   true,
+						FilenameTemplate:   "{id}",
+						FirstNameOrder:     true,
+						UnknownActressMode: "fallback",
+						UnknownActressText: "Unknown",
 					},
 				},
 			},
@@ -28,16 +30,20 @@ func TestConfigFromAppConfig_NFO(t *testing.T) {
 		require.NotNil(t, result)
 		assert.Equal(t, "{id}", result.FilenameTemplate)
 		assert.True(t, result.FirstNameOrder)
+		assert.Equal(t, "fallback", string(result.UnknownActressMode))
+		assert.Equal(t, "Unknown", result.UnknownActressText)
 	})
 }
 
 func TestConfig_ToNFONameConfig(t *testing.T) {
 	c := &Config{
-		FilenameTemplate: "{id}",
-		GroupActress:     true,
-		GroupActressName: "actress",
-		PerFile:          true,
-		FirstNameOrder:   true,
+		FilenameTemplate:   "{id}",
+		GroupActress:       true,
+		GroupActressName:   "actress",
+		PerFile:            true,
+		FirstNameOrder:     true,
+		UnknownActressMode: "fallback",
+		UnknownActressText: "Unknown",
 	}
 	result := c.ToNFONameConfig(true, "-A")
 	assert.Equal(t, "{id}", result.FilenameTemplate)
@@ -45,4 +51,6 @@ func TestConfig_ToNFONameConfig(t *testing.T) {
 	assert.True(t, result.IsMultiPart)
 	assert.Equal(t, "-A", result.PartSuffix)
 	assert.True(t, result.FirstNameOrder)
+	assert.Equal(t, "fallback", string(result.UnknownActressMode))
+	assert.Equal(t, "Unknown", result.UnknownActressText)
 }

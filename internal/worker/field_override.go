@@ -6,6 +6,7 @@ import (
 
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/scrape"
+	"github.com/javinizer/javinizer-go/internal/translation"
 )
 
 // fieldOverrideKeys is the canonical set of field-source keys a user may
@@ -256,7 +257,9 @@ func actressesFromScraperInfo(infos []models.ActressInfo) []models.Actress {
 		return nil
 	}
 	out := make([]models.Actress, 0, len(infos))
-	for _, info := range infos {
+	for _, rawInfo := range infos {
+		info := rawInfo
+		translation.CleanActressInfo(&info)
 		out = append(out, models.Actress{
 			DMMID:        info.DMMID,
 			FirstName:    info.FirstName,

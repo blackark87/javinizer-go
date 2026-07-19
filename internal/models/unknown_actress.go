@@ -1,6 +1,9 @@
 package models
 
-import "strings"
+import (
+	"reflect"
+	"strings"
+)
 
 // UnknownActressName is the canonical placeholder for missing performer data.
 const UnknownActressName = "Unknown"
@@ -151,4 +154,56 @@ func CanonicalizeUnknownActressInfo(actress *ActressInfo) bool {
 	actress.LastName = ""
 	actress.JapaneseName = UnknownActressName
 	return true
+}
+
+// ApplyUnknownActressMode makes the movie cast obey the configured unknown-
+// actress policy. Unknown placeholders are presentation metadata, so a real
+// actress always wins; when no real actress remains, fallback mode keeps one
+// canonical placeholder while skip mode leaves the cast empty.
+func ApplyUnknownActressMode(movie *Movie, mode UnknownActressMode, fallbackText string) bool {
+	if movie == nil {
+		return false
+	}
+
+	before := append([]Actress(nil), movie.Actresses...)
+	realActresses := make([]Actress, 0, len(movie.Actresses))
+	var placeholder *Actress
+	for i := range movie.Actresses {
+		actress := movie.Actresses[i]
+		if IsUnknownActressFields(actress.LastName, actress.FirstName, actress.JapaneseName) {
+			if placeholder == nil {
+				copy := actress
+				placeholder = &copy
+			}
+			continue
+		}
+		if actress.ID == 0 && actress.DMMID == 0 && strings.TrimSpace(actress.FirstName) == "" &&
+			strings.TrimSpace(actress.LastName) == "" && strings.TrimSpace(actress.JapaneseName) == "" {
+			continue
+		}
+		realActresses = append(realActresses, actress)
+	}
+
+	if len(realActresses) > 0 || mode != UnknownActressModeFallback {
+		movie.Actresses = realActresses
+		return !actressSlicesEqual(before, movie.Actresses)
+	}
+
+	text := strings.TrimSpace(fallbackText)
+	if text == "" {
+		text = UnknownActressName
+	}
+	if placeholder == nil {
+		placeholder = &Actress{}
+	}
+	placeholder.FirstName = text
+	placeholder.LastName = ""
+	placeholder.JapaneseName = text
+	placeholder.ThumbURL = ""
+	movie.Actresses = []Actress{*placeholder}
+	return !actressSlicesEqual(before, movie.Actresses)
+}
+
+func actressSlicesEqual(left, right []Actress) bool {
+	return reflect.DeepEqual(left, right)
 }

@@ -6,11 +6,27 @@ import (
 	"testing"
 
 	"github.com/javinizer/javinizer-go/internal/config"
+	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/scraperutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestReconcileVerifiedActressesSkipsUnverifiedCastEntries(t *testing.T) {
+	fixture := newFixture(t)
+	repo := database.NewActressRepository(fixture.db)
+	movie := &models.Movie{Actresses: []models.Actress{
+		{DMMID: 7001, JapaneseName: "검증 배우"},
+		{DMMID: 0, JapaneseName: "미검증 배우"},
+	}}
+
+	require.NoError(t, reconcileVerifiedActresses(movie, repo))
+	require.Len(t, movie.Actresses, 2)
+	assert.Equal(t, 7001, movie.Actresses[0].DMMID)
+	assert.Equal(t, "미검증 배우", movie.Actresses[1].JapaneseName)
+	assert.Zero(t, movie.Actresses[1].DMMID)
+}
 
 type actressResolverScraper struct {
 	name         string

@@ -421,7 +421,7 @@ func (a *Aggregator) getActressesByPriorityWithSource(
 	// Record field source (side-effect belongs to Aggregator, not ActressMerger)
 	if len(result) > 0 && fieldSources != nil {
 		for _, src := range priority {
-			if r, ok := results[src]; ok && len(r.Actresses) > 0 {
+			if r, ok := results[src]; ok && hasUsableActressSource(r.Actresses, opts) {
 				fieldSources["actresses"] = src
 				break
 			}

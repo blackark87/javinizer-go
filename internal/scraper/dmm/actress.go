@@ -409,17 +409,14 @@ func normalizeActressThumbURL(rawURL string) string {
 		rawURL = "https://video.dmm.co.jp" + rawURL
 	}
 
-	// Preserve DMM's high-quality actress CDN host while removing its
-	// presentation-only pics_dig prefix and resizing query. Validate the parsed
-	// URL first so scraped file/loopback/metadata URLs never reach downloaders.
+	// Preserve DMM's high-quality actress CDN path while removing only resizing
+	// parameters. /pics_dig/ is part of the real asset path; stripping it turns
+	// a valid profile image into DMM's now_printing redirect.
 	parsed, err := url.Parse(rawURL)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || !imageutil.IsDMMHost(parsed.Hostname()) {
 		return ""
 	}
 	host := strings.ToLower(parsed.Hostname())
-	if host == "awsimgsrc.dmm.co.jp" && strings.HasPrefix(parsed.Path, "/pics_dig/") {
-		parsed.Path = strings.TrimPrefix(parsed.Path, "/pics_dig")
-	}
 	parsed.Scheme = "https"
 	parsed.Host = host
 	parsed.RawQuery = ""
@@ -469,7 +466,25 @@ func (s *scraper) tryActressThumbURLs(ctx context.Context, firstName, lastName s
 		)
 	}
 	candidates = dedupeActressImageCandidates(candidates)
+	if thumbnail := s.firstExistingActressImage(ctx, candidates); thumbnail != "" {
+		return thumbnail
+	}
 
+	// Some DMM actress list pages expose no profile image. Check only the first
+	// streaming work detail from the first list page; never paginate or recurse.
+	if dmmID > 0 {
+		if candidate := s.resolveActressThumbnailFromStreamingList(ctx, dmmID); candidate != "" {
+			if thumbnail := s.firstExistingActressImage(ctx, []string{candidate}); thumbnail != "" {
+				return thumbnail
+			}
+		}
+	}
+
+	logging.Debugf("DMM: No actress thumbnail found (tried %d profile candidates)", len(candidates))
+	return ""
+}
+
+func (s *scraper) firstExistingActressImage(ctx context.Context, candidates []string) string {
 	testClient, err := httpclient.NewRestyClient(s.proxyProfile, 5*time.Second, 0)
 	if err != nil {
 		// Warn (not Debug): falling back to an explicit no-proxy client can
@@ -486,9 +501,100 @@ func (s *scraper) tryActressThumbURLs(ctx context.Context, firstName, lastName s
 			return candidate
 		}
 	}
-
-	logging.Debugf("DMM: No actress thumbnail found (tried %d candidates)", len(candidates))
 	return ""
+}
+
+func (s *scraper) resolveActressThumbnailFromStreamingList(ctx context.Context, dmmID int) string {
+	listURL := fmt.Sprintf("https://video.dmm.co.jp/av/list/?actress=%d", dmmID)
+	listDoc, err := s.fetchActressStreamingDoc(ctx, listURL)
+	if err != nil {
+		logging.Debugf("DMM: Actress streaming list lookup failed for ID %d: %v", dmmID, err)
+		return ""
+	}
+	detailURL := firstActressStreamingDetailURL(listDoc)
+	if detailURL == "" {
+		return ""
+	}
+	detailDoc, err := s.fetchActressStreamingDoc(ctx, detailURL)
+	if err != nil {
+		logging.Debugf("DMM: First actress streaming detail lookup failed for ID %d: %v", dmmID, err)
+		return ""
+	}
+	return extractExactActressThumbFromStreamingDoc(detailDoc, dmmID)
+}
+
+func (s *scraper) fetchActressStreamingDoc(ctx context.Context, rawURL string) (*goquery.Document, error) {
+	if s.useBrowser {
+		bodyHTML, err := fetchWithBrowser(ctx, rawURL, s.browserConfig.Timeout, s.proxyProfile, s.getEnvLookup(), s.getFs())
+		if err != nil {
+			return nil, err
+		}
+		return goquery.NewDocumentFromReader(strings.NewReader(bodyHTML))
+	}
+	if err := s.rateLimiter.Wait(ctx); err != nil {
+		return nil, err
+	}
+	resp, err := s.client.R().SetContext(ctx).Get(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return nil, models.NewScraperStatusError("DMM", resp.StatusCode(), "DMM actress streaming page lookup failed")
+	}
+	return goquery.NewDocumentFromReader(strings.NewReader(resp.String()))
+}
+
+func firstActressStreamingDetailURL(doc *goquery.Document) string {
+	if doc == nil {
+		return ""
+	}
+	var detailURL string
+	doc.Find(`a[href*='/av/content/?id=']`).EachWithBreak(func(_ int, sel *goquery.Selection) bool {
+		href, exists := sel.Attr("href")
+		if !exists {
+			return true
+		}
+		base, _ := url.Parse("https://video.dmm.co.jp")
+		ref, err := url.Parse(strings.TrimSpace(href))
+		if err != nil {
+			return true
+		}
+		resolved := base.ResolveReference(ref)
+		if resolved.Hostname() != "video.dmm.co.jp" || !strings.Contains(resolved.Path, "/av/content/") || resolved.Query().Get("id") == "" {
+			return true
+		}
+		resolved.RawQuery = "id=" + url.QueryEscape(resolved.Query().Get("id"))
+		resolved.Fragment = ""
+		detailURL = resolved.String()
+		return false
+	})
+	return detailURL
+}
+
+func extractExactActressThumbFromStreamingDoc(doc *goquery.Document, dmmID int) string {
+	if doc == nil || dmmID <= 0 {
+		return ""
+	}
+	var thumbnail string
+	doc.Find(actressLinkSelector).EachWithBreak(func(_ int, sel *goquery.Selection) bool {
+		href, _ := sel.Attr("href")
+		if extractActressID(href) != dmmID {
+			return true
+		}
+		root := sel
+		for depth := 0; depth < 4 && root.Length() > 0; depth++ {
+			if depth > 0 && root.Find(actressLinkSelector).Length() > 1 {
+				break
+			}
+			if candidate := extractActressThumbURL(root); candidate != "" {
+				thumbnail = candidate
+				return false
+			}
+			root = root.Parent()
+		}
+		return thumbnail == ""
+	})
+	return thumbnail
 }
 
 // ResolveActressThumbnail exposes DMM's profile-page and actjpgs lookup to

@@ -286,6 +286,13 @@ func reconcileVerifiedActresses(movie *models.Movie, repo database.ActressReposi
 	canonical := make([]models.Actress, 0, len(movie.Actresses))
 	seen := make(map[uint]struct{}, len(movie.Actresses))
 	for _, actress := range movie.Actresses {
+		// Reconciliation verifies identities that already carry a DMM ID. An
+		// unverified cast entry is still a valid scrape result and must not make
+		// the whole movie fail with "verified actress requires a positive DMM ID".
+		if actress.DMMID <= 0 {
+			canonical = append(canonical, actress)
+			continue
+		}
 		var resolution *database.VerifiedActressResolution
 		var err error
 		observedAliases := splitActressAliases(actress.Aliases)

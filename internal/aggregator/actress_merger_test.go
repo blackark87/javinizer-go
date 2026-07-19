@@ -54,6 +54,54 @@ func TestActressMerger_PreservesPrimarySourceCastOrder(t *testing.T) {
 	}
 }
 
+func TestActressMerger_LowerPriorityDistinctCastRemainsSourceOnly(t *testing.T) {
+	merger := newActressMerger()
+	sources := []actressSource{
+		{
+			Source: "javbus",
+			Actresses: []models.ActressInfo{{
+				JapaneseName: "AIKA",
+			}},
+		},
+		{
+			Source: "r18dev",
+			Actresses: []models.ActressInfo{{
+				DMMID:        1058164,
+				JapaneseName: "佐々木あき",
+			}},
+		},
+	}
+
+	actresses := merger.Merge(sources, actressMergeOptions{Priority: []string{"javbus", "r18dev"}})
+
+	require.Len(t, actresses, 1)
+	assert.Equal(t, "AIKA", actresses[0].JapaneseName)
+}
+
+func TestActressMerger_LowerPriorityMatchingActressEnrichesPrimary(t *testing.T) {
+	merger := newActressMerger()
+	sources := []actressSource{
+		{
+			Source:    "javbus",
+			Actresses: []models.ActressInfo{{JapaneseName: "AIKA"}},
+		},
+		{
+			Source: "dmm",
+			Actresses: []models.ActressInfo{{
+				DMMID:        12345,
+				JapaneseName: "AIKA",
+				ThumbURL:     "https://pics.dmm.co.jp/mono/actjpgs/aika.jpg",
+			}},
+		},
+	}
+
+	actresses := merger.Merge(sources, actressMergeOptions{Priority: []string{"javbus", "dmm"}})
+
+	require.Len(t, actresses, 1)
+	assert.Equal(t, 12345, actresses[0].DMMID)
+	assert.Equal(t, "https://pics.dmm.co.jp/mono/actjpgs/aika.jpg", actresses[0].ThumbURL)
+}
+
 // TestActressMerger_MultipleSourcesPriority tests that two sources with the same
 // actress (different DMMID) deduplicate, keep higher-priority fields, and fill
 // empty fields from lower priority.

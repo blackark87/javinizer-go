@@ -157,7 +157,8 @@ func TestActressAliasDedup_NoResolver(t *testing.T) {
 
 	actresses := merger.Merge(sources, opts)
 
-	// Without alias data the merger cannot know these are the same person, so
-	// both survive — preserving the pre-fix behavior for the no-DB path.
-	require.Len(t, actresses, 2)
+	// Without alias data the lower-priority name cannot enrich the authoritative
+	// cast, and it must not be appended as a second performer.
+	require.Len(t, actresses, 1)
+	assert.Equal(t, "朝日芹奈", actresses[0].JapaneseName)
 }

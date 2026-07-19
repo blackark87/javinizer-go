@@ -16,10 +16,11 @@ type ActressSyncStatus string
 
 // Actress metadata sync outcomes.
 const (
-	ActressSyncUpdated  ActressSyncStatus = "updated"
-	ActressSyncSkipped  ActressSyncStatus = "skipped"
-	ActressSyncConflict ActressSyncStatus = "conflict"
-	ActressSyncFailed   ActressSyncStatus = "failed"
+	ActressSyncUpdated   ActressSyncStatus = "updated"
+	ActressSyncSkipped   ActressSyncStatus = "skipped"
+	ActressSyncConflict  ActressSyncStatus = "conflict"
+	ActressSyncFailed    ActressSyncStatus = "failed"
+	maxActressSyncMovies                   = 5
 )
 
 // ActressSyncResult is the internal result used by a durable actress sync task.
@@ -45,7 +46,6 @@ func SyncActressMetadata(
 	movieRepos ...*database.MovieRepository,
 ) (*ActressSyncResult, error) {
 	_ = scraperPriority
-	_ = movieRepos
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -102,6 +102,22 @@ func SyncActressMetadata(
 	}
 
 	if !profileThumbnailResolved {
+		if movieRepo := firstMovieRepository(movieRepos); movieRepo != nil {
+			thumbnail := resolveThumbnailFromRecentMovies(ctx, registry, movieRepo, *actress)
+			if thumbnail != "" {
+				profileThumbnailResolved = true
+				if thumbnail != strings.TrimSpace(actress.ThumbURL) {
+					actress.ThumbURL = thumbnail
+					if err := actressRepo.Update(ctx, actress); err != nil {
+						return nil, err
+					}
+					result.UpdatedFields = appendUnique(result.UpdatedFields, "thumb_url")
+				}
+			}
+		}
+	}
+
+	if !profileThumbnailResolved {
 		thumbnailResolver := findActressThumbnailResolver(registry)
 		thumbnail := ""
 		if thumbnailResolver == nil {
@@ -112,12 +128,15 @@ func SyncActressMetadata(
 				return nil, err
 			}
 		}
-		if thumbnail != "" && thumbnail != strings.TrimSpace(actress.ThumbURL) {
-			actress.ThumbURL = thumbnail
-			if err := actressRepo.Update(ctx, actress); err != nil {
-				return nil, err
+		if thumbnail != "" {
+			profileThumbnailResolved = true
+			if thumbnail != strings.TrimSpace(actress.ThumbURL) {
+				actress.ThumbURL = thumbnail
+				if err := actressRepo.Update(ctx, actress); err != nil {
+					return nil, err
+				}
+				result.UpdatedFields = appendUnique(result.UpdatedFields, "thumb_url")
 			}
-			result.UpdatedFields = appendUnique(result.UpdatedFields, "thumb_url")
 		} else if thumbnailResolver != nil {
 			result.Messages = append(result.Messages, "Profile thumbnail could not be resolved")
 		}
@@ -130,6 +149,63 @@ func SyncActressMetadata(
 	}
 	result.Actress = *actress
 	return result, nil
+}
+
+func firstMovieRepository(repos []*database.MovieRepository) *database.MovieRepository {
+	for _, repo := range repos {
+		if repo != nil {
+			return repo
+		}
+	}
+	return nil
+}
+
+func resolveThumbnailFromRecentMovies(
+	ctx context.Context,
+	registry scraperutil.ScraperInstancesInterface,
+	movieRepo *database.MovieRepository,
+	actress models.Actress,
+) string {
+	if registry == nil || movieRepo == nil || actress.ID == 0 || actress.DMMID <= 0 {
+		return ""
+	}
+	dmmScraper, ok := registry.GetInstance("dmm")
+	if !ok || dmmScraper == nil {
+		return ""
+	}
+	movies, err := movieRepo.ListByActressID(ctx, actress.ID, maxActressSyncMovies, 0)
+	if err != nil {
+		return ""
+	}
+	for _, movie := range movies {
+		if err := ctx.Err(); err != nil {
+			return ""
+		}
+		var scraped *models.ScraperResult
+		if handler, supportsURL := dmmScraper.(models.URLHandler); supportsURL &&
+			strings.EqualFold(strings.TrimSpace(movie.SourceName), "dmm") &&
+			handler.CanHandleURL(strings.TrimSpace(movie.SourceURL)) {
+			scraped, err = handler.ScrapeURL(ctx, strings.TrimSpace(movie.SourceURL))
+		} else {
+			queryID := strings.TrimSpace(movie.ID)
+			if queryID == "" {
+				queryID = strings.TrimSpace(movie.ContentID)
+			}
+			if queryID == "" {
+				continue
+			}
+			scraped, err = dmmScraper.Search(ctx, queryID)
+		}
+		if err != nil || scraped == nil {
+			continue
+		}
+		for _, candidate := range scraped.Actresses {
+			if candidate.DMMID == actress.DMMID && strings.TrimSpace(candidate.ThumbURL) != "" {
+				return strings.TrimSpace(candidate.ThumbURL)
+			}
+		}
+	}
+	return ""
 }
 
 func findActressThumbnailResolver(registry scraperutil.ScraperInstancesInterface) models.ActressThumbnailResolver {

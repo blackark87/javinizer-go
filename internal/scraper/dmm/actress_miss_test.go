@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/go-resty/resty/v2"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/ratelimit"
@@ -208,7 +209,32 @@ func TestResolveActressProfilePrefersDMMIDSuffixedProfileImage(t *testing.T) {
 	profile, err := s.ResolveActressProfile(context.Background(), models.ActressInfo{DMMID: 321})
 	require.NoError(t, err)
 	assert.Equal(t, "宮下玲奈", profile.JapaneseName)
-	assert.Equal(t, "https://awsimgsrc.dmm.co.jp/mono/actjpgs/miyasita_rena2.jpg", profile.ThumbURL)
+	assert.Equal(t, "https://awsimgsrc.dmm.co.jp/pics_dig/mono/actjpgs/miyasita_rena2.jpg", profile.ThumbURL)
+}
+
+func TestNormalizeActressThumbURLPreservesPicsDigAssetPath(t *testing.T) {
+	raw := "https://awsimgsrc.dmm.co.jp/pics_dig/mono/actjpgs/tibitori.jpg?w=125&h=125&t=margin"
+	assert.Equal(t,
+		"https://awsimgsrc.dmm.co.jp/pics_dig/mono/actjpgs/tibitori.jpg",
+		normalizeActressThumbURL(raw),
+	)
+}
+
+func TestActressStreamingFallbackUsesFirstDetailAndExactDMMID(t *testing.T) {
+	listDoc, err := goquery.NewDocumentFromReader(strings.NewReader(`
+		<a href="/av/content/?id=first001&i3_ref=list">first</a>
+		<a href="/av/content/?id=second002">second</a>`))
+	require.NoError(t, err)
+	assert.Equal(t, "https://video.dmm.co.jp/av/content/?id=first001", firstActressStreamingDetailURL(listDoc))
+
+	detailDoc, err := goquery.NewDocumentFromReader(strings.NewReader(`
+		<div><a href="/av/list/?actress=999"><img src="https://pics.dmm.co.jp/mono/actjpgs/wrong.jpg"></a></div>
+		<div><a href="/av/list/?actress=1075313"><img src="https://awsimgsrc.dmm.co.jp/pics_dig/mono/actjpgs/tibitori.jpg?w=125&h=125"></a></div>`))
+	require.NoError(t, err)
+	assert.Equal(t,
+		"https://awsimgsrc.dmm.co.jp/pics_dig/mono/actjpgs/tibitori.jpg",
+		extractExactActressThumbFromStreamingDoc(detailDoc, 1075313),
+	)
 }
 
 // --- extractRomajiVariantsFromActressPageCtx: httptest server-based test ---

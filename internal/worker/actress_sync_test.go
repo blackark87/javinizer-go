@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -24,11 +25,13 @@ type actressSyncTestScraper struct {
 	thumbnailURL   string
 	thumbnailFn    func(context.Context, models.ActressInfo) string
 	resolveFn      func(context.Context, string) (*models.ScraperResult, error)
+	searchFn       func(context.Context, string) (*models.ScraperResult, error)
 
 	mu              sync.Mutex
 	identityQueries []models.ActressIdentityQuery
 	thumbnailInfos  []models.ActressInfo
 	resolveQueries  []string
+	searchQueries   []string
 }
 
 type actressProfileSyncTestScraper struct {
@@ -42,7 +45,13 @@ func (s *actressProfileSyncTestScraper) ResolveActressProfile(context.Context, m
 }
 
 func (s *actressSyncTestScraper) Name() string { return s.name }
-func (s *actressSyncTestScraper) Search(context.Context, string) (*models.ScraperResult, error) {
+func (s *actressSyncTestScraper) Search(ctx context.Context, id string) (*models.ScraperResult, error) {
+	s.mu.Lock()
+	s.searchQueries = append(s.searchQueries, id)
+	s.mu.Unlock()
+	if s.searchFn != nil {
+		return s.searchFn(ctx, id)
+	}
 	return nil, nil
 }
 func (s *actressSyncTestScraper) GetURL(context.Context, string) (string, error) { return "", nil }
@@ -90,6 +99,47 @@ func newActressSyncTestRepo(t *testing.T) *database.ActressRepository {
 	t.Cleanup(func() { _ = db.Close() })
 	require.NoError(t, db.RunMigrationsOnStartup(context.Background()))
 	return database.NewActressRepository(db)
+}
+
+func TestResolveThumbnailFromRecentMoviesStopsAtExactDMMIDAndCapsAtFive(t *testing.T) {
+	actressRepo := newActressSyncTestRepo(t)
+	movieRepo := database.NewMovieRepository(actressRepo.GetDB())
+	actress := &models.Actress{DMMID: 1075313, JapaneseName: "ちびとり"}
+	require.NoError(t, actressRepo.Create(context.Background(), actress))
+	for index := 0; index < 6; index++ {
+		movie := &models.Movie{
+			ContentID: fmt.Sprintf("recent%03d", index),
+			ID:        fmt.Sprintf("RECENT-%03d", index),
+			Actresses: []models.Actress{*actress},
+		}
+		require.NoError(t, movieRepo.Create(context.Background(), movie))
+	}
+
+	dmm := &actressSyncTestScraper{name: "dmm", enabled: true}
+	dmm.searchFn = func(_ context.Context, id string) (*models.ScraperResult, error) {
+		if id == "RECENT-002" {
+			return &models.ScraperResult{Actresses: []models.ActressInfo{{
+				DMMID: 1075313, ThumbURL: "https://awsimgsrc.dmm.co.jp/pics_dig/mono/actjpgs/tibitori.jpg",
+			}}}, nil
+		}
+		return &models.ScraperResult{}, nil
+	}
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(dmm)
+
+	thumbnail := resolveThumbnailFromRecentMovies(context.Background(), registry, movieRepo, *actress)
+	assert.Equal(t, "https://awsimgsrc.dmm.co.jp/pics_dig/mono/actjpgs/tibitori.jpg", thumbnail)
+	assert.LessOrEqual(t, len(dmm.searchQueries), maxActressSyncMovies)
+	assert.Contains(t, dmm.searchQueries, "RECENT-002")
+
+	dmm.mu.Lock()
+	dmm.searchQueries = nil
+	dmm.searchFn = func(context.Context, string) (*models.ScraperResult, error) {
+		return &models.ScraperResult{}, nil
+	}
+	dmm.mu.Unlock()
+	assert.Empty(t, resolveThumbnailFromRecentMovies(context.Background(), registry, movieRepo, *actress))
+	assert.Len(t, dmm.searchQueries, maxActressSyncMovies)
 }
 
 func TestSyncActressMetadataThumbnailOnlyDoesNotLookupIdentityOrOverwriteNames(t *testing.T) {

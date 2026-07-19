@@ -39,14 +39,15 @@ func newActressMerger() *actressMerger {
 	return &actressMerger{}
 }
 
-// Merge combines actresses from multiple sources according to priority,
-// deduplicates by DMMID then by name key, fills empty fields from lower
-// priority sources, applies alias resolution, and adds unknown actress
-// fallback if configured.
+// Merge selects the first usable cast in source-priority order, deduplicates
+// that authoritative cast, and fills empty fields only from matching actresses
+// in lower-priority sources. A distinct actress reported only by a lower source
+// is deliberately not appended: users can still select that source explicitly
+// from the raw source records.
 //
 // The method has 3 phases:
-//  1. Collect + Dedup: iterate sources in priority order, deduplicate actresses
-//     by DMMID then by name key, merge empty fields from lower priority sources.
+//  1. Select + Dedup: select the first source with a usable actress, deduplicate
+//     its cast, then enrich matching entries from lower-priority sources.
 //  2. Resolve: apply alias resolution to each actress if a resolver is provided.
 //  3. Fallback: if no actresses were found and fallback mode is enabled, add
 //     unknown actress text as a placeholder.
@@ -63,21 +64,32 @@ func (m *actressMerger) Merge(sources []actressSource, opts actressMergeOptions)
 		unknownTextLower = models.NormalizeActressNameKey(opts.UnknownText)
 	}
 
-	hadAnyActressFromScrapers := false
+	primarySelected := false
 
 	for _, src := range sources {
 		if len(src.Actresses) == 0 {
 			continue
 		}
+		isPrimary := false
+		if !primarySelected {
+			if !hasUsableActressSource(src.Actresses, opts) {
+				continue
+			}
+			primarySelected = true
+			isPrimary = true
+		}
 
 		for _, rawInfo := range src.Actresses {
 			info := rawInfo
 			cleanActressInfoName(&info)
-			hadAnyActressFromScrapers = true
 
 			nameKey := resolveCanonicalNameKey(opts.AliasResolver, info.JapaneseName, info.FirstName, info.LastName)
 
-			if opts.SkipUnknown && unknownTextLower != "" && isUnknownActress(info, nameKey, unknownTextLower) {
+			if models.IsUnknownActressFields(info.LastName, info.FirstName, info.JapaneseName) ||
+				(unknownTextLower != "" && isUnknownActress(info, nameKey, unknownTextLower)) {
+				continue
+			}
+			if info.DMMID <= 0 && nameKey == "" {
 				continue
 			}
 
@@ -136,7 +148,7 @@ func (m *actressMerger) Merge(sources []actressSource, opts actressMergeOptions)
 				for _, alias := range info.ObservedAliases {
 					existing.Aliases = appendActressAliasValue(existing.Aliases, alias)
 				}
-			} else {
+			} else if isPrimary {
 				// New actress - add to appropriate map
 				actress := &models.Actress{
 					DMMID:        info.DMMID,
@@ -179,7 +191,7 @@ func (m *actressMerger) Merge(sources []actressSource, opts actressMergeOptions)
 	}
 
 	// Phase 3: Fallback
-	if !hadAnyActressFromScrapers && !opts.SkipUnknown && opts.UnknownText != "" {
+	if !opts.SkipUnknown && opts.UnknownText != "" {
 		return []models.Actress{
 			{
 				FirstName:    opts.UnknownText,
@@ -189,6 +201,23 @@ func (m *actressMerger) Merge(sources []actressSource, opts actressMergeOptions)
 	}
 
 	return []models.Actress{}
+}
+
+func hasUsableActressSource(infos []models.ActressInfo, opts actressMergeOptions) bool {
+	unknownText := models.NormalizeActressNameKey(opts.UnknownText)
+	for _, rawInfo := range infos {
+		info := rawInfo
+		cleanActressInfoName(&info)
+		nameKey := resolveCanonicalNameKey(opts.AliasResolver, info.JapaneseName, info.FirstName, info.LastName)
+		if models.IsUnknownActressFields(info.LastName, info.FirstName, info.JapaneseName) ||
+			(unknownText != "" && isUnknownActress(info, nameKey, unknownText)) {
+			continue
+		}
+		if info.DMMID > 0 || nameKey != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func appendActressAliasValue(existing, candidate string) string {

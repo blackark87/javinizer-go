@@ -138,6 +138,25 @@ func restoreActressMiddleDots(source, translated string) string {
 	return translated
 }
 
+// flexibleJapaneseNamePattern matches one Japanese actress name while allowing
+// scraper/source differences in ASCII or full-width whitespace between its
+// characters. The characters themselves remain exact, so ordinary prose is
+// not normalized or matched loosely.
+func flexibleJapaneseNamePattern(name string) *regexp.Regexp {
+	compact := strings.Join(strings.Fields(strings.TrimSpace(name)), "")
+	if compact == "" {
+		return nil
+	}
+	var pattern strings.Builder
+	for index, r := range []rune(compact) {
+		if index > 0 {
+			pattern.WriteString(`[\s　]*`)
+		}
+		pattern.WriteString(regexp.QuoteMeta(string(r)))
+	}
+	return regexp.MustCompile(pattern.String())
+}
+
 // extractHonorificNameToken finds a name token carrying a Japanese honorific
 // even when scraper-added occupation text follows it. Descriptor-only tokens
 // such as "奥さん" are ignored so they cannot become a false performer name.

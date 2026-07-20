@@ -18,6 +18,7 @@ func TestRomajiToHangul(t *testing.T) {
 		{"long vowel ee dropped", "Futaba Reena", "후타바 레나", true},
 		{"long vowel uu dropped", "Yuu", "유", true},
 		{"long vowel ou dropped", "Tarou", "타로", true},
+		{"confirmed ou mora boundary override", "Nonoura Non", "노노우라 논", true},
 		{"long vowel ou in name", "Youko", "요코", true},
 		{"long vowel oo dropped", "Oono", "오노", true},
 		{"long vowel yuu dropped", "Yuuki", "유키", true},

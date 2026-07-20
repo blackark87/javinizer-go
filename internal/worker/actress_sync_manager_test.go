@@ -389,6 +389,188 @@ func TestActressSyncManagerLLMFailureKeepsVerifiedIdentityAndMapping(t *testing.
 	assert.Contains(t, tasks[0].Warning, "translation")
 }
 
+func TestActressSyncManagerTranslatesExistingNonKoreanNameWhileSyncingThumbnail(t *testing.T) {
+	var translationCalls atomic.Int32
+	translationServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		translationCalls.Add(1)
+		response := map[string]any{
+			"choices": []map[string]any{{
+				"message": map[string]string{"content": "<<<JZ_0>>>\n미야시타 레나\n"},
+			}},
+		}
+		require.NoError(t, json.NewEncoder(w).Encode(response))
+	}))
+	defer translationServer.Close()
+
+	resolver := &actressProfileSyncTestScraper{
+		actressSyncTestScraper: &actressSyncTestScraper{name: "dmm", enabled: true},
+		profile: models.ActressInfo{
+			DMMID: 321, JapaneseName: "宮下玲奈", ThumbURL: "https://example.com/profile.jpg",
+		},
+	}
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
+	cfg := &config.Config{}
+	cfg.Metadata.Translation = config.TranslationConfig{
+		Enabled: true, Provider: "openai", SourceLanguage: "ja", TargetLanguage: "ko", ApplyToPrimary: true,
+		Fields: config.TranslationFieldsConfig{Actresses: true},
+		OpenAI: config.OpenAITranslationConfig{BaseURL: translationServer.URL, APIKey: "test"},
+	}
+	manager, _, actressRepo, _ := newActressSyncManagerTest(t, cfg, registry)
+	actress := &models.Actress{DMMID: 321, FirstName: "玲奈", LastName: "宮下", JapaneseName: "宮下玲奈"}
+	require.NoError(t, actressRepo.Create(context.Background(), actress))
+
+	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{Scope: "selected", ActressIDs: []uint{actress.ID}})
+	require.NoError(t, err)
+	completed := waitForActressSyncJob(t, manager, job.ID)
+	assert.Equal(t, 1, completed.Updated)
+	assert.Zero(t, completed.Failed)
+	assert.EqualValues(t, 1, translationCalls.Load())
+
+	stored, err := actressRepo.FindByID(context.Background(), actress.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "宮下玲奈", stored.JapaneseName)
+	assert.Equal(t, "미야시타 레나", stored.FullName())
+	assert.Equal(t, "https://example.com/profile.jpg", stored.ThumbURL)
+}
+
+func TestActressSyncManagerPreservesExistingKoreanNameWhileSyncingThumbnail(t *testing.T) {
+	var translationCalls atomic.Int32
+	translationServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		translationCalls.Add(1)
+		http.Error(w, "translation must not be called", http.StatusInternalServerError)
+	}))
+	defer translationServer.Close()
+
+	resolver := &actressProfileSyncTestScraper{
+		actressSyncTestScraper: &actressSyncTestScraper{name: "dmm", enabled: true},
+		profile: models.ActressInfo{
+			DMMID: 321, JapaneseName: "宮下玲奈", ThumbURL: "https://example.com/miyasita_rena.jpg",
+		},
+	}
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
+	cfg := &config.Config{}
+	cfg.Metadata.Translation = config.TranslationConfig{
+		Enabled: true, Provider: "openai", SourceLanguage: "ja", TargetLanguage: "ko", ApplyToPrimary: true,
+		Fields: config.TranslationFieldsConfig{Actresses: true},
+		OpenAI: config.OpenAITranslationConfig{BaseURL: translationServer.URL, APIKey: "test"},
+	}
+	manager, _, actressRepo, _ := newActressSyncManagerTest(t, cfg, registry)
+	actress := &models.Actress{DMMID: 321, FirstName: "레나", LastName: "미야시타", JapaneseName: "宮下玲奈"}
+	require.NoError(t, actressRepo.Create(context.Background(), actress))
+
+	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{Scope: "selected", ActressIDs: []uint{actress.ID}})
+	require.NoError(t, err)
+	completed := waitForActressSyncJob(t, manager, job.ID)
+	assert.Equal(t, 1, completed.Updated)
+	assert.Zero(t, completed.Failed)
+	assert.Zero(t, translationCalls.Load())
+
+	stored, err := actressRepo.FindByID(context.Background(), actress.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "미야시타 레나", stored.FullName())
+	assert.Equal(t, "https://example.com/miyasita_rena.jpg", stored.ThumbURL)
+}
+
+func TestActressSyncManagerTranslationFailureKeepsThumbnailUpdate(t *testing.T) {
+	translationServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "translation unavailable", http.StatusInternalServerError)
+	}))
+	defer translationServer.Close()
+
+	resolver := &actressProfileSyncTestScraper{
+		actressSyncTestScraper: &actressSyncTestScraper{name: "dmm", enabled: true},
+		profile: models.ActressInfo{
+			DMMID: 321, JapaneseName: "宮下玲奈", ThumbURL: "https://example.com/profile.jpg",
+		},
+	}
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
+	cfg := &config.Config{}
+	cfg.Metadata.Translation = config.TranslationConfig{
+		Enabled: true, Provider: "openai", SourceLanguage: "ja", TargetLanguage: "ko", ApplyToPrimary: true,
+		Fields: config.TranslationFieldsConfig{Actresses: true},
+		OpenAI: config.OpenAITranslationConfig{BaseURL: translationServer.URL, APIKey: "test"},
+	}
+	manager, _, actressRepo, _ := newActressSyncManagerTest(t, cfg, registry)
+	actress := &models.Actress{DMMID: 321, FirstName: "玲奈", LastName: "宮下", JapaneseName: "宮下玲奈"}
+	require.NoError(t, actressRepo.Create(context.Background(), actress))
+
+	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{Scope: "selected", ActressIDs: []uint{actress.ID}})
+	require.NoError(t, err)
+	completed := waitForActressSyncJob(t, manager, job.ID)
+	assert.Equal(t, 1, completed.Updated)
+	assert.Equal(t, 1, completed.Warnings)
+	assert.Zero(t, completed.Failed)
+
+	stored, err := actressRepo.FindByID(context.Background(), actress.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "宮下玲奈", stored.JapaneseName)
+	assert.Equal(t, "宮下 玲奈", stored.FullName())
+	assert.Equal(t, "https://example.com/profile.jpg", stored.ThumbURL)
+	tasks, err := manager.ListTasks(job.ID)
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	assert.Equal(t, "updated_with_warning", tasks[0].Outcome)
+	assert.Contains(t, tasks[0].Warning, "translation")
+}
+
+func TestActressSyncManagerTranslatesReusedDMMOwnerFromSougouWikiMovie(t *testing.T) {
+	translationServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		response := map[string]any{
+			"choices": []map[string]any{{
+				"message": map[string]string{"content": "<<<JZ_0>>>\n하타노 유이\n"},
+			}},
+		}
+		require.NoError(t, json.NewEncoder(w).Encode(response))
+	}))
+	defer translationServer.Close()
+
+	resolver := &actressProfileSyncTestScraper{
+		actressSyncTestScraper: &actressSyncTestScraper{name: "sougouwiki", enabled: true},
+		profile: models.ActressInfo{
+			DMMID: 702, FirstName: "Yui", LastName: "Hatano", JapaneseName: "波多野結衣", ThumbURL: "profile.jpg",
+		},
+	}
+	resolver.resolveFn = func(_ context.Context, id string) (*models.ScraperResult, error) {
+		return &models.ScraperResult{ID: id, Actresses: []models.ActressInfo{{
+			DMMID: 702, FirstName: "Yui", LastName: "Hatano", JapaneseName: "波多野結衣",
+		}}}, nil
+	}
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
+	cfg := &config.Config{}
+	cfg.Metadata.Translation = config.TranslationConfig{
+		Enabled: true, Provider: "openai", SourceLanguage: "ja", TargetLanguage: "ko", ApplyToPrimary: true,
+		Fields: config.TranslationFieldsConfig{Actresses: true},
+		OpenAI: config.OpenAITranslationConfig{BaseURL: translationServer.URL, APIKey: "test"},
+	}
+	manager, _, actressRepo, movieRepo := newActressSyncManagerTest(t, cfg, registry)
+	owner := &models.Actress{DMMID: 702, FirstName: "Yui", LastName: "Hatano", JapaneseName: "波多野結衣"}
+	placeholder := &models.Actress{JapaneseName: "仮名"}
+	require.NoError(t, actressRepo.Create(context.Background(), owner))
+	require.NoError(t, actressRepo.Create(context.Background(), placeholder))
+	require.NoError(t, movieRepo.Create(context.Background(), &models.Movie{
+		ContentID: "sougou-translation", ID: "TEST-702", Actresses: []models.Actress{*placeholder},
+	}))
+
+	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{Scope: "selected", ActressIDs: []uint{placeholder.ID}})
+	require.NoError(t, err)
+	completed := waitForActressSyncJob(t, manager, job.ID)
+	assert.Equal(t, 1, completed.Updated)
+	assert.Zero(t, completed.Failed)
+
+	stored, err := actressRepo.FindByID(context.Background(), owner.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "波多野結衣", stored.JapaneseName)
+	assert.Equal(t, "하타노 유이", stored.FullName())
+	updatedMovie, err := movieRepo.FindByContentID(context.Background(), "sougou-translation")
+	require.NoError(t, err)
+	require.Len(t, updatedMovie.Actresses, 1)
+	assert.Equal(t, owner.ID, updatedMovie.Actresses[0].ID)
+}
+
 func TestActressSyncManagerNewDatabaseJobsPersistKoreanActressNames(t *testing.T) {
 	translationServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		response := map[string]any{

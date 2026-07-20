@@ -80,6 +80,12 @@ func TestBuildLLMTranslationPrompts_KoreanJAVStudioRules(t *testing.T) {
 		"compressed headline style", "short, forceful noun phrases", "~을 조절하는",
 		"ご開帳", "手取り足取り", "骨抜き", "毒牙", "生殺し",
 		"middle dot ・", "never turn it into a comma",
+		"顔騎 → 안면기승", "never 페이스시팅", "足コキ → 풋잡", "never 발코키",
+		"生ハメ → 노콘", "生ハメ中出し → 노콘 질내사정", "シコサポ", "자위 서포트",
+		"媚薬 → 최음제", "never 피임약", "キメセク", "never 킴세쿠",
+		"雑魚チ●ポ → 허접 자지", "never 잡어 자지", "喰い意地爆発", "욕정 폭발",
+		"むしゃぶりつく", "never use the food-like adverb 게걸스럽게",
+		"みあたん → 미아짱", "never 미아탄", "자지 저작",
 	} {
 		assert.Contains(t, systemPrompt, expected)
 	}
@@ -92,6 +98,7 @@ func TestBuildLLMTranslationPrompts_KoreanJAVStudioRules(t *testing.T) {
 	assert.Contains(t, systemPrompt, "クンニ and クンニリングス → 보빨")
 	assert.Contains(t, systemPrompt, "アクメ → 절정 or 오르가슴")
 	assert.Contains(t, systemPrompt, "デカチン and 巨根 → 대물")
+	assert.NotContains(t, systemPrompt, "むしゃぶりつく →")
 }
 
 func TestBuildLLMTranslationPrompts_KoreanRulesAreTargetSpecific(t *testing.T) {

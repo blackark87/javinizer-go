@@ -14,6 +14,13 @@ func normalizeRomanizationToASCII(s string) string {
 	return longVowelReplacer.Replace(s)
 }
 
+// romajiWordHangulOverrides resolves confirmed mora boundaries that cannot be
+// inferred from DMM's unseparated ASCII actress slugs. Keep this list narrow:
+// generic "ou" still represents a Japanese long vowel in names such as Tarou.
+var romajiWordHangulOverrides = map[string]string{
+	"nonoura": "노노우라",
+}
+
 // romajiSyllables maps Hepburn romaji syllables to precomposed Hangul without a
 // final consonant (batchim). Longest-match parsing tries 3-, then 2-, then
 // 1-character keys. Nihon-shiki digraph spellings (sya, tya, zya) are included
@@ -72,6 +79,9 @@ func isRomajiVowel(b byte) bool {
 
 // romajiWordToHangul transliterates a single lowercase romaji word.
 func romajiWordToHangul(word string) (string, bool) {
+	if override, ok := romajiWordHangulOverrides[word]; ok {
+		return override, true
+	}
 	out := make([]rune, 0, len(word))
 
 	attach := func(jongseong rune) bool {

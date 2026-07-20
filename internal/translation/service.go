@@ -7,6 +7,8 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -235,7 +237,13 @@ func (s *Service) BuildTranslationPlan(scraped *models.Movie, targetLang, source
 		}
 	}
 
-	type nameSub struct{ japanese, hangul, token string }
+	type nameSub struct {
+		japanese string
+		hangul   string
+		token    string
+		pattern  *regexp.Regexp
+		length   int
+	}
 	nameSubs := make([]nameSub, 0, len(scraped.Actresses))
 	if targetLang == "ko" {
 		for i, actress := range scraped.Actresses {
@@ -243,22 +251,31 @@ func (s *Service) BuildTranslationPlan(scraped *models.Movie, targetLang, source
 			if japanese == "" || actressHangulNames[i] == "" {
 				continue
 			}
+			pattern := flexibleJapaneseNamePattern(japanese)
+			if pattern == nil {
+				continue
+			}
 			nameSubs = append(nameSubs, nameSub{
 				japanese: japanese,
 				hangul:   actressHangulNames[i],
 				token:    fmt.Sprintf("⟦%d⟧", len(nameSubs)),
+				pattern:  pattern,
+				length:   len([]rune(strings.Join(strings.Fields(japanese), ""))),
 			})
 		}
+		sort.SliceStable(nameSubs, func(i, j int) bool {
+			return nameSubs[i].length > nameSubs[j].length
+		})
 	}
 	protectNames := func(value string) (direct, protected string, placeholders map[string]string) {
 		direct, protected = value, value
 		placeholders = make(map[string]string)
 		for _, sub := range nameSubs {
-			if !strings.Contains(direct, sub.japanese) {
+			if !sub.pattern.MatchString(protected) {
 				continue
 			}
-			direct = strings.ReplaceAll(direct, sub.japanese, sub.hangul)
-			protected = strings.ReplaceAll(protected, sub.japanese, sub.token)
+			direct = sub.pattern.ReplaceAllStringFunc(direct, func(string) string { return sub.hangul })
+			protected = sub.pattern.ReplaceAllStringFunc(protected, func(string) string { return sub.token })
 			placeholders[sub.token] = sub.hangul
 		}
 		return direct, protected, placeholders

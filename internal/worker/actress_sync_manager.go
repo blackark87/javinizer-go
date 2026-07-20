@@ -382,6 +382,7 @@ func (m *ActressSyncManager) processActress(ctx context.Context, task *models.Ac
 	}
 	preserveExistingProfile := existing.DMMID > 0 && hasUsableActressIdentityProfile(*existing)
 	cfg := m.deps.GetConfig()
+	needsKoreanTranslation := needsKoreanActressTranslation(cfg.Metadata.Translation, *existing)
 	m.setStage(task, "resolving")
 	result, err := SyncActressMetadata(ctx, *task.ActressID, m.deps.ActressRepo, m.deps.GetRegistry(), cfg.Scrapers.Priority, m.deps.MovieRepo)
 	if err != nil {
@@ -401,7 +402,7 @@ func (m *ActressSyncManager) processActress(ctx context.Context, task *models.Ac
 	}
 	canonical := result.Actress
 
-	if !preserveExistingProfile || containsAnyField(result.UpdatedFields, "japanese_name") {
+	if !preserveExistingProfile || containsAnyField(result.UpdatedFields, "japanese_name") || needsKoreanTranslation {
 		m.setStage(task, "romanizing")
 		if translation.ApplyDMMHepburnName(&canonical) {
 			if err := m.deps.ActressRepo.Update(ctx, &canonical); err != nil {
@@ -526,6 +527,9 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 			info.ThumbURL = safeResolveActressThumbnail(ctx, thumbnailResolver, info)
 		}
 		needsNameEnrichment := existing == nil || !hasUsableActressIdentityProfile(*existing)
+		if existing != nil && needsKoreanActressTranslation(m.deps.GetConfig().Metadata.Translation, *existing) {
+			needsNameEnrichment = true
+		}
 		var resolution *database.VerifiedActressResolution
 		var resolveErr error
 		if profileResolved[info.DMMID] {
@@ -911,6 +915,18 @@ func verifiedActresses(result *models.ScraperResult) []models.ActressInfo {
 
 func hasUsableActressIdentityProfile(actress models.Actress) bool {
 	return hasUsableActressJapaneseName(actress.JapaneseName) && hasUsableActressPrimaryProfile(actress)
+}
+
+// needsKoreanActressTranslation is deliberately separate from identity
+// completeness. DMM romanized first/last names are valid identity metadata,
+// but they are not a completed Korean display name.
+func needsKoreanActressTranslation(cfg config.TranslationConfig, actress models.Actress) bool {
+	target := strings.ToLower(strings.TrimSpace(cfg.TargetLanguage))
+	if !cfg.Enabled || !cfg.Fields.Actresses || (target != "ko" && !strings.HasPrefix(target, "ko-") && !strings.HasPrefix(target, "ko_")) {
+		return false
+	}
+	primary := translatedActressPrimaryName(actress)
+	return primary == "" || !containsHangul(primary)
 }
 
 func hasUsableActressJapaneseName(name string) bool {

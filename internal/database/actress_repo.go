@@ -71,7 +71,38 @@ func (r *ActressRepository) FindByID(ctx context.Context, id uint) (*models.Actr
 
 // Delete removes the actress with the given primary key.
 func (r *ActressRepository) Delete(ctx context.Context, id uint) error {
-	return r.BaseRepository.Delete(ctx, id)
+	if id == 0 {
+		return wrapDBErr("delete", "actress 0", ErrInvalidLookup)
+	}
+	err := retryOnLocked(func() error {
+		return r.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := deleteActressRelationsTx(tx, []uint{id}); err != nil {
+				return err
+			}
+			return tx.Delete(&models.Actress{}, id).Error
+		})
+	})
+	return wrapDBErr("delete", fmt.Sprintf("actress %d", id), err)
+}
+
+func deleteActressRelationsTx(tx *gorm.DB, ids []uint) error {
+	if err := tx.Exec("DELETE FROM movie_actresses WHERE actress_id IN ?", ids).Error; err != nil {
+		return err
+	}
+	if tx.Migrator().HasTable(&models.ActressTranslation{}) {
+		if err := tx.Where("actress_id IN ?", ids).Delete(&models.ActressTranslation{}).Error; err != nil {
+			return err
+		}
+	}
+	if tx.Migrator().HasTable(&models.ActressAlias{}) {
+		if err := tx.Model(&models.ActressAlias{}).Where("alias_actress_id IN ?", ids).Update("alias_actress_id", 0).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&models.ActressAlias{}).Where("canonical_actress_id IN ?", ids).Update("canonical_actress_id", 0).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DeleteByIDs deletes actress rows and their movie associations atomically.
@@ -82,7 +113,7 @@ func (r *ActressRepository) DeleteByIDs(ctx context.Context, ids []uint) (int64,
 	var deleted int64
 	err := retryOnLocked(func() error {
 		return r.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			if err := tx.Exec("DELETE FROM movie_actresses WHERE actress_id IN ?", ids).Error; err != nil {
+			if err := deleteActressRelationsTx(tx, ids); err != nil {
 				return err
 			}
 			res := tx.Where("id IN ?", ids).Delete(&models.Actress{})
@@ -104,8 +135,14 @@ func (r *ActressRepository) DeleteAll(ctx context.Context) (int64, error) {
 	var deleted int64
 	err := retryOnLocked(func() error {
 		return r.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			if err := tx.Exec("DELETE FROM movie_actresses").Error; err != nil {
+			var ids []uint
+			if err := tx.Model(&models.Actress{}).Pluck("id", &ids).Error; err != nil {
 				return err
+			}
+			if len(ids) > 0 {
+				if err := deleteActressRelationsTx(tx, ids); err != nil {
+					return err
+				}
 			}
 			res := tx.Where("1 = 1").Delete(&models.Actress{})
 			if res.Error != nil {

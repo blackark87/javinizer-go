@@ -365,7 +365,7 @@ func parseActressIdentityPage(doc *goquery.Document, matchedName string) (models
 	}
 	primary := identities[0]
 	return models.ActressInfo{
-		DMMID: primary.DMMID, JapaneseName: primary.JapaneseName,
+		DMMID: primary.DMMID, JapaneseName: primary.JapaneseName, Reading: primary.Reading,
 		AliasIdentities: append([]models.ActressIdentity(nil), identities[1:]...),
 	}, true
 }
@@ -375,8 +375,9 @@ func extractHeadingActressIdentities(heading *goquery.Selection, fallbackName st
 		return nil
 	}
 	type candidate struct {
-		id   int
-		name string
+		id      int
+		name    string
+		reading string
 	}
 	candidates := make([]candidate, 0)
 	seen := make(map[int]struct{})
@@ -397,7 +398,8 @@ func extractHeadingActressIdentities(heading *goquery.Selection, fallbackName st
 			return
 		}
 		seen[dmmID] = struct{}{}
-		candidates = append(candidates, candidate{id: dmmID, name: cleanCanonicalActressName(link.Text())})
+		name, reading := splitCanonicalActressNameReading(link.Text())
+		candidates = append(candidates, candidate{id: dmmID, name: name, reading: reading})
 	})
 	if len(candidates) == 0 {
 		return nil
@@ -415,7 +417,7 @@ func extractHeadingActressIdentities(heading *goquery.Selection, fallbackName st
 		if name == "" {
 			continue
 		}
-		identities = append(identities, models.ActressIdentity{DMMID: item.id, JapaneseName: name})
+		identities = append(identities, models.ActressIdentity{DMMID: item.id, JapaneseName: name, Reading: item.reading})
 	}
 	return identities
 }
@@ -461,7 +463,7 @@ func parseVerifiedActressPage(doc *goquery.Document, movieID, fallbackName strin
 	}
 	primary := identities[0]
 	return models.ActressInfo{
-		DMMID: primary.DMMID, JapaneseName: primary.JapaneseName,
+		DMMID: primary.DMMID, JapaneseName: primary.JapaneseName, Reading: primary.Reading,
 		AliasIdentities: append([]models.ActressIdentity(nil), identities[1:]...),
 	}, true
 }
@@ -480,9 +482,22 @@ func isDMMActressURL(raw string) bool {
 }
 
 func cleanCanonicalActressName(name string) string {
+	cleaned, _ := splitCanonicalActressNameReading(name)
+	return cleaned
+}
+
+func splitCanonicalActressNameReading(name string) (string, string) {
 	name = scraperutil.CleanString(name)
+	reading := ""
+	if match := readingSuffixPattern.FindStringSubmatch(name); len(match) > 0 {
+		suffix := match[0]
+		suffix = strings.TrimSpace(strings.Trim(suffix, "（）()"))
+		if suffix != "" && regexp.MustCompile(`^[ぁ-んァ-ヶー・]+$`).MatchString(suffix) {
+			reading = suffix
+		}
+	}
 	name = readingSuffixPattern.ReplaceAllString(name, "")
-	return strings.TrimSpace(name)
+	return strings.TrimSpace(name), reading
 }
 
 var _ models.ActressIdentityResolver = (*Scraper)(nil)

@@ -89,6 +89,18 @@ func TestResolveActressesKnownMappingsEUCJP(t *testing.T) {
 	}
 }
 
+func TestExtractHeadingActressIdentitiesKeepsReadingPerDMMIdentity(t *testing.T) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(`<h3 id="content_1">
+		<a href="https://www.dmm.co.jp/mono/dvd/-/list/=/article=actress/id=1083266/">星まりあ（ほしまりあ）</a>／
+		<a href="https://www.dmm.co.jp/mono/dvd/-/list/=/article=actress/id=1061509/">天音まひな（あまねまひな）</a>
+	</h3>`))
+	require.NoError(t, err)
+	identities := extractHeadingActressIdentities(doc.Find("h3"), "星まりあ")
+	require.Len(t, identities, 2)
+	assert.Equal(t, models.ActressIdentity{DMMID: 1083266, JapaneseName: "星まりあ", Reading: "ほしまりあ"}, identities[0])
+	assert.Equal(t, models.ActressIdentity{DMMID: 1061509, JapaneseName: "天音まひな", Reading: "あまねまひな"}, identities[1])
+}
+
 func TestDisabledScraperStillAllowsDedicatedActressResolution(t *testing.T) {
 	server := newFixtureServer(t, func(_ string, request *http.Request) (string, int) {
 		switch request.URL.Path {

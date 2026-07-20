@@ -321,6 +321,7 @@ func (s *Scraper) enrichResolvedActressProfiles(ctx context.Context, result *mod
 					actress.ObservedAliases = appendUniqueActressAlias(actress.ObservedAliases, observedName)
 				}
 				actress.JapaneseName = profileName
+				actress.Reading = strings.TrimSpace(profile.Reading)
 				actress.FirstName = strings.TrimSpace(profile.FirstName)
 				actress.LastName = strings.TrimSpace(profile.LastName)
 				if strings.TrimSpace(profile.ThumbURL) != "" {
@@ -345,12 +346,13 @@ func (s *Scraper) enrichResolvedActressProfiles(ctx context.Context, result *mod
 				continue
 			}
 			profile, err := safeActressProfile(ctx, profileResolver, models.ActressInfo{
-				DMMID: alias.DMMID, JapaneseName: alias.JapaneseName,
+				DMMID: alias.DMMID, JapaneseName: alias.JapaneseName, Reading: alias.Reading,
 			})
 			if err != nil || strings.TrimSpace(profile.JapaneseName) == "" {
 				continue
 			}
 			alias.JapaneseName = strings.TrimSpace(profile.JapaneseName)
+			alias.Reading = strings.TrimSpace(profile.Reading)
 			alias.FirstName = strings.TrimSpace(profile.FirstName)
 			alias.LastName = strings.TrimSpace(profile.LastName)
 			alias.ThumbURL = strings.TrimSpace(profile.ThumbURL)
@@ -405,12 +407,14 @@ func reconcileVerifiedAliasGroups(results []*models.ScraperResult, repo database
 			canonical := models.Actress{
 				DMMID: info.DMMID, FirstName: info.FirstName, LastName: info.LastName,
 				JapaneseName: info.JapaneseName, ThumbURL: info.ThumbURL,
+				Reading: info.Reading,
 			}
 			aliases := make([]models.Actress, 0, len(info.AliasIdentities))
 			for _, alias := range info.AliasIdentities {
 				aliases = append(aliases, models.Actress{
 					DMMID: alias.DMMID, FirstName: alias.FirstName, LastName: alias.LastName,
 					JapaneseName: alias.JapaneseName, ThumbURL: alias.ThumbURL,
+					Reading: alias.Reading,
 				})
 			}
 			if err := resolver.ResolveVerifiedAliasGroup(canonical, aliases); err != nil {

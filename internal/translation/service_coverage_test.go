@@ -264,6 +264,21 @@ func TestBuildOpenAICompatibleThinkingStrategies_LlamaCppAutoDetect(t *testing.T
 	assert.Equal(t, openAICompatibleThinkingStrategyEnableThinking, strategies[0])
 }
 
+func TestBuildOpenAICompatibleThinkingStrategies_LMStudioAutoDetect(t *testing.T) {
+	strategies := buildOpenAICompatibleThinkingStrategies("http://192.168.1.100:1234/v1", "model", openAICompatibleConfig{})
+	assert.Equal(t, openAICompatibleThinkingStrategyEnableThinking, strategies[0])
+}
+
+func TestModelOutputFormatErrorRetriesSameTranslationStrategy(t *testing.T) {
+	err := &translationError{
+		Kind: TranslationErrorHTTPStatus, StatusCode: 400,
+		Message: "The model produced output that does not match the expected peg-gemma4 format",
+	}
+	assert.True(t, isModelOutputFormatError(err))
+	assert.False(t, isRetryableThinkingStrategyError(err))
+	assert.True(t, isRetryableError(err, nil))
+}
+
 func TestParseLLMTranslationPayload_CompactFormat(t *testing.T) {
 	payload := "<<<JZ_0>>>\nhello\n<<<JZ_1>>>\nworld"
 	result, err := parseLLMTranslationPayload(payload, 2)

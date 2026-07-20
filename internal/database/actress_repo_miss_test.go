@@ -391,6 +391,29 @@ func TestActressRepository_Delete(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestActressRepository_DeleteCleansRelations(t *testing.T) {
+	db := newDatabaseTestDB(t)
+	repo := NewActressRepository(db)
+	actress := &models.Actress{DMMID: 64002, JapaneseName: "関連削除対象"}
+	require.NoError(t, repo.Create(context.Background(), actress))
+	require.NoError(t, db.Create(&models.ActressTranslation{ActressID: actress.ID, Language: "ko", DisplayName: "삭제 대상"}).Error)
+	require.NoError(t, db.Create(&models.ActressAlias{AliasName: "旧関連削除対象", CanonicalName: actress.JapaneseName, AliasActressID: actress.ID, CanonicalActressID: actress.ID}).Error)
+	movie := &models.Movie{ContentID: "delete-relations-001", ID: "DEL-001", Actresses: []models.Actress{*actress}}
+	_, err := NewMovieRepository(db).Upsert(context.Background(), movie)
+	require.NoError(t, err)
+
+	require.NoError(t, repo.Delete(context.Background(), actress.ID))
+	var translationCount, mappingCount int64
+	require.NoError(t, db.Model(&models.ActressTranslation{}).Where("actress_id = ?", actress.ID).Count(&translationCount).Error)
+	require.NoError(t, db.Table("movie_actresses").Where("actress_id = ?", actress.ID).Count(&mappingCount).Error)
+	assert.Zero(t, translationCount)
+	assert.Zero(t, mappingCount)
+	var alias models.ActressAlias
+	require.NoError(t, db.Where("alias_name = ?", "旧関連削除対象").First(&alias).Error)
+	assert.Zero(t, alias.AliasActressID)
+	assert.Zero(t, alias.CanonicalActressID)
+}
+
 // --- Update ---
 
 func TestActressRepository_Update(t *testing.T) {

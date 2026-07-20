@@ -92,6 +92,10 @@ func enrichActressFields(actress *models.Actress, dbActress *models.Actress) boo
 		actress.JapaneseName = dbActress.JapaneseName
 		changed = true
 	}
+	if actress.Reading == "" && dbActress.Reading != "" {
+		actress.Reading = dbActress.Reading
+		changed = true
+	}
 	if changed {
 		logging.Debugf("Enriched actress %s from database (ThumbURL=%s)", actress.FullName(), actress.ThumbURL)
 	}

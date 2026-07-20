@@ -402,7 +402,7 @@ func (m *ActressSyncManager) processActress(ctx context.Context, task *models.Ac
 	}
 	canonical := result.Actress
 
-	if !preserveExistingProfile || containsAnyField(result.UpdatedFields, "japanese_name") || needsKoreanTranslation {
+	if !preserveExistingProfile || containsAnyField(result.UpdatedFields, "japanese_name", "reading") || needsKoreanTranslation {
 		m.setStage(task, "romanizing")
 		if translation.ApplyDMMHepburnName(&canonical) {
 			if err := m.deps.ActressRepo.Update(ctx, &canonical); err != nil {
@@ -421,7 +421,7 @@ func (m *ActressSyncManager) processActress(ctx context.Context, task *models.Ac
 		}
 	}
 
-	displayChanged := containsAnyField(task.UpdatedFields, "hepburn_name", "translated_name", "japanese_name", "first_name", "last_name")
+	displayChanged := containsAnyField(task.UpdatedFields, "hepburn_name", "translated_name", "japanese_name", "reading", "first_name", "last_name")
 	translationChanged := containsAnyField(task.UpdatedFields, "actress_translations")
 	thumbnailChanged := containsAnyField(task.UpdatedFields, "thumb_url")
 	if displayChanged || translationChanged || thumbnailChanged {
@@ -497,6 +497,7 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 				continue
 			}
 			resolved.Actresses[index].JapaneseName = strings.TrimSpace(profile.JapaneseName)
+			resolved.Actresses[index].Reading = strings.TrimSpace(profile.Reading)
 			resolved.Actresses[index].FirstName = strings.TrimSpace(profile.FirstName)
 			resolved.Actresses[index].LastName = strings.TrimSpace(profile.LastName)
 			if strings.TrimSpace(profile.ThumbURL) != "" {
@@ -547,6 +548,7 @@ func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *mode
 		}
 		if resolution.NameChanged {
 			task.UpdatedFields = appendUnique(task.UpdatedFields, "japanese_name")
+			task.UpdatedFields = appendUnique(task.UpdatedFields, "reading")
 			needsNameEnrichment = true
 		}
 		if existing != nil && strings.TrimSpace(existing.ThumbURL) != strings.TrimSpace(resolution.Actress.ThumbURL) {

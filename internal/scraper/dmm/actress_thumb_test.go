@@ -239,6 +239,13 @@ func TestExtractActressProfileNameRemovesReadings(t *testing.T) {
 	}
 }
 
+func TestExtractActressProfileNameAndReadingKeepsAuthoritativeKana(t *testing.T) {
+	doc := docFromHTMLDMM(t, "<html><head><title>天然美月（天然かのん）(あまねみづき) - FANZA</title></head></html>")
+	name, reading := extractActressProfileNameAndReading(doc)
+	assert.Equal(t, "天然美月", name)
+	assert.Equal(t, "あまねみづき", reading)
+}
+
 func TestTryActressThumbURLs_VariantGeneration(t *testing.T) {
 	// This tests the URL generation logic without actually making HTTP requests
 	tests := []struct {

@@ -100,6 +100,9 @@ func normalizeSQLiteDSN(dsn string) string {
 	// `:memory:` is scoped per SQLite connection. Goose migration checks and applies
 	// can use multiple connections, so convert to a unique shared-cache memory URI.
 	next := sqliteMemoryDSNCounter.Add(1)
+	// Keep foreign-key enforcement off for the shared in-memory compatibility
+	// database: a number of repository unit tests intentionally construct child
+	// rows in isolation. File-backed production databases enable it below.
 	return fmt.Sprintf("file:javinizer_mem_%d_%d?mode=memory&cache=shared&_busy_timeout=5000", time.Now().UnixNano(), next)
 }
 
@@ -128,12 +131,15 @@ func dsnParamSep(dsn string) byte {
 func enhanceFileSQLiteDSN(dsn string) string {
 	lower := strings.ToLower(dsn)
 	sep := dsnParamSep(dsn)
-	additions := make([]string, 0, 2)
+	additions := make([]string, 0, 3)
 	if !strings.Contains(lower, "_journal_mode=") && !strings.Contains(lower, "_pragma=journal_mode") {
 		additions = append(additions, "_journal_mode=WAL")
 	}
 	if !strings.Contains(lower, "_busy_timeout=") {
 		additions = append(additions, "_busy_timeout=5000")
+	}
+	if !strings.Contains(lower, "_foreign_keys=") && !strings.Contains(lower, "_fk=") {
+		additions = append(additions, "_foreign_keys=on")
 	}
 	if len(additions) == 0 {
 		return dsn

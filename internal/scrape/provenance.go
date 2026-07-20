@@ -254,6 +254,7 @@ func ScraperResultFromCachedMovie(movie *models.Movie) *models.ScraperResult {
 				FirstName:    a.FirstName,
 				LastName:     a.LastName,
 				JapaneseName: a.JapaneseName,
+				Reading:      a.Reading,
 				ThumbURL:     a.ThumbURL,
 			})
 		}

@@ -10,6 +10,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/history"
+	"github.com/javinizer/javinizer-go/internal/maintenance"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/spf13/cobra"
 )
@@ -65,8 +66,41 @@ func NewCommand() *cobra.Command {
 	historyCleanCmd.Flags().IntP("days", "d", 30, "Delete records older than this many days")
 
 	revertCmd := NewRevertCommand()
+	reprocessJobCmd := &cobra.Command{
+		Use:   "reprocess-job <job-id>",
+		Short: "Retranslate and remap a pending-organize job from stored sources",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			configFile, _ := cmd.Flags().GetString("config")
+			apply, _ := cmd.Flags().GetBool("apply")
+			additionalModels, _ := cmd.Flags().GetStringSlice("additional-model")
+			cfg, err := config.LoadOrCreate(configFile)
+			if err != nil {
+				return fmt.Errorf("failed to load config: %w", err)
+			}
+			deps, err := commandutil.NewDependencies(cfg)
+			if err != nil {
+				return fmt.Errorf("failed to initialize dependencies: %w", err)
+			}
+			defer func() { _ = deps.Close() }()
+			report, err := maintenance.ReprocessStoredJobWithOptions(cmd.Context(), deps.DB, cfg, args[0], maintenance.JobReprocessOptions{
+				Apply: apply, AdditionalModels: additionalModels,
+			})
+			if err != nil {
+				return err
+			}
+			mode := "dry-run"
+			if report.Applied {
+				mode = "applied"
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Job %s %s: results=%d translated_sources=%d unknown_casts=%d\n", report.JobID, mode, report.Results, report.SourcesTranslated, report.UnknownCasts)
+			return nil
+		},
+	}
+	reprocessJobCmd.Flags().Bool("apply", false, "Persist the staged result atomically (default is dry-run)")
+	reprocessJobCmd.Flags().StringSlice("additional-model", nil, "Additional OpenAI-compatible model IDs used by the worker pool")
 
-	historyCmd.AddCommand(historyListCmd, historyStatsCmd, historyMovieCmd, historyCleanCmd, revertCmd)
+	historyCmd.AddCommand(historyListCmd, historyStatsCmd, historyMovieCmd, historyCleanCmd, revertCmd, reprocessJobCmd)
 	return historyCmd
 }
 

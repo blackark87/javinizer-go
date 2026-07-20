@@ -168,6 +168,7 @@ type ActressInfo struct {
 	FirstName    string `json:"first_name"`
 	LastName     string `json:"last_name"`
 	JapaneseName string `json:"japanese_name"`
+	Reading      string `json:"reading,omitempty"`
 	ThumbURL     string `json:"thumb_url"`
 	// ObservedAliases contains activity names seen before an authoritative DMM
 	// profile replaced JapaneseName. Raw scraper results leave this empty.
@@ -186,6 +187,7 @@ type ActressIdentity struct {
 	FirstName    string `json:"first_name,omitempty"`
 	LastName     string `json:"last_name,omitempty"`
 	JapaneseName string `json:"japanese_name"`
+	Reading      string `json:"reading,omitempty"`
 	ThumbURL     string `json:"thumb_url,omitempty"`
 }
 

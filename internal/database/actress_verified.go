@@ -235,6 +235,7 @@ resolvedCanonical:
 			"first_name":    canonical.FirstName,
 			"last_name":     canonical.LastName,
 			"japanese_name": canonical.JapaneseName,
+			"reading":       canonical.Reading,
 			"thumb_url":     canonical.ThumbURL,
 			"aliases":       canonical.Aliases,
 			"updated_at":    time.Now().UTC(),
@@ -248,7 +249,7 @@ resolvedCanonical:
 		return nil, err
 	}
 
-	nameChanged := before.JapaneseName != canonical.JapaneseName || before.FirstName != canonical.FirstName || before.LastName != canonical.LastName
+	nameChanged := before.JapaneseName != canonical.JapaneseName || before.Reading != canonical.Reading || before.FirstName != canonical.FirstName || before.LastName != canonical.LastName
 	if !created && nameChanged && tx.Migrator().HasTable(&models.ActressTranslation{}) {
 		if err := tx.Where("actress_id = ?", canonical.ID).Delete(&models.ActressTranslation{}).Error; err != nil {
 			return nil, wrapDBErr("delete", fmt.Sprintf("stale actress translations %d", canonical.ID), err)
@@ -310,6 +311,7 @@ func sanitizedVerifiedActress(verified models.Actress) models.Actress {
 	verified.CreatedAt = time.Time{}
 	verified.UpdatedAt = time.Time{}
 	verified.JapaneseName = strings.TrimSpace(verified.JapaneseName)
+	verified.Reading = strings.TrimSpace(verified.Reading)
 	verified.FirstName = strings.TrimSpace(verified.FirstName)
 	verified.LastName = strings.TrimSpace(verified.LastName)
 	verified.ThumbURL = strings.TrimSpace(verified.ThumbURL)
@@ -320,6 +322,9 @@ func sanitizedVerifiedActress(verified models.Actress) models.Actress {
 func applyVerifiedActress(verified, canonical *models.Actress, observedAliases []string, authoritativeProfile bool) (bool, []string) {
 	before := *canonical
 	canonical.DMMID = verified.DMMID
+	if value := strings.TrimSpace(verified.Reading); value != "" && (authoritativeProfile || strings.TrimSpace(canonical.Reading) == "") {
+		canonical.Reading = value
+	}
 
 	oldJapanese := strings.TrimSpace(canonical.JapaneseName)
 	newJapanese := strings.TrimSpace(verified.JapaneseName)
@@ -373,7 +378,7 @@ func applyVerifiedActress(verified, canonical *models.Actress, observedAliases [
 	}
 
 	profileChanged := before.DMMID != canonical.DMMID || before.JapaneseName != canonical.JapaneseName ||
-		before.FirstName != canonical.FirstName || before.LastName != canonical.LastName || before.ThumbURL != canonical.ThumbURL
+		before.Reading != canonical.Reading || before.FirstName != canonical.FirstName || before.LastName != canonical.LastName || before.ThumbURL != canonical.ThumbURL
 	return profileChanged, aliasesAdded
 }
 

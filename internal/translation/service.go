@@ -218,7 +218,11 @@ func (s *Service) BuildTranslationPlan(scraped *models.Movie, targetLang, source
 		if models.IsUnknownActressName(actress.FirstName) || models.IsUnknownActressName(actress.JapaneseName) {
 			continue
 		}
-		if last, first, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL); ok {
+		if strings.TrimSpace(actress.Reading) != "" {
+			// A profile reading is authoritative. Thumbnail slugs can retain an
+			// older activity name and must only be used when no reading exists.
+			actressSourceNames[i] = strings.TrimSpace(actress.Reading)
+		} else if last, first, ok := extractNamesFromDMMActjpgsURL(actress.ThumbURL); ok {
 			actressSourceNames[i] = joinRomanizedName(last, first)
 		} else if romanized := romanizedActressName(actress); romanized != "" {
 			actressSourceNames[i] = romanized
@@ -587,6 +591,79 @@ func (s *Service) TranslateMovie(ctx context.Context, scraped *models.Movie, set
 	return output, warning, nil
 }
 
+// QualityReviewField pairs a Japanese source field with its first-pass Korean translation.
+type QualityReviewField struct {
+	FieldName string
+	Source    string
+	Candidate string
+}
+
+// ReviewJAVTranslations performs a mandatory second LLM pass over first-pass JAV translations.
+// It is intentionally limited to chat-based OpenAI providers because the review prompt needs
+// the original and candidate text as distinct inputs.
+func (s *Service) ReviewJAVTranslations(ctx context.Context, fields []QualityReviewField) ([]string, error) {
+	if s == nil {
+		return nil, fmt.Errorf("translation: ReviewJAVTranslations called on nil Service")
+	}
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	providerName := normalizeProvider(s.cfg.Provider)
+	if providerName != "openai" && providerName != "openai-compatible" {
+		return nil, fmt.Errorf("quality review requires an OpenAI chat provider, got %s", providerName)
+	}
+	provider, ok := s.providers[providerName]
+	if !ok {
+		return nil, fmt.Errorf("unsupported translation provider: %s", s.cfg.Provider)
+	}
+	markers := make([]string, len(fields))
+	texts := make([]string, len(fields))
+	items := make([]qualityReviewItem, len(fields))
+	for i, field := range fields {
+		name := strings.TrimSpace(field.FieldName)
+		if name == "" {
+			name = fmt.Sprintf("quality_review_%d", i)
+		}
+		markers[i] = name
+		texts[i] = field.Candidate
+		items[i] = qualityReviewItem{Source: field.Source, Candidate: field.Candidate}
+	}
+	targetLanguages := s.TargetLanguages()
+	if len(targetLanguages) == 0 {
+		return nil, fmt.Errorf("target language is required")
+	}
+	reviewCtx := withQualityReview(withTranslationMarkers(ctx, markers), items)
+	reviewed, err := s.translateWithProvider(reviewCtx, provider, sourceLangAuto, targetLanguages[0], texts)
+	if err != nil {
+		if len(fields) > 1 && shouldSplitLLMRequest(err) {
+			result := make([]string, 0, len(fields))
+			for _, field := range fields {
+				one, oneErr := s.ReviewJAVTranslations(ctx, []QualityReviewField{field})
+				if oneErr != nil {
+					return nil, oneErr
+				}
+				result = append(result, one[0])
+			}
+			return result, nil
+		}
+		return nil, err
+	}
+	for i := range reviewed {
+		reviewed[i] = sanitizeQualityReviewText(reviewed[i])
+	}
+	return reviewed, nil
+}
+
+func sanitizeQualityReviewText(value string) string {
+	value = strings.TrimSpace(value)
+	for _, prefix := range []string{"[corrected Korean]", "[corrected korean]", "[교정된 한국어]", "[translation]"} {
+		if strings.HasPrefix(value, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(value, prefix))
+		}
+	}
+	return value
+}
+
 func isTitleTranslationField(fieldName string) bool {
 	return fieldName == "title" || fieldName == "title_as_name"
 }
@@ -804,7 +881,7 @@ func (s *Service) translateTexts(ctx context.Context, sourceLang, targetLang str
 	translated, err := s.translateWithProvider(withTranslationMarkers(ctx, fieldNames), provider, sourceLang, targetLang, texts)
 	if err != nil {
 		var translationErr *translationError
-		if len(texts) > 1 && errors.As(err, &translationErr) && translationErr.Kind == TranslationErrorParse {
+		if len(texts) > 1 && ((errors.As(err, &translationErr) && translationErr.Kind == TranslationErrorParse) || shouldSplitLLMRequest(err)) {
 			return s.translateTextsOneByOne(ctx, sourceLang, targetLang, texts, fieldNames)
 		}
 		return nil, err
@@ -814,6 +891,14 @@ func (s *Service) translateTexts(ctx context.Context, sourceLang, targetLang str
 		return s.translateTextsOneByOne(ctx, sourceLang, targetLang, texts, fieldNames)
 	}
 	return translated, nil
+}
+
+func shouldSplitLLMRequest(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "peg-gemma4") || strings.Contains(message, "channel error") || strings.Contains(message, "context size has been exceeded")
 }
 
 func hasSlotWordCountAnomaly(inputs, outputs []string) bool {
@@ -925,6 +1010,8 @@ func isRetryableError(err error, result *translationResult) bool {
 		switch te.Kind {
 		case TranslationErrorCountMismatch, TranslationErrorParse:
 			return result != nil && result.RawLLM != ""
+		case TranslationErrorHTTPStatus:
+			return isModelOutputFormatError(te)
 		default:
 			return false
 		}

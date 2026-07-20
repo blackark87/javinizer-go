@@ -108,9 +108,24 @@ func applyOpenAICompatibleThinkingStrategy(base openAIChatRequest, strategy open
 func isRetryableThinkingStrategyError(err error) bool {
 	var te *translationError
 	if errors.As(err, &te) && te.Kind == TranslationErrorHTTPStatus {
+		// A malformed model reasoning stream is stochastic output, not an
+		// unsupported thinking-control field. Retrying the same preferred
+		// strategy is useful; changing control formats is not.
+		if isModelOutputFormatError(te) {
+			return false
+		}
 		return te.StatusCode == 400 || te.StatusCode == 422
 	}
 	return false
+}
+
+func isModelOutputFormatError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "does not match the expected peg-") ||
+		strings.Contains(message, "model produced output") && strings.Contains(message, "format")
 }
 
 // looksLikeOllamaBaseURL heuristically detects an Ollama server from its URL.
@@ -131,7 +146,9 @@ func looksLikeLlamaCppBackend(baseURL, model string) bool {
 	if err == nil {
 		host := strings.ToLower(parsed.Host)
 		path := strings.ToLower(parsed.Path)
-		if strings.Contains(host, "llama") || strings.Contains(path, "llama") {
+		// LM Studio's local OpenAI-compatible server defaults to port 1234 and
+		// uses llama.cpp-style thinking controls.
+		if strings.Contains(host, "llama") || strings.Contains(path, "llama") || parsed.Port() == "1234" {
 			return true
 		}
 	}

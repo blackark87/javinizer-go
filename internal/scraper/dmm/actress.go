@@ -624,11 +624,11 @@ func (s *scraper) ResolveActressProfile(ctx context.Context, actress models.Actr
 	if err != nil {
 		return models.ActressInfo{}, err
 	}
-	name := extractActressProfileName(doc)
+	name, reading := extractActressProfileNameAndReading(doc)
 	if name == "" || shouldSkipActressName(name) {
 		return models.ActressInfo{}, fmt.Errorf("DMM actress profile %d has no usable name", actress.DMMID)
 	}
-	profile := models.ActressInfo{DMMID: actress.DMMID, JapaneseName: name}
+	profile := models.ActressInfo{DMMID: actress.DMMID, JapaneseName: name, Reading: reading}
 	if candidates := extractActressProfileImageCandidates(doc); len(candidates) > 0 {
 		profile.ThumbURL = candidates[0]
 	}
@@ -668,18 +668,33 @@ func (s *scraper) fetchActressPageDocResult(ctx context.Context, dmmID int) (*go
 }
 
 func extractActressProfileName(doc *goquery.Document) string {
+	name, _ := extractActressProfileNameAndReading(doc)
+	return name
+}
+
+var trailingActressReadingPattern = regexp.MustCompile(`[（(]([ぁ-んァ-ヶー・]+)[）)]\s*$`)
+
+func extractActressProfileNameAndReading(doc *goquery.Document) (string, string) {
 	if doc == nil {
-		return ""
+		return "", ""
 	}
 	title := scraperutil.CleanString(doc.Find("title").First().Text())
 	lowerTitle := strings.ToLower(title)
 	if strings.Contains(title, "ご利用になれません") || strings.Contains(lowerTitle, "not available in your region") {
-		return ""
+		return "", ""
 	}
 	if idx := strings.Index(title, " - "); idx >= 0 {
 		title = strings.TrimSpace(title[:idx])
 	}
-	return cleanActressName(title)
+	reading := ""
+	if match := trailingActressReadingPattern.FindStringSubmatch(title); len(match) == 2 {
+		reading = strings.TrimSpace(match[1])
+		title = strings.TrimSpace(trailingActressReadingPattern.ReplaceAllString(title, ""))
+	}
+	// cleanActressName removes remaining parenthetical readings/decorations but
+	// retains surrounding name tokens. Alias identity is established separately
+	// from DMM-ID-backed SougouWiki data, never from this decoration alone.
+	return cleanActressName(title), reading
 }
 
 func extractRomajiVariantsFromActressDoc(doc *goquery.Document) []string {

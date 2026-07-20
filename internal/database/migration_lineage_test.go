@@ -56,7 +56,7 @@ func TestRunMigrationsOnStartup_UpgradesLegacyFeatureV12(t *testing.T) {
 	currentProvider := newMigrationProvider(t, sqlDB)
 	currentVersion, err := currentProvider.GetDBVersion(context.Background())
 	require.NoError(t, err)
-	assert.Equal(t, int64(15), currentVersion)
+	assert.Equal(t, int64(16), currentVersion)
 
 	assertSchemaColumn(t, db, "jobs", "operation_mode_override", true)
 	assertSchemaColumn(t, db, "movies", "original_cover_url", true)
@@ -69,6 +69,7 @@ func TestRunMigrationsOnStartup_UpgradesLegacyFeatureV12(t *testing.T) {
 	assertSchemaTable(t, db, "actress_sync_tasks", true)
 	assertSchemaColumn(t, db, "actress_aliases", "alias_actress_id", true)
 	assertSchemaColumn(t, db, "actress_aliases", "canonical_actress_id", true)
+	assertSchemaColumn(t, db, "actresses", "reading", true)
 
 	var translation struct {
 		ID           uint
@@ -113,12 +114,13 @@ func TestRunMigrationsOnStartup_UpgradesUpstreamV11(t *testing.T) {
 	require.NoError(t, db.RunMigrationsOnStartup(context.Background()))
 	version, err := provider.GetDBVersion(context.Background())
 	require.NoError(t, err)
-	assert.Equal(t, int64(15), version)
+	assert.Equal(t, int64(16), version)
 	assertSchemaColumn(t, db, "movie_translations", "actresses", true)
 	assertSchemaColumn(t, db, "actress_translations", "settings_hash", true)
 	assertSchemaTable(t, db, "actress_sync_jobs", true)
 	assertSchemaColumn(t, db, "actress_aliases", "alias_actress_id", true)
 	assertSchemaColumn(t, db, "actress_aliases", "canonical_actress_id", true)
+	assertSchemaColumn(t, db, "actresses", "reading", true)
 }
 
 func legacyFeatureV12Filesystem(t *testing.T) fs.FS {

@@ -265,6 +265,7 @@ func actressesFromScraperInfo(infos []models.ActressInfo) []models.Actress {
 			FirstName:    info.FirstName,
 			LastName:     info.LastName,
 			JapaneseName: info.JapaneseName,
+			Reading:      info.Reading,
 			ThumbURL:     info.ThumbURL,
 		})
 	}

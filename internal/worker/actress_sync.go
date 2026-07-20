@@ -86,6 +86,9 @@ func SyncActressMetadata(
 			if resolution.NameChanged {
 				result.UpdatedFields = appendUnique(result.UpdatedFields, "japanese_name")
 			}
+			if strings.TrimSpace(resolution.Actress.Reading) != strings.TrimSpace(actress.Reading) {
+				result.UpdatedFields = appendUnique(result.UpdatedFields, "reading")
+			}
 			if strings.TrimSpace(resolution.Actress.ThumbURL) != strings.TrimSpace(actress.ThumbURL) {
 				result.UpdatedFields = appendUnique(result.UpdatedFields, "thumb_url")
 			}
@@ -276,6 +279,7 @@ func actressModelFromInfo(info models.ActressInfo) models.Actress {
 		FirstName:    strings.TrimSpace(info.FirstName),
 		LastName:     strings.TrimSpace(info.LastName),
 		JapaneseName: strings.TrimSpace(info.JapaneseName),
+		Reading:      strings.TrimSpace(info.Reading),
 		ThumbURL:     strings.TrimSpace(info.ThumbURL),
 	}
 }
@@ -305,5 +309,6 @@ func actressInfoForThumbnail(actress models.Actress) models.ActressInfo {
 		FirstName:    actress.FirstName,
 		LastName:     actress.LastName,
 		JapaneseName: actress.JapaneseName,
+		Reading:      actress.Reading,
 	}
 }

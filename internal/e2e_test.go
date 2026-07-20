@@ -348,8 +348,31 @@ func TestFullWorkflow(t *testing.T) {
 	// Step 9: Test database persistence
 	t.Log("Step 9: Testing database persistence")
 	movieRepo := database.NewMovieRepository(db)
+	actressRepo := database.NewActressRepository(db)
+	persistedGenreRepo := db.Repositories().GenreRepo
+	persistedActresses := make(map[string]models.Actress)
 
 	for _, movie := range movies {
+		for i := range movie.Actresses {
+			key := models.NormalizeActressNameKey(movie.Actresses[i].JapaneseName)
+			if persisted, ok := persistedActresses[key]; ok {
+				movie.Actresses[i] = persisted
+				continue
+			}
+			actress := movie.Actresses[i]
+			if err := actressRepo.Create(context.TODO(), &actress); err != nil {
+				t.Fatalf("Failed to save actress to database: %v", err)
+			}
+			persistedActresses[key] = actress
+			movie.Actresses[i] = actress
+		}
+		for i := range movie.Genres {
+			genre, err := persistedGenreRepo.FindOrCreate(context.TODO(), movie.Genres[i].Name)
+			if err != nil {
+				t.Fatalf("Failed to save genre to database: %v", err)
+			}
+			movie.Genres[i] = *genre
+		}
 		// Save movie to database
 		if err := movieRepo.Create(context.TODO(), movie); err != nil {
 			t.Fatalf("Failed to save movie to database: %v", err)

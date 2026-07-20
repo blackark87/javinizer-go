@@ -836,10 +836,10 @@ func TestMiss5_NormalizeSQLiteDSN_FilePath(t *testing.T) {
 	// busy timeout so concurrent worker-pool writes and API reads don't contend
 	// on SQLite's default locking (Fix C — see /tmp/concurrency-investigation-results.md).
 	result := normalizeSQLiteDSN("test.db")
-	assert.Equal(t, "test.db?_journal_mode=WAL&_busy_timeout=5000", result)
+	assert.Equal(t, "test.db?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on", result)
 	// Explicit params already present are preserved; only missing ones are added.
-	assert.Equal(t, "test.db?_busy_timeout=1000&_journal_mode=WAL", normalizeSQLiteDSN("test.db?_busy_timeout=1000"))
-	assert.Equal(t, "test.db?_journal_mode=WAL&_busy_timeout=5000", normalizeSQLiteDSN("test.db?_journal_mode=WAL"))
+	assert.Equal(t, "test.db?_busy_timeout=1000&_journal_mode=WAL&_foreign_keys=on", normalizeSQLiteDSN("test.db?_busy_timeout=1000"))
+	assert.Equal(t, "test.db?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on", normalizeSQLiteDSN("test.db?_journal_mode=WAL"))
 }
 
 func TestMiss5_MigrationLocker_EmptyDSN(t *testing.T) {

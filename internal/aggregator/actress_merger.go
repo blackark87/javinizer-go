@@ -155,6 +155,7 @@ func (m *actressMerger) Merge(sources []actressSource, opts actressMergeOptions)
 					FirstName:    info.FirstName,
 					LastName:     info.LastName,
 					JapaneseName: info.JapaneseName,
+					Reading:      info.Reading,
 					ThumbURL:     info.ThumbURL,
 					Aliases:      strings.Join(info.ObservedAliases, "|"),
 				}

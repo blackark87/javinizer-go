@@ -55,6 +55,25 @@ type openAIChatCallOptions struct {
 
 type translationMarkersContextKey struct{}
 
+type qualityReviewContextKey struct{}
+
+type qualityReviewItem struct {
+	Source    string
+	Candidate string
+}
+
+func withQualityReview(ctx context.Context, items []qualityReviewItem) context.Context {
+	return context.WithValue(ctx, qualityReviewContextKey{}, append([]qualityReviewItem(nil), items...))
+}
+
+func qualityReviewFromContext(ctx context.Context, count int) ([]qualityReviewItem, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	items, ok := ctx.Value(qualityReviewContextKey{}).([]qualityReviewItem)
+	return items, ok && len(items) == count
+}
+
 func withTranslationMarkers(ctx context.Context, fieldNames []string) context.Context {
 	markers := make([]string, len(fieldNames))
 	for i, fieldName := range fieldNames {
@@ -116,6 +135,30 @@ func buildLLMTranslationPromptsWithMarkers(sourceLang, targetLang string, texts,
 	return systemPrompt, strings.TrimSpace(userPrompt.String()), nil
 }
 
+func buildLLMQualityReviewPromptsWithMarkers(targetLang string, items []qualityReviewItem, markers []string) (string, string, error) {
+	if len(items) == 0 || len(markers) != len(items) {
+		return "", "", fmt.Errorf("quality review prompt requires one marker per item (%d markers for %d items)", len(markers), len(items))
+	}
+	systemPrompt := "You are the mandatory second-pass quality reviewer for strictly JAV/AV-studio metadata translated into Korean. Compare every Japanese source with its Korean candidate. Silently correct mistranslation, dictionary calques, Japanese slang transliteration, broken hybrid text, omitted meaning, invented meaning, awkward grammar, dated wording, and unnatural AV terminology. Preserve the source's explicitness and tone. Do not merely approve or critique the candidate: return the complete corrected final Korean text. Preserve protected tokens such as ⟦0⟧ exactly. Preserve correctly translated performer names and never replace them with a different performer. " + koreanJAVPromptRules(targetLang) + "CRITICAL: return exactly one corrected result under each original marker in the same order. Return only markers and corrected Korean text, with no assessment, explanation, JSON, or commentary."
+
+	var userPrompt strings.Builder
+	userPrompt.WriteString("Review and, where necessary, rewrite each candidate by comparing it with its Japanese source:\n")
+	for i, item := range items {
+		userPrompt.WriteString(markers[i])
+		userPrompt.WriteString("\n[JAPANESE SOURCE]\n")
+		userPrompt.WriteString(item.Source)
+		userPrompt.WriteString("\n[KOREAN CANDIDATE]\n")
+		userPrompt.WriteString(item.Candidate)
+		userPrompt.WriteByte('\n')
+	}
+	userPrompt.WriteString("\nReturn only the corrected final Korean text under the same markers.\n")
+	for _, marker := range markers {
+		userPrompt.WriteString(marker)
+		userPrompt.WriteByte('\n')
+	}
+	return systemPrompt, strings.TrimSpace(userPrompt.String()), nil
+}
+
 func koreanJAVPromptRules(targetLang string) string {
 	lang := strings.ToLower(strings.TrimSpace(targetLang))
 	if lang != "ko" && !strings.HasPrefix(lang, "ko-") && !strings.HasPrefix(lang, "ko_") {
@@ -128,6 +171,17 @@ func koreanJAVPromptRules(targetLang string) string {
 		"垢抜け → 비주얼 업그레이드 or 세련된; 初々しい → 풋풋한 or 앳된; 玄人 and 玄人肌 → 프로 or 능숙한; " +
 		"中出し and Creampie → 질내사정; 顔射 and Facial → 안면사정; ぶっかけ and Bukkake → 정액 세례 or 붓카케; 個撮 → 개인촬영; ハメ撮り → POV or 셀프카메라; POV may remain POV when natural; 汁男優 → 사정 전문 남배우. " +
 		"Established Korean JAV mappings: 顔騎 → 안면기승 (never 페이스시팅 or 얼굴 기승위); 足裏 → 발바닥; 足コキ → 풋잡 (never 발코키); in pantyhose fetish context ムレた足裏 → 땀에 찬 발바닥 or 땀이 밴 발바닥 (never 눅눅한 발바닥); 足裏からつま先を味わい尽くす → 발바닥부터 발끝까지 샅샅이 맛본다. " +
+		"桃尻 and the mixed-script stylization 桃Siri describe a peach-shaped butt and must be translated as 애플힙, never treated as a person name and never transliterated as 모모시리. " +
+		"ミルチオ is the opaque JAV coinage built from performer miru and フェラチオ: transliterate it as 미루치오, never 밀치오. ミルチオの愛人 means a mistress who performs the technique, so translate it as 미루치오를 해주는 불륜 상대, never the nonsensical possessive 미루치오의 정부. In an adultery context 愛人 → 불륜 상대, never the ambiguous or stiff 정부 and never the generic 애인. 絶倫性欲者 referring to a woman → 절륜 색녀, and referring to a man → 절륜남; never 절륜 성욕자. " +
+		"In penile stimulation context シゴく and シゴき mean stroking or jerking by hand, not a loanword: use 손으로 흔들다, 핸드잡, or 뽑아주다 according to grammar. 舐めシゴき → 혀와 손으로 뽑아주기 or 핥기와 핸드잡; 舐めシゴきフルコース → 혀와 손으로 뽑아주는 풀코스. Never write 시고키, 핥기 시고키, or 사랑의 핥기. In compounds such as 愛ベロ and 愛舐め, 愛 intensifies intimate technique and must not mechanically become the corny phrase 사랑의. " +
+		"エビ反り is the orgasm posture where the waist arches: always use 허리가 휘는. エビ反り痙攣絶頂 → 허리가 휘며 경련 절정; エビ反りオーガズム → 허리가 휘는 오르가슴. Never write 허리 꺾인, 새우등처럼 휜, 등을 활처럼 휘는, 허리를 뒤로 젖히는, 에비반리, or 에비소리. In erotic massage or esthetic titles, 特別施術 → 특별 코스, never the clinical 특별 시술 or 특별 트리트먼트. " +
+		"人妻 → 유부녀 and 人妻もの → 유부녀물. Never use the dated Japanese-calque term 인처. " +
+		"セフレ means 섹스 파트너 or the current colloquial abbreviation 섹파 according to tone; never transliterate it as 세프레. セフレ志願の女の子 → 섹파를 자처하는 여자 or 섹스 파트너를 원하는 여자. In playful sexual phrasing, ちんちんおっきしたら → 자지가 서면; never produce broken hybrids such as n자지 커지면. " +
+		"秘部 is a source-side euphemism: render it naturally as 은밀한 곳 or 민감한 부위 according to the sentence, never the dictionary calque 비부. きわどい秘部を触られすぎて → 은밀한 곳을 집요하게 만져져, not 아슬아슬한 비부를 너무 많이 만져져서. Do not mechanically transliterate 寝取られました as 네토라레 당했습니다 in prose; express the event naturally from the subject's perspective, such as 다른 남자에게 넘어가 버렸다. Keep NTR only when it functions as a concise genre label. " +
+		"The emphatic prefix ド attached to a sexual trait intensifies the trait and must never be transliterated as 도. ド痴女 → 극강의 치녀 or 지독한 색녀 according to tone, never 도치녀; ド変態 → 극도의 변태 or 지독한 변태. 結婚した妻 should normally be the concise 아내, not the redundant 결혼한 아내. 性欲おさまらない → 멈출 줄 모르는 성욕 or 주체할 수 없는 성욕. " +
+		"逆パコ is a woman initiating, taking control of, or pouncing on a man for sex: use 여자가 덮치는, 여배우가 덮치는, or 여자 주도 섹스 according to grammar; never transliterate it as 역파코. 痴女られる means being sexually toyed with or dominated by an assertive woman: がっつり痴女られたい → 치녀에게 실컷 농락당하고 싶다, never 듬뿍 치녀 취급당하고 싶다. " +
+		"パコ, パコる, and パコパコ are ordinary Japanese sex slang, not Korean loanwords: translate them by context as 섹스, 섹스하다, or 박아대다; never transliterate them as 파코. イキパコ means sex involving climax: use 절정 섹스, 가버리는 섹스, or a fluent contextual equivalent, never 이키파코 or 파코. " +
+		"鉄マン is explicit JAV slang for an exceptionally strong or tight vagina: translate it as 강철 보지, never transliterate it as 철맨. In punchy title copy マジかよ！？ → 실화냐?! or 말도 안 돼?! according to tone; 秘技教本 → 비법 교본, never the stiff calque 비기 교본. " +
 		"生ハメ → 노콘 (never 생삽입 or 생으로 하메); 生ハメSEX → 노콘 섹스; 生ハメ中出し → 노콘 질내사정. シコサポ, オナサポ, and オナニーサポート → 자위 서포트 (never 시코사포 or 오나사포). " +
 		"媚薬 → 최음제 (never 피임약). Interpret キメセク by its drug context: with 媚薬 use 최음제에 취한 섹스 or 최음제 섹스; with narcotics or stimulants use 약물에 취한 섹스 or 약물 섹스; only when it is an unspecified standalone genre term use 키메섹; never 킴세쿠 or 키메세쿠. " +
 		"Interpret insults by their target, not their dictionary homograph: fish-context 雑魚 → 잡어, but a sexually belittling 雑魚 → 허접, 하찮은, or 찌질한, and 雑魚チ●ポ → 허접 자지 (never 잡어 자지). Food-context 食い意地 → 식탐, but when 喰い意地爆発 governs 肉棒, 巨根, or sex acts use 욕정 폭발 (never 식탐 폭발). " +

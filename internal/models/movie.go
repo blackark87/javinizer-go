@@ -122,8 +122,12 @@ type Actress struct {
 	FirstName    string `json:"first_name"`
 	LastName     string `json:"last_name"`
 	JapaneseName string `json:"japanese_name" gorm:"index"`
-	ThumbURL     string `json:"thumb_url"`
-	Aliases      string `json:"aliases"` // Pipe-separated
+	// Reading is the authoritative kana pronunciation reported by DMM or a
+	// trusted identity resolver. It is kept separate so JapaneseName remains
+	// the clean activity name while translation does not have to guess kanji.
+	Reading  string `json:"reading,omitempty"`
+	ThumbURL string `json:"thumb_url"`
+	Aliases  string `json:"aliases"` // Pipe-separated
 
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

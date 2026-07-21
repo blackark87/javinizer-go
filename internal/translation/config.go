@@ -58,12 +58,13 @@ type googleConfig struct {
 
 // openAICompatibleConfig holds settings for OpenAI-compatible endpoints.
 type openAICompatibleConfig struct {
-	BaseURL        string
-	APIKey         string
-	Model          string
-	EnableThinking bool
-	ThinkingMode   string
-	BackendType    string
+	BaseURL         string
+	APIKey          string
+	Model           string
+	MaxOutputTokens int
+	EnableThinking  bool
+	ThinkingMode    string
+	BackendType     string
 }
 
 // anthropicConfig holds Anthropic (Claude) translation settings.

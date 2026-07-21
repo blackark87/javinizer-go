@@ -74,6 +74,8 @@ func NewCommand() *cobra.Command {
 			configFile, _ := cmd.Flags().GetString("config")
 			apply, _ := cmd.Flags().GetBool("apply")
 			additionalModels, _ := cmd.Flags().GetStringSlice("additional-model")
+			movieIDs, _ := cmd.Flags().GetStringSlice("movie-id")
+			titleOnly, _ := cmd.Flags().GetBool("title-only")
 			cfg, err := config.LoadOrCreate(configFile)
 			if err != nil {
 				return fmt.Errorf("failed to load config: %w", err)
@@ -84,7 +86,7 @@ func NewCommand() *cobra.Command {
 			}
 			defer func() { _ = deps.Close() }()
 			report, err := maintenance.ReprocessStoredJobWithOptions(cmd.Context(), deps.DB, cfg, args[0], maintenance.JobReprocessOptions{
-				Apply: apply, AdditionalModels: additionalModels,
+				Apply: apply, AdditionalModels: additionalModels, MovieIDs: movieIDs, TitleOnly: titleOnly,
 			})
 			if err != nil {
 				return err
@@ -99,6 +101,8 @@ func NewCommand() *cobra.Command {
 	}
 	reprocessJobCmd.Flags().Bool("apply", false, "Persist the staged result atomically (default is dry-run)")
 	reprocessJobCmd.Flags().StringSlice("additional-model", nil, "Additional OpenAI-compatible model IDs used by the worker pool")
+	reprocessJobCmd.Flags().StringSlice("movie-id", nil, "Only reprocess matching movie IDs (repeat or comma-separate)")
+	reprocessJobCmd.Flags().Bool("title-only", false, "Retranslate titles only and preserve existing descriptions")
 
 	historyCmd.AddCommand(historyListCmd, historyStatsCmd, historyMovieCmd, historyCleanCmd, revertCmd, reprocessJobCmd)
 	return historyCmd

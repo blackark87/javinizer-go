@@ -117,6 +117,7 @@ func (p *OpenAICompatibleProvider) Translate(ctx context.Context, sourceLang, ta
 	baseRequest := openAIChatRequest{
 		Model:       model,
 		Temperature: 0,
+		MaxTokens:   effectiveMaxOutputTokens(p.cfg.OpenAICompatible.MaxOutputTokens),
 		Messages: []openAIChatMessage{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: userPrompt},
@@ -154,4 +155,11 @@ func (p *OpenAICompatibleProvider) Translate(ctx context.Context, sourceLang, ta
 	}
 
 	return nil, lastErr
+}
+
+func effectiveMaxOutputTokens(configured int) int {
+	if configured > 0 {
+		return configured
+	}
+	return 4096
 }

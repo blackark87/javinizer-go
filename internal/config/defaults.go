@@ -140,11 +140,12 @@ func defaultTranslationConfig() TranslationConfig {
 			APIKey:  "",
 		},
 		OpenAICompatible: OpenAICompatibleTranslationConfig{
-			BaseURL:        "http://localhost:11434/v1",
-			APIKey:         "",
-			Model:          "",
-			EnableThinking: &thinkingDisabled,
-			ThinkingMode:   "boolean",
+			BaseURL:         "http://localhost:11434/v1",
+			APIKey:          "",
+			Model:           "",
+			MaxOutputTokens: defaultOpenAICompatibleMaxOutputTokens,
+			EnableThinking:  &thinkingDisabled,
+			ThinkingMode:    "boolean",
 		},
 		Anthropic: AnthropicTranslationConfig{
 			BaseURL: "https://api.anthropic.com",

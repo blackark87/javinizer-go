@@ -83,12 +83,13 @@ func googleConfigFromApp(cfg config.GoogleTranslationConfig) googleConfig {
 
 func openAICompatibleConfigFromApp(cfg config.OpenAICompatibleTranslationConfig) openAICompatibleConfig {
 	return openAICompatibleConfig{
-		BaseURL:        cfg.BaseURL,
-		APIKey:         cfg.APIKey,
-		Model:          cfg.Model,
-		EnableThinking: cfg.EffectiveEnableThinking(),
-		ThinkingMode:   cfg.NormalizedThinkingMode(),
-		BackendType:    cfg.NormalizedBackendType(),
+		BaseURL:         cfg.BaseURL,
+		APIKey:          cfg.APIKey,
+		Model:           cfg.Model,
+		MaxOutputTokens: cfg.MaxOutputTokens,
+		EnableThinking:  cfg.EffectiveEnableThinking(),
+		ThinkingMode:    cfg.NormalizedThinkingMode(),
+		BackendType:     cfg.NormalizedBackendType(),
 	}
 }
 

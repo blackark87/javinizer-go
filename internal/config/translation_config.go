@@ -16,6 +16,8 @@ import (
 // in one place.
 const translationProviderOpenAI = "openai"
 
+const defaultOpenAICompatibleMaxOutputTokens = 4096
+
 // MetadataConfig holds metadata aggregation settings
 type MetadataConfig struct {
 	Priority         PriorityConfig         `yaml:"priority" json:"priority"`
@@ -88,12 +90,13 @@ type GoogleTranslationConfig struct {
 // OpenAICompatibleTranslationConfig holds settings for self-hosted or third-party
 // OpenAI-compatible translation endpoints (Ollama, vLLM, LM Studio, OpenRouter, etc.).
 type OpenAICompatibleTranslationConfig struct {
-	BaseURL        string `yaml:"base_url" json:"base_url"`                               // e.g., http://localhost:11434/v1
-	APIKey         string `yaml:"api_key" json:"api_key"`                                 // Optional for local endpoints
-	Model          string `yaml:"model" json:"model"`                                     // e.g., llama3.1
-	EnableThinking *bool  `yaml:"enable_thinking" json:"enable_thinking,omitempty"`       // Toggle reasoning/thinking when supported by the backend
-	ThinkingMode   string `yaml:"thinking_mode,omitempty" json:"thinking_mode,omitempty"` // boolean, low, medium, or high
-	BackendType    string `yaml:"backend_type,omitempty" json:"backend_type,omitempty" swaggerignore:"true"`
+	BaseURL         string `yaml:"base_url" json:"base_url"`                               // e.g., http://localhost:11434/v1
+	APIKey          string `yaml:"api_key" json:"api_key"`                                 // Optional for local endpoints
+	Model           string `yaml:"model" json:"model"`                                     // e.g., llama3.1
+	MaxOutputTokens int    `yaml:"max_output_tokens" json:"max_output_tokens"`             // Maximum generated tokens, including reasoning output
+	EnableThinking  *bool  `yaml:"enable_thinking" json:"enable_thinking,omitempty"`       // Toggle reasoning/thinking when supported by the backend
+	ThinkingMode    string `yaml:"thinking_mode,omitempty" json:"thinking_mode,omitempty"` // boolean, low, medium, or high
+	BackendType     string `yaml:"backend_type,omitempty" json:"backend_type,omitempty" swaggerignore:"true"`
 }
 
 // AnthropicTranslationConfig holds Anthropic (Claude) translation settings.
@@ -429,6 +432,7 @@ func (tc *TranslationConfig) SettingsHash() string {
 		hashInput.OpenAIModel = tc.OpenAI.Model
 	case "openai_compatible", "openai-compatible":
 		hashInput.OpenAICompatibleModel = tc.OpenAICompatible.Model
+		hashInput.OpenAICompatibleMaxOutputTokens = tc.OpenAICompatible.EffectiveMaxOutputTokens()
 		hashInput.OpenAICompatibleEnableThinking = tc.OpenAICompatible.EffectiveEnableThinking()
 		hashInput.OpenAICompatibleThinkingMode = tc.OpenAICompatible.NormalizedThinkingMode()
 	case "anthropic":
@@ -457,21 +461,22 @@ func (tc *TranslationConfig) SettingsHash() string {
 // settingsHashInput is a simplified struct for hash computation.
 // Only includes settings that affect translation output.
 type settingsHashInput struct {
-	Provider                       string                  `json:"provider"`
-	SourceLanguage                 string                  `json:"source_language"`
-	TargetLanguage                 string                  `json:"target_language"`
-	TargetLanguages                []string                `json:"target_languages,omitempty"`
-	ApplyToPrimary                 bool                    `json:"apply_to_primary"`
-	OverwriteExistingTarget        bool                    `json:"overwrite_existing_target"`
-	Fields                         TranslationFieldsConfig `json:"fields"`
-	OpenAIModel                    string                  `json:"openai_model,omitempty"`
-	OpenAICompatibleModel          string                  `json:"openai_compatible_model,omitempty"`
-	OpenAICompatibleEnableThinking bool                    `json:"openai_compatible_enable_thinking,omitempty"`
-	OpenAICompatibleThinkingMode   string                  `json:"openai_compatible_thinking_mode,omitempty"`
-	AnthropicModel                 string                  `json:"anthropic_model,omitempty"`
-	BedrockModel                   string                  `json:"bedrock_model,omitempty"`
-	DeepLMode                      string                  `json:"deepl_mode,omitempty"`
-	GoogleMode                     string                  `json:"google_mode,omitempty"`
+	Provider                        string                  `json:"provider"`
+	SourceLanguage                  string                  `json:"source_language"`
+	TargetLanguage                  string                  `json:"target_language"`
+	TargetLanguages                 []string                `json:"target_languages,omitempty"`
+	ApplyToPrimary                  bool                    `json:"apply_to_primary"`
+	OverwriteExistingTarget         bool                    `json:"overwrite_existing_target"`
+	Fields                          TranslationFieldsConfig `json:"fields"`
+	OpenAIModel                     string                  `json:"openai_model,omitempty"`
+	OpenAICompatibleModel           string                  `json:"openai_compatible_model,omitempty"`
+	OpenAICompatibleMaxOutputTokens int                     `json:"openai_compatible_max_output_tokens,omitempty"`
+	OpenAICompatibleEnableThinking  bool                    `json:"openai_compatible_enable_thinking,omitempty"`
+	OpenAICompatibleThinkingMode    string                  `json:"openai_compatible_thinking_mode,omitempty"`
+	AnthropicModel                  string                  `json:"anthropic_model,omitempty"`
+	BedrockModel                    string                  `json:"bedrock_model,omitempty"`
+	DeepLMode                       string                  `json:"deepl_mode,omitempty"`
+	GoogleMode                      string                  `json:"google_mode,omitempty"`
 }
 
 // EffectiveEnableThinking returns the enable_thinking flag, treating a nil value as false.
@@ -480,6 +485,15 @@ func (oc OpenAICompatibleTranslationConfig) EffectiveEnableThinking() bool {
 		return false
 	}
 	return *oc.EnableThinking
+}
+
+// EffectiveMaxOutputTokens returns the configured generation limit, using the
+// legacy/default value when the field is absent from an existing config.
+func (oc OpenAICompatibleTranslationConfig) EffectiveMaxOutputTokens() int {
+	if oc.MaxOutputTokens > 0 {
+		return oc.MaxOutputTokens
+	}
+	return defaultOpenAICompatibleMaxOutputTokens
 }
 
 // NormalizedThinkingMode returns the request control used for thinking-enabled

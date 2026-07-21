@@ -271,6 +271,11 @@ func TestOpenAICompatibleTranslationConfig_EffectiveEnableThinking(t *testing.T)
 	})
 }
 
+func TestOpenAICompatibleTranslationConfig_EffectiveMaxOutputTokens(t *testing.T) {
+	assert.Equal(t, 4096, (OpenAICompatibleTranslationConfig{}).EffectiveMaxOutputTokens())
+	assert.Equal(t, 2048, (OpenAICompatibleTranslationConfig{MaxOutputTokens: 2048}).EffectiveMaxOutputTokens())
+}
+
 func TestOpenAICompatibleTranslationConfig_NormalizedThinkingMode(t *testing.T) {
 	for input, expected := range map[string]string{
 		"": "boolean", "BOOLEAN": "boolean", "low": "low", "Medium": "medium", "HIGH": "high", "invalid": "boolean",
@@ -287,6 +292,13 @@ func TestTranslationConfig_SettingsHashIncludesThinkingMode(t *testing.T) {
 	effort := base
 	effort.OpenAICompatible.ThinkingMode = "high"
 	assert.NotEqual(t, base.SettingsHash(), effort.SettingsHash())
+}
+
+func TestTranslationConfig_SettingsHashIncludesMaxOutputTokens(t *testing.T) {
+	base := TranslationConfig{Provider: "openai-compatible", OpenAICompatible: OpenAICompatibleTranslationConfig{Model: "model", MaxOutputTokens: 4096}}
+	limited := base
+	limited.OpenAICompatible.MaxOutputTokens = 2048
+	assert.NotEqual(t, base.SettingsHash(), limited.SettingsHash())
 }
 
 func TestNFOConfig_IsUnknownActressFallback(t *testing.T) {

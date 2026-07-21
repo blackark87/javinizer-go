@@ -342,8 +342,9 @@ metadata:
             base_url: http://localhost:11434/v1
             api_key: ""               # Optional for local/self-hosted endpoints
             model: ""
+            max_output_tokens: 4096   # Caps combined thinking/reasoning and final-answer output
             enable_thinking: false    # Automatically mapped to backend-specific thinking controls when supported
-            thinking_mode: boolean    # boolean | low | medium | high
+            thinking_mode: boolean    # Gemma 4/boolean-only backends: boolean; reasoning-effort models only: low | medium | high
         anthropic:
             base_url: https://api.anthropic.com
             api_key: ""               # Required when provider=anthropic (set via ANTHROPIC_API_KEY env var)

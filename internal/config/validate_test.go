@@ -126,6 +126,15 @@ func TestConfig_Validate(t *testing.T) {
 			errorContains: "thinking_mode must be one of boolean, low, medium, or high",
 		},
 		{
+			name: "translation max output tokens too high",
+			modifyConfig: func(c *Config) {
+				c.Metadata.Translation.Enabled = true
+				c.Metadata.Translation.OpenAICompatible.MaxOutputTokens = 131073
+			},
+			expectError:   true,
+			errorContains: "max_output_tokens must be between 1 and 131072, or 0 to use the default",
+		},
+		{
 			name: "max_workers too high",
 			modifyConfig: func(c *Config) {
 				c.Performance.MaxWorkers = 150

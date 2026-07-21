@@ -650,6 +650,10 @@ func (s *Service) ReviewJAVTranslations(ctx context.Context, fields []QualityRev
 	}
 	for i := range reviewed {
 		reviewed[i] = sanitizeQualityReviewText(reviewed[i])
+		if isInvalidQualityReviewText(reviewed[i]) {
+			logging.Warnf("Translation: quality reviewer returned contaminated output for %s; keeping first-pass candidate", markers[i])
+			reviewed[i] = strings.TrimSpace(fields[i].Candidate)
+		}
 	}
 	return reviewed, nil
 }
@@ -662,6 +666,20 @@ func sanitizeQualityReviewText(value string) string {
 		}
 	}
 	return value
+}
+
+func isInvalidQualityReviewText(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || containsResidualJapanese(trimmed) {
+		return true
+	}
+	lower := strings.ToLower(trimmed)
+	for _, marker := range []string{"[japanese source]", "[korean candidate]", "translate each labeled section", "review and, where necessary"} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func isTitleTranslationField(fieldName string) bool {

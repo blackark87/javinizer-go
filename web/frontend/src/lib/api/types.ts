@@ -798,6 +798,7 @@ export interface OpenAICompatibleTranslationConfig {
 	base_url: string;
 	api_key: string;
 	model: string;
+	max_output_tokens?: number;
 	enable_thinking?: boolean | null;
 	thinking_mode?: 'boolean' | 'low' | 'medium' | 'high';
 }

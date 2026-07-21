@@ -6764,6 +6764,10 @@ const docTemplate = `{
                     "description": "Toggle reasoning/thinking when supported by the backend",
                     "type": "boolean"
                 },
+                "max_output_tokens": {
+                    "description": "Maximum generated tokens, including reasoning output",
+                    "type": "integer"
+                },
                 "model": {
                     "description": "e.g., llama3.1",
                     "type": "string"
@@ -7397,6 +7401,10 @@ const docTemplate = `{
                 "last_name": {
                     "type": "string"
                 },
+                "reading": {
+                    "description": "Reading is the authoritative kana pronunciation reported by DMM or a\ntrusted identity resolver. It is kept separate so JapaneseName remains\nthe clean activity name while translation does not have to guess kanji.",
+                    "type": "string"
+                },
                 "thumb_url": {
                     "type": "string"
                 },
@@ -7412,9 +7420,39 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_javinizer_javinizer-go_internal_models.ActressIdentity": {
+            "type": "object",
+            "properties": {
+                "dmm_id": {
+                    "type": "integer"
+                },
+                "first_name": {
+                    "type": "string"
+                },
+                "japanese_name": {
+                    "type": "string"
+                },
+                "last_name": {
+                    "type": "string"
+                },
+                "reading": {
+                    "type": "string"
+                },
+                "thumb_url": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_javinizer_javinizer-go_internal_models.ActressInfo": {
             "type": "object",
             "properties": {
+                "alias_identities": {
+                    "description": "AliasIdentities contains other DMM-backed activity names that a trusted\nidentity source explicitly groups with this actress. They are identities,\nnot additional cast members.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.ActressIdentity"
+                    }
+                },
                 "dmm_id": {
                     "description": "DMM actress ID for unique identification",
                     "type": "integer"
@@ -7426,6 +7464,16 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "last_name": {
+                    "type": "string"
+                },
+                "observed_aliases": {
+                    "description": "ObservedAliases contains activity names seen before an authoritative DMM\nprofile replaced JapaneseName. Raw scraper results leave this empty.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "reading": {
                     "type": "string"
                 },
                 "thumb_url": {
@@ -8451,6 +8499,10 @@ const docTemplate = `{
                 "last_name": {
                     "type": "string"
                 },
+                "reading": {
+                    "description": "Reading is the authoritative kana pronunciation reported by DMM or a\ntrusted identity resolver. It is kept separate so JapaneseName remains\nthe clean activity name while translation does not have to guess kanji.",
+                    "type": "string"
+                },
                 "thumb_url": {
                     "type": "string"
                 },
@@ -8542,11 +8594,34 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_api_actress.aliasGroupMemberResponse": {
+            "type": "object",
+            "properties": {
+                "actress": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.Actress"
+                },
+                "available": {
+                    "type": "boolean"
+                },
+                "canonical": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_api_actress.aliasGroupResponse": {
             "type": "object",
             "properties": {
                 "canonical": {
                     "type": "string"
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_api_actress.aliasGroupMemberResponse"
+                    }
                 },
                 "names": {
                     "type": "array",

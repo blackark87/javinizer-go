@@ -2824,8 +2824,9 @@ She says "It's forceful..." but looks happy while being teased.
 		TargetLanguage: "en",
 		SourceLanguage: "ja",
 		OpenAICompatible: openAICompatibleConfig{
-			BaseURL: server.URL,
-			Model:   "llama3",
+			BaseURL:         server.URL,
+			Model:           "llama3",
+			MaxOutputTokens: 1536,
 		},
 	}
 	s := New(cfg,
@@ -2855,6 +2856,7 @@ She says "It's forceful..." but looks happy while being teased.
 	assert.Contains(t, userPrompt, "<<<JZ_0>>>")
 	assert.Contains(t, userPrompt, "<<<JZ_1>>>")
 	assert.NotContains(t, userPrompt, "<<<JAVINIZER_INPUT_0>>>")
+	assert.Equal(t, float64(1536), capturedBody["max_tokens"])
 }
 
 func TestTranslateWithOpenAICompatible_ThinkingControls(t *testing.T) {

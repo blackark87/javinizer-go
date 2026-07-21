@@ -18,6 +18,7 @@ import (
 type openAIChatRequest struct {
 	Model              string              `json:"model"`
 	Temperature        float64             `json:"temperature"`
+	MaxTokens          int                 `json:"max_tokens,omitempty"`
 	Messages           []openAIChatMessage `json:"messages"`
 	ChatTemplateKwargs map[string]any      `json:"chat_template_kwargs,omitempty"`
 	ReasoningEffort    string              `json:"reasoning_effort,omitempty"`
@@ -179,6 +180,7 @@ func koreanJAVPromptRules(targetLang string) string {
 		"セフレ means 섹스 파트너 or the current colloquial abbreviation 섹파 according to tone; never transliterate it as 세프레. セフレ志願の女の子 → 섹파를 자처하는 여자 or 섹스 파트너를 원하는 여자. In playful sexual phrasing, ちんちんおっきしたら → 자지가 서면; never produce broken hybrids such as n자지 커지면. " +
 		"秘部 is a source-side euphemism: render it naturally as 은밀한 곳 or 민감한 부위 according to the sentence, never the dictionary calque 비부. きわどい秘部を触られすぎて → 은밀한 곳을 집요하게 만져져, not 아슬아슬한 비부를 너무 많이 만져져서. Do not mechanically transliterate 寝取られました as 네토라레 당했습니다 in prose; express the event naturally from the subject's perspective, such as 다른 남자에게 넘어가 버렸다. Keep NTR only when it functions as a concise genre label. " +
 		"The emphatic prefix ド attached to a sexual trait intensifies the trait and must never be transliterated as 도. ド痴女 → 극강의 치녀 or 지독한 색녀 according to tone, never 도치녀; ド変態 → 극도의 변태 or 지독한 변태. 結婚した妻 should normally be the concise 아내, not the redundant 결혼한 아내. 性欲おさまらない → 멈출 줄 모르는 성욕 or 주체할 수 없는 성욕. " +
+		"言いなり and イイナリ mean obeying another person's demands: use 시키는 대로 하는, 말이라면 뭐든 따르는, or 복종하는 according to grammar, never transliterate them as 이이나리. ドM means an extreme masochist or strongly submissive M: use 극M or 극도의 마조 according to tone, never 도M. イイナリドM → 말이라면 뭐든 따르는 극M or 복종하는 극M. " +
 		"逆パコ is a woman initiating, taking control of, or pouncing on a man for sex: use 여자가 덮치는, 여배우가 덮치는, or 여자 주도 섹스 according to grammar; never transliterate it as 역파코. 痴女られる means being sexually toyed with or dominated by an assertive woman: がっつり痴女られたい → 치녀에게 실컷 농락당하고 싶다, never 듬뿍 치녀 취급당하고 싶다. " +
 		"パコ, パコる, and パコパコ are ordinary Japanese sex slang, not Korean loanwords: translate them by context as 섹스, 섹스하다, or 박아대다; never transliterate them as 파코. イキパコ means sex involving climax: use 절정 섹스, 가버리는 섹스, or a fluent contextual equivalent, never 이키파코 or 파코. " +
 		"Render パコ compounds by their actual AV-marketing meaning: オフパコ → 비밀 만남 섹스 or 팬과의 섹스 according to context, 生パコ → 노콘 섹스, イチャパコ → 달달한 섹스, and パコパコ撮影 → 마구 섹스하는 촬영. Do not retain 파코 inside a compound. " +
@@ -340,6 +342,7 @@ func (a *openAIChatAdapter) BuildRequest(ctx context.Context, baseURL, model str
 	request := openAIChatRequest{
 		Model:       model,
 		Temperature: 0,
+		MaxTokens:   4096,
 		Messages: []openAIChatMessage{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: userPrompt},

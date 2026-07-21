@@ -113,6 +113,14 @@ func TestKoreanJAVPromptTreatsDoPrefixAsEmphasis(t *testing.T) {
 	assert.Contains(t, rules, "性欲おさまらない → 멈출 줄 모르는 성욕")
 }
 
+func TestKoreanJAVPromptTranslatesIinariDoMByMeaning(t *testing.T) {
+	rules := koreanJAVPromptRules("ko")
+	assert.Contains(t, rules, "言いなり and イイナリ")
+	assert.Contains(t, rules, "never transliterate them as 이이나리")
+	assert.Contains(t, rules, "ドM means an extreme masochist")
+	assert.Contains(t, rules, "never 도M")
+}
+
 func TestKoreanJAVPromptTranslatesGyakuPakoByMeaning(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
 	assert.Contains(t, rules, "逆パコ is a woman initiating")
@@ -153,6 +161,33 @@ func TestBuildLLMQualityReviewPromptIncludesSourceCandidateAndStrictOutput(t *te
 func TestSanitizeQualityReviewTextRemovesEchoedOutputLabel(t *testing.T) {
 	assert.Equal(t, "강철 보지", sanitizeQualityReviewText("[corrected Korean]\n강철 보지"))
 	assert.Equal(t, "강철 보지", sanitizeQualityReviewText("강철 보지"))
+}
+
+func TestInvalidQualityReviewTextRejectsPromptEchoAndResidualJapanese(t *testing.T) {
+	assert.True(t, isInvalidQualityReviewText("[JAPANESE SOURCE]\n原題\n[KOREAN CANDIDATE]\n후보"))
+	assert.True(t, isInvalidQualityReviewText("한국어 原題"))
+	assert.True(t, isInvalidQualityReviewText(""))
+	assert.False(t, isInvalidQualityReviewText("자연스런 한국어 검수 결과"))
+}
+
+type promptEchoQualityReviewProvider struct{}
+
+func (p *promptEchoQualityReviewProvider) Name() string { return "openai-compatible" }
+
+func (p *promptEchoQualityReviewProvider) Translate(_ context.Context, _, _ string, _ []string) (*translationResult, error) {
+	return &translationResult{Texts: []string{"[JAPANESE SOURCE]\n原題\n[KOREAN CANDIDATE]\n정상 후보"}}, nil
+}
+
+func TestReviewJAVTranslationsFallsBackAfterPromptEcho(t *testing.T) {
+	provider := &promptEchoQualityReviewProvider{}
+	service := New(Config{Enabled: true, Provider: "openai-compatible", TargetLanguage: "ko"}, provider)
+
+	result, err := service.ReviewJAVTranslations(context.Background(), []QualityReviewField{{
+		FieldName: "quality_review_title", Source: "原題", Candidate: "정상 후보",
+	}})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"정상 후보"}, result)
 }
 
 func TestTranslateTextsSplitsCombinedRequestAfterGemmaParserError(t *testing.T) {

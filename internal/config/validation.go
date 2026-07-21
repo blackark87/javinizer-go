@@ -263,6 +263,9 @@ func validateTranslationProviderInternal(c *Config) error {
 	if t.MaxConcurrency > 100 {
 		return fmt.Errorf("metadata.translation.max_concurrency must be between 1 and 100")
 	}
+	if t.OpenAICompatible.MaxOutputTokens < 0 || t.OpenAICompatible.MaxOutputTokens > 131072 {
+		return fmt.Errorf("metadata.translation.openai_compatible.max_output_tokens must be between 1 and 131072, or 0 to use the default")
+	}
 	if mode := strings.ToLower(strings.TrimSpace(t.OpenAICompatible.ThinkingMode)); mode != "" && mode != "boolean" && mode != "low" && mode != "medium" && mode != "high" {
 		return fmt.Errorf("metadata.translation.openai_compatible.thinking_mode must be one of boolean, low, medium, or high")
 	}

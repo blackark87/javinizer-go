@@ -254,6 +254,19 @@
 					}}
 				/>
 
+				<FormNumberInput
+					label="Maximum output tokens"
+					description="Caps the combined thinking/reasoning and final-answer output for each request"
+					value={config.metadata.translation?.['openai_compatible']?.max_output_tokens ?? 4096}
+					min={1}
+					max={131072}
+					onchange={(val) => {
+						if (!config.metadata.translation) config.metadata.translation = {} as TranslationConfigType;
+						if (!config.metadata.translation!['openai_compatible']) config.metadata.translation!['openai_compatible'] = {} as OpenAICompatibleTranslationConfigType;
+						config.metadata.translation!['openai_compatible'].max_output_tokens = val;
+					}}
+				/>
+
 				<div class="py-4 border-b border-border">
 					<label class="block text-sm font-medium mb-2" for="translation-thinking-mode">Thinking mode</label>
 					<p class="text-xs text-muted-foreground mb-2">Use simple on/off controls or request a supported reasoning effort level.</p>

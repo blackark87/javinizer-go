@@ -6,6 +6,7 @@ import (
 
 	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/models"
+	"github.com/javinizer/javinizer-go/internal/worker"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -49,6 +50,34 @@ func TestReprocessTranslationCheckpointRoundTrip(t *testing.T) {
 	applyCheckpointEntry([]reprocessTranslationItem{{titleSource: newTitle, descriptionSource: newDescription}}, entry, "ko")
 	assert.Equal(t, "검수 제목", translatedSourceField(newTitle, "ko", "title"))
 	assert.Equal(t, "검수 설명", translatedSourceField(newDescription, "ko", "description"))
+}
+
+func TestReprocessMovieIDSelection(t *testing.T) {
+	selected := normalizeReprocessMovieIDs([]string{" MIAA-811 ", "drpt-050"})
+	result := &worker.MovieResult{
+		Status:        models.JobStatusCompleted,
+		FileMatchInfo: models.FileMatchInfo{MovieID: "MIAA-811"},
+		Movie:         &models.Movie{ID: "MIAA-811", ContentID: "miaa811"},
+	}
+
+	assert.True(t, shouldReprocessResult(result, selected))
+	assert.False(t, shouldReprocessResult(&worker.MovieResult{
+		Status: models.JobStatusCompleted, Movie: &models.Movie{ID: "OTHER"},
+	}, selected))
+	assert.True(t, shouldReprocessResult(result, nil))
+}
+
+func TestReprocessCheckpointPathSeparatesSelections(t *testing.T) {
+	jobID := "job-id"
+	full := reprocessCheckpointPath(jobID, nil, false)
+	first := reprocessCheckpointPath(jobID, normalizeReprocessMovieIDs([]string{"MIAA-811"}), false)
+	second := reprocessCheckpointPath(jobID, normalizeReprocessMovieIDs([]string{"DRPT-050"}), false)
+	titleOnly := reprocessCheckpointPath(jobID, normalizeReprocessMovieIDs([]string{"MIAA-811"}), true)
+
+	assert.NotEqual(t, full, first)
+	assert.NotEqual(t, first, second)
+	assert.NotEqual(t, first, titleOnly)
+	assert.Equal(t, first, reprocessCheckpointPath(jobID, normalizeReprocessMovieIDs([]string{"miaa-811"}), false))
 }
 
 func TestTranslationModelConfigsAddsUniqueOpenAICompatibleModels(t *testing.T) {
@@ -113,4 +142,24 @@ func TestMergeSourceTranslationFieldPreservesUnselectedField(t *testing.T) {
 	assert.Equal(t, "기존 설명", source.Translations[0].Description)
 	assert.Equal(t, "translation:openai-compatible", source.Translations[0].SourceName)
 	assert.Equal(t, "new-hash", source.Translations[0].SettingsHash)
+}
+
+func TestProtectReviewActressNamesRestoresKnownKoreanName(t *testing.T) {
+	actresses := []models.Actress{{JapaneseName: "円井萌華", LastName: "마루이", FirstName: "모에카"}}
+	protected := protectReviewActressNames(
+		"イイナリドM 円井萌華",
+		"이이나리 도M 마루이 모에카",
+		actresses,
+	)
+
+	assert.Equal(t, "イイナリドM ⟦7000⟧", protected.source)
+	assert.Equal(t, "이이나리 도M ⟦7000⟧", protected.candidate)
+	assert.Equal(t, "복종하는 극M 마루이 모에카", protected.restore("복종하는 극M ⟦7000⟧"))
+}
+
+func TestProtectReviewActressNamesFallsBackWhenReviewerDropsToken(t *testing.T) {
+	actresses := []models.Actress{{JapaneseName: "円井萌華", LastName: "마루이", FirstName: "모에카"}}
+	protected := protectReviewActressNames("제목 円井萌華", "제목 마루이 모에카", actresses)
+
+	assert.Equal(t, "제목 마루이 모에카", protected.restore("제목 에누이 모에카"))
 }

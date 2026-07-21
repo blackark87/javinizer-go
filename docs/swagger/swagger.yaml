@@ -1692,6 +1692,9 @@ definitions:
       enable_thinking:
         description: Toggle reasoning/thinking when supported by the backend
         type: boolean
+      max_output_tokens:
+        description: Maximum generated tokens, including reasoning output
+        type: integer
       model:
         description: e.g., llama3.1
         type: string
@@ -2137,6 +2140,12 @@ definitions:
         type: string
       last_name:
         type: string
+      reading:
+        description: |-
+          Reading is the authoritative kana pronunciation reported by DMM or a
+          trusted identity resolver. It is kept separate so JapaneseName remains
+          the clean activity name while translation does not have to guess kanji.
+        type: string
       thumb_url:
         type: string
       translations:
@@ -2149,8 +2158,31 @@ definitions:
       updated_at:
         type: string
     type: object
+  github_com_javinizer_javinizer-go_internal_models.ActressIdentity:
+    properties:
+      dmm_id:
+        type: integer
+      first_name:
+        type: string
+      japanese_name:
+        type: string
+      last_name:
+        type: string
+      reading:
+        type: string
+      thumb_url:
+        type: string
+    type: object
   github_com_javinizer_javinizer-go_internal_models.ActressInfo:
     properties:
+      alias_identities:
+        description: |-
+          AliasIdentities contains other DMM-backed activity names that a trusted
+          identity source explicitly groups with this actress. They are identities,
+          not additional cast members.
+        items:
+          $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_models.ActressIdentity'
+        type: array
       dmm_id:
         description: DMM actress ID for unique identification
         type: integer
@@ -2159,6 +2191,15 @@ definitions:
       japanese_name:
         type: string
       last_name:
+        type: string
+      observed_aliases:
+        description: |-
+          ObservedAliases contains activity names seen before an authoritative DMM
+          profile replaced JapaneseName. Raw scraper results leave this empty.
+        items:
+          type: string
+        type: array
+      reading:
         type: string
       thumb_url:
         type: string
@@ -2882,6 +2923,12 @@ definitions:
         type: string
       last_name:
         type: string
+      reading:
+        description: |-
+          Reading is the authoritative kana pronunciation reported by DMM or a
+          trusted identity resolver. It is kept separate so JapaneseName remains
+          the clean activity name while translation does not have to guess kanji.
+        type: string
       thumb_url:
         type: string
       translations:
@@ -2943,10 +2990,25 @@ definitions:
       total:
         type: integer
     type: object
+  internal_api_actress.aliasGroupMemberResponse:
+    properties:
+      actress:
+        $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_models.Actress'
+      available:
+        type: boolean
+      canonical:
+        type: boolean
+      name:
+        type: string
+    type: object
   internal_api_actress.aliasGroupResponse:
     properties:
       canonical:
         type: string
+      members:
+        items:
+          $ref: '#/definitions/internal_api_actress.aliasGroupMemberResponse'
+        type: array
       names:
         items:
           type: string

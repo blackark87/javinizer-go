@@ -2,10 +2,12 @@ package maintenance
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +35,8 @@ type JobReprocessReport struct {
 type JobReprocessOptions struct {
 	Apply            bool
 	AdditionalModels []string
+	MovieIDs         []string
+	TitleOnly        bool
 }
 
 // ReprocessStoredJob retranslates and remaps a completed, not-yet-organized
@@ -66,15 +70,20 @@ func ReprocessStoredJobWithOptions(ctx context.Context, db *database.DB, cfg *co
 	if err != nil {
 		return nil, err
 	}
-	checkpointPath := reprocessCheckpointPath(jobID)
-	translatedCount, err := retranslateSelectedFields(ctx, cfg.Metadata.Translation, parsed, index, options.AdditionalModels, checkpointPath)
+	selectedMovieIDs := normalizeReprocessMovieIDs(options.MovieIDs)
+	selectedResults := countSelectedReprocessResults(parsed, selectedMovieIDs)
+	if selectedResults == 0 {
+		return nil, fmt.Errorf("job %s has no results matching the selected movie IDs", jobID)
+	}
+	checkpointPath := reprocessCheckpointPath(jobID, selectedMovieIDs, options.TitleOnly)
+	translatedCount, err := retranslateSelectedFields(ctx, cfg.Metadata.Translation, parsed, index, options.AdditionalModels, checkpointPath, selectedMovieIDs, options.TitleOnly)
 	if err != nil {
 		return nil, err
 	}
 
-	report := &JobReprocessReport{JobID: jobID, Results: len(parsed.Results), SourcesTranslated: translatedCount, Applied: options.Apply}
+	report := &JobReprocessReport{JobID: jobID, Results: selectedResults, SourcesTranslated: translatedCount, Applied: options.Apply}
 	for filePath, result := range parsed.Results {
-		if result == nil || result.Movie == nil || result.Status != models.JobStatusCompleted {
+		if !shouldReprocessResult(result, selectedMovieIDs) {
 			continue
 		}
 		prov := parsed.Provenance[filePath]
@@ -126,7 +135,7 @@ func ReprocessStoredJobWithOptions(ctx context.Context, db *database.DB, cfg *co
 	movieTranslationRepo := database.NewMovieTranslationRepository(db)
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, result := range parsed.Results {
-			if result == nil || result.Movie == nil || result.Status != models.JobStatusCompleted {
+			if !shouldReprocessResult(result, selectedMovieIDs) {
 				continue
 			}
 			movie := result.Movie
@@ -336,8 +345,21 @@ type reprocessTranslationCheckpoint struct {
 	entries map[string]reprocessTranslationCheckpointEntry
 }
 
-func reprocessCheckpointPath(jobID string) string {
-	return filepath.Join(os.TempDir(), "javinizer-reprocess-"+strings.TrimSpace(jobID)+".json")
+func reprocessCheckpointPath(jobID string, selectedMovieIDs map[string]struct{}, titleOnly bool) string {
+	suffix := ""
+	if len(selectedMovieIDs) > 0 {
+		ids := make([]string, 0, len(selectedMovieIDs))
+		for id := range selectedMovieIDs {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		digest := sha256.Sum256([]byte(strings.Join(ids, "\x00")))
+		suffix = fmt.Sprintf("-%x", digest[:6])
+	}
+	if titleOnly {
+		suffix += "-title"
+	}
+	return filepath.Join(os.TempDir(), "javinizer-reprocess-"+strings.TrimSpace(jobID)+suffix+".json")
 }
 
 func loadReprocessTranslationCheckpoint(path string) (*reprocessTranslationCheckpoint, error) {
@@ -394,16 +416,16 @@ func applyCheckpointEntry(current []reprocessTranslationItem, entry reprocessTra
 	}
 }
 
-func retranslateSelectedFields(ctx context.Context, tc config.TranslationConfig, parsed *worker.ParsedJobResults, index *actressIndex, additionalModels []string, checkpointPath string) (int, error) {
+func retranslateSelectedFields(ctx context.Context, tc config.TranslationConfig, parsed *worker.ParsedJobResults, index *actressIndex, additionalModels []string, checkpointPath string, selectedMovieIDs map[string]struct{}, titleOnly bool) (int, error) {
 	if !tc.Enabled {
 		return 0, fmt.Errorf("metadata translation is disabled")
 	}
 	tc.ApplyToPrimary = false
 	tc.OverwriteExistingTarget = true
-	tc.Fields = config.TranslationFieldsConfig{Title: true, Description: true}
+	tc.Fields = config.TranslationFieldsConfig{Title: true, Description: !titleOnly}
 	grouped := make(map[string][]reprocessTranslationItem)
 	for filePath, result := range parsed.Results {
-		if result == nil || result.Status != models.JobStatusCompleted {
+		if !shouldReprocessResult(result, selectedMovieIDs) {
 			continue
 		}
 		prov := parsed.Provenance[filePath]
@@ -415,6 +437,9 @@ func retranslateSelectedFields(ctx context.Context, tc config.TranslationConfig,
 			return 0, fmt.Errorf("%s: selected title source %q is unavailable", result.FileMatchInfo.MovieID, prov.FieldSources["title"])
 		}
 		descriptionSource := findStoredSource(prov.ScraperResults, prov.FieldSources["description"])
+		if titleOnly {
+			descriptionSource = nil
+		}
 		actressSource := findStoredSource(prov.ScraperResults, prov.FieldSources["actresses"])
 		actresses, _ := index.resolveCast(actressSource)
 		translationActresses := index.translationVariants(actresses)
@@ -454,6 +479,12 @@ func retranslateSelectedFields(ctx context.Context, tc config.TranslationConfig,
 	workers := tc.MaxConcurrency
 	if workers <= 0 {
 		workers = 3
+	}
+	// Targeted repair passes favor deterministic, bounded pressure on a local
+	// LLM. Sending several long thinking requests at once can exhaust the
+	// backend context or leave cancelled generations queued behind each other.
+	if len(selectedMovieIDs) > 0 {
+		workers = 1
 	}
 	translationConfigs := translationModelConfigs(tc, additionalModels)
 	work := make(chan []reprocessTranslationItem)
@@ -532,6 +563,44 @@ func retranslateSelectedFields(ctx context.Context, tc config.TranslationConfig,
 	return len(grouped), nil
 }
 
+func normalizeReprocessMovieIDs(movieIDs []string) map[string]struct{} {
+	if len(movieIDs) == 0 {
+		return nil
+	}
+	selected := make(map[string]struct{}, len(movieIDs))
+	for _, id := range movieIDs {
+		if normalized := strings.ToLower(strings.TrimSpace(id)); normalized != "" {
+			selected[normalized] = struct{}{}
+		}
+	}
+	return selected
+}
+
+func shouldReprocessResult(result *worker.MovieResult, selectedMovieIDs map[string]struct{}) bool {
+	if result == nil || result.Movie == nil || result.Status != models.JobStatusCompleted {
+		return false
+	}
+	if len(selectedMovieIDs) == 0 {
+		return true
+	}
+	for _, id := range []string{result.FileMatchInfo.MovieID, result.Movie.ID, result.Movie.ContentID} {
+		if _, ok := selectedMovieIDs[strings.ToLower(strings.TrimSpace(id))]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func countSelectedReprocessResults(parsed *worker.ParsedJobResults, selectedMovieIDs map[string]struct{}) int {
+	count := 0
+	for _, result := range parsed.Results {
+		if shouldReprocessResult(result, selectedMovieIDs) {
+			count++
+		}
+	}
+	return count
+}
+
 func translateAndReviewGroup(ctx context.Context, tc config.TranslationConfig, current []reprocessTranslationItem, service *translation.Service, workerConfig config.TranslationConfig) error {
 	representative := current[0]
 	description := ""
@@ -543,18 +612,21 @@ func translateAndReviewGroup(ctx context.Context, tc config.TranslationConfig, c
 	output, _, err := service.TranslateMovie(callCtx, movie, workerConfig.SettingsHash())
 	callCancel()
 	if err == nil && output != nil && output.Movie != nil {
-		reviewFields := []translation.QualityReviewField{{FieldName: "quality_review_title", Source: movie.Title, Candidate: output.Movie.Title}}
+		protectedTitle := protectReviewActressNames(movie.Title, output.Movie.Title, representative.actresses)
+		reviewFields := []translation.QualityReviewField{{FieldName: "quality_review_title", Source: protectedTitle.source, Candidate: protectedTitle.candidate}}
+		var protectedDescription protectedReviewText
 		if strings.TrimSpace(movie.Description) != "" && strings.TrimSpace(output.Movie.Description) != "" {
-			reviewFields = append(reviewFields, translation.QualityReviewField{FieldName: "quality_review_description", Source: movie.Description, Candidate: output.Movie.Description})
+			protectedDescription = protectReviewActressNames(movie.Description, output.Movie.Description, representative.actresses)
+			reviewFields = append(reviewFields, translation.QualityReviewField{FieldName: "quality_review_description", Source: protectedDescription.source, Candidate: protectedDescription.candidate})
 		}
 		var reviewed []string
 		reviewCtx, reviewCancel := reprocessCallContext(ctx, tc)
 		reviewed, err = service.ReviewJAVTranslations(reviewCtx, reviewFields)
 		reviewCancel()
 		if err == nil && len(reviewed) == len(reviewFields) {
-			output.Movie.Title = strings.TrimSpace(reviewed[0])
+			output.Movie.Title = protectedTitle.restore(reviewed[0])
 			if len(reviewFields) > 1 {
-				output.Movie.Description = strings.TrimSpace(reviewed[1])
+				output.Movie.Description = protectedDescription.restore(reviewed[1])
 			}
 		} else if err == nil {
 			err = fmt.Errorf("quality reviewer returned %d items for %d inputs", len(reviewed), len(reviewFields))
@@ -573,6 +645,54 @@ func translateAndReviewGroup(ctx context.Context, tc config.TranslationConfig, c
 		}
 	}
 	return nil
+}
+
+type protectedReviewText struct {
+	source       string
+	candidate    string
+	fallback     string
+	placeholders map[string]string
+}
+
+// protectReviewActressNames keeps the deterministic actress translation from
+// the first pass out of the reviewer's reach. The reviewer still sees the same
+// token in the Japanese source and Korean candidate, so it can review the
+// surrounding grammar without guessing a new reading for a known performer.
+func protectReviewActressNames(source, candidate string, actresses []models.Actress) protectedReviewText {
+	protected := protectedReviewText{
+		source:       source,
+		candidate:    candidate,
+		fallback:     strings.TrimSpace(candidate),
+		placeholders: make(map[string]string),
+	}
+	for _, actress := range actresses {
+		japanese := strings.TrimSpace(actress.JapaneseName)
+		korean := strings.TrimSpace(strings.TrimSpace(actress.LastName) + " " + strings.TrimSpace(actress.FirstName))
+		if japanese == "" || korean == "" || !strings.Contains(protected.source, japanese) || !strings.Contains(protected.candidate, korean) {
+			continue
+		}
+		tokenIndex := 7000 + len(protected.placeholders)
+		token := fmt.Sprintf("⟦%d⟧", tokenIndex)
+		for strings.Contains(protected.source, token) || strings.Contains(protected.candidate, token) {
+			tokenIndex++
+			token = fmt.Sprintf("⟦%d⟧", tokenIndex)
+		}
+		protected.source = strings.ReplaceAll(protected.source, japanese, token)
+		protected.candidate = strings.ReplaceAll(protected.candidate, korean, token)
+		protected.placeholders[token] = korean
+	}
+	return protected
+}
+
+func (p protectedReviewText) restore(reviewed string) string {
+	restored := strings.TrimSpace(reviewed)
+	for token, actressName := range p.placeholders {
+		if !strings.Contains(restored, token) {
+			return p.fallback
+		}
+		restored = strings.ReplaceAll(restored, token, actressName)
+	}
+	return restored
 }
 
 func reprocessCallContext(ctx context.Context, tc config.TranslationConfig) (context.Context, context.CancelFunc) {

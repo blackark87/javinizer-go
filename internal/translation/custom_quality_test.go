@@ -260,14 +260,19 @@ func TestReviewJAVTranslationsSplitsAfterGemmaParserError(t *testing.T) {
 }
 
 type qualityReviewMockProvider struct {
-	items []qualityReviewItem
+	items    []qualityReviewItem
+	response string
 }
 
 func (p *qualityReviewMockProvider) Name() string { return "openai-compatible" }
 
 func (p *qualityReviewMockProvider) Translate(ctx context.Context, _, _ string, texts []string) (*translationResult, error) {
 	p.items, _ = qualityReviewFromContext(ctx, len(texts))
-	return &translationResult{Texts: []string{"강철 보지"}}, nil
+	response := p.response
+	if response == "" {
+		response = "강철 보지"
+	}
+	return &translationResult{Texts: []string{response}}, nil
 }
 
 func TestReviewJAVTranslationsPassesOriginalAndCandidateToSecondPass(t *testing.T) {
@@ -283,6 +288,24 @@ func TestReviewJAVTranslationsPassesOriginalAndCandidateToSecondPass(t *testing.
 	require.Len(t, provider.items, 1)
 	assert.Equal(t, "鉄マン", provider.items[0].Source)
 	assert.Equal(t, "철맨", provider.items[0].Candidate)
+}
+
+func TestReviewJAVTranslationsProtectsActressNames(t *testing.T) {
+	provider := &qualityReviewMockProvider{response: "더 자연스러운 제목 ⟦7000⟧"}
+	service := New(Config{Enabled: true, Provider: "openai-compatible", TargetLanguage: "ko"}, provider)
+
+	result, err := service.ReviewJAVTranslations(context.Background(), []QualityReviewField{{
+		FieldName: "quality_review_title",
+		Source:    "素敵な作品 松本いちか",
+		Candidate: "멋진 작품 마츠모토 이치카",
+		Actresses: []models.Actress{{JapaneseName: "松本いちか", LastName: "마츠모토", FirstName: "이치카"}},
+	}})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"더 자연스러운 제목 마츠모토 이치카"}, result)
+	require.Len(t, provider.items, 1)
+	assert.Equal(t, "素敵な作品 ⟦7000⟧", provider.items[0].Source)
+	assert.Equal(t, "멋진 작품 ⟦7000⟧", provider.items[0].Candidate)
 }
 
 func TestTranslateMovie_RetriesNonHangulPersonSlot(t *testing.T) {

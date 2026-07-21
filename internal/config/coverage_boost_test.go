@@ -206,7 +206,7 @@ func TestApplyEnvironmentOverrides_MetadataTranslationSettings(t *testing.T) {
 		cfg := DefaultConfig(nil, nil)
 		ApplyEnvironmentOverrides(cfg)
 
-		assert.Equal(t, 60, cfg.Metadata.Translation.TimeoutSeconds)
+		assert.Equal(t, 120, cfg.Metadata.Translation.TimeoutSeconds)
 	})
 
 	t.Run("METADATA_TRANSLATION_TIMEOUT_SECONDS empty keeps default", func(t *testing.T) {
@@ -215,7 +215,7 @@ func TestApplyEnvironmentOverrides_MetadataTranslationSettings(t *testing.T) {
 		cfg := DefaultConfig(nil, nil)
 		ApplyEnvironmentOverrides(cfg)
 
-		assert.Equal(t, 60, cfg.Metadata.Translation.TimeoutSeconds)
+		assert.Equal(t, 120, cfg.Metadata.Translation.TimeoutSeconds)
 	})
 
 	t.Run("METADATA_TRANSLATION_APPLY_TO_PRIMARY true", func(t *testing.T) {
@@ -857,11 +857,11 @@ func TestNormalizeTranslationConfig_ZeroTimeout(t *testing.T) {
 		Provider:       "openai",
 		SourceLanguage: "ja",
 		TargetLanguage: "en",
-		TimeoutSeconds: 0, // should be set to 60
+		TimeoutSeconds: 0, // should be set to 120
 	}
 	changed := normalizeTranslationConfig(tc)
 	assert.True(t, changed)
-	assert.Equal(t, 60, tc.TimeoutSeconds)
+	assert.Equal(t, 120, tc.TimeoutSeconds)
 }
 
 func TestNormalizeTranslationConfig_AlreadyNormalized(t *testing.T) {

@@ -427,6 +427,8 @@ export function createReviewState(pageStore: Page) {
 			apiClient.getBatchMovieSources(mutationJobId, resultId),
 		overrideBatchMovieField: (mutationJobId, resultId, body) =>
 			apiClient.overrideBatchMovieField(mutationJobId, resultId, body),
+		reviewBatchMovieTranslation: (mutationJobId, resultId, body) =>
+			apiClient.reviewBatchMovieTranslation(mutationJobId, resultId, body),
 		excludeBatchMovie: (mutationJobId, resultId) =>
 			apiClient.excludeBatchMovie(mutationJobId, resultId),
 		updateBatchMovie: (mutationJobId, resultId, movie) =>
@@ -963,6 +965,11 @@ export function createReviewState(pageStore: Page) {
 		return mutations.applyFieldOverrideAsync(currentResult.result_id, field, source);
 	}
 
+	function reviewTranslation(field: 'title' | 'description') {
+		if (!currentResult) return;
+		return mutations.reviewTranslationAsync(currentResult.result_id, field);
+	}
+
 	async function openRescrapeModal(movieId: string) {
 		bulkRescrapeMovieIds = [];
 		rescrapeTargetResult = null;
@@ -1413,6 +1420,10 @@ export function createReviewState(pageStore: Page) {
 		openSourceViewerModal,
 		loadSources,
 		applyFieldOverride,
+		reviewTranslation,
+		get translationReviewPending() {
+			return mutations.translationReviewMutation.isPending;
+		},
 		get fieldOverridePending() {
 			return mutations.fieldOverrideMutation.isPending;
 		},

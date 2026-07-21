@@ -172,7 +172,7 @@ export function createSettingsStore(deps: SettingsStoreDeps): SettingsStore {
 		if (!translation.provider) translation.provider = 'openai';
 		if (!translation.source_language) translation.source_language = 'en';
 		if (!translation.target_language) translation.target_language = 'ja';
-		if (!translation.timeout_seconds) translation.timeout_seconds = 60;
+		if (!translation.timeout_seconds) translation.timeout_seconds = 120;
 		if (translation.apply_to_primary === undefined) translation.apply_to_primary = true;
 		if (translation.overwrite_existing_target === undefined)
 			translation.overwrite_existing_target = true;

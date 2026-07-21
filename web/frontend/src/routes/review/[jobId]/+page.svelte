@@ -59,6 +59,7 @@
 	let sourceViewerResults: ScraperResult[] = $state([]);
 	let sourceViewerOutcomes: ScraperOutcome[] = $state([]);
 	let pendingOverrideField = $state<string | null>(null);
+	let retranslatingField = $state<'title' | 'description' | null>(null);
 
 	async function loadSourcesForCurrent() {
 		if (!s.currentResult) return;
@@ -92,6 +93,16 @@
 			await loadSourcesForCurrent();
 		} finally {
 			pendingOverrideField = null;
+		}
+	}
+
+	async function handleRetranslate(field: 'title' | 'description') {
+		if (!s.currentResult || retranslatingField !== null) return;
+		retranslatingField = field;
+		try {
+			await s.reviewTranslation(field);
+		} finally {
+			retranslatingField = null;
 		}
 	}
 </script>
@@ -323,6 +334,9 @@
 							onOpenSourceViewer={openSourceViewer}
 								onResetCurrentMovie={s.resetCurrentMovie}
 								onUpdateCurrentMovie={s.updateCurrentMovie}
+								onRetranslate={handleRetranslate}
+								retranslatingField={retranslatingField}
+								retranslationDisabled={s.job.status !== 'completed' || s.translationReviewPending}
 							/>
 
 							<Card class="p-6">

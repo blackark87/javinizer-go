@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Movie, Genre } from '$lib/api/types';
-	import { CircleAlert, X, Plus } from 'lucide-svelte';
+	import { CircleAlert, LoaderCircle, RefreshCw, X, Plus } from 'lucide-svelte';
 
 	interface Props {
 		movie: Movie;
@@ -8,9 +8,21 @@
 		onUpdate: (movie: Movie) => void;
 		fieldSources?: Record<string, string>;
 		showFieldSources?: boolean;
+		onRetranslate?: (field: 'title' | 'description') => void;
+		retranslatingField?: 'title' | 'description' | null;
+		retranslationDisabled?: boolean;
 	}
 
-	let { movie, originalMovie, onUpdate, fieldSources, showFieldSources = false }: Props = $props();
+	let {
+		movie,
+		originalMovie,
+		onUpdate,
+		fieldSources,
+		showFieldSources = false,
+		onRetranslate,
+		retranslatingField = null,
+		retranslationDisabled = false,
+	}: Props = $props();
 
 	// Create a local editable copy - initialized by effect
 	let editedMovie = $state<Movie>({} as Movie);
@@ -141,15 +153,32 @@
 
 		<!-- Title -->
 		<div class="md:col-span-2">
-			<label class="flex items-center gap-2 text-sm font-medium mb-1">
-				Title
-				{#if sourceText('display_title')}
-					<span class="text-xs font-normal text-muted-foreground">{sourceText('display_title')}</span>
+			<div class="flex items-center justify-between gap-2 mb-1">
+				<label class="flex items-center gap-2 text-sm font-medium">
+					Title
+					{#if sourceText('display_title')}
+						<span class="text-xs font-normal text-muted-foreground">{sourceText('display_title')}</span>
+					{/if}
+					{#if isModified('display_title')}
+						<CircleAlert class="h-3 w-3 text-orange-600 dark:text-orange-400" />
+					{/if}
+				</label>
+				{#if onRetranslate}
+					<button
+						type="button"
+						class="inline-flex items-center gap-1 text-xs text-primary hover:underline disabled:text-muted-foreground disabled:no-underline disabled:cursor-not-allowed"
+						disabled={retranslationDisabled || retranslatingField !== null || isModified('display_title')}
+						title={isModified('display_title') ? 'Save title changes before retranslating' : 'Run 2-pass LLM review on the current translation'}
+						onclick={() => onRetranslate?.('title')}
+					>
+						{#if retranslatingField === 'title'}
+							<LoaderCircle class="h-3.5 w-3.5 animate-spin" /> 2-pass 번역 중...
+						{:else}
+							<RefreshCw class="h-3.5 w-3.5" /> 재번역
+						{/if}
+					</button>
 				{/if}
-				{#if isModified('display_title')}
-					<CircleAlert class="h-3 w-3 text-orange-600 dark:text-orange-400" />
-				{/if}
-			</label>
+			</div>
 			<input
 				type="text"
 				bind:value={editedMovie.display_title}
@@ -179,15 +208,32 @@
 
 		<!-- Description -->
 		<div class="md:col-span-2">
-			<label class="flex items-center gap-2 text-sm font-medium mb-1">
-				Description
-				{#if sourceText('description')}
-					<span class="text-xs font-normal text-muted-foreground">{sourceText('description')}</span>
+			<div class="flex items-center justify-between gap-2 mb-1">
+				<label class="flex items-center gap-2 text-sm font-medium">
+					Description
+					{#if sourceText('description')}
+						<span class="text-xs font-normal text-muted-foreground">{sourceText('description')}</span>
+					{/if}
+					{#if isModified('description')}
+						<CircleAlert class="h-3 w-3 text-orange-600 dark:text-orange-400" />
+					{/if}
+				</label>
+				{#if onRetranslate}
+					<button
+						type="button"
+						class="inline-flex items-center gap-1 text-xs text-primary hover:underline disabled:text-muted-foreground disabled:no-underline disabled:cursor-not-allowed"
+						disabled={retranslationDisabled || retranslatingField !== null || isModified('description')}
+						title={isModified('description') ? 'Save description changes before retranslating' : 'Run 2-pass LLM review on the current translation'}
+						onclick={() => onRetranslate?.('description')}
+					>
+						{#if retranslatingField === 'description'}
+							<LoaderCircle class="h-3.5 w-3.5 animate-spin" /> 2-pass 번역 중...
+						{:else}
+							<RefreshCw class="h-3.5 w-3.5" /> 재번역
+						{/if}
+					</button>
 				{/if}
-				{#if isModified('description')}
-					<CircleAlert class="h-3 w-3 text-orange-600 dark:text-orange-400" />
-				{/if}
-			</label>
+			</div>
 			<textarea
 				bind:value={editedMovie.description}
 				onchange={() => onUpdate(editedMovie)}

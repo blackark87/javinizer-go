@@ -596,6 +596,51 @@ type QualityReviewField struct {
 	FieldName string
 	Source    string
 	Candidate string
+	Actresses []models.Actress
+}
+
+type protectedQualityReviewText struct {
+	source       string
+	candidate    string
+	fallback     string
+	placeholders map[string]string
+}
+
+func protectQualityReviewActressNames(field QualityReviewField) protectedQualityReviewText {
+	protected := protectedQualityReviewText{
+		source:       field.Source,
+		candidate:    field.Candidate,
+		fallback:     strings.TrimSpace(field.Candidate),
+		placeholders: make(map[string]string),
+	}
+	for _, actress := range field.Actresses {
+		japanese := strings.TrimSpace(actress.JapaneseName)
+		korean := strings.TrimSpace(strings.TrimSpace(actress.LastName) + " " + strings.TrimSpace(actress.FirstName))
+		if japanese == "" || korean == "" || !strings.Contains(protected.source, japanese) || !strings.Contains(protected.candidate, korean) {
+			continue
+		}
+		tokenIndex := 7000 + len(protected.placeholders)
+		token := fmt.Sprintf("⟦%d⟧", tokenIndex)
+		for strings.Contains(protected.source, token) || strings.Contains(protected.candidate, token) {
+			tokenIndex++
+			token = fmt.Sprintf("⟦%d⟧", tokenIndex)
+		}
+		protected.source = strings.ReplaceAll(protected.source, japanese, token)
+		protected.candidate = strings.ReplaceAll(protected.candidate, korean, token)
+		protected.placeholders[token] = korean
+	}
+	return protected
+}
+
+func (p protectedQualityReviewText) restore(reviewed string) string {
+	restored := strings.TrimSpace(reviewed)
+	for token, actressName := range p.placeholders {
+		if !strings.Contains(restored, token) {
+			return p.fallback
+		}
+		restored = strings.ReplaceAll(restored, token, actressName)
+	}
+	return restored
 }
 
 // ReviewJAVTranslations performs a mandatory second LLM pass over first-pass JAV translations.
@@ -619,14 +664,16 @@ func (s *Service) ReviewJAVTranslations(ctx context.Context, fields []QualityRev
 	markers := make([]string, len(fields))
 	texts := make([]string, len(fields))
 	items := make([]qualityReviewItem, len(fields))
+	protected := make([]protectedQualityReviewText, len(fields))
 	for i, field := range fields {
 		name := strings.TrimSpace(field.FieldName)
 		if name == "" {
 			name = fmt.Sprintf("quality_review_%d", i)
 		}
 		markers[i] = name
-		texts[i] = field.Candidate
-		items[i] = qualityReviewItem{Source: field.Source, Candidate: field.Candidate}
+		protected[i] = protectQualityReviewActressNames(field)
+		texts[i] = protected[i].candidate
+		items[i] = qualityReviewItem{Source: protected[i].source, Candidate: protected[i].candidate}
 	}
 	targetLanguages := s.TargetLanguages()
 	if len(targetLanguages) == 0 {
@@ -653,7 +700,9 @@ func (s *Service) ReviewJAVTranslations(ctx context.Context, fields []QualityRev
 		if isInvalidQualityReviewText(reviewed[i]) {
 			logging.Warnf("Translation: quality reviewer returned contaminated output for %s; keeping first-pass candidate", markers[i])
 			reviewed[i] = strings.TrimSpace(fields[i].Candidate)
+			continue
 		}
+		reviewed[i] = protected[i].restore(reviewed[i])
 	}
 	return reviewed, nil
 }

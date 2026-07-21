@@ -76,10 +76,20 @@ func TestScrapePhase_StagesMetadataBeforeTranslationAndCheckpointsEveryRecord(t 
 		Lifecycle:              &stubLifecycle{},
 		persister:              persister,
 	}
+	translationProgress := make(chan string, total)
+	cfg := ScrapePhaseConfig{
+		FileMatchInfo: fileInfo,
+		OnScrapeStepProgress: func(_ string, step string, pct float64, msg string) {
+			if step == string(StepTranslate) {
+				assert.Equal(t, 0.85, pct)
+				translationProgress <- msg
+			}
+		},
+	}
 
 	done := make(chan struct{})
 	go func() {
-		(&scrapePhase{}).Run(context.Background(), inputs, files, ScrapePhaseConfig{FileMatchInfo: fileInfo})
+		(&scrapePhase{}).Run(context.Background(), inputs, files, cfg)
 		close(done)
 	}()
 
@@ -87,6 +97,23 @@ func TestScrapePhase_StagesMetadataBeforeTranslationAndCheckpointsEveryRecord(t 
 	assert.Equal(t, int32(total), atomic.LoadInt32(&wf.metadataCompleted))
 	assert.Zero(t, atomic.LoadInt32(&wf.translationEarly))
 	assert.Equal(t, int32(total), atomic.LoadInt32(&repo.upserts), "raw metadata must be durable before translation is released")
+	running, pending := 0, 0
+	for _, file := range files {
+		result := inputs.Updater.(*stubUpdater).getResult(file)
+		require.NotNil(t, result)
+		switch result.Status {
+		case models.JobStatusRunning:
+			running++
+		case models.JobStatusPending:
+			pending++
+		}
+	}
+	assert.Equal(t, 2, running, "only translation workers should be reported as running")
+	assert.Equal(t, 2, pending, "metadata-complete files waiting for translation should be pending")
+	require.Eventually(t, func() bool { return len(translationProgress) == 2 }, 3*time.Second, 10*time.Millisecond)
+	for i := 0; i < 2; i++ {
+		assert.Contains(t, <-translationProgress, "1-pass LLM translation in progress for")
+	}
 
 	for range files {
 		wf.releaseTranslation <- struct{}{}

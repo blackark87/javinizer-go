@@ -1379,6 +1379,22 @@ definitions:
           type: string
         type: array
     type: object
+  github_com_javinizer_javinizer-go_internal_api_contracts.TranslationReviewRequest:
+    properties:
+      field:
+        enum:
+        - title
+        - description
+        example: title
+        type: string
+    required:
+    - field
+    type: object
+  github_com_javinizer_javinizer-go_internal_api_contracts.TranslationReviewResponse:
+    properties:
+      movie:
+        $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieView'
+    type: object
   github_com_javinizer_javinizer-go_internal_api_contracts.UpdateMovieRequest:
     properties:
       movie:
@@ -4599,6 +4615,60 @@ paths:
           schema:
             $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse'
       summary: Get per-source raw scraper results for a movie
+      tags:
+      - web
+  /api/v1/batch/{id}/results/{resultId}/translation-review:
+    post:
+      consumes:
+      - application/json
+      description: Runs the existing Korean translation through the second-pass JAV
+        quality reviewer using the retained Japanese scraper source, then persists
+        only the reviewed field. Available before organization.
+      parameters:
+      - description: Job ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Result ID
+        in: path
+        name: resultId
+        required: true
+        type: string
+      - description: Field to review
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.TranslationReviewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.TranslationReviewResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse'
+      summary: Review one translated movie field with the configured LLM
       tags:
       - web
   /api/v1/batch/{id}/update:

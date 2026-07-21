@@ -207,9 +207,13 @@ func TestTryCache_CacheHitNoTranslationUncovered(t *testing.T) {
 // --- Apply translation (apply_translation.go) ---
 
 func TestNewTranslationHTTPClientUncovered(t *testing.T) {
-	client := newTranslationHTTPClient()
+	client := newTranslationHTTPClient(120)
 	require.NotNil(t, client)
-	assert.Equal(t, 30*time.Second, client.Timeout)
+	assert.Equal(t, 120*time.Second, client.Timeout)
+
+	defaultClient := newTranslationHTTPClient(0)
+	require.NotNil(t, defaultClient)
+	assert.Equal(t, 120*time.Second, defaultClient.Timeout)
 }
 
 func TestMergeOrAppendTranslation_EmptySliceUncovered(t *testing.T) {

@@ -58,7 +58,7 @@ func NewTranslatorFromApp(cfg *config.TranslationConfig) Translator {
 		return noOpTranslator{}
 	}
 	bridgeCfg := translation.ConfigFromApp(*cfg)
-	httpClient := newTranslationHTTPClient()
+	httpClient := newTranslationHTTPClient(cfg.TimeoutSeconds)
 	ts := translation.New(bridgeCfg,
 		translation.NewOpenAIProvider(bridgeCfg, httpClient),
 		translation.NewOpenAICompatibleProvider(bridgeCfg, httpClient),

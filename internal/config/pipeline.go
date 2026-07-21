@@ -61,7 +61,7 @@ func normalizeTranslationConfig(t *TranslationConfig) bool {
 	changed = normalizeTranslationMode(&t.Google.Mode, models.GoogleModeFree) || changed
 
 	if t.TimeoutSeconds <= 0 {
-		t.TimeoutSeconds = 60
+		t.TimeoutSeconds = 120
 		changed = true
 	}
 	if t.MaxConcurrency <= 0 {

@@ -149,6 +149,24 @@ func runDeferredTranslationStage(ctx context.Context, outcomes []scrapeFileOutco
 		if !outcome.Success || outcome.Result == nil || outcome.Result.Movie == nil {
 			return outcome
 		}
+		_ = inputs.Updater.AtomicUpdateFileResult(outcome.FilePath, func(current *MovieResult) (*MovieResult, error) {
+			current.Status = models.JobStatusRunning
+			current.EndedAt = nil
+			return current, nil
+		})
+		message := fmt.Sprintf("1-pass LLM translation in progress for %s", outcome.MovieID)
+		inputs.Broadcaster.Send(JobEvent{
+			JobID:     inputs.JobID,
+			MovieID:   outcome.MovieID,
+			Phase:     JobEventPhaseScrape,
+			Step:      StepTranslate,
+			Progress:  0.85,
+			Message:   message,
+			Timestamp: time.Now(),
+		})
+		if cfg.OnScrapeStepProgress != nil {
+			cfg.OnScrapeStepProgress(outcome.FilePath, string(StepTranslate), 0.85, message)
+		}
 		translatedMeta, err := translator.TranslateScrapeResult(taskCtx, outcome.Result, outcome.FilePath)
 		if err != nil {
 			outcome.Success = false
@@ -389,7 +407,7 @@ func interpretScrapeResult(
 	fileResult, prov := scrapeResultToMovieResult(fmi, result, meta, preserveMovieID)
 	fileResult.StartedAt = startTime
 	if inputs.DeferredTranslation {
-		fileResult.Status = models.JobStatusRunning
+		fileResult.Status = models.JobStatusPending
 		fileResult.EndedAt = nil
 	}
 

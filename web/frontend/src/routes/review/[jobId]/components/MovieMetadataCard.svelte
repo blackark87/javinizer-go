@@ -14,6 +14,9 @@
 		onOpenSourceViewer: () => void;
 		onResetCurrentMovie: () => void;
 		onUpdateCurrentMovie: (movie: Movie) => void;
+		onRetranslate: (field: 'title' | 'description') => void;
+		retranslatingField: 'title' | 'description' | null;
+		retranslationDisabled: boolean;
 	}
 
 	let {
@@ -24,7 +27,10 @@
 		onOpenRescrape,
 		onOpenSourceViewer,
 		onResetCurrentMovie,
-		onUpdateCurrentMovie
+		onUpdateCurrentMovie,
+		onRetranslate,
+		retranslatingField,
+		retranslationDisabled,
 	}: Props = $props();
 </script>
 
@@ -75,6 +81,9 @@
 			onUpdate={onUpdateCurrentMovie}
 			fieldSources={currentResult.field_sources}
 			showFieldSources={showFieldScraperSources}
+			onRetranslate={onRetranslate}
+			retranslatingField={retranslatingField}
+			retranslationDisabled={retranslationDisabled}
 		/>
 	</div>
 </Card>

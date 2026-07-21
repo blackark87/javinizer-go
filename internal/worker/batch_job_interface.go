@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -193,6 +194,10 @@ type JobEditor interface {
 	// provenance attribution. Mirrors the original Javinizer "Replace" button.
 	// Returns the updated MovieResult and ProvenanceData (both clones).
 	ApplyFieldOverride(ctx context.Context, resultID, fieldKey, source string) (*MovieResult, *ProvenanceData, error)
+
+	// ApplyTranslationReview stores a user-requested second-pass correction for
+	// title or description and refreshes derived display-title metadata.
+	ApplyTranslationReview(ctx context.Context, resultID, fieldKey, value, targetLanguage string) (*MovieResult, error)
 }
 
 // PhaseController provides phase execution and dependency-wiring operations
@@ -387,7 +392,10 @@ type jobEditorImpl struct {
 }
 
 func (je *jobEditorImpl) UpdateMovie(ctx context.Context, filePath string, movie *models.Movie) error {
-	if movie != nil && je.displayTitleConfig != nil {
+	// Populate the configured fallback only when no cast was supplied. An
+	// explicit review-page cast is user-authored data, so preserve combinations
+	// such as a verified actress plus an Unknown placeholder verbatim.
+	if movie != nil && len(movie.Actresses) == 0 && je.displayTitleConfig != nil {
 		_, nameCfg := je.displayTitleConfig()
 		models.ApplyUnknownActressMode(movie, nameCfg.UnknownActressMode, nameCfg.UnknownActressText)
 	}
@@ -525,6 +533,62 @@ func (je *jobEditorImpl) ApplyFieldOverride(ctx context.Context, resultID, field
 	updated, _, _ := je.tracker.GetFileResultByResultID(resultID)
 	updatedProv := je.tracker.GetProvenance(filePath)
 	return updated, updatedProv, nil
+}
+
+func (je *jobEditorImpl) ApplyTranslationReview(ctx context.Context, resultID, fieldKey, value, targetLanguage string) (*MovieResult, error) {
+	mu, _ := je.overrideMu.LoadOrStore(resultID, &sync.Mutex{})
+	mu.(*sync.Mutex).Lock()
+	defer mu.(*sync.Mutex).Unlock()
+
+	result, filePath, found := je.tracker.GetFileResultByResultID(resultID)
+	if !found || result == nil || result.Movie == nil {
+		return nil, fmt.Errorf("result %s not found or has no movie", resultID)
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, fmt.Errorf("reviewed %s is empty", fieldKey)
+	}
+	movie := result.Movie.Clone()
+	switch fieldKey {
+	case "title":
+		movie.Title = value
+	case "description":
+		movie.Description = value
+	default:
+		return nil, fmt.Errorf("unsupported translation review field %q", fieldKey)
+	}
+
+	targetLanguage = strings.ToLower(strings.TrimSpace(targetLanguage))
+	if targetLanguage != "" {
+		translationIndex := -1
+		for i := range movie.Translations {
+			if strings.ToLower(strings.TrimSpace(movie.Translations[i].Language)) == targetLanguage {
+				translationIndex = i
+				break
+			}
+		}
+		if translationIndex < 0 {
+			movie.Translations = append(movie.Translations, models.MovieTranslation{Language: targetLanguage})
+			translationIndex = len(movie.Translations) - 1
+		}
+		if fieldKey == "title" {
+			movie.Translations[translationIndex].Title = value
+		} else {
+			movie.Translations[translationIndex].Description = value
+		}
+	}
+
+	if fieldKey == "title" && je.templateEngine != nil && je.displayTitleConfig != nil {
+		displayTitleTemplate, nameCfg := je.displayTitleConfig()
+		workflow.ApplyDisplayTitleFromSourceFile(
+			ctx, movie, movie, displayTitleTemplate, je.templateEngine, nameCfg, filePath,
+		)
+	}
+	if err := je.UpdateMovie(ctx, filePath, movie); err != nil {
+		return nil, fmt.Errorf("persist translation review: %w", err)
+	}
+	updated, _, _ := je.tracker.GetFileResultByResultID(resultID)
+	return updated, nil
 }
 
 // editableJobAdapter satisfies EditableJob by composing jobReaderImpl,

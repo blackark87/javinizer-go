@@ -21,14 +21,15 @@ type JobEventStep string
 
 // JobEventStep values naming the individual steps within a job phase.
 const (
-	StepQueued   JobEventStep = "queued"
-	StepScrape   JobEventStep = "scrape"
-	stepOrganize JobEventStep = "organize"
-	stepDownload JobEventStep = "download"
-	stepNFO      JobEventStep = "nfo"
-	StepApply    JobEventStep = "apply"
-	StepComplete JobEventStep = "complete"
-	StepFailed   JobEventStep = "failed"
+	StepQueued    JobEventStep = "queued"
+	StepScrape    JobEventStep = "scrape"
+	StepTranslate JobEventStep = "translation"
+	stepOrganize  JobEventStep = "organize"
+	stepDownload  JobEventStep = "download"
+	stepNFO       JobEventStep = "nfo"
+	StepApply     JobEventStep = "apply"
+	StepComplete  JobEventStep = "complete"
+	StepFailed    JobEventStep = "failed"
 )
 
 // JobEvent represents a progress event emitted during batch job execution.

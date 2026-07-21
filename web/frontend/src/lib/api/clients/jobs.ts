@@ -31,6 +31,8 @@ import type {
 	SourceResultsResponse,
 	FieldOverrideRequest,
 	FieldOverrideResponse,
+	TranslationReviewRequest,
+	TranslationReviewResponse,
 } from '../types';
 import { BaseClient } from './common';
 
@@ -108,6 +110,20 @@ export class JobClient extends BaseClient {
 	): Promise<FieldOverrideResponse> {
 		return this.request<FieldOverrideResponse>(
 			`/api/v1/batch/${jobId}/results/${resultId}/field-override`,
+			{
+				method: 'POST',
+				body: JSON.stringify(request),
+			},
+		);
+	}
+
+	async reviewBatchMovieTranslation(
+		jobId: string,
+		resultId: string,
+		request: TranslationReviewRequest,
+	): Promise<TranslationReviewResponse> {
+		return this.request<TranslationReviewResponse>(
+			`/api/v1/batch/${jobId}/results/${resultId}/translation-review`,
 			{
 				method: 'POST',
 				body: JSON.stringify(request),

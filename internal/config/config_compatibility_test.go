@@ -50,7 +50,7 @@ func TestNormalize_Idempotent(t *testing.T) {
 	assert.Equal(t, " JA ", cfg.Scrapers.Overrides["javlibrary"].Language)
 	assert.Equal(t, "https://www.dmm.co.jp/", cfg.Scrapers.Referer)
 	assert.Equal(t, "openai", cfg.Metadata.Translation.Provider)
-	assert.Equal(t, 60, cfg.Metadata.Translation.TimeoutSeconds)
+	assert.Equal(t, 120, cfg.Metadata.Translation.TimeoutSeconds)
 
 	changed = normalize(cfg)
 	assert.False(t, changed)

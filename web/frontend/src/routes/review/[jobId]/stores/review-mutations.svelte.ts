@@ -12,6 +12,7 @@ import type {
 	PosterCropResponse,
 	PosterFromURLResponse,
 	SourceResultsResponse,
+	TranslationReviewResponse,
 } from '$lib/api/types';
 import {
 	normalizeCropBox,
@@ -53,6 +54,11 @@ interface ReviewMutationsDeps {
 		resultId: string,
 		body: { field: string; source: string },
 	) => Promise<FieldOverrideResponse>;
+	reviewBatchMovieTranslation: (
+		jobId: string,
+		resultId: string,
+		body: { field: 'title' | 'description' },
+	) => Promise<TranslationReviewResponse>;
 	excludeBatchMovie: (jobId: string, resultId: string) => Promise<unknown>;
 	updateBatchMovie: (jobId: string, resultId: string, movie: Movie) => Promise<unknown>;
 	updateBatchMoviePosterCrop: (
@@ -407,6 +413,45 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 		await fieldOverrideMutation.mutateAsync({ resultId, field, source });
 	}
 
+	const translationReviewMutation = createMutation(() => ({
+		mutationFn: async ({ resultId, field }: { resultId: string; field: 'title' | 'description' }) =>
+			deps.reviewBatchMovieTranslation(deps.getJobId(), resultId, { field }),
+		onSuccess: (data: TranslationReviewResponse, { resultId, field }) => {
+			const currentJob = deps.getJob();
+			if (currentJob && data.movie) {
+				const updatedJob: BatchJobResponse = {
+					...currentJob,
+					results: { ...currentJob.results },
+				};
+				for (const [filePath, result] of Object.entries(updatedJob.results)) {
+					const current = result as FileResult;
+					if (current.result_id !== resultId) continue;
+					updatedJob.results[filePath] = { ...current, movie: data.movie };
+				}
+				deps.skipJobSync();
+				deps.setJob(updatedJob);
+
+				const editedMovies = deps.getEditedMovies();
+				for (const [filePath, movie] of editedMovies) {
+					if (currentJob.results?.[filePath]?.result_id !== resultId) continue;
+					const merged = { ...movie };
+					overlayFieldOverride(merged, field, data.movie);
+					editedMovies.set(filePath, merged);
+				}
+			}
+			deps.toastSuccess(`${field === 'title' ? 'Title' : 'Description'} retranslated`);
+			void invalidateJobQueries();
+		},
+		onError: (err: Error) => {
+			deps.toastError(`Retranslation failed: ${err.message}`);
+		},
+	}));
+
+	async function reviewTranslationAsync(resultId: string, field: 'title' | 'description') {
+		if (!deps.getJob()) return;
+		await translationReviewMutation.mutateAsync({ resultId, field });
+	}
+
 	return {
 		posterFromUrlMutation,
 		applyPosterFromUrl,
@@ -419,5 +464,7 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 		applyPosterCropAsync,
 		fieldOverrideMutation,
 		applyFieldOverrideAsync,
+		translationReviewMutation,
+		reviewTranslationAsync,
 	};
 }

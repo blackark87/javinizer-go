@@ -109,7 +109,7 @@ func defaultTranslationConfig() TranslationConfig {
 		SourceLanguage:          "ja", // Japanese content translated to English
 		TargetLanguage:          "en",
 		TargetLanguages:         nil,
-		TimeoutSeconds:          60,
+		TimeoutSeconds:          120,
 		MaxConcurrency:          3,
 		ApplyToPrimary:          true,
 		OverwriteExistingTarget: true,

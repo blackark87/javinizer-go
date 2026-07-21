@@ -175,6 +175,14 @@ export interface FieldOverrideResponse {
 	actress_sources?: Record<string, string>;
 }
 
+export interface TranslationReviewRequest {
+	field: 'title' | 'description';
+}
+
+export interface TranslationReviewResponse {
+	movie: Movie;
+}
+
 export interface BatchRescrapeRequest {
 	force?: boolean;
 	selected_scrapers?: string[];

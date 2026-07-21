@@ -119,6 +119,46 @@ func TestJobEditorApplyFieldOverride_RegeneratesConfiguredDisplayTitle(t *testin
 	}
 }
 
+func TestJobEditorApplyTranslationReview_PersistsFieldAndRefreshesDisplayTitle(t *testing.T) {
+	const filePath = "IPX-535.mp4"
+	const resultID = "review-result"
+	tracker := NewResultTracker(1, []string{filePath})
+	tracker.Updater().UpdateFileResult(filePath, &MovieResult{
+		ResultID: resultID,
+		Movie: &models.Movie{
+			ID:           "IPX-535",
+			Title:        "기존 제목",
+			DisplayTitle: "기존 제목",
+			Description:  "기존 설명",
+			Translations: []models.MovieTranslation{{Language: "ko", Title: "기존 제목", Description: "기존 설명"}},
+		},
+		Status: models.JobStatusCompleted,
+	})
+	editor := &jobEditorImpl{
+		updater:        tracker.Updater(),
+		accessor:       tracker,
+		tracker:        tracker,
+		templateEngine: templatepkg.NewEngine(),
+		displayTitleConfig: func() (string, nfo.NFONameConfig) {
+			return "[<ID>] <TITLE>", nfo.NFONameConfig{}
+		},
+	}
+
+	updated, err := editor.ApplyTranslationReview(context.Background(), resultID, "title", "교정 제목", "ko")
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	assert.Equal(t, "교정 제목", updated.Movie.Title)
+	assert.Equal(t, "[IPX-535] 교정 제목", updated.Movie.DisplayTitle)
+	require.Len(t, updated.Movie.Translations, 1)
+	assert.Equal(t, "교정 제목", updated.Movie.Translations[0].Title)
+	assert.Equal(t, "기존 설명", updated.Movie.Translations[0].Description)
+
+	updated, err = editor.ApplyTranslationReview(context.Background(), resultID, "description", "교정 설명", "ko")
+	require.NoError(t, err)
+	assert.Equal(t, "교정 설명", updated.Movie.Description)
+	assert.Equal(t, "교정 설명", updated.Movie.Translations[0].Description)
+}
+
 func TestApplyFieldOverride_UsesRetainedSourceTranslations(t *testing.T) {
 	movie := &models.Movie{
 		ID: "OLD-001", ContentID: "old001", Title: "Old title", DisplayTitle: "Old title",
@@ -622,6 +662,40 @@ func TestUpdateMovie_AppliesUnknownActressFallback(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, updated.Movie.Actresses, 1)
 	assert.Equal(t, models.UnknownActressName, updated.Movie.Actresses[0].FirstName)
+}
+
+func TestUpdateMovie_PreservesExplicitUnknownAlongsideKnownActress(t *testing.T) {
+	filePath := "mixed-cast.mp4"
+	tracker := NewResultTracker(1, []string{filePath})
+	tracker.Updater().UpdateFileResult(filePath, &MovieResult{
+		ResultID: "mixed-cast-result",
+		Movie:    &models.Movie{ID: "MIXED-001"},
+		Status:   models.JobStatusCompleted,
+	})
+	editor := &jobEditorImpl{
+		updater:  tracker.Updater(),
+		accessor: tracker,
+		tracker:  tracker,
+		displayTitleConfig: func() (string, nfo.NFONameConfig) {
+			return "", nfo.NFONameConfig{
+				UnknownActressMode: models.UnknownActressModeFallback,
+				UnknownActressText: models.UnknownActressName,
+			}
+		},
+	}
+	movie := &models.Movie{ID: "MIXED-001", Actresses: []models.Actress{
+		{ID: 42, FirstName: "Known"},
+		{FirstName: models.UnknownActressName, JapaneseName: models.UnknownActressName},
+	}}
+
+	err := editor.UpdateMovie(context.Background(), filePath, movie)
+
+	require.NoError(t, err)
+	updated, err := tracker.GetMovieResult(filePath)
+	require.NoError(t, err)
+	require.Len(t, updated.Movie.Actresses, 2)
+	assert.Equal(t, "Known", updated.Movie.Actresses[0].FirstName)
+	assert.Equal(t, models.UnknownActressName, updated.Movie.Actresses[1].FirstName)
 }
 
 func TestApplyFieldOverride_PersistErrorWrapped(t *testing.T) {

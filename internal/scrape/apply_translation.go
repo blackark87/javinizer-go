@@ -52,8 +52,8 @@ func newTranslationService(provider string, sourceLanguage string, targetLanguag
 // The configured Metadata.Translation.TimeoutSeconds (populated from
 // METADATA_TRANSLATION_TIMEOUT_SECONDS) bounds the whole translation as a
 // context deadline, mirroring main's ApplyConfiguredTranslation which wrapped
-// TranslateMovie in context.WithTimeout(TimeoutSeconds||60). A value <= 0
-// defaults to 60s; the caller's ctx is always respected as the parent.
+// TranslateMovie in context.WithTimeout. A value <= 0 defaults to 120s; the
+// caller's ctx is always respected as the parent.
 func (ts *translationService) translateWithContext(ctx context.Context, scraped *models.Movie) (string, *translation.TranslationOutput) {
 	if scraped == nil {
 		return "", nil
@@ -63,7 +63,7 @@ func (ts *translationService) translateWithContext(ctx context.Context, scraped 
 
 	timeout := ts.timeoutSeconds
 	if timeout <= 0 {
-		timeout = 60
+		timeout = 120
 	}
 	transCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
@@ -99,7 +99,7 @@ func (ts *translationService) translateWithContext(ctx context.Context, scraped 
 func (ts *translationService) translateTitlesWithContext(ctx context.Context, titles []string) ([]string, error) {
 	timeout := ts.timeoutSeconds
 	if timeout <= 0 {
-		timeout = 60
+		timeout = 120
 	}
 	transCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
@@ -107,9 +107,12 @@ func (ts *translationService) translateTitlesWithContext(ctx context.Context, ti
 }
 
 // newTranslationHTTPClient creates the shared HTTP client for translation providers.
-func newTranslationHTTPClient() *http.Client {
+func newTranslationHTTPClient(timeoutSeconds int) *http.Client {
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 120
+	}
 	return &http.Client{
-		Timeout: 30 * time.Second,
+		Timeout: time.Duration(timeoutSeconds) * time.Second,
 		Transport: &http.Transport{
 			MaxIdleConns:        10,
 			IdleConnTimeout:     30 * time.Second,

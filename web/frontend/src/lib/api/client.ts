@@ -171,6 +171,13 @@ class APIClient {
 	) {
 		return this.jobs.overrideBatchMovieField(jobId, resultId, request);
 	}
+	async reviewBatchMovieTranslation(
+		jobId: string,
+		resultId: string,
+		request: Parameters<JobClient['reviewBatchMovieTranslation']>[2],
+	) {
+		return this.jobs.reviewBatchMovieTranslation(jobId, resultId, request);
+	}
 	async excludeBatchMovie(jobId: string, resultId: string) {
 		return this.jobs.excludeBatchMovie(jobId, resultId);
 	}

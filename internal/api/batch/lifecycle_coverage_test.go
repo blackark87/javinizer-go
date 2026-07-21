@@ -283,4 +283,7 @@ func (s *stubControlledJob) UpdatePosterFromURL(context.Context, string, string,
 func (s *stubControlledJob) ApplyFieldOverride(context.Context, string, string, string) (*worker.MovieResult, *worker.ProvenanceData, error) {
 	return nil, nil, nil
 }
+func (s *stubControlledJob) ApplyTranslationReview(context.Context, string, string, string, string) (*worker.MovieResult, error) {
+	return nil, nil
+}
 func (s *stubControlledJob) GetProvenance(string) *worker.ProvenanceData { return nil }

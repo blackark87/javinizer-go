@@ -101,7 +101,7 @@ func TestApplyUnknownActressMode(t *testing.T) {
 		assert.Equal(t, UnknownActressName, movie.Actresses[0].JapaneseName)
 	})
 
-	t.Run("real actress removes redundant placeholder", func(t *testing.T) {
+	t.Run("fallback preserves placeholder alongside real actress", func(t *testing.T) {
 		movie := &Movie{Actresses: []Actress{
 			{FirstName: UnknownActressName, JapaneseName: UnknownActressName},
 			{FirstName: "레나", LastName: "미야시타", JapaneseName: "宮下玲奈"},
@@ -109,9 +109,23 @@ func TestApplyUnknownActressMode(t *testing.T) {
 
 		changed := ApplyUnknownActressMode(movie, UnknownActressModeFallback, "Unknown")
 
+		assert.False(t, changed)
+		require.Len(t, movie.Actresses, 2)
+		assert.Equal(t, UnknownActressName, movie.Actresses[0].JapaneseName)
+		assert.Equal(t, "宮下玲奈", movie.Actresses[1].JapaneseName)
+	})
+
+	t.Run("fallback collapses duplicate placeholders", func(t *testing.T) {
+		movie := &Movie{Actresses: []Actress{
+			{FirstName: "미상"},
+			{FirstName: UnknownActressName, JapaneseName: UnknownActressName},
+		}}
+
+		changed := ApplyUnknownActressMode(movie, UnknownActressModeFallback, "Unknown")
+
 		assert.True(t, changed)
 		require.Len(t, movie.Actresses, 1)
-		assert.Equal(t, "宮下玲奈", movie.Actresses[0].JapaneseName)
+		assert.Equal(t, UnknownActressName, movie.Actresses[0].FirstName)
 	})
 
 	t.Run("skip removes placeholder", func(t *testing.T) {

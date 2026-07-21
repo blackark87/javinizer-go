@@ -90,6 +90,15 @@ func overrideBatchMovieField(rt *core.APIRuntime) gin.HandlerFunc {
 			return
 		}
 
+		// Existing jobs are reconstructed before the lazily-built batch factory
+		// has a chance to inject the current BatchJobConfig. Initialize it before
+		// editing so source overrides can regenerate derived fields such as
+		// DisplayTitle with the current NFO template after a server restart.
+		if rt.GetBatchJobFactory() == nil {
+			c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: "batch job runtime unavailable"})
+			return
+		}
+
 		job, ok := deps.GetJobStore().GetBatchJob(jobID)
 		if !ok {
 			c.JSON(http.StatusNotFound, contracts.ErrorResponse{Error: "Job not found"})

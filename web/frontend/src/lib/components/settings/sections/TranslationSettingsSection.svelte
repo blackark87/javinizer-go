@@ -564,7 +564,7 @@
 				<FormNumberInput
 					label="Timeout"
 					description="Maximum time to wait for translation API calls"
-					value={config.metadata.translation?.timeout_seconds ?? 60}
+					value={config.metadata.translation?.timeout_seconds ?? 120}
 					min={5}
 					max={300}
 					unit="seconds"

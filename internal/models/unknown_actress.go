@@ -157,23 +157,31 @@ func CanonicalizeUnknownActressInfo(actress *ActressInfo) bool {
 }
 
 // ApplyUnknownActressMode makes the movie cast obey the configured unknown-
-// actress policy. Unknown placeholders are presentation metadata, so a real
-// actress always wins; when no real actress remains, fallback mode keeps one
-// canonical placeholder while skip mode leaves the cast empty.
+// actress policy. Fallback mode preserves one canonical placeholder alongside
+// any identified actresses so partially identified casts remain visible. Skip
+// mode removes placeholders, and an otherwise empty fallback cast gets one.
 func ApplyUnknownActressMode(movie *Movie, mode UnknownActressMode, fallbackText string) bool {
 	if movie == nil {
 		return false
 	}
 
 	before := append([]Actress(nil), movie.Actresses...)
-	realActresses := make([]Actress, 0, len(movie.Actresses))
-	var placeholder *Actress
+	normalized := make([]Actress, 0, len(movie.Actresses))
+	placeholderSeen := false
 	for i := range movie.Actresses {
 		actress := movie.Actresses[i]
 		if IsUnknownActressFields(actress.LastName, actress.FirstName, actress.JapaneseName) {
-			if placeholder == nil {
-				copy := actress
-				placeholder = &copy
+			if mode == UnknownActressModeFallback && !placeholderSeen {
+				text := strings.TrimSpace(fallbackText)
+				if text == "" {
+					text = UnknownActressName
+				}
+				actress.FirstName = text
+				actress.LastName = ""
+				actress.JapaneseName = text
+				actress.ThumbURL = ""
+				normalized = append(normalized, actress)
+				placeholderSeen = true
 			}
 			continue
 		}
@@ -181,26 +189,17 @@ func ApplyUnknownActressMode(movie *Movie, mode UnknownActressMode, fallbackText
 			strings.TrimSpace(actress.LastName) == "" && strings.TrimSpace(actress.JapaneseName) == "" {
 			continue
 		}
-		realActresses = append(realActresses, actress)
+		normalized = append(normalized, actress)
 	}
 
-	if len(realActresses) > 0 || mode != UnknownActressModeFallback {
-		movie.Actresses = realActresses
-		return !actressSlicesEqual(before, movie.Actresses)
+	if len(normalized) == 0 && mode == UnknownActressModeFallback {
+		text := strings.TrimSpace(fallbackText)
+		if text == "" {
+			text = UnknownActressName
+		}
+		normalized = append(normalized, Actress{FirstName: text, JapaneseName: text})
 	}
-
-	text := strings.TrimSpace(fallbackText)
-	if text == "" {
-		text = UnknownActressName
-	}
-	if placeholder == nil {
-		placeholder = &Actress{}
-	}
-	placeholder.FirstName = text
-	placeholder.LastName = ""
-	placeholder.JapaneseName = text
-	placeholder.ThumbURL = ""
-	movie.Actresses = []Actress{*placeholder}
+	movie.Actresses = normalized
 	return !actressSlicesEqual(before, movie.Actresses)
 }
 

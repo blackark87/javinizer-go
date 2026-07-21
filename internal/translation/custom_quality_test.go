@@ -105,6 +105,15 @@ func TestKoreanJAVPromptAvoidsJapaneseCalquesForSexFriendAndPrivateParts(t *test
 	assert.Contains(t, rules, "Do not mechanically transliterate 寝取られました as 네토라레 당했습니다")
 }
 
+func TestKoreanJAVPromptTranslatesRemoteVibeAndFawnClimaxByMeaning(t *testing.T) {
+	rules := koreanJAVPromptRules("ko")
+	assert.Contains(t, rules, "寸止めリモバイ調教 → 리모트 바이브로 절정 직전까지 애태우는 조교")
+	assert.Contains(t, rules, "must be rendered as 리모트 바이브")
+	assert.Contains(t, rules, "never transliterated as 리모바이")
+	assert.Contains(t, rules, "膝ガクガク小鹿アクメ → 무릎이 후들거리는 절정")
+	assert.Contains(t, rules, "never 새끼 사슴 오르가슴")
+}
+
 func TestKoreanJAVPromptTreatsDoPrefixAsEmphasis(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
 	assert.Contains(t, rules, "ド痴女 → 극강의 치녀")
@@ -135,6 +144,20 @@ func TestKoreanJAVPromptTranslatesGyakuPakoByMeaning(t *testing.T) {
 	assert.Contains(t, rules, "never transliterate it as 역파코")
 	assert.Contains(t, rules, "がっつり痴女られたい → 치녀에게 실컷 농락당하고 싶다")
 	assert.Contains(t, rules, "never 듬뿍 치녀 취급당하고 싶다")
+}
+
+func TestKoreanJAVPromptTranslatesNewContextualSlangByMeaning(t *testing.T) {
+	rules := koreanJAVPromptRules("ko")
+	assert.Contains(t, rules, "吸引おしゃぶり → 빨아들이는 펠라")
+	assert.Contains(t, rules, "Never output 키메섹")
+	assert.Contains(t, rules, "キメセクの巣 → 약물 섹스의 소굴")
+	assert.Contains(t, rules, "タイパを気にし過ぎる → 시간 효율을 지나치게 따지는")
+	assert.Contains(t, rules, "never 페더 손가락 핸드잡")
+	assert.Contains(t, rules, "never write 러브호텔 물바다")
+	assert.Contains(t, rules, "never transliterate it as 야리만")
+	assert.Contains(t, rules, "逆ナンドライブ → 남자를 헌팅하는 드라이브")
+	assert.Contains(t, rules, "never default to the stiff legal calque 음행")
+	assert.Contains(t, rules, "never 말뚝박기 피스톤")
 }
 
 func TestKoreanJAVPromptTranslatesTetsumanAsExplicitSlang(t *testing.T) {

@@ -117,6 +117,13 @@ func TestKoreanJAVPromptTranslatesGyakuPakoByMeaning(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
 	assert.Contains(t, rules, "逆パコ is a woman initiating")
 	assert.Contains(t, rules, "never transliterate them as 파코")
+	assert.Contains(t, rules, "Never use the clinical 자궁경부")
+	assert.Contains(t, rules, "Do not exaggerate it as 강타하다 or 집중 공략하다")
+	assert.Contains(t, rules, "Never output 쥬보쥬보")
+	assert.Contains(t, rules, "Never transliterate Japanese sexual sound-symbolic words into Hangul")
+	assert.Contains(t, rules, "never the food term 자지 샤브샤브")
+	assert.Contains(t, rules, "おしゃぶり means 펠라 or 자지 빨기")
+	assert.Contains(t, rules, "never use the awkward 한 판 박아버리다")
 	assert.Contains(t, rules, "never transliterate it as 역파코")
 	assert.Contains(t, rules, "がっつり痴女られたい → 치녀에게 실컷 농락당하고 싶다")
 	assert.Contains(t, rules, "never 듬뿍 치녀 취급당하고 싶다")
@@ -128,6 +135,7 @@ func TestKoreanJAVPromptTranslatesTetsumanAsExplicitSlang(t *testing.T) {
 	assert.Contains(t, rules, "translate it as 강철 보지")
 	assert.Contains(t, rules, "never transliterate it as 철맨")
 	assert.Contains(t, rules, "秘技教本 → 비법 교본")
+	assert.Contains(t, rules, "never 생하메, 생삽입")
 }
 
 func TestBuildLLMQualityReviewPromptIncludesSourceCandidateAndStrictOutput(t *testing.T) {

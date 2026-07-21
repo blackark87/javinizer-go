@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/javinizer/javinizer-go/internal/aggregator"
@@ -97,6 +98,11 @@ type ScrapeCmd struct {
 	// Single-scrape paths (CLI scrape, API scrape/rescrape, workflow tests) leave
 	// this false so Workflow.Scrape continues to persist inline before returning.
 	SkipPersist bool
+
+	// SkipTranslation defers translation until after metadata collection. The
+	// batch worker uses this to checkpoint raw metadata before its bounded LLM
+	// stage. Single-scrape and rescrape callers leave it false.
+	SkipTranslation bool
 }
 
 // ScrapeResult holds the output of a scrape operation: the aggregated movie, per-scraper results, field sources, and timing.
@@ -265,11 +271,11 @@ func postProcessScraped(ctx context.Context, scraped *models.Movie, results []*m
 
 	var translationWarning string
 	var translationOutput *translation.TranslationOutput
-	if cfg.TranslationEnabled {
+	if cfg.TranslationEnabled && !cmd.SkipTranslation {
 		translationWarning, translationOutput = applyTranslation(ctx, scraped, translator)
 	}
 
-	if cfg.TranslationEnabled {
+	if cfg.TranslationEnabled && !cmd.SkipTranslation {
 		if sourceWarning := translateSourceMetadata(ctx, translator, results); sourceWarning != "" {
 			if translationWarning != "" {
 				translationWarning += "; "
@@ -293,6 +299,40 @@ func postProcessScraped(ctx context.Context, scraped *models.Movie, results []*m
 	}
 
 	return result, nil
+}
+
+// TranslateResult applies deferred primary/source translation to a completed
+// scrape result. Cached records with a current settings hash are reused.
+func (s *Scraper) TranslateResult(ctx context.Context, result *ScrapeResult) {
+	if s == nil || result == nil || result.Movie == nil || s.cfg == nil || !s.cfg.TranslationEnabled {
+		return
+	}
+	if result.Cached && !result.NeedsPersistence && hasTranslationSettingsHash(result.Movie, s.cfg.TranslationTargetLang, s.cfg.TranslationSettingsHash) {
+		return
+	}
+
+	warning, output := applyTranslation(ctx, result.Movie, s.translator)
+	if sourceWarning := translateSourceMetadata(ctx, s.translator, result.ScraperResults); sourceWarning != "" {
+		if warning != "" {
+			warning += "; "
+		}
+		warning += sourceWarning
+	}
+	result.TranslationWarning = warning
+	result.TranslationOutput = output
+	result.NeedsPersistence = true
+}
+
+func hasTranslationSettingsHash(movie *models.Movie, language, settingsHash string) bool {
+	if movie == nil || strings.TrimSpace(language) == "" || strings.TrimSpace(settingsHash) == "" {
+		return false
+	}
+	for _, record := range movie.Translations {
+		if record.Language == language && record.SettingsHash == settingsHash {
+			return true
+		}
+	}
+	return false
 }
 
 func movieActresses(movie *models.Movie) []models.Actress {

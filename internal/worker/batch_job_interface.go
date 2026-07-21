@@ -34,6 +34,8 @@ type ApplyFileResult struct {
 // callers provide only the fields BatchJob reads during scrape, apply, and review-edit phases.
 type BatchJobConfig struct {
 	MaxWorkers           int               // cfg.Performance.MaxWorkers → pool sizing
+	TranslationEnabled   bool              // cfg.Metadata.Translation.Enabled → deferred batch translation stage
+	TranslationWorkers   int               // cfg.Metadata.Translation.MaxConcurrency → translation stage pool sizing
 	WorkerTimeout        time.Duration     // cfg.Performance.WorkerTimeout → per-task timeout
 	ScraperPriority      []string          // cfg.Scrapers.Priority → selected scrapers
 	NFOEnabled           bool              // cfg.Metadata.NFO.Feature.Enabled → NFO generation toggle
@@ -43,7 +45,7 @@ type BatchJobConfig struct {
 
 func (c BatchJobConfig) isZero() bool {
 	return c.MaxWorkers == 0 && c.WorkerTimeout == 0 && len(c.ScraperPriority) == 0 &&
-		!c.NFOEnabled && c.DisplayTitleTemplate == "" && c.NFONameCfg == (nfo.NFONameConfig{})
+		!c.TranslationEnabled && c.TranslationWorkers == 0 && !c.NFOEnabled && c.DisplayTitleTemplate == "" && c.NFONameCfg == (nfo.NFONameConfig{})
 }
 
 // batchJobBase holds the 19 shared snapshot fields common to both BatchJobStatus

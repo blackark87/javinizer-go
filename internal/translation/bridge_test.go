@@ -76,6 +76,7 @@ func TestConfigFromAppMapsAllFields(t *testing.T) {
 			APIKey:         "compat-key",
 			Model:          "llama3.1",
 			EnableThinking: true,
+			ThinkingMode:   "boolean",
 			BackendType:    "llama.cpp",
 		},
 		Anthropic: anthropicConfig{BaseURL: "https://api.anthropic.com", APIKey: "anthropic-key", Model: "claude-sonnet-4-20250514"},
@@ -137,7 +138,7 @@ func TestConfigFromAppOpenAICompatibleBackendTypeNormalization(t *testing.T) {
 
 func TestConfigFromAppZeroValueProducesZeroValueBridge(t *testing.T) {
 	got := ConfigFromApp(config.TranslationConfig{})
-	want := Config{}
+	want := Config{OpenAICompatible: openAICompatibleConfig{ThinkingMode: "boolean"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ConfigFromApp(zero) mismatch\n got: %#v\nwant: %#v", got, want)
 	}

@@ -54,6 +54,7 @@ func normalizeTranslationConfig(t *TranslationConfig) bool {
 	changed = normalizeField(&t.TargetLanguage, "ja", false) || changed
 	changed = normalizeField(&t.OpenAI.BaseURL, "https://api.openai.com/v1", false) || changed
 	changed = normalizeField(&t.OpenAI.Model, "gpt-4o-mini", false) || changed
+	changed = normalizeField(&t.OpenAICompatible.ThinkingMode, "boolean", true) || changed
 	changed = normalizeField(&t.Bedrock.Region, "us-east-1", false) || changed
 	changed = normalizeField(&t.Bedrock.Model, "anthropic.claude-3-5-sonnet-20241022-v2:0", false) || changed
 	changed = normalizeTranslationMode(&t.DeepL.Mode, models.DeepLModeFree) || changed

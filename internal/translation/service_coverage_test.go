@@ -253,9 +253,23 @@ func TestBuildOpenAICompatibleThinkingStrategies_All(t *testing.T) {
 }
 
 func TestBuildOpenAICompatibleThinkingStrategies_OllamaAutoDetect(t *testing.T) {
-	strategies := buildOpenAICompatibleThinkingStrategies("http://localhost:11434", "model", openAICompatibleConfig{})
+	strategies := buildOpenAICompatibleThinkingStrategies("http://localhost:11434", "model", openAICompatibleConfig{EnableThinking: true, ThinkingMode: "medium"})
 	assert.NotEmpty(t, strategies)
 	assert.Equal(t, openAICompatibleThinkingStrategyReasoningEffort, strategies[0])
+}
+
+func TestBuildOpenAICompatibleThinkingStrategies_BooleanOmitsReasoningEffort(t *testing.T) {
+	strategies := buildOpenAICompatibleThinkingStrategies("http://localhost:11434", "model", openAICompatibleConfig{EnableThinking: true, ThinkingMode: "boolean"})
+	assert.NotContains(t, strategies, openAICompatibleThinkingStrategyReasoningEffort)
+}
+
+func TestApplyOpenAICompatibleThinkingStrategy_UsesConfiguredEffort(t *testing.T) {
+	for _, effort := range []string{"low", "medium", "high"} {
+		t.Run(effort, func(t *testing.T) {
+			request := applyOpenAICompatibleThinkingStrategy(openAIChatRequest{}, openAICompatibleThinkingStrategyReasoningEffort, true, effort)
+			assert.Equal(t, effort, request.ReasoningEffort)
+		})
+	}
 }
 
 func TestBuildOpenAICompatibleThinkingStrategies_LlamaCppAutoDetect(t *testing.T) {

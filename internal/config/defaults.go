@@ -144,6 +144,7 @@ func defaultTranslationConfig() TranslationConfig {
 			APIKey:         "",
 			Model:          "",
 			EnableThinking: &thinkingDisabled,
+			ThinkingMode:   "boolean",
 		},
 		Anthropic: AnthropicTranslationConfig{
 			BaseURL: "https://api.anthropic.com",

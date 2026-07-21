@@ -271,6 +271,24 @@ func TestOpenAICompatibleTranslationConfig_EffectiveEnableThinking(t *testing.T)
 	})
 }
 
+func TestOpenAICompatibleTranslationConfig_NormalizedThinkingMode(t *testing.T) {
+	for input, expected := range map[string]string{
+		"": "boolean", "BOOLEAN": "boolean", "low": "low", "Medium": "medium", "HIGH": "high", "invalid": "boolean",
+	} {
+		t.Run(input, func(t *testing.T) {
+			assert.Equal(t, expected, (OpenAICompatibleTranslationConfig{ThinkingMode: input}).NormalizedThinkingMode())
+		})
+	}
+}
+
+func TestTranslationConfig_SettingsHashIncludesThinkingMode(t *testing.T) {
+	enabled := true
+	base := TranslationConfig{Provider: "openai-compatible", OpenAICompatible: OpenAICompatibleTranslationConfig{Model: "model", EnableThinking: &enabled, ThinkingMode: "boolean"}}
+	effort := base
+	effort.OpenAICompatible.ThinkingMode = "high"
+	assert.NotEqual(t, base.SettingsHash(), effort.SettingsHash())
+}
+
 func TestNFOConfig_IsUnknownActressFallback(t *testing.T) {
 	t.Run("returns true when mode is fallback", func(t *testing.T) {
 		n := NFOConfig{Format: NFOFormatConfig{UnknownActressMode: models.UnknownActressModeFallback}}

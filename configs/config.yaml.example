@@ -343,6 +343,7 @@ metadata:
             api_key: ""               # Optional for local/self-hosted endpoints
             model: ""
             enable_thinking: false    # Automatically mapped to backend-specific thinking controls when supported
+            thinking_mode: boolean    # boolean | low | medium | high
         anthropic:
             base_url: https://api.anthropic.com
             api_key: ""               # Required when provider=anthropic (set via ANTHROPIC_API_KEY env var)

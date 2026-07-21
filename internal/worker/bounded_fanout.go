@@ -23,6 +23,19 @@ func boundedFanOut[T any, I any](
 	items []I,
 	work func(egCtx context.Context, item I) T,
 ) []T {
+	return boundedFanOutEach(ctx, maxWorkers, items, work, nil)
+}
+
+// boundedFanOutEach invokes onOutcome serially as soon as each worker result is
+// available. Batch scrape uses it as a record-level checkpoint writer while
+// provider workers continue filling the buffered outcome channel.
+func boundedFanOutEach[T any, I any](
+	ctx context.Context,
+	maxWorkers int,
+	items []I,
+	work func(egCtx context.Context, item I) T,
+	onOutcome func(T) T,
+) []T {
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(maxWorkers)
 
@@ -45,6 +58,9 @@ func boundedFanOut[T any, I any](
 
 	outcomes := make([]T, 0, len(items))
 	for o := range outcomeCh {
+		if onOutcome != nil {
+			o = onOutcome(o)
+		}
 		outcomes = append(outcomes, o)
 	}
 

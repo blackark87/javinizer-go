@@ -218,10 +218,12 @@ func run(cmd *cobra.Command, args []string) error {
 			bs.Matcher,
 			bs.PosterGen,
 			worker.BatchJobConfig{
-				MaxWorkers:      processorCfg.MaxWorkers,
-				WorkerTimeout:   processorCfg.WorkerTimeout,
-				ScraperPriority: processorCfg.ScraperPriority,
-				NFOEnabled:      processorCfg.NFOEnabled,
+				MaxWorkers:         processorCfg.MaxWorkers,
+				TranslationEnabled: processorCfg.TranslationEnabled,
+				TranslationWorkers: processorCfg.TranslationWorkers,
+				WorkerTimeout:      processorCfg.WorkerTimeout,
+				ScraperPriority:    processorCfg.ScraperPriority,
+				NFOEnabled:         processorCfg.NFOEnabled,
 			},
 			nil, // no emitter for TUI
 		),

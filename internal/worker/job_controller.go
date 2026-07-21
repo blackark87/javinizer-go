@@ -296,17 +296,22 @@ func (c *jobController) buildScrapeInputs(wf workflow.WorkflowInterface, batchCf
 	fileMatchInfo := c.job.results.CloneFileMatchInfo()
 
 	inputs := scrapePhaseInputs{
-		JobID:               c.job.ID,
-		Concurrency:         newConcurrencyConfig(batchCfg.MaxWorkers, batchCfg.WorkerTimeout, defaultMaxWorkers, defaultWorkerTimeout),
-		WF:                  wf,
-		PosterGen:           pg,
-		KeepBroadcasterOpen: keepOpen,
-		Broadcaster:         broadcaster,
-		Updater:             c.job.results,
-		Lifecycle:           c.job.lifecycle,
-		persister:           persistFunc(persistFn),
-		FileMatchInfo:       fileMatchInfo,
-		MovieRepo:           movieRepo,
+		JobID:                  c.job.ID,
+		Concurrency:            newConcurrencyConfig(batchCfg.MaxWorkers, batchCfg.WorkerTimeout, defaultMaxWorkers, defaultWorkerTimeout),
+		WF:                     wf,
+		PosterGen:              pg,
+		KeepBroadcasterOpen:    keepOpen,
+		Broadcaster:            broadcaster,
+		Updater:                c.job.results,
+		Lifecycle:              c.job.lifecycle,
+		persister:              persistFunc(persistFn),
+		FileMatchInfo:          fileMatchInfo,
+		MovieRepo:              movieRepo,
+		DeferredTranslation:    batchCfg.TranslationEnabled,
+		TranslationConcurrency: batchCfg.TranslationWorkers,
+	}
+	if _, ok := wf.(workflow.DeferredTranslationWorkflow); !ok {
+		inputs.DeferredTranslation = false
 	}
 	if m != nil {
 		inputs.Matcher = m

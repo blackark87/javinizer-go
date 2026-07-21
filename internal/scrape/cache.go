@@ -41,7 +41,7 @@ func (s *Scraper) tryCache(ctx context.Context, cmd ScrapeCmd, actressRepo datab
 	needsPersistence := actressesChanged
 	translationWarning := ""
 	var translationOutput *translation.TranslationOutput
-	if s.cfg != nil && s.cfg.TranslationEnabled {
+	if s.cfg != nil && s.cfg.TranslationEnabled && !cmd.SkipTranslation {
 		currentHash := s.cfg.TranslationSettingsHash
 		targetLang := s.cfg.TranslationTargetLang
 		hasValidTranslation := false

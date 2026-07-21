@@ -87,6 +87,8 @@ type SecurityNarrowConfig struct {
 type BatchNarrowConfig struct {
 	OperationMode        string            // resolved operation mode for batch execution
 	MaxWorkers           int               // worker pool concurrency
+	TranslationEnabled   bool              // whether the deferred LLM stage is active
+	TranslationWorkers   int               // maximum concurrent LLM requests
 	WorkerTimeout        time.Duration     // worker execution timeout
 	ScraperPriority      []string          // scraper source ordering
 	NFOEnabled           bool              // whether NFO generation is active
@@ -141,6 +143,8 @@ func (c APIConfig) BatchConfig() *BatchNarrowConfig {
 	return &BatchNarrowConfig{
 		OperationMode:        c.OperationMode,
 		MaxWorkers:           c.MaxWorkers,
+		TranslationEnabled:   c.TranslationConfig.Enabled,
+		TranslationWorkers:   c.TranslationConfig.MaxConcurrency,
 		WorkerTimeout:        c.WorkerTimeout,
 		ScraperPriority:      c.ScraperPriority,
 		NFOEnabled:           c.NFOEnabled,

@@ -87,6 +87,7 @@ func openAICompatibleConfigFromApp(cfg config.OpenAICompatibleTranslationConfig)
 		APIKey:         cfg.APIKey,
 		Model:          cfg.Model,
 		EnableThinking: cfg.EffectiveEnableThinking(),
+		ThinkingMode:   cfg.NormalizedThinkingMode(),
 		BackendType:    cfg.NormalizedBackendType(),
 	}
 }

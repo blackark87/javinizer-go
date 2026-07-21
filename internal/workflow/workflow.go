@@ -24,6 +24,12 @@ func (w *Workflow) Scrape(ctx context.Context, cmd scrape.ScrapeCmd, progress sc
 	return w.scrape.Execute(ctx, cmd, progress)
 }
 
+// TranslateScrapeResult applies translation deferred by the batch metadata
+// stage and then recomputes the display title from the translated movie.
+func (w *Workflow) TranslateScrapeResult(ctx context.Context, result *scrape.ScrapeResult, sourcePath string) (*OrchestrationMeta, error) {
+	return w.scrape.TranslateScrapeResult(ctx, result, sourcePath)
+}
+
 // Apply delegates to the internal applyOrchestrator which owns the 6-step Apply
 // sequence: revert begin, organize, merge, DisplayTitle, download, NFO, revert complete.
 func (w *Workflow) Apply(ctx context.Context, cmd ApplyCmd, progress scrape.ProgressFunc) (*ApplyResult, error) {

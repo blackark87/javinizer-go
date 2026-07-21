@@ -32,6 +32,7 @@ type OrchestrationMeta struct {
 // metadata is separated from the pure scrape output.
 type scrapeOrchestrator interface {
 	Execute(ctx context.Context, cmd scrape.ScrapeCmd, progress scrape.ProgressFunc) (*scrape.ScrapeResult, *OrchestrationMeta, error)
+	TranslateScrapeResult(ctx context.Context, result *scrape.ScrapeResult, sourcePath string) (*OrchestrationMeta, error)
 }
 
 type scrapeOrchImpl struct {
@@ -41,6 +42,29 @@ type scrapeOrchImpl struct {
 	templateEngine template.EngineInterface
 	nameCfg        nfo.NFONameConfig
 	logger         logging.Logger
+}
+
+func (o *scrapeOrchImpl) TranslateScrapeResult(ctx context.Context, result *scrape.ScrapeResult, sourcePath string) (*OrchestrationMeta, error) {
+	if result == nil || result.Movie == nil {
+		return nil, fmt.Errorf("cannot translate an empty scrape result")
+	}
+	translator, ok := o.scraper.(interface {
+		TranslateResult(context.Context, *scrape.ScrapeResult)
+	})
+	if !ok {
+		return nil, fmt.Errorf("workflow scraper does not support deferred translation")
+	}
+	translator.TranslateResult(ctx, result)
+
+	var meta OrchestrationMeta
+	if result.TranslationWarning != "" {
+		warning := result.TranslationWarning
+		meta.TranslationWarning = &warning
+	}
+	models.ApplyUnknownActressMode(result.Movie, o.nameCfg.UnknownActressMode, o.nameCfg.UnknownActressText)
+	ApplyDisplayTitleFromSourceFile(ctx, result.Movie, result.Movie, o.displayTitle, o.templateEngine, o.nameCfg, sourcePath)
+	meta.DisplayTitleApplied = true
+	return &meta, nil
 }
 
 var _ scrapeOrchestrator = (*scrapeOrchImpl)(nil)
@@ -151,4 +175,8 @@ var _ scrapeOrchestrator = (*noOpScrapeOrchestrator)(nil)
 
 func (noOpScrapeOrchestrator) Execute(_ context.Context, _ scrape.ScrapeCmd, _ scrape.ProgressFunc) (*scrape.ScrapeResult, *OrchestrationMeta, error) {
 	return nil, nil, fmt.Errorf("scrape not configured")
+}
+
+func (noOpScrapeOrchestrator) TranslateScrapeResult(_ context.Context, _ *scrape.ScrapeResult, _ string) (*OrchestrationMeta, error) {
+	return nil, fmt.Errorf("scrape not configured")
 }

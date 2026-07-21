@@ -15,6 +15,8 @@ import (
 func BatchJobConfigFromAppConfig(cfg *config.Config) worker.BatchJobConfig {
 	return worker.BatchJobConfig{
 		MaxWorkers:           cfg.Performance.MaxWorkers,
+		TranslationEnabled:   cfg.Metadata.Translation.Enabled,
+		TranslationWorkers:   cfg.Metadata.Translation.MaxConcurrency,
 		WorkerTimeout:        time.Duration(cfg.Performance.WorkerTimeout) * time.Second,
 		ScraperPriority:      cfg.Scrapers.Priority,
 		NFOEnabled:           cfg.Metadata.NFO.Feature.Enabled,

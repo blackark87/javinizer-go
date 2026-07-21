@@ -873,6 +873,7 @@ func TestNormalizeTranslationConfig_AlreadyNormalized(t *testing.T) {
 		Bedrock:                 BedrockTranslationConfig{Region: "us-east-1", Model: "anthropic.claude-3-5-sonnet-20241022-v2:0"},
 		DeepL:                   DeepLTranslationConfig{Mode: models.DeepLModeFree},
 		Google:                  GoogleTranslationConfig{Mode: models.GoogleModeFree},
+		OpenAICompatible:        OpenAICompatibleTranslationConfig{ThinkingMode: "boolean"},
 		TimeoutSeconds:          60,
 		MaxConcurrency:          3,
 		ApplyToPrimary:          true,

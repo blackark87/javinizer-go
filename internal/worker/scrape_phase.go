@@ -32,18 +32,21 @@ func NewScrapePhase() ScrapePhase {
 // Collected by the errgroup goroutine, then aggregated by trackScrapeResults.
 //
 // Result carries the un-persisted scrape output (cmd.SkipPersist=true in the
-// batch path). The dedicated persist pool reads Result.Movie to persist off
-// the per-goroutine critical path. It is nil for the failed/error/panic paths.
+// batch path). The record checkpoint writer reads Result.Movie outside provider
+// goroutines. It is nil for the failed/error/panic paths.
 type scrapeFileOutcome struct {
-	FilePath string
-	MovieID  string
-	Success  bool
-	Failed   bool // true if scrape failed (not panic)
-	Panic    bool // true if goroutine panicked
-	PanicMsg string
-	ErrorMsg string
-	Result   *scrape.ScrapeResult
-	Meta     *workflow.OrchestrationMeta
+	FilePath        string
+	MovieID         string
+	FileMatchInfo   models.FileMatchInfo
+	PreserveMovieID bool
+	ResultID        string
+	Success         bool
+	Failed          bool // true if scrape failed (not panic)
+	Panic           bool // true if goroutine panicked
+	PanicMsg        string
+	ErrorMsg        string
+	Result          *scrape.ScrapeResult
+	Meta            *workflow.OrchestrationMeta
 }
 
 // Run executes the scrape phase: setup errgroup → iterate files → dispatch
@@ -63,7 +66,7 @@ func (p *scrapePhase) Run(ctx context.Context, inputs scrapePhaseInputs, files [
 		}
 	}()
 
-	outcomes := boundedFanOut(ctx, inputs.Concurrency.MaxWorkers, files,
+	outcomes := boundedFanOutEach(ctx, inputs.Concurrency.MaxWorkers, files,
 		func(egCtx context.Context, filePath string) scrapeFileOutcome {
 			// scrapeFile does NOT persist to the database: buildScrapeCmd sets
 			// cmd.SkipPersist=true when inputs.MovieRepo is wired, so the workflow's
@@ -80,10 +83,25 @@ func (p *scrapePhase) Run(ctx context.Context, inputs scrapePhaseInputs, files [
 			// Mirrors main's realtime.ProgressAdapter which forwarded per-task
 			// scrape updates to the WS hub (deleted in this refactor with no
 			// replacement — restored here via the hook seam).
-			if outcome.Success && cfg.OnFileScraped != nil {
+			if outcome.Success && !inputs.DeferredTranslation && cfg.OnFileScraped != nil {
 				cfg.OnFileScraped(filePath, fmt.Sprintf("Scraped %s successfully", outcome.MovieID))
+			} else if outcome.Success && inputs.DeferredTranslation && cfg.OnScrapeStepProgress != nil {
+				cfg.OnScrapeStepProgress(filePath, "metadata", 0.75, fmt.Sprintf("Collected metadata for %s", outcome.MovieID))
 			} else if outcome.Failed && cfg.OnFileScrapeFailed != nil {
 				cfg.OnFileScrapeFailed(filePath, outcome.ErrorMsg)
+			}
+			return outcome
+		},
+		func(outcome scrapeFileOutcome) scrapeFileOutcome {
+			if outcome.Success && inputs.MovieRepo != nil {
+				if !persistScrapeOutcome(ctx, outcome, inputs, cfg.OnFileScrapeFailed) {
+					outcome.Success = false
+					outcome.Failed = true
+					outcome.ErrorMsg = "metadata checkpoint persistence failed"
+				}
+			}
+			if inputs.persister != nil {
+				inputs.persister.Persist()
 			}
 			return outcome
 		},
@@ -98,23 +116,10 @@ func (p *scrapePhase) Run(ctx context.Context, inputs scrapePhaseInputs, files [
 		return
 	}
 
-	// Persist successful scrape results OFF the per-goroutine critical path.
-	// This runs AFTER all errgroup-gated scrape goroutines have drained, so the
-	// scrape workers never blocked on the DB write during scraping. A small
-	// dedicated pool (independent of eg.SetLimit(MaxWorkers)) bounds total
-	// persist latency. Only the batch scrape path opts out of the workflow's
-	// inline persist (cmd.SkipPersist=true via buildScrapeCmd); single-scrape
-	// callers (CLI/API/rescrape) still persist inline inside Workflow.Scrape.
-	// Must complete before MarkCompleted so job-state persistence (deferred at
-	// the top of Run) captures Persisted=true and any surfacable persist errors.
-	if inputs.MovieRepo != nil {
-		// Pass cfg.OnFileScrapeFailed so a persist failure can correct the
-		// per-file WS status: the scrape worker already emitted a terminal
-		// "success" ProgressMessage for this file (OnFileScraped), but persist
-		// runs later in a separate pool and can fail. Re-firing the per-file
-		// failure hook overwrites messagesByFile[filePath] so the frontend
-		// never shows a stale "success" for a file whose persist failed.
-		persistScrapeOutcomePool(ctx, outcomes, inputs, cfg.OnFileScrapeFailed)
+	// Every metadata result is already durable. Translation starts only after
+	// the metadata barrier and checkpoints each completed record independently.
+	if inputs.DeferredTranslation {
+		outcomes = runDeferredTranslationStage(ctx, outcomes, inputs, cfg)
 	}
 
 	// ctx can be canceled while the persist pool is draining. After it returns,
@@ -128,6 +133,101 @@ func (p *scrapePhase) Run(ctx context.Context, inputs scrapePhaseInputs, files [
 	trackScrapeResults(outcomes)
 
 	inputs.Lifecycle.MarkCompleted()
+}
+
+func runDeferredTranslationStage(ctx context.Context, outcomes []scrapeFileOutcome, inputs scrapePhaseInputs, cfg ScrapePhaseConfig) []scrapeFileOutcome {
+	translator, ok := inputs.WF.(workflow.DeferredTranslationWorkflow)
+	if !ok {
+		return outcomes
+	}
+	workers := inputs.TranslationConcurrency
+	if workers <= 0 {
+		workers = 3
+	}
+
+	return boundedFanOutEach(ctx, workers, outcomes, func(taskCtx context.Context, outcome scrapeFileOutcome) scrapeFileOutcome {
+		if !outcome.Success || outcome.Result == nil || outcome.Result.Movie == nil {
+			return outcome
+		}
+		translatedMeta, err := translator.TranslateScrapeResult(taskCtx, outcome.Result, outcome.FilePath)
+		if err != nil {
+			outcome.Success = false
+			outcome.Failed = true
+			outcome.ErrorMsg = fmt.Sprintf("translation stage failed: %v", err)
+			_ = inputs.Updater.AtomicUpdateFileResult(outcome.FilePath, func(current *MovieResult) (*MovieResult, error) {
+				current.Status = models.JobStatusFailed
+				current.Error = outcome.ErrorMsg
+				ended := time.Now()
+				current.EndedAt = &ended
+				return current, nil
+			})
+			return outcome
+		}
+
+		mergeDeferredTranslationMeta(&outcome, translatedMeta)
+		finalizeDeferredTranslationOutcome(taskCtx, &outcome, inputs)
+		return outcome
+	}, func(outcome scrapeFileOutcome) scrapeFileOutcome {
+		if outcome.Success && inputs.MovieRepo != nil {
+			if !persistScrapeOutcome(ctx, outcome, inputs, cfg.OnFileScrapeFailed) {
+				outcome.Success = false
+				outcome.Failed = true
+				outcome.ErrorMsg = "translation checkpoint persistence failed"
+			}
+		}
+		if inputs.persister != nil {
+			inputs.persister.Persist()
+		}
+		if outcome.Success && cfg.OnFileScraped != nil {
+			cfg.OnFileScraped(outcome.FilePath, fmt.Sprintf("Scraped and translated %s successfully", outcome.MovieID))
+		} else if outcome.Failed && cfg.OnFileScrapeFailed != nil && outcome.ErrorMsg != "" {
+			cfg.OnFileScrapeFailed(outcome.FilePath, outcome.ErrorMsg)
+		}
+		return outcome
+	})
+}
+
+func mergeDeferredTranslationMeta(outcome *scrapeFileOutcome, translated *workflow.OrchestrationMeta) {
+	if outcome == nil || translated == nil {
+		return
+	}
+	if outcome.Meta == nil {
+		outcome.Meta = &workflow.OrchestrationMeta{}
+	}
+	outcome.Meta.DisplayTitleApplied = translated.DisplayTitleApplied
+	outcome.Meta.TranslationWarning = translated.TranslationWarning
+}
+
+func finalizeDeferredTranslationOutcome(ctx context.Context, outcome *scrapeFileOutcome, inputs scrapePhaseInputs) {
+	fileResult, prov := scrapeResultToMovieResult(outcome.FileMatchInfo, outcome.Result, outcome.Meta, outcome.PreserveMovieID)
+	if fileResult == nil {
+		return
+	}
+	fileResult.ResultID = outcome.ResultID
+	fileResult.StartedAt = outcome.Result.StartedAt
+	if inputs.PosterGen != nil && fileResult.Movie != nil {
+		if err := inputs.PosterGen.GeneratePoster(ctx, inputs.JobID.String(), fileResult.Movie); err != nil {
+			message := err.Error()
+			fileResult.PosterError = &message
+		}
+		fileResult.PosterGenerated = true
+	}
+	if fileResult.Movie != nil {
+		establishScrapedBaseline(fileResult.Movie, fileResult.Movie)
+	}
+	inputs.Updater.UpdateFileResult(outcome.FilePath, fileResult)
+	if prov != nil {
+		inputs.Updater.SetProvenance(outcome.FilePath, prov)
+	}
+	inputs.Broadcaster.Send(JobEvent{
+		JobID:     inputs.JobID,
+		MovieID:   outcome.MovieID,
+		Phase:     JobEventPhaseScrape,
+		Step:      StepComplete,
+		Progress:  1,
+		Message:   fmt.Sprintf("Translated %s successfully", outcome.MovieID),
+		Timestamp: time.Now(),
+	})
 }
 
 // isManualURLInput reports whether a manual input looks like an http(s) URL.
@@ -203,9 +303,10 @@ func buildScrapeCmd(
 		PriorityOverride: cfg.PriorityOverride,
 		// Batch scrape opts out of the workflow's inline DB persist so the
 		// errgroup-gated scrape workers don't block on SQLite's single-writer
-		// lock. Persistence runs in a dedicated pool off the critical path —
-		// see Run(). Single-scrape callers (CLI/API/rescrape) leave this false.
-		SkipPersist: inputs.MovieRepo != nil,
+		// lock. The Run checkpoint writer persists each outcome as it arrives.
+		// Single-scrape callers (CLI/API/rescrape) leave this false.
+		SkipPersist:     inputs.MovieRepo != nil,
+		SkipTranslation: inputs.DeferredTranslation,
 	}, movieIDFromMatcher
 }
 
@@ -287,11 +388,15 @@ func interpretScrapeResult(
 
 	fileResult, prov := scrapeResultToMovieResult(fmi, result, meta, preserveMovieID)
 	fileResult.StartedAt = startTime
+	if inputs.DeferredTranslation {
+		fileResult.Status = models.JobStatusRunning
+		fileResult.EndedAt = nil
+	}
 
 	// Poster generation — moved from the workflow's scrape orchestrator
 	// to the worker phase so that ScrapeCmd stays a pure query and
 	// the side-effect (filesystem write) is owned by the orchestration layer.
-	if inputs.PosterGen != nil && fileResult.Movie != nil {
+	if !inputs.DeferredTranslation && inputs.PosterGen != nil && fileResult.Movie != nil {
 		posterErr := inputs.PosterGen.GeneratePoster(taskCtx, inputs.JobID.String(), fileResult.Movie)
 		if posterErr != nil {
 			s := posterErr.Error()
@@ -306,7 +411,7 @@ func interpretScrapeResult(
 	// rescrape path (establishScrapedBaseline) for full symmetry — without it,
 	// Original* stays empty until the first manual edit snapshots it lazily via
 	// backupPosterOriginals, which is inconsistent with the rescrape baseline.
-	if fileResult.Movie != nil {
+	if !inputs.DeferredTranslation && fileResult.Movie != nil {
 		establishScrapedBaseline(fileResult.Movie, fileResult.Movie)
 	}
 
@@ -315,18 +420,29 @@ func interpretScrapeResult(
 		inputs.Updater.SetProvenance(filePath, prov)
 	}
 
+	step := StepComplete
+	progress := 1.0
+	message := fmt.Sprintf("Scraped %s successfully", result.Movie.ID)
+	if inputs.DeferredTranslation {
+		step = StepScrape
+		progress = 0.75
+		message = fmt.Sprintf("Collected metadata for %s", result.Movie.ID)
+	}
 	inputs.Broadcaster.Send(JobEvent{
 		JobID:     inputs.JobID,
 		MovieID:   result.Movie.ID,
 		Phase:     JobEventPhaseScrape,
-		Step:      StepComplete,
-		Progress:  1.0,
-		Message:   fmt.Sprintf("Scraped %s successfully", result.Movie.ID),
-		Timestamp: *fileResult.EndedAt,
+		Step:      step,
+		Progress:  progress,
+		Message:   message,
+		Timestamp: time.Now(),
 	})
 	outcome.Success = true
 	outcome.Result = result
 	outcome.Meta = meta
+	outcome.FileMatchInfo = fmi
+	outcome.PreserveMovieID = preserveMovieID
+	outcome.ResultID = fileResult.ResultID
 	return outcome
 }
 
@@ -489,7 +605,7 @@ func persistScrapeOutcomes(ctx context.Context, ch <-chan scrapeFileOutcome, inp
 // AtomicUpdateFileResult so API/UI readers observe a consistent snapshot.
 // Persist failures surface on the MovieResult, preserving the original
 // error semantics (persist error → Status=Failed).
-func persistScrapeOutcome(ctx context.Context, o scrapeFileOutcome, inputs scrapePhaseInputs, onFileFailed func(filePath, errMsg string)) {
+func persistScrapeOutcome(ctx context.Context, o scrapeFileOutcome, inputs scrapePhaseInputs, onFileFailed func(filePath, errMsg string)) bool {
 	// Clone before persisting: UpsertWithTranslations mutates its input movie in
 	// place (resets association slices to reapply associations). The in-memory
 	// MovieResult.Movie shares the result.Movie pointer, so mutating it here
@@ -526,7 +642,7 @@ func persistScrapeOutcome(ctx context.Context, o scrapeFileOutcome, inputs scrap
 		if onFileFailed != nil {
 			onFileFailed(o.FilePath, fmt.Sprintf("persist failed: %v", err))
 		}
-		return
+		return false
 	}
 	// Refresh the in-memory movie with the DB-saved version (DB-assigned IDs,
 	// normalized associations) and flip Persisted. AtomicUpdateFileResult clones
@@ -538,4 +654,5 @@ func persistScrapeOutcome(ctx context.Context, o scrapeFileOutcome, inputs scrap
 		}
 		return current, nil
 	})
+	return true
 }

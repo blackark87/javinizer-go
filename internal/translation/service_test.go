@@ -2936,6 +2936,7 @@ translated
 				BaseURL:        server.URL,
 				Model:          "test-model",
 				EnableThinking: thinkingEnabled,
+				ThinkingMode:   "medium",
 				BackendType:    "ollama",
 			},
 		}
@@ -3006,19 +3007,19 @@ translated
 
 	t.Run("auto fallback tries another backend control", func(t *testing.T) {
 		requestKinds := make([]string, 0, 2)
-		thinkingEnabled := false
+		thinkingEnabled := true
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var body map[string]interface{}
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 
 			switch {
-			case body["chat_template_kwargs"] != nil:
-				requestKinds = append(requestKinds, "chat_template_kwargs")
-				w.WriteHeader(http.StatusBadRequest)
-				_, _ = w.Write([]byte(`{"error":"unknown field chat_template_kwargs"}`))
 			case body["reasoning_effort"] != nil:
 				requestKinds = append(requestKinds, "reasoning_effort")
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":"unsupported reasoning effort"}`))
+			case body["chat_template_kwargs"] != nil:
+				requestKinds = append(requestKinds, "chat_template_kwargs")
 				response := map[string]interface{}{
 					"choices": []map[string]interface{}{
 						{
@@ -3044,6 +3045,7 @@ translated
 				BaseURL:        server.URL,
 				Model:          "test-model",
 				EnableThinking: thinkingEnabled,
+				ThinkingMode:   "high",
 			},
 		}
 		s := New(cfg,
@@ -3057,7 +3059,7 @@ translated
 		result, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"translated"}, result)
-		assert.Equal(t, []string{"chat_template_kwargs", "reasoning_effort"}, requestKinds)
+		assert.Equal(t, []string{"reasoning_effort", "chat_template_kwargs"}, requestKinds)
 	})
 }
 

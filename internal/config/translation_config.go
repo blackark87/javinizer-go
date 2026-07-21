@@ -88,10 +88,11 @@ type GoogleTranslationConfig struct {
 // OpenAICompatibleTranslationConfig holds settings for self-hosted or third-party
 // OpenAI-compatible translation endpoints (Ollama, vLLM, LM Studio, OpenRouter, etc.).
 type OpenAICompatibleTranslationConfig struct {
-	BaseURL        string `yaml:"base_url" json:"base_url"`                         // e.g., http://localhost:11434/v1
-	APIKey         string `yaml:"api_key" json:"api_key"`                           // Optional for local endpoints
-	Model          string `yaml:"model" json:"model"`                               // e.g., llama3.1
-	EnableThinking *bool  `yaml:"enable_thinking" json:"enable_thinking,omitempty"` // Toggle reasoning/thinking when supported by the backend
+	BaseURL        string `yaml:"base_url" json:"base_url"`                               // e.g., http://localhost:11434/v1
+	APIKey         string `yaml:"api_key" json:"api_key"`                                 // Optional for local endpoints
+	Model          string `yaml:"model" json:"model"`                                     // e.g., llama3.1
+	EnableThinking *bool  `yaml:"enable_thinking" json:"enable_thinking,omitempty"`       // Toggle reasoning/thinking when supported by the backend
+	ThinkingMode   string `yaml:"thinking_mode,omitempty" json:"thinking_mode,omitempty"` // boolean, low, medium, or high
 	BackendType    string `yaml:"backend_type,omitempty" json:"backend_type,omitempty" swaggerignore:"true"`
 }
 
@@ -429,6 +430,7 @@ func (tc *TranslationConfig) SettingsHash() string {
 	case "openai_compatible", "openai-compatible":
 		hashInput.OpenAICompatibleModel = tc.OpenAICompatible.Model
 		hashInput.OpenAICompatibleEnableThinking = tc.OpenAICompatible.EffectiveEnableThinking()
+		hashInput.OpenAICompatibleThinkingMode = tc.OpenAICompatible.NormalizedThinkingMode()
 	case "anthropic":
 		hashInput.AnthropicModel = tc.Anthropic.Model
 	case "bedrock":
@@ -465,6 +467,7 @@ type settingsHashInput struct {
 	OpenAIModel                    string                  `json:"openai_model,omitempty"`
 	OpenAICompatibleModel          string                  `json:"openai_compatible_model,omitempty"`
 	OpenAICompatibleEnableThinking bool                    `json:"openai_compatible_enable_thinking,omitempty"`
+	OpenAICompatibleThinkingMode   string                  `json:"openai_compatible_thinking_mode,omitempty"`
 	AnthropicModel                 string                  `json:"anthropic_model,omitempty"`
 	BedrockModel                   string                  `json:"bedrock_model,omitempty"`
 	DeepLMode                      string                  `json:"deepl_mode,omitempty"`
@@ -477,6 +480,17 @@ func (oc OpenAICompatibleTranslationConfig) EffectiveEnableThinking() bool {
 		return false
 	}
 	return *oc.EnableThinking
+}
+
+// NormalizedThinkingMode returns the request control used for thinking-enabled
+// OpenAI-compatible models. Missing legacy values use boolean controls.
+func (oc OpenAICompatibleTranslationConfig) NormalizedThinkingMode() string {
+	switch strings.ToLower(strings.TrimSpace(oc.ThinkingMode)) {
+	case "low", "medium", "high":
+		return strings.ToLower(strings.TrimSpace(oc.ThinkingMode))
+	default:
+		return "boolean"
+	}
 }
 
 // NormalizedBackendType returns the canonical backend type, mapping aliases and "auto" to an empty string.

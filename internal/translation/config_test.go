@@ -88,6 +88,7 @@ func TestConfigBridgeShape(t *testing.T) {
 				{"APIKey", typeFor[string]()},
 				{"Model", typeFor[string]()},
 				{"EnableThinking", typeFor[bool]()},
+				{"ThinkingMode", typeFor[string]()},
 				{"BackendType", typeFor[string]()},
 			},
 		},
@@ -226,6 +227,7 @@ func TestTranslationConfigSourceShape(t *testing.T) {
 		{"APIKey", typeFor[string]()},
 		{"Model", typeFor[string]()},
 		{"EnableThinking", reflect.TypeFor[*bool]()},
+		{"ThinkingMode", typeFor[string]()},
 		{"BackendType", typeFor[string]()},
 	})
 

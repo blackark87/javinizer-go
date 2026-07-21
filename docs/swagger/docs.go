@@ -6767,6 +6767,10 @@ const docTemplate = `{
                 "model": {
                     "description": "e.g., llama3.1",
                     "type": "string"
+                },
+                "thinking_mode": {
+                    "description": "boolean, low, medium, or high",
+                    "type": "string"
                 }
             }
         },

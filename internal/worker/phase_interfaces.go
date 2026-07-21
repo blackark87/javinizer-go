@@ -161,6 +161,11 @@ type scrapePhaseInputs struct {
 	// the workflow's Scrape persists inline as before.
 	MovieRepo database.MovieRepositoryInterface
 
+	// DeferredTranslation separates provider collection from LLM work for batch
+	// jobs. TranslationConcurrency is independent from the file worker pool.
+	DeferredTranslation    bool
+	TranslationConcurrency int
+
 	Broadcaster progressBroadcaster
 	Updater     ResultUpdater
 	Lifecycle   PhaseLifecycle

@@ -799,6 +799,7 @@ export interface OpenAICompatibleTranslationConfig {
 	api_key: string;
 	model: string;
 	enable_thinking?: boolean | null;
+	thinking_mode?: 'boolean' | 'low' | 'medium' | 'high';
 }
 
 export interface AnthropicTranslationConfig {

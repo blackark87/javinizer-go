@@ -20,6 +20,15 @@ const (
 // buildOpenAICompatibleThinkingStrategies returns the ordered list of thinking
 // strategies to try for the given backend type and configuration.
 func buildOpenAICompatibleThinkingStrategies(baseURL, model string, cfg openAICompatibleConfig) []openAICompatibleThinkingStrategy {
+	strategies := preferredOpenAICompatibleThinkingStrategies(baseURL, model, cfg)
+	mode := normalizeThinkingMode(cfg.ThinkingMode)
+	if !cfg.EnableThinking || mode == "boolean" {
+		return removeThinkingStrategy(strategies, openAICompatibleThinkingStrategyReasoningEffort)
+	}
+	return prioritizeThinkingStrategy(strategies, openAICompatibleThinkingStrategyReasoningEffort)
+}
+
+func preferredOpenAICompatibleThinkingStrategies(baseURL, model string, cfg openAICompatibleConfig) []openAICompatibleThinkingStrategy {
 	switch cfg.BackendType {
 	case "vllm":
 		return []openAICompatibleThinkingStrategy{
@@ -76,9 +85,38 @@ func buildOpenAICompatibleThinkingStrategies(baseURL, model string, cfg openAICo
 	}
 }
 
+func normalizeThinkingMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "low", "medium", "high":
+		return strings.ToLower(strings.TrimSpace(mode))
+	default:
+		return "boolean"
+	}
+}
+
+func removeThinkingStrategy(strategies []openAICompatibleThinkingStrategy, target openAICompatibleThinkingStrategy) []openAICompatibleThinkingStrategy {
+	filtered := make([]openAICompatibleThinkingStrategy, 0, len(strategies))
+	for _, strategy := range strategies {
+		if strategy != target {
+			filtered = append(filtered, strategy)
+		}
+	}
+	return filtered
+}
+
+func prioritizeThinkingStrategy(strategies []openAICompatibleThinkingStrategy, target openAICompatibleThinkingStrategy) []openAICompatibleThinkingStrategy {
+	ordered := []openAICompatibleThinkingStrategy{target}
+	for _, strategy := range strategies {
+		if strategy != target {
+			ordered = append(ordered, strategy)
+		}
+	}
+	return ordered
+}
+
 // applyOpenAICompatibleThinkingStrategy applies the given thinking strategy to
 // an OpenAI chat request, returning a modified copy.
-func applyOpenAICompatibleThinkingStrategy(base openAIChatRequest, strategy openAICompatibleThinkingStrategy, enabled bool) openAIChatRequest {
+func applyOpenAICompatibleThinkingStrategy(base openAIChatRequest, strategy openAICompatibleThinkingStrategy, enabled bool, thinkingMode ...string) openAIChatRequest {
 	req := base
 	req.ChatTemplateKwargs = nil
 	req.ReasoningEffort = ""
@@ -92,7 +130,7 @@ func applyOpenAICompatibleThinkingStrategy(base openAIChatRequest, strategy open
 		}
 	case openAICompatibleThinkingStrategyReasoningEffort:
 		if enabled {
-			req.ReasoningEffort = "medium"
+			req.ReasoningEffort = normalizeReasoningEffort(firstThinkingMode(thinkingMode))
 		} else {
 			req.ReasoningEffort = "none"
 		}
@@ -101,6 +139,22 @@ func applyOpenAICompatibleThinkingStrategy(base openAIChatRequest, strategy open
 	}
 
 	return req
+}
+
+func firstThinkingMode(modes []string) string {
+	if len(modes) == 0 {
+		return "boolean"
+	}
+	return modes[0]
+}
+
+func normalizeReasoningEffort(mode string) string {
+	switch normalizeThinkingMode(mode) {
+	case "low", "medium", "high":
+		return normalizeThinkingMode(mode)
+	default:
+		return "medium"
+	}
 }
 
 // isRetryableThinkingStrategyError checks whether a thinking strategy error

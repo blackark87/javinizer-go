@@ -1695,6 +1695,9 @@ definitions:
       model:
         description: e.g., llama3.1
         type: string
+      thinking_mode:
+        description: boolean, low, medium, or high
+        type: string
     type: object
   github_com_javinizer_javinizer-go_internal_config.OpenAITranslationConfig:
     properties:

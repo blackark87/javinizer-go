@@ -125,6 +125,12 @@ type WorkflowInterface interface {
 	ScanAndMatch(ctx context.Context, cmd ScanAndMatchCmd) (*ScanAndMatchResult, error)
 }
 
+// DeferredTranslationWorkflow is implemented by production workflows that can
+// finalize a batch scrape result after metadata collection has been checkpointed.
+type DeferredTranslationWorkflow interface {
+	TranslateScrapeResult(ctx context.Context, result *scrape.ScrapeResult, sourcePath string) (*OrchestrationMeta, error)
+}
+
 // CompareCmd is the command struct that crosses the Compare seam.
 // The seam handles the full scrape-aggregate-merge pipeline internally,
 // so the API layer never imports nfo, aggregator, or matcher directly.

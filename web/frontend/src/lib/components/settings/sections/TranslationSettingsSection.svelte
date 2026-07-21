@@ -253,6 +253,27 @@
 						config.metadata.translation!['openai_compatible'].enable_thinking = val;
 					}}
 				/>
+
+				<div class="py-4 border-b border-border">
+					<label class="block text-sm font-medium mb-2" for="translation-thinking-mode">Thinking mode</label>
+					<p class="text-xs text-muted-foreground mb-2">Use simple on/off controls or request a supported reasoning effort level.</p>
+					<select
+						id="translation-thinking-mode"
+						class={inputClass}
+						disabled={!(config.metadata.translation?.['openai_compatible']?.enable_thinking ?? false)}
+						value={config.metadata.translation?.['openai_compatible']?.thinking_mode ?? 'boolean'}
+						onchange={(e) => {
+							if (!config.metadata.translation) config.metadata.translation = {} as TranslationConfigType;
+							if (!config.metadata.translation!['openai_compatible']) config.metadata.translation!['openai_compatible'] = {} as OpenAICompatibleTranslationConfigType;
+							config.metadata.translation!['openai_compatible'].thinking_mode = e.currentTarget.value as 'boolean' | 'low' | 'medium' | 'high';
+						}}
+					>
+						<option value="boolean">On / Off</option>
+						<option value="low">Low</option>
+						<option value="medium">Medium</option>
+						<option value="high">High</option>
+					</select>
+				</div>
 				
 			</fieldset>
 		</SettingsSubsection>

@@ -128,7 +128,7 @@ func (p *OpenAICompatibleProvider) Translate(ctx context.Context, sourceLang, ta
 
 	var lastErr error
 	for _, strategy := range strategies {
-		request := applyOpenAICompatibleThinkingStrategy(baseRequest, strategy, thinkingEnabled)
+		request := applyOpenAICompatibleThinkingStrategy(baseRequest, strategy, thinkingEnabled, p.cfg.OpenAICompatible.ThinkingMode)
 		result, err := executeOpenAIChatTranslation(ctx, p.httpClient, openAIChatCallOptions{
 			provider:  "openai-compatible",
 			baseURL:   baseURL,

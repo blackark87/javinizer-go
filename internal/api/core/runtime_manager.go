@@ -408,6 +408,8 @@ func (s *RuntimeSnapshot) BatchJobFactory() worker.BatchJobFactoryInterface {
 	matcherIface := s.Matcher()
 	workerBatchCfg := worker.BatchJobConfig{
 		MaxWorkers:           batchCfg.MaxWorkers,
+		TranslationEnabled:   batchCfg.TranslationEnabled,
+		TranslationWorkers:   batchCfg.TranslationWorkers,
 		WorkerTimeout:        batchCfg.WorkerTimeout,
 		ScraperPriority:      batchCfg.ScraperPriority,
 		NFOEnabled:           batchCfg.NFOEnabled,
@@ -549,6 +551,8 @@ func (r *APIRuntime) buildBatchJobFactory() any {
 	matcher := r.NewMatcher()
 	workerBatchCfg := worker.BatchJobConfig{
 		MaxWorkers:           batchCfg.MaxWorkers,
+		TranslationEnabled:   batchCfg.TranslationEnabled,
+		TranslationWorkers:   batchCfg.TranslationWorkers,
 		WorkerTimeout:        batchCfg.WorkerTimeout,
 		ScraperPriority:      batchCfg.ScraperPriority,
 		NFOEnabled:           batchCfg.NFOEnabled,

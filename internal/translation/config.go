@@ -62,6 +62,7 @@ type openAICompatibleConfig struct {
 	APIKey         string
 	Model          string
 	EnableThinking bool
+	ThinkingMode   string
 	BackendType    string
 }
 

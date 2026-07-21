@@ -3,6 +3,7 @@ package batch
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -176,6 +177,57 @@ func TestOverrideBatchMovieField_UsesRetainedTranslation(t *testing.T) {
 	assert.Equal(t, "DMM translated title", response.Movie.Title)
 	assert.Equal(t, "AggregatedMaker", response.Movie.Maker)
 	assert.Equal(t, "dmm", response.FieldSources["title"])
+}
+
+func TestOverrideBatchMovieField_RehydratesDisplayTitleConfigBeforeEditingStoredJob(t *testing.T) {
+	cfg := config.DefaultConfig(nil, nil)
+	cfg.Metadata.NFO.Format.DisplayTitle = "[<ID>] <TITLE>"
+	deps := createTestDeps(t, cfg, "")
+	filePath := "/path/to/IPX-535.mp4"
+
+	// Create the job directly in the store to mirror a DB-restored job whose
+	// runtime-only BatchJobConfig has not been hydrated by the lazy factory yet.
+	job := deps.JobStore.CreateJobBatch([]string{filePath})
+	resultID := "stored-result"
+	setJobResult(job, filePath, &worker.MovieResult{
+		ResultID:      resultID,
+		FileMatchInfo: models.FileMatchInfo{Path: filePath, MovieID: "IPX-535"},
+		Status:        models.JobStatusCompleted,
+		Movie: &models.Movie{
+			ID:           "IPX-535",
+			ContentID:    "ipx00535",
+			Title:        "Aggregated title",
+			DisplayTitle: "Aggregated title",
+		},
+		StartedAt: time.Now(),
+	})
+	job.ResultsWriter().SetProvenance(filePath, &worker.ProvenanceData{
+		ScraperResults: []*models.ScraperResult{{
+			Source: "dmm",
+			Title:  "DMM raw title",
+			Translations: []models.MovieTranslation{{
+				Language: "ko",
+				Title:    "DMM translated title",
+			}},
+		}},
+	})
+
+	router := gin.New()
+	router.POST("/batch/:id/results/:resultId/field-override", overrideBatchMovieField(testkit.GetTestRuntime(deps)))
+	body, err := json.Marshal(contracts.FieldOverrideRequest{Field: "title", Source: "dmm"})
+	require.NoError(t, err)
+	req := httptest.NewRequest(http.MethodPost, "/batch/"+job.GetID()+"/results/"+resultID+"/field-override", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, 200, w.Code, w.Body.String())
+	var response contracts.FieldOverrideResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	require.NotNil(t, response.Movie)
+	assert.Equal(t, "DMM translated title", response.Movie.Title)
+	assert.Equal(t, "[IPX-535] DMM translated title", response.Movie.DisplayTitle)
 }
 
 func TestOverrideBatchMovieField_BadJSON(t *testing.T) {

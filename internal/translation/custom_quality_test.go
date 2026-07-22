@@ -227,8 +227,14 @@ func TestKoreanJAVPromptCoversNewMissTranslationTerms(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
 	for _, expected := range []string{
 		"never use the literal 늪",
+		"never the objectifying dictionary calque 편리한",
 		"枕営業 means 성상납",
+		"never transliterate it as 농교",
 		"never the dictionary calque 색백",
+		"never the stacked calque 미거유",
+		"エロかわ and エロ可愛い mean 야하고 귀여운",
+		"乳首エステ means 유두 마사지",
+		"舐めテク and ハンドテク mean 혀 테크닉 and 손 테크닉",
 		"僕の身代わりに means 나 대신",
 		"never transliterate it as 바쿠누키",
 		"挟射 means ejaculation while held between the breasts",

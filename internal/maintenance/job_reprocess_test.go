@@ -154,12 +154,16 @@ func TestProtectReviewActressNamesRestoresKnownKoreanName(t *testing.T) {
 
 	assert.Equal(t, "イイナリドM ⟦7000⟧", protected.source)
 	assert.Equal(t, "이이나리 도M ⟦7000⟧", protected.candidate)
-	assert.Equal(t, "복종하는 극M 마루이 모에카", protected.restore("복종하는 극M ⟦7000⟧"))
+	restored, ok := protected.restore("복종하는 극M ⟦7000⟧")
+	assert.True(t, ok)
+	assert.Equal(t, "복종하는 극M 마루이 모에카", restored)
 }
 
-func TestProtectReviewActressNamesFallsBackWhenReviewerDropsToken(t *testing.T) {
+func TestProtectReviewActressNamesRejectsReviewerThatDropsToken(t *testing.T) {
 	actresses := []models.Actress{{JapaneseName: "円井萌華", LastName: "마루이", FirstName: "모에카"}}
 	protected := protectReviewActressNames("제목 円井萌華", "제목 마루이 모에카", actresses)
 
-	assert.Equal(t, "제목 마루이 모에카", protected.restore("제목 에누이 모에카"))
+	restored, ok := protected.restore("제목 에누이 모에카")
+	assert.False(t, ok)
+	assert.Equal(t, "제목 마루이 모에카", restored)
 }

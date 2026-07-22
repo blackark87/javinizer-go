@@ -624,9 +624,16 @@ func translateAndReviewGroup(ctx context.Context, tc config.TranslationConfig, c
 		reviewed, err = service.ReviewJAVTranslations(reviewCtx, reviewFields)
 		reviewCancel()
 		if err == nil && len(reviewed) == len(reviewFields) {
-			output.Movie.Title = protectedTitle.restore(reviewed[0])
+			var restored bool
+			output.Movie.Title, restored = protectedTitle.restore(reviewed[0])
+			if !restored {
+				err = fmt.Errorf("quality reviewer dropped a protected performer name from title")
+			}
 			if len(reviewFields) > 1 {
-				output.Movie.Description = protectedDescription.restore(reviewed[1])
+				output.Movie.Description, restored = protectedDescription.restore(reviewed[1])
+				if !restored && err == nil {
+					err = fmt.Errorf("quality reviewer dropped a protected performer name from description")
+				}
 			}
 		} else if err == nil {
 			err = fmt.Errorf("quality reviewer returned %d items for %d inputs", len(reviewed), len(reviewFields))
@@ -684,15 +691,15 @@ func protectReviewActressNames(source, candidate string, actresses []models.Actr
 	return protected
 }
 
-func (p protectedReviewText) restore(reviewed string) string {
+func (p protectedReviewText) restore(reviewed string) (string, bool) {
 	restored := strings.TrimSpace(reviewed)
 	for token, actressName := range p.placeholders {
 		if !strings.Contains(restored, token) {
-			return p.fallback
+			return p.fallback, false
 		}
 		restored = strings.ReplaceAll(restored, token, actressName)
 	}
-	return restored
+	return restored, true
 }
 
 func reprocessCallContext(ctx context.Context, tc config.TranslationConfig) (context.Context, context.CancelFunc) {

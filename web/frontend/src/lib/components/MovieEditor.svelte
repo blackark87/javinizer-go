@@ -168,11 +168,11 @@
 						type="button"
 						class="inline-flex items-center gap-1 text-xs text-primary hover:underline disabled:text-muted-foreground disabled:no-underline disabled:cursor-not-allowed"
 						disabled={retranslationDisabled || retranslatingField !== null || isModified('display_title')}
-						title={isModified('display_title') ? 'Save title changes before retranslating' : 'Run 2-pass LLM review on the current translation'}
+						title={isModified('display_title') ? 'Save title changes before retranslating' : 'Retranslate from the Japanese source, then run 2-pass LLM review'}
 						onclick={() => onRetranslate?.('title')}
 					>
 						{#if retranslatingField === 'title'}
-							<LoaderCircle class="h-3.5 w-3.5 animate-spin" /> 2-pass 번역 중...
+							<LoaderCircle class="h-3.5 w-3.5 animate-spin" /> 재번역 중...
 						{:else}
 							<RefreshCw class="h-3.5 w-3.5" /> 재번역
 						{/if}
@@ -223,11 +223,11 @@
 						type="button"
 						class="inline-flex items-center gap-1 text-xs text-primary hover:underline disabled:text-muted-foreground disabled:no-underline disabled:cursor-not-allowed"
 						disabled={retranslationDisabled || retranslatingField !== null || isModified('description')}
-						title={isModified('description') ? 'Save description changes before retranslating' : 'Run 2-pass LLM review on the current translation'}
+						title={isModified('description') ? 'Save description changes before retranslating' : 'Retranslate from the Japanese source, then run 2-pass LLM review'}
 						onclick={() => onRetranslate?.('description')}
 					>
 						{#if retranslatingField === 'description'}
-							<LoaderCircle class="h-3.5 w-3.5 animate-spin" /> 2-pass 번역 중...
+							<LoaderCircle class="h-3.5 w-3.5 animate-spin" /> 재번역 중...
 						{:else}
 							<RefreshCw class="h-3.5 w-3.5" /> 재번역
 						{/if}

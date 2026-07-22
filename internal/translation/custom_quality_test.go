@@ -146,6 +146,25 @@ func TestKoreanJAVPromptTranslatesGyakuPakoByMeaning(t *testing.T) {
 	assert.Contains(t, rules, "never 듬뿍 치녀 취급당하고 싶다")
 }
 
+func TestKoreanJAVPromptTranslatesOrificeSwallowingAndSquirtingCompounds(t *testing.T) {
+	rules := koreanJAVPromptRules("ko")
+	assert.Contains(t, rules, "3穴 → 3홀 or 세 구멍")
+	assert.Contains(t, rules, "2穴セフレ → 2홀 섹파 or 두 구멍을 내주는 섹파")
+	assert.Contains(t, rules, "never the Hanja reading 혈")
+	assert.Contains(t, rules, "never transliterate it as 고쿤")
+	assert.Contains(t, rules, "ケツマンコ means 후장")
+	assert.Contains(t, rules, "ストゼロ is the alcoholic drink brand Strong Zero")
+	assert.Contains(t, rules, "never 스트로제로 or 스트로 제로")
+	assert.Contains(t, rules, "潮吹き means squirting sexual fluid")
+	assert.Contains(t, rules, "限界ストゼロ潮吹きFUCK → 스트롱 제로를 마시며 한계까지 분수를 뿜는 섹스")
+}
+
+func TestTranslationPromptForbidsSubstitutingPerformerNames(t *testing.T) {
+	systemPrompt, _, err := buildLLMTranslationPromptsWithMarkers("ja", "ko", []string{"作品名 晶エリー"}, []string{"<<<title>>>"})
+	require.NoError(t, err)
+	assert.Contains(t, systemPrompt, "Never invent, anglicize, or substitute a different performer name")
+}
+
 func TestKoreanJAVPromptTranslatesNewContextualSlangByMeaning(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
 	assert.Contains(t, rules, "吸引おしゃぶり → 빨아들이는 펠라")
@@ -201,16 +220,16 @@ func (p *promptEchoQualityReviewProvider) Translate(_ context.Context, _, _ stri
 	return &translationResult{Texts: []string{"[JAPANESE SOURCE]\n原題\n[KOREAN CANDIDATE]\n정상 후보"}}, nil
 }
 
-func TestReviewJAVTranslationsFallsBackAfterPromptEcho(t *testing.T) {
+func TestReviewJAVTranslationsRejectsPromptEcho(t *testing.T) {
 	provider := &promptEchoQualityReviewProvider{}
 	service := New(Config{Enabled: true, Provider: "openai-compatible", TargetLanguage: "ko"}, provider)
 
-	result, err := service.ReviewJAVTranslations(context.Background(), []QualityReviewField{{
+	_, err := service.ReviewJAVTranslations(context.Background(), []QualityReviewField{{
 		FieldName: "quality_review_title", Source: "原題", Candidate: "정상 후보",
 	}})
 
-	require.NoError(t, err)
-	assert.Equal(t, []string{"정상 후보"}, result)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "quality reviewer returned invalid output")
 }
 
 func TestTranslateTextsSplitsCombinedRequestAfterGemmaParserError(t *testing.T) {
@@ -306,6 +325,21 @@ func TestReviewJAVTranslationsProtectsActressNames(t *testing.T) {
 	require.Len(t, provider.items, 1)
 	assert.Equal(t, "素敵な作品 ⟦7000⟧", provider.items[0].Source)
 	assert.Equal(t, "멋진 작품 ⟦7000⟧", provider.items[0].Candidate)
+}
+
+func TestReviewJAVTranslationsRejectsDroppedActressNameToken(t *testing.T) {
+	provider := &qualityReviewMockProvider{response: "배우 이름이 사라진 제목"}
+	service := New(Config{Enabled: true, Provider: "openai-compatible", TargetLanguage: "ko"}, provider)
+
+	_, err := service.ReviewJAVTranslations(context.Background(), []QualityReviewField{{
+		FieldName: "quality_review_title",
+		Source:    "素敵な作品 松本いちか",
+		Candidate: "멋진 작품 마츠모토 이치카",
+		Actresses: []models.Actress{{JapaneseName: "松本いちか", LastName: "마츠모토", FirstName: "이치카"}},
+	}})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "dropped a protected performer name")
 }
 
 func TestTranslateMovie_RetriesNonHangulPersonSlot(t *testing.T) {

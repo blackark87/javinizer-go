@@ -21,13 +21,18 @@ import (
 )
 
 func TestReviewBatchMovieTranslation_Title(t *testing.T) {
-	var requestBody string
+	var requestBodies []string
 	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
-		requestBody = string(body)
+		requestBody := string(body)
+		requestBodies = append(requestBodies, requestBody)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"<<<quality_review_title>>>\n교정 제목"}}]}`))
+		if strings.Contains(requestBody, "mandatory second-pass quality reviewer") {
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"<<<quality_review_title>>>\n교정 제목"}}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"<<<title>>>\n새 1차 제목"}}]}`))
 	}))
 	defer llm.Close()
 
@@ -79,11 +84,16 @@ func TestReviewBatchMovieTranslation_Title(t *testing.T) {
 	var response contracts.TranslationReviewResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
 	require.NotNil(t, response.Movie)
+	assert.True(t, response.Changed)
 	assert.Equal(t, "교정 제목", response.Movie.Title)
 	assert.Equal(t, "[IPX-535] 교정 제목", response.Movie.DisplayTitle)
-	assert.Contains(t, requestBody, "mandatory second-pass quality reviewer")
-	assert.Contains(t, requestBody, "日本語原題")
-	assert.Contains(t, requestBody, "기존 제목")
+	require.Len(t, requestBodies, 2)
+	assert.NotContains(t, requestBodies[0], "mandatory second-pass quality reviewer")
+	assert.Contains(t, requestBodies[0], "日本語原題")
+	assert.Contains(t, requestBodies[1], "mandatory second-pass quality reviewer")
+	assert.Contains(t, requestBodies[1], "日本語原題")
+	assert.Contains(t, requestBodies[1], "새 1차 제목")
+	assert.NotContains(t, requestBodies[1], "기존 제목")
 }
 
 func TestRetainedJapaneseField_UsesSelectedSourceAndTitleFallback(t *testing.T) {

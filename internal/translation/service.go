@@ -632,15 +632,15 @@ func protectQualityReviewActressNames(field QualityReviewField) protectedQuality
 	return protected
 }
 
-func (p protectedQualityReviewText) restore(reviewed string) string {
+func (p protectedQualityReviewText) restore(reviewed string) (string, bool) {
 	restored := strings.TrimSpace(reviewed)
 	for token, actressName := range p.placeholders {
 		if !strings.Contains(restored, token) {
-			return p.fallback
+			return p.fallback, false
 		}
 		restored = strings.ReplaceAll(restored, token, actressName)
 	}
-	return restored
+	return restored, true
 }
 
 // ReviewJAVTranslations performs a mandatory second LLM pass over first-pass JAV translations.
@@ -698,11 +698,13 @@ func (s *Service) ReviewJAVTranslations(ctx context.Context, fields []QualityRev
 	for i := range reviewed {
 		reviewed[i] = sanitizeQualityReviewText(reviewed[i])
 		if isInvalidQualityReviewText(reviewed[i]) {
-			logging.Warnf("Translation: quality reviewer returned contaminated output for %s; keeping first-pass candidate", markers[i])
-			reviewed[i] = strings.TrimSpace(fields[i].Candidate)
-			continue
+			return nil, fmt.Errorf("quality reviewer returned invalid output for %s", markers[i])
 		}
-		reviewed[i] = protected[i].restore(reviewed[i])
+		restored, ok := protected[i].restore(reviewed[i])
+		if !ok {
+			return nil, fmt.Errorf("quality reviewer dropped a protected performer name for %s", markers[i])
+		}
+		reviewed[i] = restored
 	}
 	return reviewed, nil
 }

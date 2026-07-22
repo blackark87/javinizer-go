@@ -439,7 +439,11 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 					editedMovies.set(filePath, merged);
 				}
 			}
-			deps.toastSuccess(`${field === 'title' ? 'Title' : 'Description'} retranslated`);
+			if (data.changed) {
+				deps.toastSuccess(`${field === 'title' ? 'Title' : 'Description'} retranslated`);
+			} else {
+				deps.toastSuccess(`${field === 'title' ? 'Title' : 'Description'}: no changes`);
+			}
 			void invalidateJobQueries();
 		},
 		onError: (err: Error) => {

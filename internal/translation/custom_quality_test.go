@@ -223,6 +223,21 @@ func TestKoreanJAVPromptTranslatesTetsumanAsExplicitSlang(t *testing.T) {
 	assert.Contains(t, rules, "never 생하메, 생삽입")
 }
 
+func TestKoreanJAVPromptCoversNewMissTranslationTerms(t *testing.T) {
+	rules := koreanJAVPromptRules("ko")
+	for _, expected := range []string{
+		"never use the literal 늪",
+		"枕営業 means 성상납",
+		"never the dictionary calque 색백",
+		"僕の身代わりに means 나 대신",
+		"never transliterate it as 바쿠누키",
+		"挟射 means ejaculation while held between the breasts",
+		"おま○こよわよわ → 보지 허접",
+	} {
+		assert.Contains(t, rules, expected)
+	}
+}
+
 func TestBuildLLMQualityReviewPromptIncludesSourceCandidateAndStrictOutput(t *testing.T) {
 	items := []qualityReviewItem{{Source: "鉄マン", Candidate: "철맨"}}
 	systemPrompt, userPrompt, err := buildLLMQualityReviewPromptsWithMarkers("ko", items, []string{"<<<quality_review_title>>>"})
@@ -250,7 +265,25 @@ func TestSanitizeQualityReviewTextExtractsFinalTextAfterGemmaPromptEcho(t *testi
 		"청춘 교복 미소녀와 보내는 성춘 3SEX. 160분 ⟦7000⟧",
 		sanitizeQualityReviewTextWithCandidate(echoed, candidate),
 	)
-	assert.True(t, isInvalidQualityReviewText(sanitizeQualityReviewTextWithCandidate(echoed, "다른 후보")))
+	assert.Equal(t,
+		candidate+"\n\n청춘 교복 미소녀와 보내는 성춘 3SEX. 160분 ⟦7000⟧",
+		sanitizeQualityReviewTextWithCandidate(echoed, "다른 후보"),
+	)
+}
+
+func TestSanitizeQualityReviewTextUsesEchoedKoreanCandidate(t *testing.T) {
+	original := "과격한 몰래카메라 枕営業 로케 ⟦7000⟧"
+	echoed := "[JAPANESE SOURCE]\n過激ドッキリ枕営業ロケ ⟦7000⟧\n" +
+		"[KOREAN CANDIDATE]\n과격한 몰래카메라 성상납 촬영 ⟦7000⟧"
+	assert.Equal(t, "과격한 몰래카메라 성상납 촬영 ⟦7000⟧",
+		sanitizeQualityReviewTextWithCandidate(echoed, original))
+}
+
+func TestSanitizeQualityReviewTextPrefersCandidateOverMalformedTrailingBlock(t *testing.T) {
+	candidate := "농밀한 교감, 하얀 피부의 거유 미소녀 ⟦7000⟧"
+	echoed := "[JAPANESE SOURCE]\n濃交 色白美少女 ⟦7000⟧\n" +
+		"[KOREAN CANDIDATE]\n" + candidate + "\n\n濃交 하얀 피부의 미소녀 ⟦7000⟧"
+	assert.Equal(t, candidate, sanitizeQualityReviewTextWithCandidate(echoed, candidate))
 }
 
 func TestInvalidQualityReviewTextRejectsPromptEchoAndResidualJapanese(t *testing.T) {
@@ -268,16 +301,16 @@ func (p *promptEchoQualityReviewProvider) Translate(_ context.Context, _, _ stri
 	return &translationResult{Texts: []string{"[JAPANESE SOURCE]\n原題\n[KOREAN CANDIDATE]\n정상 후보"}}, nil
 }
 
-func TestReviewJAVTranslationsRejectsPromptEcho(t *testing.T) {
+func TestReviewJAVTranslationsAcceptsEchoedKoreanCandidateSlot(t *testing.T) {
 	provider := &promptEchoQualityReviewProvider{}
 	service := New(Config{Enabled: true, Provider: "openai-compatible", TargetLanguage: "ko"}, provider)
 
-	_, err := service.ReviewJAVTranslations(context.Background(), []QualityReviewField{{
+	result, err := service.ReviewJAVTranslations(context.Background(), []QualityReviewField{{
 		FieldName: "quality_review_title", Source: "原題", Candidate: "정상 후보",
 	}})
 
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "quality reviewer returned invalid output")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"정상 후보"}, result)
 }
 
 func TestTranslateTextsSplitsCombinedRequestAfterGemmaParserError(t *testing.T) {

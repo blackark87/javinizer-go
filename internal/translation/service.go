@@ -211,6 +211,7 @@ func (s *Service) BuildTranslationPlan(scraped *models.Movie, targetLang, source
 
 	actressSourceNames := make([]string, len(scraped.Actresses))
 	actressHangulNames := make([]string, len(scraped.Actresses))
+	actressHangulFirstNames := make([]string, len(scraped.Actresses))
 	romanizedByJapaneseName := make(map[string]string, len(scraped.Actresses))
 	for i, original := range scraped.Actresses {
 		actress := original
@@ -239,14 +240,18 @@ func (s *Service) BuildTranslationPlan(scraped *models.Movie, targetLang, source
 		} else if isLikelyRomanized(actressSourceNames[i]) {
 			actressHangulNames[i], _ = romajiToHangul(actressSourceNames[i])
 		}
+		if actressHangulNames[i] != "" {
+			actressHangulFirstNames[i], _ = models.SplitActressName(actressHangulNames[i])
+		}
 	}
 
 	type nameSub struct {
-		japanese string
-		hangul   string
-		token    string
-		pattern  *regexp.Regexp
-		length   int
+		japanese  string
+		hangul    string
+		token     string
+		pattern   *regexp.Regexp
+		length    int
+		honorific bool
 	}
 	nameSubs := make([]nameSub, 0, len(scraped.Actresses))
 	if targetLang == "ko" {
@@ -266,6 +271,31 @@ func (s *Service) BuildTranslationPlan(scraped *models.Movie, targetLang, source
 				pattern:  pattern,
 				length:   len([]rune(strings.Join(strings.Fields(japanese), ""))),
 			})
+
+			// A title can repeat only the performer's given name with an
+			// honorific (for example 彩月七緒 ... 七緒ちゃん). Protect the
+			// longest matching suffix with the already resolved FirstName so the
+			// LLM cannot guess a different kanji reading such as 나나짱.
+			compact := []rune(strings.Join(strings.Fields(japanese), ""))
+			firstName := actressHangulFirstNames[i]
+			if firstName != "" && len(compact) > 1 {
+				honorificPattern := strings.Join([]string{"ちゃん", "たん", "くん", "さん", "様", "氏", "君"}, "|")
+				for start := 1; start < len(compact); start++ {
+					suffix := string(compact[start:])
+					base := flexibleJapaneseNamePattern(suffix)
+					if base == nil {
+						continue
+					}
+					nameSubs = append(nameSubs, nameSub{
+						japanese:  suffix,
+						hangul:    firstName,
+						token:     fmt.Sprintf("⟦%d⟧", len(nameSubs)),
+						pattern:   regexp.MustCompile(base.String() + `(?:` + honorificPattern + `)`),
+						length:    len(compact) - start,
+						honorific: true,
+					})
+				}
+			}
 		}
 		sort.SliceStable(nameSubs, func(i, j int) bool {
 			return nameSubs[i].length > nameSubs[j].length
@@ -278,8 +308,36 @@ func (s *Service) BuildTranslationPlan(scraped *models.Movie, targetLang, source
 			if !sub.pattern.MatchString(protected) {
 				continue
 			}
-			direct = sub.pattern.ReplaceAllStringFunc(direct, func(string) string { return sub.hangul })
-			protected = sub.pattern.ReplaceAllStringFunc(protected, func(string) string { return sub.token })
+			honorific := func(match string, korean bool) string {
+				if !sub.honorific {
+					return ""
+				}
+				for _, suffix := range []string{"ちゃん", "たん", "くん", "さん", "様", "氏", "君"} {
+					if !strings.HasSuffix(match, suffix) {
+						continue
+					}
+					if !korean {
+						return suffix
+					}
+					switch suffix {
+					case "ちゃん", "たん":
+						return "짱"
+					case "くん", "君":
+						return "군"
+					case "様":
+						return "님"
+					default:
+						return "씨"
+					}
+				}
+				return ""
+			}
+			direct = sub.pattern.ReplaceAllStringFunc(direct, func(match string) string {
+				return sub.hangul + honorific(match, true)
+			})
+			protected = sub.pattern.ReplaceAllStringFunc(protected, func(match string) string {
+				return sub.token + honorific(match, false)
+			})
 			placeholders[sub.token] = sub.hangul
 		}
 		return direct, protected, placeholders
@@ -729,10 +787,22 @@ func sanitizeQualityReviewTextWithCandidate(value, candidate string) string {
 			remainder := strings.ReplaceAll(strings.TrimPrefix(tail, candidate), "\r\n", "\n")
 			if strings.HasPrefix(remainder, "\n\n") {
 				finalText := strings.TrimSpace(remainder)
-				if finalText != "" {
+				if finalText != "" && !isInvalidQualityReviewText(finalText) {
 					return finalText
 				}
 			}
+			// Gemma sometimes returns the reviewed text inside the echoed
+			// [KOREAN CANDIDATE] slot, or appends a malformed Japanese/Korean
+			// hybrid after it. The echoed slot is still an unambiguous single
+			// review result and is safer than the malformed trailing block.
+			return candidate
+		}
+		// The model may rewrite the candidate in place instead of repeating the
+		// original candidate first. Accept that slot only when it is already a
+		// clean Korean result; the normal validator still rejects prompt labels,
+		// residual Japanese, and empty output.
+		if tail != "" && !isInvalidQualityReviewText(tail) {
+			return tail
 		}
 	}
 	return value

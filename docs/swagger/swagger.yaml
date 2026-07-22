@@ -1392,6 +1392,8 @@ definitions:
     type: object
   github_com_javinizer_javinizer-go_internal_api_contracts.TranslationReviewResponse:
     properties:
+      changed:
+        type: boolean
       movie:
         $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieView'
     type: object
@@ -4621,8 +4623,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Runs the existing Korean translation through the second-pass JAV
-        quality reviewer using the retained Japanese scraper source, then persists
+      description: Creates a fresh Korean translation from the retained Japanese scraper
+        source, runs it through the second-pass JAV quality reviewer, then persists
         only the reviewed field. Available before organization.
       parameters:
       - description: Job ID
@@ -4668,7 +4670,7 @@ paths:
           description: Bad Gateway
           schema:
             $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse'
-      summary: Review one translated movie field with the configured LLM
+      summary: Retranslate one movie field with the configured LLM
       tags:
       - web
   /api/v1/batch/{id}/update:

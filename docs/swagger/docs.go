@@ -1820,7 +1820,7 @@ const docTemplate = `{
         },
         "/api/v1/batch/{id}/results/{resultId}/translation-review": {
             "post": {
-                "description": "Runs the existing Korean translation through the second-pass JAV quality reviewer using the retained Japanese scraper source, then persists only the reviewed field. Available before organization.",
+                "description": "Creates a fresh Korean translation from the retained Japanese scraper source, runs it through the second-pass JAV quality reviewer, then persists only the reviewed field. Available before organization.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1830,7 +1830,7 @@ const docTemplate = `{
                 "tags": [
                     "web"
                 ],
-                "summary": "Review one translated movie field with the configured LLM",
+                "summary": "Retranslate one movie field with the configured LLM",
                 "parameters": [
                     {
                         "type": "string",
@@ -6384,6 +6384,9 @@ const docTemplate = `{
         "github_com_javinizer_javinizer-go_internal_api_contracts.TranslationReviewResponse": {
             "type": "object",
             "properties": {
+                "changed": {
+                    "type": "boolean"
+                },
                 "movie": {
                     "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieView"
                 }

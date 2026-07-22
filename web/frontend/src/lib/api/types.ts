@@ -181,6 +181,7 @@ export interface TranslationReviewRequest {
 
 export interface TranslationReviewResponse {
 	movie: Movie;
+	changed: boolean;
 }
 
 export interface BatchRescrapeRequest {

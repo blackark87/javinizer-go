@@ -696,7 +696,7 @@ func (s *Service) ReviewJAVTranslations(ctx context.Context, fields []QualityRev
 		return nil, err
 	}
 	for i := range reviewed {
-		reviewed[i] = sanitizeQualityReviewText(reviewed[i])
+		reviewed[i] = sanitizeQualityReviewTextWithCandidate(reviewed[i], protected[i].candidate)
 		if isInvalidQualityReviewText(reviewed[i]) {
 			return nil, fmt.Errorf("quality reviewer returned invalid output for %s", markers[i])
 		}
@@ -710,10 +710,29 @@ func (s *Service) ReviewJAVTranslations(ctx context.Context, fields []QualityRev
 }
 
 func sanitizeQualityReviewText(value string) string {
+	return sanitizeQualityReviewTextWithCandidate(value, "")
+}
+
+func sanitizeQualityReviewTextWithCandidate(value, candidate string) string {
 	value = strings.TrimSpace(value)
 	for _, prefix := range []string{"[corrected Korean]", "[corrected korean]", "[교정된 한국어]", "[translation]"} {
 		if strings.HasPrefix(value, prefix) {
 			return strings.TrimSpace(strings.TrimPrefix(value, prefix))
+		}
+	}
+	lower := strings.ToLower(value)
+	const candidateMarker = "[korean candidate]"
+	if markerIndex := strings.LastIndex(lower, candidateMarker); markerIndex >= 0 {
+		tail := strings.TrimSpace(value[markerIndex+len(candidateMarker):])
+		candidate = strings.TrimSpace(candidate)
+		if candidate != "" && strings.HasPrefix(tail, candidate) {
+			remainder := strings.ReplaceAll(strings.TrimPrefix(tail, candidate), "\r\n", "\n")
+			if strings.HasPrefix(remainder, "\n\n") {
+				finalText := strings.TrimSpace(remainder)
+				if finalText != "" {
+					return finalText
+				}
+			}
 		}
 	}
 	return value

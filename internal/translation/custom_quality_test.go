@@ -159,6 +159,40 @@ func TestKoreanJAVPromptTranslatesOrificeSwallowingAndSquirtingCompounds(t *test
 	assert.Contains(t, rules, "限界ストゼロ潮吹きFUCK → 스트롱 제로를 마시며 한계까지 분수를 뿜는 섹스")
 }
 
+func TestKoreanJAVPromptTranslatesAmateurHostessPoseAndNTRTerms(t *testing.T) {
+	rules := koreanJAVPromptRules("ko")
+	assert.Contains(t, rules, "never transliterate them as 시로토 or 시로트")
+	assert.Contains(t, rules, "逆ナンパ has the same female-pickup meaning")
+	assert.Contains(t, rules, "キャバ嬢 means a hostess")
+	assert.Contains(t, rules, "never transliterate it as 캬바죠 or 카바죠")
+	assert.Contains(t, rules, "スタイル最強 and 最強スタイル → 최강 몸매")
+	assert.Contains(t, rules, "理想のモテ体型 and 理想のモテ体系 → 이상적인 인기 몸매")
+	assert.Contains(t, rules, "極エロ → 극도로 야한 or 극강의 야함")
+	assert.Contains(t, rules, "寝取り is the act of taking or seducing someone else's partner")
+	assert.Contains(t, rules, "ちんぐり返し depicts a man on his back")
+	assert.Contains(t, rules, "ちんぐり返し騎乗位 → 남자를 꺾어 누르는 기승위")
+	assert.Contains(t, rules, "never use shape metaphors such as 새우, 쟁기, or 활")
+	assert.Contains(t, rules, "タイマン4本番 → 1대1 맞대결 본방 4회")
+	assert.Contains(t, rules, "胸糞NTR → 역겨운 NTR or 기분 더러운 NTR")
+	assert.Contains(t, rules, "never 울울한 발기")
+}
+
+func TestKoreanJAVPromptTranslatesExplicitMetaphorsAndKeywordProperNouns(t *testing.T) {
+	rules := koreanJAVPromptRules("ko")
+	assert.Contains(t, rules, "蜜壺 is a metaphor for the vagina")
+	assert.Contains(t, rules, "never use the dictionary calques 밀통, 꿀단지, or 비부")
+	assert.Contains(t, rules, "手マン performed by another person means 핑거링")
+	assert.Contains(t, rules, "浅草 is the place name 아사쿠사")
+	assert.Contains(t, rules, "ordinary fortune-result 大吉 means 대길 or 대박")
+	assert.Contains(t, rules, "玩具責め in promotional headlines means 성인용품 공세")
+	assert.Contains(t, rules, "確定ビッチ describes an unmistakably promiscuous woman")
+	assert.Contains(t, rules, "大・連・発 or 大連発 describes a woman's climax")
+	assert.Contains(t, rules, "ヤリモクインフルエンサー → 섹스만 노리는 인플루언서")
+	assert.Contains(t, rules, "完全主観 means 완전 1인칭 시점")
+	assert.Contains(t, rules, "青春グラフィティ means 청춘 이야기 or 청춘 기록")
+	assert.Contains(t, rules, "【...】 must remain 【...】")
+}
+
 func TestTranslationPromptForbidsSubstitutingPerformerNames(t *testing.T) {
 	systemPrompt, _, err := buildLLMTranslationPromptsWithMarkers("ja", "ko", []string{"作品名 晶エリー"}, []string{"<<<title>>>"})
 	require.NoError(t, err)
@@ -203,6 +237,19 @@ func TestBuildLLMQualityReviewPromptIncludesSourceCandidateAndStrictOutput(t *te
 func TestSanitizeQualityReviewTextRemovesEchoedOutputLabel(t *testing.T) {
 	assert.Equal(t, "강철 보지", sanitizeQualityReviewText("[corrected Korean]\n강철 보지"))
 	assert.Equal(t, "강철 보지", sanitizeQualityReviewText("강철 보지"))
+}
+
+func TestSanitizeQualityReviewTextExtractsFinalTextAfterGemmaPromptEcho(t *testing.T) {
+	candidate := "청춘 교복 미소녀와 보내는 성춘 3SEX. 160분 ⟦7000⟧"
+	echoed := "[JAPANESE SOURCE]\nアオハル 制服美少女 160分 ⟦7000⟧\n" +
+		"[KOREAN CANDIDATE]\n" + candidate + "\n\n" +
+		"청춘 교복 미소녀와 보내는 성춘 3SEX. 160분 ⟦7000⟧"
+
+	assert.Equal(t,
+		"청춘 교복 미소녀와 보내는 성춘 3SEX. 160분 ⟦7000⟧",
+		sanitizeQualityReviewTextWithCandidate(echoed, candidate),
+	)
+	assert.True(t, isInvalidQualityReviewText(sanitizeQualityReviewTextWithCandidate(echoed, "다른 후보")))
 }
 
 func TestInvalidQualityReviewTextRejectsPromptEchoAndResidualJapanese(t *testing.T) {
@@ -307,6 +354,24 @@ func TestReviewJAVTranslationsPassesOriginalAndCandidateToSecondPass(t *testing.
 	require.Len(t, provider.items, 1)
 	assert.Equal(t, "鉄マン", provider.items[0].Source)
 	assert.Equal(t, "철맨", provider.items[0].Candidate)
+}
+
+func TestReviewJAVTranslationsAcceptsFinalTextAfterGemmaPromptEcho(t *testing.T) {
+	candidate := "청춘 교복 미소녀와 보내는 성춘 3SEX. 160분 ⟦7000⟧"
+	provider := &qualityReviewMockProvider{response: "[JAPANESE SOURCE]\nアオハル 制服美少女 160分 ⟦7000⟧\n" +
+		"[KOREAN CANDIDATE]\n" + candidate + "\n\n" +
+		"청춘 교복 미소녀와 보내는 성춘 3SEX. 160분 ⟦7000⟧"}
+	service := New(Config{Enabled: true, Provider: "openai-compatible", TargetLanguage: "ko"}, provider)
+
+	result, err := service.ReviewJAVTranslations(context.Background(), []QualityReviewField{{
+		FieldName: "quality_review_title",
+		Source:    "アオハル 制服美少女 160分 流川夕",
+		Candidate: "청춘 교복 미소녀와 보내는 성춘 3SEX. 160분 루카와 유",
+		Actresses: []models.Actress{{JapaneseName: "流川夕", LastName: "루카와", FirstName: "유"}},
+	}})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"청춘 교복 미소녀와 보내는 성춘 3SEX. 160분 루카와 유"}, result)
 }
 
 func TestReviewJAVTranslationsProtectsActressNames(t *testing.T) {

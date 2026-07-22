@@ -59,6 +59,14 @@ func parseLLMTranslationPayload(payload string, markerSpec any) ([]string, error
 		// marker format while requests now use semantic field labels.
 		fallback := indexedTranslationMarkers(len(markers))
 		if len(fallback) == 0 || !strings.Contains(cleaned, fallback[0]) {
+			// Some models omit the requested marker when reviewing only one output
+			// slot. In that unambiguous review case, treat the whole response as the
+			// slot; ordinary translations and multi-slot reviews still require their
+			// markers so malformed provider responses are not silently accepted.
+			if len(markers) == 1 && strings.HasPrefix(markers[0], "<<<quality_review_") && cleaned != "" {
+				logging.Debugf("Translation: accepted unmarked single-item response")
+				return []string{cleaned}, nil
+			}
 			return nil, fmt.Errorf("failed to parse translated output payload: first output marker not found")
 		}
 		markers = fallback

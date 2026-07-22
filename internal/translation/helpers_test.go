@@ -705,6 +705,32 @@ She says "It's forceful..." but looks happy while being teased.`
 		require.NoError(t, err)
 		assert.Equal(t, []string{"hello", "world"}, got)
 	})
+
+	t.Run("accepts unmarked single-item response", func(t *testing.T) {
+		input := "【발매일】2023-07-15, 【수록 시간】99분"
+
+		got, err := parseLLMTranslationPayload(input, []string{"<<<quality_review_description>>>"})
+		require.NoError(t, err)
+		assert.Equal(t, []string{input}, got)
+	})
+
+	t.Run("requires markers for multiple items", func(t *testing.T) {
+		_, err := parseLLMTranslationPayload("hello\nworld", []string{"<<<quality_review_title>>>", "<<<quality_review_description>>>"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "first output marker not found")
+	})
+
+	t.Run("requires marker for ordinary single-item translation", func(t *testing.T) {
+		_, err := parseLLMTranslationPayload("hello", []string{"<<<title>>>"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "first output marker not found")
+	})
+
+	t.Run("rejects empty unmarked single-item response", func(t *testing.T) {
+		_, err := parseLLMTranslationPayload("   ", []string{"<<<quality_review_description>>>"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "first output marker not found")
+	})
 }
 
 // =============================================================================

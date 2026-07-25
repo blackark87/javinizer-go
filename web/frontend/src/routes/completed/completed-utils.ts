@@ -29,3 +29,7 @@ export function completedContentSearchURL(query: string, page: number): string {
 	const suffix = params.toString();
 	return suffix ? `/completed?${suffix}` : '/completed';
 }
+
+export function completedContentMetadataURL(movieID: string): string {
+	return `/movies/${encodeURIComponent(movieID)}`;
+}

@@ -2,7 +2,6 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import {
-		ArrowRight,
 		CheckCircle2,
 		ChevronLeft,
 		ChevronRight,
@@ -11,6 +10,7 @@
 		ImageOff,
 		LoaderCircle,
 		Search,
+		SquarePen,
 		X,
 	} from 'lucide-svelte';
 	import { apiClient } from '$lib/api/client';
@@ -18,8 +18,10 @@
 	import Button from '$lib/components/ui/Button.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 	import { toastStore } from '$lib/stores/toast';
+	import { posterImageCandidates } from '$lib/utils/image';
 	import {
 		completedActressName,
+		completedContentMetadataURL,
 		completedContentPageCount,
 		completedContentSearchURL,
 		completedContentTitle,
@@ -36,7 +38,7 @@
 	let error = $state<string | null>(null);
 	let requestSequence = 0;
 	let loadedKey = '';
-	let posterErrors = $state<Set<string>>(new Set());
+	let posterIndexes = $state<Map<string, number>>(new Map());
 
 	const totalPages = $derived(completedContentPageCount(total, pageSize));
 	const rangeStart = $derived(total === 0 ? 0 : (currentPage - 1) * pageSize + 1);
@@ -72,7 +74,7 @@
 
 			contents = response.contents ?? [];
 			total = response.total;
-			posterErrors = new Set();
+			posterIndexes = new Map();
 
 			const resolvedPages = completedContentPageCount(response.total, pageSize);
 			if (pageNumber > resolvedPages) {
@@ -111,11 +113,10 @@
 		});
 	}
 
-	function posterURL(content: CompletedContentItem): string {
-		const url = content.cropped_poster_url || content.poster_url || '';
-		if (!url) return '';
-		if (url.startsWith('/')) return apiClient.withSessionParam(url);
-		return apiClient.getPreviewImageURL(url);
+	function advancePoster(content: CompletedContentItem) {
+		const next = new Map(posterIndexes);
+		next.set(content.movie_id, (next.get(content.movie_id) ?? 0) + 1);
+		posterIndexes = next;
 	}
 
 	function formatOrganizedAt(value: string): string {
@@ -235,17 +236,17 @@
 	{:else}
 		<div class="grid gap-4">
 			{#each contents as content (content.movie_id)}
+				{@const posterCandidates = posterImageCandidates(content)}
+				{@const poster = posterCandidates[posterIndexes.get(content.movie_id) ?? 0]}
 				<Card class="overflow-hidden">
 					<div class="flex flex-col gap-4 p-4 sm:flex-row">
 						<div class="h-40 w-full shrink-0 overflow-hidden rounded-md border bg-muted sm:h-40 sm:w-28">
-							{#if posterURL(content) && !posterErrors.has(content.movie_id)}
+							{#if poster}
 								<img
-									src={posterURL(content)}
+									src={poster}
 									alt={`${completedContentTitle(content)} poster`}
 									class="h-full w-full object-cover"
-									onerror={() => {
-										posterErrors = new Set([...posterErrors, content.movie_id]);
-									}}
+									onerror={() => advancePoster(content)}
 								/>
 							{:else}
 								<div class="flex h-full items-center justify-center text-muted-foreground">
@@ -273,13 +274,13 @@
 									{/if}
 								</div>
 
-								{#if content.latest_job_id}
+								{#if content.content_id}
 									<a
-										href={`/jobs/${content.latest_job_id}`}
+										href={completedContentMetadataURL(content.movie_id)}
 										class="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-primary hover:underline"
 									>
-										View job
-										<ArrowRight class="h-4 w-4" />
+										<SquarePen class="h-4 w-4" />
+										Edit Metadata
 									</a>
 								{/if}
 							</div>

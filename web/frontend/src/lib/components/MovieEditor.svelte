@@ -11,6 +11,7 @@
 		onRetranslate?: (field: 'title' | 'description') => void;
 		retranslatingField?: 'title' | 'description' | null;
 		retranslationDisabled?: boolean;
+		identifiersReadonly?: boolean;
 	}
 
 	let {
@@ -22,6 +23,7 @@
 		onRetranslate,
 		retranslatingField = null,
 		retranslationDisabled = false,
+		identifiersReadonly = false,
 	}: Props = $props();
 
 	// Create a local editable copy - initialized by effect
@@ -128,7 +130,8 @@
 				type="text"
 				bind:value={editedMovie.id}
 				onchange={() => onUpdate(editedMovie)}
-				class="w-full px-3 py-2 border rounded-md bg-background focus:ring-2 focus:ring-primary focus:border-primary transition-all"
+				disabled={identifiersReadonly}
+				class="w-full px-3 py-2 border rounded-md bg-background focus:ring-2 focus:ring-primary focus:border-primary transition-all disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
 			/>
 		</div>
 
@@ -147,7 +150,8 @@
 				type="text"
 				bind:value={editedMovie.code}
 				onchange={() => onUpdate(editedMovie)}
-				class="w-full px-3 py-2 border rounded-md bg-background focus:ring-2 focus:ring-primary focus:border-primary transition-all"
+				disabled={identifiersReadonly}
+				class="w-full px-3 py-2 border rounded-md bg-background focus:ring-2 focus:ring-primary focus:border-primary transition-all disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
 			/>
 		</div>
 

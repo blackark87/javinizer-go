@@ -8,6 +8,7 @@ import (
 func RegisterRoutes(protected *gin.RouterGroup, deps MovieDeps) {
 	protected.POST("/scrape", scrapeMovie(deps))
 	protected.GET("/movies/:id", getMovie(deps))
+	protected.PUT("/movies/:id", updateMovie(deps))
 	protected.GET("/movies", listMovies(deps))
 	protected.POST("/movies/:id/rescrape", rescrapeMovie(deps))
 	protected.POST("/movies/:id/compare-nfo", compareNFO(deps))

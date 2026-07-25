@@ -295,6 +295,7 @@ func TestNewServer_RouteParity(t *testing.T) {
 		"PUT /api/v1/genres/replacements",
 		"PUT /api/v1/genres/ignored",
 		"PUT /api/v1/genres/favorites",
+		"PUT /api/v1/movies/:id",
 		"PUT /api/v1/words/replacements",
 	}
 

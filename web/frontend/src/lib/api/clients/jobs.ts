@@ -270,6 +270,14 @@ export class ScraperClient extends BaseClient {
 		return response.movie;
 	}
 
+	async updateMovie(id: string, movie: Movie): Promise<Movie> {
+		const response = await this.request<{ movie: Movie }>(`/api/v1/movies/${id}`, {
+			method: 'PUT',
+			body: JSON.stringify({ movie }),
+		});
+		return response.movie;
+	}
+
 	async listMovies(limit?: number, offset?: number): Promise<{ movies: Movie[]; count: number }> {
 		const params = new URLSearchParams();
 		if (limit) params.set('limit', limit.toString());

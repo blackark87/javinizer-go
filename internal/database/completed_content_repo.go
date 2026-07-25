@@ -12,29 +12,37 @@ import (
 // CompletedContent is the database read model for one organized movie.
 // Paths are the distinct destinations still marked as applied.
 type CompletedContent struct {
-	MovieID          string
-	ContentID        string
-	DisplayTitle     string
-	Title            string
-	OriginalTitle    string
-	PosterURL        string
-	CroppedPosterURL string
-	Actresses        []models.Actress
-	Paths            []string
-	LatestJobID      string
-	OrganizedAt      time.Time
+	MovieID                  string
+	ContentID                string
+	DisplayTitle             string
+	Title                    string
+	OriginalTitle            string
+	PosterURL                string
+	CoverURL                 string
+	CroppedPosterURL         string
+	OriginalPosterURL        string
+	OriginalCroppedPosterURL string
+	OriginalCoverURL         string
+	Actresses                []models.Actress
+	Paths                    []string
+	LatestJobID              string
+	OrganizedAt              time.Time
 }
 
 type completedContentRow struct {
-	MovieID          string `gorm:"column:movie_id"`
-	ContentID        string `gorm:"column:content_id"`
-	DisplayTitle     string `gorm:"column:display_title"`
-	Title            string `gorm:"column:title"`
-	OriginalTitle    string `gorm:"column:original_title"`
-	PosterURL        string `gorm:"column:poster_url"`
-	CroppedPosterURL string `gorm:"column:cropped_poster_url"`
-	LatestJobID      string `gorm:"column:latest_job_id"`
-	OrganizedAtUnix  int64  `gorm:"column:organized_at_unix"`
+	MovieID                  string `gorm:"column:movie_id"`
+	ContentID                string `gorm:"column:content_id"`
+	DisplayTitle             string `gorm:"column:display_title"`
+	Title                    string `gorm:"column:title"`
+	OriginalTitle            string `gorm:"column:original_title"`
+	PosterURL                string `gorm:"column:poster_url"`
+	CoverURL                 string `gorm:"column:cover_url"`
+	CroppedPosterURL         string `gorm:"column:cropped_poster_url"`
+	OriginalPosterURL        string `gorm:"column:original_poster_url"`
+	OriginalCroppedPosterURL string `gorm:"column:original_cropped_poster_url"`
+	OriginalCoverURL         string `gorm:"column:original_cover_url"`
+	LatestJobID              string `gorm:"column:latest_job_id"`
+	OrganizedAtUnix          int64  `gorm:"column:organized_at_unix"`
 }
 
 type completedContentPathRow struct {
@@ -81,12 +89,17 @@ func (r *BatchFileOperationRepository) ListCompletedContent(
 			COALESCE(m.title, '') AS title,
 			COALESCE(m.original_title, '') AS original_title,
 			COALESCE(m.poster_url, '') AS poster_url,
+			COALESCE(m.cover_url, '') AS cover_url,
 			COALESCE(m.cropped_poster_url, '') AS cropped_poster_url,
+			COALESCE(m.original_poster_url, '') AS original_poster_url,
+			COALESCE(m.original_cropped_poster_url, '') AS original_cropped_poster_url,
+			COALESCE(m.original_cover_url, '') AS original_cover_url,
 			(
 				SELECT latest.batch_job_id
 				FROM batch_file_operations AS latest
 				WHERE latest.movie_id = b.movie_id
 					AND latest.revert_status = ?
+					AND TRIM(COALESCE(latest.new_path, '')) <> ''
 				ORDER BY latest.created_at DESC, latest.id DESC
 				LIMIT 1
 			) AS latest_job_id,
@@ -107,17 +120,21 @@ func (r *BatchFileOperationRepository) ListCompletedContent(
 	itemByMovieID := make(map[string]*CompletedContent, len(rows))
 	for i, row := range rows {
 		items[i] = CompletedContent{
-			MovieID:          row.MovieID,
-			ContentID:        row.ContentID,
-			DisplayTitle:     row.DisplayTitle,
-			Title:            row.Title,
-			OriginalTitle:    row.OriginalTitle,
-			PosterURL:        row.PosterURL,
-			CroppedPosterURL: row.CroppedPosterURL,
-			Actresses:        []models.Actress{},
-			Paths:            []string{},
-			LatestJobID:      row.LatestJobID,
-			OrganizedAt:      time.Unix(row.OrganizedAtUnix, 0).UTC(),
+			MovieID:                  row.MovieID,
+			ContentID:                row.ContentID,
+			DisplayTitle:             row.DisplayTitle,
+			Title:                    row.Title,
+			OriginalTitle:            row.OriginalTitle,
+			PosterURL:                row.PosterURL,
+			CoverURL:                 row.CoverURL,
+			CroppedPosterURL:         row.CroppedPosterURL,
+			OriginalPosterURL:        row.OriginalPosterURL,
+			OriginalCroppedPosterURL: row.OriginalCroppedPosterURL,
+			OriginalCoverURL:         row.OriginalCoverURL,
+			Actresses:                []models.Actress{},
+			Paths:                    []string{},
+			LatestJobID:              row.LatestJobID,
+			OrganizedAt:              time.Unix(row.OrganizedAtUnix, 0).UTC(),
 		}
 		movieIDs = append(movieIDs, row.MovieID)
 		if row.ContentID != "" {
@@ -149,7 +166,10 @@ func (r *BatchFileOperationRepository) completedContentBaseQuery(ctx context.Con
 					LIMIT 1
 				)
 		`).
-		Where("b.revert_status = ?", models.RevertStatusApplied)
+		Where(
+			"b.revert_status = ? AND TRIM(COALESCE(b.new_path, '')) <> ''",
+			models.RevertStatusApplied,
+		)
 
 	term := strings.TrimSpace(query)
 	if term == "" {
@@ -214,7 +234,11 @@ func (r *BatchFileOperationRepository) loadCompletedContentPaths(
 	err := r.GetDB().WithContext(ctx).
 		Table("batch_file_operations").
 		Select("movie_id, new_path").
-		Where("revert_status = ? AND movie_id IN ?", models.RevertStatusApplied, movieIDs).
+		Where(
+			"revert_status = ? AND TRIM(COALESCE(new_path, '')) <> '' AND movie_id IN ?",
+			models.RevertStatusApplied,
+			movieIDs,
+		).
 		Order("created_at DESC, id DESC").
 		Scan(&rows).Error
 	if err != nil {

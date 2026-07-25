@@ -1322,7 +1322,11 @@ export interface CompletedContentItem {
 	title?: string;
 	original_title?: string;
 	poster_url?: string;
+	cover_url?: string;
 	cropped_poster_url?: string;
+	original_poster_url?: string;
+	original_cropped_poster_url?: string;
+	original_cover_url?: string;
 	actresses: Actress[];
 	paths: string[];
 	latest_job_id: string;

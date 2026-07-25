@@ -59,17 +59,21 @@ func listCompletedContent(deps JobDeps) gin.HandlerFunc {
 		items := make([]contracts.CompletedContentItem, len(contents))
 		for i, content := range contents {
 			items[i] = contracts.CompletedContentItem{
-				MovieID:          content.MovieID,
-				ContentID:        content.ContentID,
-				DisplayTitle:     content.DisplayTitle,
-				Title:            content.Title,
-				OriginalTitle:    content.OriginalTitle,
-				PosterURL:        content.PosterURL,
-				CroppedPosterURL: content.CroppedPosterURL,
-				Actresses:        content.Actresses,
-				Paths:            content.Paths,
-				LatestJobID:      content.LatestJobID,
-				OrganizedAt:      content.OrganizedAt.Format(time.RFC3339),
+				MovieID:                  content.MovieID,
+				ContentID:                content.ContentID,
+				DisplayTitle:             content.DisplayTitle,
+				Title:                    content.Title,
+				OriginalTitle:            content.OriginalTitle,
+				PosterURL:                content.PosterURL,
+				CoverURL:                 content.CoverURL,
+				CroppedPosterURL:         content.CroppedPosterURL,
+				OriginalPosterURL:        content.OriginalPosterURL,
+				OriginalCroppedPosterURL: content.OriginalCroppedPosterURL,
+				OriginalCoverURL:         content.OriginalCoverURL,
+				Actresses:                content.Actresses,
+				Paths:                    content.Paths,
+				LatestJobID:              content.LatestJobID,
+				OrganizedAt:              content.OrganizedAt.Format(time.RFC3339),
 			}
 		}
 

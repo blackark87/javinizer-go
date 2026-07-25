@@ -146,6 +146,7 @@ func registerAPIV1Routes(router *gin.Engine, rt *core.APIRuntime) {
 		logging.Error("registerAPIV1Routes: workflow factory PosterGen is nil — poster generation will be unavailable")
 	}
 	movieDeps := movie.NewMovieDeps(deps.Repos.MovieRepo,
+		movie.WithActressRepository(deps.Repos.ActressRepo),
 		movie.WithWorkflow(rt.GetWorkflow),
 		movie.WithAllowedDirs(secCfg.AllowedDirectories),
 		movie.WithPosterGen(posterGenForMovie),

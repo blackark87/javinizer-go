@@ -50,8 +50,12 @@ func TestBatchFileOperationRepository_ListCompletedContent(t *testing.T) {
 		Title:         "한국어 제목",
 		OriginalTitle: "綺麗なお姉さん",
 		Poster: models.PosterState{
-			PosterURL:        "https://example.com/poster.jpg",
-			CroppedPosterURL: "/api/v1/temp/posters/job-new/MIUM-985.jpg",
+			PosterURL:                "https://example.com/poster.jpg",
+			CoverURL:                 "https://example.com/cover.jpg",
+			CroppedPosterURL:         "/api/v1/temp/posters/job-new/MIUM-985.jpg",
+			OriginalPosterURL:        "https://example.com/original-poster.jpg",
+			OriginalCroppedPosterURL: "/api/v1/temp/posters/job-old/MIUM-985.jpg",
+			OriginalCoverURL:         "https://example.com/original-cover.jpg",
 		},
 		CreatedAt: now.Add(-24 * time.Hour),
 		UpdatedAt: now,
@@ -102,6 +106,11 @@ func TestBatchFileOperationRepository_ListCompletedContent(t *testing.T) {
 		NewPath: "/dest/FAILED-001.mp4", OperationType: models.OperationTypeMove,
 		RevertStatus: models.RevertStatusFailed, CreatedAt: now.Add(-30 * time.Minute), UpdatedAt: now,
 	})
+	createOperation(models.BatchFileOperation{
+		BatchJobID: "job-pending", MovieID: "PENDING-001", OriginalPath: "/src/pending.mp4",
+		NewPath: "", OperationType: models.OperationTypeMove,
+		RevertStatus: models.RevertStatusApplied, CreatedAt: now.Add(-1 * time.Minute), UpdatedAt: now,
+	})
 
 	t.Run("groups applied paths and keeps metadata", func(t *testing.T) {
 		items, total, err := repo.ListCompletedContent(ctx, "", 20, 0)
@@ -113,6 +122,9 @@ func TestBatchFileOperationRepository_ListCompletedContent(t *testing.T) {
 		assert.Equal(t, "MIUM-985", first.MovieID)
 		assert.Equal(t, "mium00985", first.ContentID)
 		assert.Equal(t, "job-new", first.LatestJobID)
+		assert.Equal(t, "https://example.com/poster.jpg", first.PosterURL)
+		assert.Equal(t, "https://example.com/cover.jpg", first.CoverURL)
+		assert.Equal(t, "https://example.com/original-poster.jpg", first.OriginalPosterURL)
 		assert.Equal(t, []string{
 			"/dest/MIUM-985/MIUM-985-CD2.mp4",
 			"/dest/MIUM-985/MIUM-985.mp4",

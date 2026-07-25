@@ -3540,6 +3540,63 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "put": {
+                "description": "Persist user edits to an existing cached movie while preserving its database identity",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "movies"
+                ],
+                "summary": "Update cached movie metadata",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Movie ID or content ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Updated movie data",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.UpdateMovieRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    }
+                }
             }
         },
         "/api/v1/movies/{id}/compare-nfo": {
@@ -5058,6 +5115,9 @@ const docTemplate = `{
                     "type": "string",
                     "example": "300mium00985"
                 },
+                "cover_url": {
+                    "type": "string"
+                },
                 "cropped_poster_url": {
                     "type": "string"
                 },
@@ -5075,6 +5135,15 @@ const docTemplate = `{
                 "organized_at": {
                     "type": "string",
                     "example": "2026-07-26T12:00:00Z"
+                },
+                "original_cover_url": {
+                    "type": "string"
+                },
+                "original_cropped_poster_url": {
+                    "type": "string"
+                },
+                "original_poster_url": {
+                    "type": "string"
                 },
                 "original_title": {
                     "type": "string"

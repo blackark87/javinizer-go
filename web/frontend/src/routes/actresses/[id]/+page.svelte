@@ -6,11 +6,12 @@
 	import Button from '$lib/components/ui/Button.svelte';
 	import { apiClient } from '$lib/api/client';
 	import type { Actress, Movie } from '$lib/api/types';
+	import { posterImageCandidates } from '$lib/utils/image';
 
 	const movieLimit = 24;
 	let movieOffset = $state(0);
 	let actressImageFailed = $state(false);
-	let movieImageFailures = $state(new Set<string>());
+	let movieImageIndexes = $state<Map<string, number>>(new Map());
 
 	let actressId = $derived(Number($page.params.id));
 
@@ -38,12 +39,19 @@
 		return movie.display_title || movie.title || movie.original_title || movie.id || movie.content_id || 'Untitled';
 	}
 
-	function movieImage(movie: Movie): string | undefined {
-		return movie.poster_url || movie.cropped_poster_url || movie.cover_url;
+	function movieKey(movie: Movie): string {
+		return movie.content_id || movie.code || movie.id || movieTitle(movie);
 	}
 
-	function movieKey(movie: Movie): string {
-		return movie.content_id || movie.id || movieTitle(movie);
+	function movieMetadataURL(movie: Movie): string {
+		return `/movies/${encodeURIComponent(movie.id || movie.content_id || movie.code || '')}`;
+	}
+
+	function advanceMovieImage(movie: Movie) {
+		const key = movieKey(movie);
+		const next = new Map(movieImageIndexes);
+		next.set(key, (next.get(key) ?? 0) + 1);
+		movieImageIndexes = next;
 	}
 
 	function releaseLabel(movie: Movie): string {
@@ -119,16 +127,16 @@
 			{:else}
 				<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
 					{#each moviesQuery.data?.movies ?? [] as movie (movieKey(movie))}
+						{@const movieImages = posterImageCandidates(movie)}
+						{@const movieImage = movieImages[movieImageIndexes.get(movieKey(movie)) ?? 0]}
 						<Card class="overflow-hidden h-full">
-							<a href={`/movies/${movie.id || movie.content_id}`} class="block hover:bg-muted/40 h-full">
-								{#if movieImage(movie) && !movieImageFailures.has(movieKey(movie))}
+							<a href={movieMetadataURL(movie)} class="block hover:bg-muted/40 h-full">
+								{#if movieImage}
 									<img
-										src={apiClient.getPreviewImageURL(movieImage(movie) ?? '')}
+										src={movieImage}
 										alt={movieTitle(movie)}
 										class="w-full h-64 object-cover border-b"
-										onerror={() => {
-											movieImageFailures = new Set([...movieImageFailures, movieKey(movie)]);
-										}}
+										onerror={() => advanceMovieImage(movie)}
 									/>
 								{:else}
 									<div class="w-full h-64 bg-muted flex items-center justify-center text-muted-foreground border-b">

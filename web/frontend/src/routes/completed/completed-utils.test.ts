@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	completedActressName,
+	completedContentMetadataURL,
 	completedContentPageCount,
 	completedContentSearchURL,
 	completedContentTitle,
@@ -48,5 +49,9 @@ describe('completed content utilities', () => {
 			'/completed?q=%E7%99%BD%E5%B2%A9%E5%86%AC%E8%90%8C&page=2',
 		);
 		expect(completedContentSearchURL('  ', 1)).toBe('/completed');
+	});
+
+	it('builds an encoded cached-movie metadata route', () => {
+		expect(completedContentMetadataURL('MIUM 985')).toBe('/movies/MIUM%20985');
 	});
 });

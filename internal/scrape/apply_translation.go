@@ -16,8 +16,16 @@ import (
 // This is a standalone function — it does not belong to the Aggregator, which is a
 // pure merge operation. Translation is an orthogonal concern invoked after aggregation.
 func applyTranslation(ctx context.Context, scraped *models.Movie, translator Translator) (string, *translation.TranslationOutput) {
+	return applyTranslationWithOptions(ctx, scraped, translator, TranslationOptions{})
+}
+
+func applyTranslationWithOptions(ctx context.Context, scraped *models.Movie, translator Translator, options TranslationOptions) (string, *translation.TranslationOutput) {
 	if scraped == nil || translator == nil {
 		return "", nil
+	}
+	if configurable, ok := translator.(translatorWithOptions); ok {
+		warning, _, output := configurable.TranslateWithOptions(ctx, scraped, options)
+		return warning, output
 	}
 	warning, _, output := translator.Translate(ctx, scraped)
 	return warning, output
@@ -33,9 +41,10 @@ type translationService struct {
 	settingsHash      string
 	timeoutSeconds    int
 	overwriteExisting bool
+	applyToPrimary    bool
 }
 
-func newTranslationService(provider string, sourceLanguage string, targetLanguage string, settingsHash string, timeoutSeconds int, overwriteExisting bool, svc *translation.Service) *translationService {
+func newTranslationService(provider string, sourceLanguage string, targetLanguage string, settingsHash string, timeoutSeconds int, overwriteExisting bool, applyToPrimary bool, svc *translation.Service) *translationService {
 	return &translationService{
 		service:           svc,
 		provider:          provider,
@@ -44,6 +53,7 @@ func newTranslationService(provider string, sourceLanguage string, targetLanguag
 		settingsHash:      settingsHash,
 		timeoutSeconds:    timeoutSeconds,
 		overwriteExisting: overwriteExisting,
+		applyToPrimary:    applyToPrimary,
 	}
 }
 
@@ -54,12 +64,16 @@ func newTranslationService(provider string, sourceLanguage string, targetLanguag
 // context deadline, mirroring main's ApplyConfiguredTranslation which wrapped
 // TranslateMovie in context.WithTimeout. A value <= 0 defaults to 120s; the
 // caller's ctx is always respected as the parent.
-func (ts *translationService) translateWithContext(ctx context.Context, scraped *models.Movie) (string, *translation.TranslationOutput) {
+func (ts *translationService) translateWithContext(ctx context.Context, scraped *models.Movie, forceOverwrite bool) (string, *translation.TranslationOutput) {
 	if scraped == nil {
 		return "", nil
 	}
 
 	logging.Debugf("Translation: starting (provider=%s, source=%s, target=%s, hash=%s)", ts.provider, ts.sourceLanguage, ts.targetLanguage, ts.settingsHash)
+	translationInput := scraped
+	if forceOverwrite {
+		translationInput = translationRefreshSourceMovie(scraped, ts.sourceLanguage)
+	}
 
 	timeout := ts.timeoutSeconds
 	if timeout <= 0 {
@@ -68,7 +82,7 @@ func (ts *translationService) translateWithContext(ctx context.Context, scraped 
 	transCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	output, warning, err := ts.service.TranslateMovie(transCtx, scraped, ts.settingsHash)
+	output, warning, err := ts.service.TranslateMovie(transCtx, translationInput, ts.settingsHash)
 	if err != nil {
 		id := scraped.ID
 		if id == "" {
@@ -81,6 +95,9 @@ func (ts *translationService) translateWithContext(ctx context.Context, scraped 
 		logging.Debugf("Translation: returned nil record (no fields to translate or source==target)")
 		return "", nil
 	}
+	if forceOverwrite && ts.applyToPrimary && translationInput != scraped {
+		copyTranslatedPrimary(scraped, translationInput, output)
+	}
 
 	records := output.Movies
 	if len(records) == 0 && output.Movie != nil {
@@ -89,11 +106,97 @@ func (ts *translationService) translateWithContext(ctx context.Context, scraped 
 	for i := range records {
 		translatedRecord := records[i]
 		logging.Debugf("Translation: appending %s translation (title=%q, hash=%s)", translatedRecord.Language, translatedRecord.Title, translatedRecord.SettingsHash)
-		scraped.Translations = mergeOrAppendTranslation(scraped.Translations, translatedRecord, ts.overwriteExisting)
+		scraped.Translations = mergeOrAppendTranslation(scraped.Translations, translatedRecord, forceOverwrite || ts.overwriteExisting)
 	}
 
 	logging.Debugf("Translation: movie now has %d translation(s)", len(scraped.Translations))
 	return warning, output
+}
+
+// translationRefreshSourceMovie rebuilds request-scoped translation input from
+// the cached source-language record. apply_to_primary may have replaced the
+// movie's primary fields with a previous target-language result, while the
+// original scraper text remains in Movie.Translations (normally language=ja).
+func translationRefreshSourceMovie(movie *models.Movie, sourceLanguage string) *models.Movie {
+	working := movie.Clone()
+	if working == nil {
+		return nil
+	}
+
+	sourceLanguage = strings.ToLower(strings.TrimSpace(sourceLanguage))
+	if sourceLanguage == "" || sourceLanguage == "auto" {
+		sourceLanguage = "ja"
+	}
+	for _, record := range movie.Translations {
+		if strings.ToLower(strings.TrimSpace(record.Language)) != sourceLanguage {
+			continue
+		}
+		working.Title = record.Title
+		working.OriginalTitle = record.OriginalTitle
+		working.Description = record.Description
+		working.Director = record.Director
+		working.Maker = record.Maker
+		working.Label = record.Label
+		working.Series = record.Series
+		if sourceLanguage == "ja" && strings.TrimSpace(working.Title) == "" {
+			working.Title = movie.OriginalTitle
+		}
+		if sourceLanguage == "ja" && strings.TrimSpace(working.OriginalTitle) == "" {
+			working.OriginalTitle = movie.OriginalTitle
+		}
+		// MovieTranslation has no genre field. Do not feed already-translated
+		// primary genre names back through the provider as source text.
+		working.Genres = nil
+		return working
+	}
+
+	// Legacy rows may lack a source-language translation association but still
+	// preserve the Japanese title in movies.original_title.
+	if sourceLanguage == "ja" && strings.TrimSpace(movie.OriginalTitle) != "" {
+		working.Title = movie.OriginalTitle
+		working.OriginalTitle = movie.OriginalTitle
+		working.Description = ""
+		working.Director = ""
+		working.Maker = ""
+		working.Label = ""
+		working.Series = ""
+		working.Genres = nil
+	}
+	return working
+}
+
+func copyTranslatedPrimary(dst, src *models.Movie, output *translation.TranslationOutput) {
+	if dst == nil || src == nil || output == nil || output.Movie == nil {
+		return
+	}
+	translated := output.Movie
+	if translated.Title != "" {
+		dst.Title = src.Title
+	}
+	// Keep movies.original_title as the authoritative source fallback for
+	// future refreshes. Target-language OriginalTitle remains available on the
+	// target MovieTranslation record.
+	if translated.Description != "" {
+		dst.Description = src.Description
+	}
+	if translated.Director != "" {
+		dst.Director = src.Director
+	}
+	if translated.Maker != "" {
+		dst.Maker = src.Maker
+	}
+	if translated.Label != "" {
+		dst.Label = src.Label
+	}
+	if translated.Series != "" {
+		dst.Series = src.Series
+	}
+	if len(output.GenreTranslations) > 0 {
+		dst.Genres = append([]models.Genre(nil), src.Genres...)
+	}
+	if len(output.ActressTranslations) > 0 {
+		dst.Actresses = append([]models.Actress(nil), src.Actresses...)
+	}
 }
 
 func (ts *translationService) translateTitlesWithContext(ctx context.Context, titles []string) ([]string, error) {

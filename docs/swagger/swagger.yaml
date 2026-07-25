@@ -363,6 +363,11 @@ definitions:
           scalar/array strategies)'
         example: conservative
         type: string
+      refresh_translation_only:
+        description: Re-translate DB-cached metadata without querying scrapers or
+          regenerating artwork
+        example: false
+        type: boolean
       scalar_strategy:
         description: 'For Update mode: prefer-nfo, prefer-scraper, preserve-existing,
           fill-missing-only'

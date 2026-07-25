@@ -246,6 +246,45 @@ describe('/browse D4 — sessionStorage hydrate + Manual Scrape checkbox', () =>
 	});
 });
 
+describe('/browse — translation-only refresh', () => {
+	it('clears conflicting scrape options and submits a cache-only translation request', async () => {
+		const { findByText, getByText, getByRole, getByLabelText } = renderPage();
+		await findByText('a.mp4');
+		await fireEvent.click(getByText('a.mp4'));
+		await findByText('1 File Selected for Scraping');
+
+		await fireEvent.click(getByRole('button', { name: /Options/ }));
+		const forceCheckbox = getByLabelText(/Clear cache and fetch fresh metadata/) as HTMLInputElement;
+		await fireEvent.click(forceCheckbox);
+		expect(forceCheckbox.checked).toBe(true);
+
+		const translationOnlyCheckbox = getByLabelText(
+			/Re-translate cached metadata without fetching scrapers or artwork/
+		) as HTMLInputElement;
+		await fireEvent.click(translationOnlyCheckbox);
+
+		expect(translationOnlyCheckbox.checked).toBe(true);
+		expect(forceCheckbox.checked).toBe(false);
+		expect(forceCheckbox.disabled).toBe(true);
+		expect((getByLabelText(/Choose specific scrapers/) as HTMLInputElement).disabled).toBe(true);
+		expect((getByLabelText(/Review & override IDs/) as HTMLInputElement).disabled).toBe(true);
+		expect(getByText('Translation only')).toBeTruthy();
+
+		const raw = sessionStorage.getItem(STORAGE_KEY_SCRAPE_STATE);
+		expect(raw).not.toBeNull();
+		expect(JSON.parse(raw as string).refreshTranslationOnly).toBe(true);
+
+		await fireEvent.click(getByRole('button', { name: 'Refresh translations for 1 File' }));
+		await waitFor(() => expect(apiClient.batchScrape).toHaveBeenCalledTimes(1));
+		expect(apiClient.batchScrape).toHaveBeenCalledWith(expect.objectContaining({
+			files: ['/library/a.mp4'],
+			force: false,
+			refresh_translation_only: true,
+			selected_scrapers: undefined
+		}));
+	});
+});
+
 describe('/browse — phantom selection pruning on refresh', () => {
 	it('drops a selected file that has been moved out of the listed directory after Refresh', async () => {
 		// Initial listing: a.mp4 + b.mp4 both present.

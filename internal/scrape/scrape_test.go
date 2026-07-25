@@ -215,6 +215,65 @@ func TestScrape_CacheMiss_Scrapes(t *testing.T) {
 	assert.Equal(t, "TEST-001", result.Movie.ID)
 }
 
+func TestScrape_RefreshTranslationOnlyCacheMissDoesNotQueryScrapers(t *testing.T) {
+	f := newFixture(t)
+	provider := &mockScraper{
+		name:    "mock",
+		enabled: true,
+		result:  &models.ScraperResult{ID: "TEST-001", Title: "Should not be fetched"},
+	}
+	f.registry.RegisterInstance(provider)
+	f.cfg.Scrapers.Priority = []string{"mock"}
+	s := f.build()
+
+	result, err := s.Scrape(context.Background(), ScrapeCmd{
+		MovieID:                "TEST-001",
+		RefreshTranslationOnly: true,
+	}, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, StatusFailed, result.Status)
+	assert.Contains(t, result.Message, "requires cached metadata")
+	assert.Zero(t, provider.callCount)
+}
+
+func TestScrape_RefreshTranslationOnlyCacheHitSkipsActressResolver(t *testing.T) {
+	f := newFixture(t)
+	_, err := f.movieRepo.Upsert(context.Background(), &models.Movie{
+		ID:    "TEST-001",
+		Title: "Cached Movie",
+		Actresses: []models.Actress{
+			{JapaneseName: "未確認女優"},
+			{JapaneseName: "別の未確認女優"},
+		},
+	})
+	require.NoError(t, err)
+	resolver := &mockScraper{
+		name:    actressResolverScraperName,
+		enabled: true,
+		result: &models.ScraperResult{
+			ID:     "TEST-001",
+			Source: actressResolverScraperName,
+		},
+	}
+	f.registry.RegisterInstance(resolver)
+	s := f.build()
+
+	result, err := s.Scrape(context.Background(), ScrapeCmd{
+		MovieID:                "TEST-001",
+		RefreshTranslationOnly: true,
+		SkipTranslation:        true,
+	}, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.Cached)
+	assert.True(t, result.RefreshTranslationOnly)
+	assert.True(t, result.NeedsPersistence)
+	assert.Zero(t, resolver.callCount)
+}
+
 func TestScrape_ForceRefresh_BypassesCache(t *testing.T) {
 	f := newFixture(t).
 		withScraper("mock", &models.ScraperResult{ID: "TEST-001", Title: "Freshly Scraped"}, nil)

@@ -37,6 +37,18 @@ type Translator interface {
 	Translate(ctx context.Context, movie *models.Movie) (warning string, translated bool, output *translation.TranslationOutput)
 }
 
+// TranslationOptions carries request-scoped translation behavior without
+// mutating the shared application configuration.
+type TranslationOptions struct {
+	ForceOverwrite bool
+}
+
+// translatorWithOptions is implemented by the production adapter. Test and
+// third-party translators may continue implementing only Translator.
+type translatorWithOptions interface {
+	TranslateWithOptions(ctx context.Context, movie *models.Movie, options TranslationOptions) (warning string, translated bool, output *translation.TranslationOutput)
+}
+
 // noOpTranslator is returned when translation is disabled. It satisfies the Translator
 // interface without doing any work, so the Scraper never needs a nil check.
 type noOpTranslator struct{}
@@ -74,6 +86,7 @@ func NewTranslatorFromApp(cfg *config.TranslationConfig) Translator {
 		cfg.SettingsHash(),
 		cfg.TimeoutSeconds,
 		cfg.OverwriteExistingTarget,
+		cfg.ApplyToPrimary,
 		ts,
 	)
 	return &translationAdapter{
@@ -96,10 +109,14 @@ func (a *translationAdapter) TranslateTitles(ctx context.Context, titles []strin
 }
 
 func (a *translationAdapter) Translate(ctx context.Context, movie *models.Movie) (string, bool, *translation.TranslationOutput) {
+	return a.TranslateWithOptions(ctx, movie, TranslationOptions{})
+}
+
+func (a *translationAdapter) TranslateWithOptions(ctx context.Context, movie *models.Movie, options TranslationOptions) (string, bool, *translation.TranslationOutput) {
 	if movie == nil {
 		return "", false, nil
 	}
-	warning, output := a.svc.translateWithContext(ctx, movie)
+	warning, output := a.svc.translateWithContext(ctx, movie, options.ForceOverwrite)
 	return warning, true, output
 }
 

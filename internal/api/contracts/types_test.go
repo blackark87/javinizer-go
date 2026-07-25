@@ -141,6 +141,20 @@ func TestBatchScrapeRequest_ManualInputsRoundTrip(t *testing.T) {
 	assert.Equal(t, req.ManualInputs, got.ManualInputs)
 }
 
+func TestBatchScrapeRequest_RefreshTranslationOnlyRoundTrip(t *testing.T) {
+	req := BatchScrapeRequest{
+		Files:                  []string{"/test/a.mp4"},
+		RefreshTranslationOnly: true,
+	}
+	data, err := json.Marshal(req)
+	assert.NoError(t, err)
+	assert.Contains(t, string(data), `"refresh_translation_only":true`)
+
+	var got BatchScrapeRequest
+	assert.NoError(t, json.Unmarshal(data, &got))
+	assert.True(t, got.RefreshTranslationOnly)
+}
+
 func TestOrganizePreviewResponse_OperationMode(t *testing.T) {
 	resp := OrganizePreviewResponse{
 		FolderName:    "TEST-001",

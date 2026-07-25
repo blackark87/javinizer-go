@@ -36,7 +36,11 @@ func (s *Scraper) tryCache(ctx context.Context, cmd ScrapeCmd, actressRepo datab
 	// Movie may be normalized or replaced by SougouWiki below, but provenance
 	// should still show what was originally stored.
 	cachedSourceResult := ScraperResultFromCachedMovie(cached)
-	actressesChanged, resolverResult := s.repairCachedActresses(ctx, cached, cachedSourceResult, actressRepo)
+	actressesChanged := false
+	var resolverResult *models.ScraperResult
+	if !cmd.RefreshTranslationOnly {
+		actressesChanged, resolverResult = s.repairCachedActresses(ctx, cached, cachedSourceResult, actressRepo)
+	}
 
 	needsPersistence := actressesChanged
 	translationWarning := ""
@@ -51,9 +55,11 @@ func (s *Scraper) tryCache(ctx context.Context, cmd ScrapeCmd, actressRepo datab
 				break
 			}
 		}
-		if !hasValidTranslation || actressesChanged {
+		if !hasValidTranslation || actressesChanged || cmd.RefreshTranslationOnly {
 			logging.Infof("[scrape] Cached metadata or translation settings changed, re-translating result for %s", cmd.MovieID)
-			warn, transOutput := applyTranslation(ctx, cached, s.translator)
+			warn, transOutput := applyTranslationWithOptions(ctx, cached, s.translator, TranslationOptions{
+				ForceOverwrite: cmd.RefreshTranslationOnly,
+			})
 			if warn != "" {
 				translationWarning = warn
 				logging.Warnf("[scrape] Partial translation warning for cached %s: %s", cmd.MovieID, warn)
@@ -61,6 +67,9 @@ func (s *Scraper) tryCache(ctx context.Context, cmd ScrapeCmd, actressRepo datab
 			translationOutput = transOutput
 			needsPersistence = true
 		}
+	}
+	if cmd.RefreshTranslationOnly && cmd.SkipTranslation {
+		needsPersistence = true
 	}
 
 	scrapedToReturn := cached
@@ -80,7 +89,7 @@ func (s *Scraper) tryCache(ctx context.Context, cmd ScrapeCmd, actressRepo datab
 		}
 	}
 
-	if actressRepo != nil {
+	if actressRepo != nil && !cmd.RefreshTranslationOnly {
 		if enriched := enrichActressesFromDB(ctx, scrapedToReturn, actressRepo, s.cfg); enriched > 0 {
 			logging.Debugf("[scrape] Enriched %d actresses from database after cache hit", enriched)
 		}
@@ -92,18 +101,19 @@ func (s *Scraper) tryCache(ctx context.Context, cmd ScrapeCmd, actressRepo datab
 	}
 	now := time.Now()
 	return &ScrapeResult{
-		Movie:              scrapedToReturn,
-		FieldSources:       fieldSources,
-		ActressSources:     actressSources,
-		ScraperResults:     scraperResults,
-		SourceOutcomes:     cachedSourceOutcomes(scraperResults),
-		Cached:             true,
-		TranslationWarning: translationWarning,
-		TranslationOutput:  translationOutput,
-		Status:             StatusCompleted,
-		NeedsPersistence:   needsPersistence,
-		StartedAt:          startTime,
-		EndedAt:            now,
+		Movie:                  scrapedToReturn,
+		FieldSources:           fieldSources,
+		ActressSources:         actressSources,
+		ScraperResults:         scraperResults,
+		SourceOutcomes:         cachedSourceOutcomes(scraperResults),
+		Cached:                 true,
+		RefreshTranslationOnly: cmd.RefreshTranslationOnly,
+		TranslationWarning:     translationWarning,
+		TranslationOutput:      translationOutput,
+		Status:                 StatusCompleted,
+		NeedsPersistence:       needsPersistence,
+		StartedAt:              startTime,
+		EndedAt:                now,
 	}
 }
 

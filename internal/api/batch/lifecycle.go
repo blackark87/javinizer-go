@@ -63,17 +63,18 @@ func batchScrape(rt *core.APIRuntime) gin.HandlerFunc {
 		}
 
 		output, err := StartScrapeUseCase(c.Request.Context(), rt, StartScrapeInput{
-			Files:            req.Files,
-			Destination:      req.Destination,
-			OperationMode:    req.OperationMode,
-			Preset:           req.Preset,
-			ScalarStrategy:   req.ScalarStrategy,
-			ArrayStrategy:    req.ArrayStrategy,
-			Update:           &req.Update,
-			SelectedScrapers: req.SelectedScrapers,
-			Strict:           req.Strict,
-			Force:            req.Force,
-			ManualInputs:     sanitizedManualInputs,
+			Files:                  req.Files,
+			Destination:            req.Destination,
+			OperationMode:          req.OperationMode,
+			Preset:                 req.Preset,
+			ScalarStrategy:         req.ScalarStrategy,
+			ArrayStrategy:          req.ArrayStrategy,
+			Update:                 &req.Update,
+			SelectedScrapers:       req.SelectedScrapers,
+			Strict:                 req.Strict,
+			Force:                  req.Force,
+			RefreshTranslationOnly: req.RefreshTranslationOnly,
+			ManualInputs:           sanitizedManualInputs,
 		})
 		if err != nil {
 			c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: err.Error()})

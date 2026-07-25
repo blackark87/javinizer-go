@@ -81,13 +81,14 @@ func (s *ScrapeStatus) UnmarshalJSON(data []byte) error {
 
 // ScrapeCmd holds the parameters for a single scrape operation.
 type ScrapeCmd struct {
-	MovieID          string
-	SourcePath       string // Local video path for media-backed template tags such as <RESOLUTION> and <VR>
-	ForceRefresh     bool
-	SelectedScrapers []string
-	PriorityOverride []string
-	RawInput         string // Raw URL/manual string — seam resolves via matcher.ParseInput internally
-	ParseWarning     string // Set when RawInput could not be parsed; used as-is for MovieID
+	MovieID                string
+	SourcePath             string // Local video path for media-backed template tags such as <RESOLUTION> and <VR>
+	ForceRefresh           bool
+	RefreshTranslationOnly bool
+	SelectedScrapers       []string
+	PriorityOverride       []string
+	RawInput               string // Raw URL/manual string — seam resolves via matcher.ParseInput internally
+	ParseWarning           string // Set when RawInput could not be parsed; used as-is for MovieID
 
 	// SkipPersist opts out of the scrape orchestrator's synchronous DB persist
 	// (step 4 of scrapeOrchestrator.Execute). Callers that set this MUST persist
@@ -123,7 +124,8 @@ type ScrapeResult struct {
 	// distinguish a cache hit from a live scrape without inferring it from
 	// ScraperResults length (which is now populated on cache hits too, via
 	// ScraperResultFromCachedMovie, for the review source viewer).
-	Cached bool `json:"cached,omitempty"`
+	Cached                 bool `json:"cached,omitempty"`
+	RefreshTranslationOnly bool `json:"-"`
 
 	// Internal enrichment signals — read by the workflow orchestrator and propagated
 	// to OrchestrationMeta. Downstream consumers (MovieResult, API) should read from
@@ -311,12 +313,19 @@ func (s *Scraper) TranslateResult(ctx context.Context, result *ScrapeResult) {
 		return
 	}
 
-	warning, output := applyTranslation(ctx, result.Movie, s.translator)
-	if sourceWarning := translateSourceMetadata(ctx, s.translator, result.ScraperResults); sourceWarning != "" {
-		if warning != "" {
-			warning += "; "
+	warning, output := applyTranslationWithOptions(ctx, result.Movie, s.translator, TranslationOptions{
+		ForceOverwrite: result.RefreshTranslationOnly,
+	})
+	// Translation-only cache refreshes do not need a second provider pass for
+	// synthetic source-viewer rows. Their translations are not persisted and
+	// the cached row already carries its retained language records.
+	if !result.RefreshTranslationOnly {
+		if sourceWarning := translateSourceMetadata(ctx, s.translator, result.ScraperResults); sourceWarning != "" {
+			if warning != "" {
+				warning += "; "
+			}
+			warning += sourceWarning
 		}
-		warning += sourceWarning
 	}
 	result.TranslationWarning = warning
 	result.TranslationOutput = output
@@ -372,7 +381,7 @@ func (s *Scraper) Scrape(ctx context.Context, cmd ScrapeCmd, progress ProgressFu
 		actressRepo = s.actressRepo
 	}
 
-	skipCache := cmd.ForceRefresh || len(cmd.SelectedScrapers) > 0
+	skipCache := !cmd.RefreshTranslationOnly && (cmd.ForceRefresh || len(cmd.SelectedScrapers) > 0)
 
 	if !skipCache {
 		result := s.tryCache(ctx, cmd, actressRepo, startTime)
@@ -380,6 +389,14 @@ func (s *Scraper) Scrape(ctx context.Context, cmd ScrapeCmd, progress ProgressFu
 			prog(progress, ProgressStepScrape, 1, "Found in cache")
 			return result, nil
 		}
+	}
+
+	if cmd.RefreshTranslationOnly {
+		return failedResult(
+			cmd.MovieID,
+			fmt.Sprintf("translation-only refresh requires cached metadata for %s", cmd.MovieID),
+			startTime,
+		), nil
 	}
 
 	prog(progress, ProgressStepScrape, 0.2, "Querying scrapers...")

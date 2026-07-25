@@ -25,6 +25,55 @@ func (s *stubWarningTranslatorCacheTest) Translate(_ context.Context, _ *models.
 	return s.warning, true, nil
 }
 
+type optionRecordingTranslatorCacheTest struct {
+	calls          int
+	forceOverwrite bool
+}
+
+func (s *optionRecordingTranslatorCacheTest) Translate(_ context.Context, _ *models.Movie) (string, bool, *translation.TranslationOutput) {
+	s.calls++
+	return "", true, nil
+}
+
+func (s *optionRecordingTranslatorCacheTest) TranslateWithOptions(_ context.Context, _ *models.Movie, options TranslationOptions) (string, bool, *translation.TranslationOutput) {
+	s.calls++
+	s.forceOverwrite = options.ForceOverwrite
+	return "", true, nil
+}
+
+func TestTranslateResult_RefreshTranslationOnlyBypassesCurrentSettingsHash(t *testing.T) {
+	translator := &optionRecordingTranslatorCacheTest{}
+	s := &Scraper{
+		cfg: &Config{
+			TranslationEnabled:      true,
+			TranslationTargetLang:   "ko",
+			TranslationSettingsHash: "current-hash",
+		},
+		translator: translator,
+	}
+	result := &ScrapeResult{
+		Movie: &models.Movie{
+			ID:    "ABC-001",
+			Title: "原題",
+			Translations: []models.MovieTranslation{
+				{Language: "ko", Title: "기존 번역", SettingsHash: "current-hash"},
+			},
+		},
+		Cached:                 true,
+		RefreshTranslationOnly: true,
+		NeedsPersistence:       true,
+		ScraperResults: []*models.ScraperResult{
+			{Source: "cache", Title: "原題"},
+		},
+	}
+
+	s.TranslateResult(context.Background(), result)
+
+	assert.Equal(t, 1, translator.calls)
+	assert.True(t, translator.forceOverwrite)
+	assert.True(t, result.NeedsPersistence)
+}
+
 // TestTryCache_RetranslationSettingsChangePropagatesTranslationWarning is a
 // regression test for the "field dropped on rebuild/fallback path" pattern.
 //

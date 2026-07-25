@@ -52,6 +52,59 @@ type countingCheckpointPersister struct{ count int32 }
 
 func (p *countingCheckpointPersister) Persist() { atomic.AddInt32(&p.count, 1) }
 
+type cachedTranslationWorkflow struct {
+	stubWorkflow
+}
+
+func (w *cachedTranslationWorkflow) Scrape(_ context.Context, cmd scrape.ScrapeCmd, _ scrape.ProgressFunc) (*scrape.ScrapeResult, *workflow.OrchestrationMeta, error) {
+	result := makeScrapeResult(cmd.MovieID)
+	result.Cached = true
+	result.RefreshTranslationOnly = true
+	return result, &workflow.OrchestrationMeta{}, nil
+}
+
+func (w *cachedTranslationWorkflow) TranslateScrapeResult(_ context.Context, _ *scrape.ScrapeResult, _ string) (*workflow.OrchestrationMeta, error) {
+	return &workflow.OrchestrationMeta{}, nil
+}
+
+type countingPosterGenerator struct {
+	calls int32
+}
+
+func (g *countingPosterGenerator) GeneratePoster(_ context.Context, _ string, _ *models.Movie) error {
+	atomic.AddInt32(&g.calls, 1)
+	return nil
+}
+
+func TestScrapePhase_TranslationOnlyCacheHitSkipsPosterGeneration(t *testing.T) {
+	const file = "ABC-001.mp4"
+	wf := &cachedTranslationWorkflow{}
+	posterGen := &countingPosterGenerator{}
+	inputs := scrapePhaseInputs{
+		JobID:                  "translation-only-job",
+		Concurrency:            concurrencyConfig{MaxWorkers: 1},
+		WF:                     wf,
+		Matcher:                &stubMatcher{result: "ABC-001"},
+		PosterGen:              posterGen,
+		FileMatchInfo:          map[string]models.FileMatchInfo{file: {Path: file, MovieID: "ABC-001"}},
+		DeferredTranslation:    true,
+		TranslationConcurrency: 1,
+		Broadcaster:            &stubBroadcaster{},
+		Updater:                newStubUpdater(),
+		Lifecycle:              &stubLifecycle{},
+	}
+
+	NewScrapePhase().Run(context.Background(), inputs, []string{file}, ScrapePhaseConfig{
+		RefreshTranslationOnly: true,
+	})
+
+	assert.Zero(t, atomic.LoadInt32(&posterGen.calls))
+	result := inputs.Updater.(*stubUpdater).getResult(file)
+	require.NotNil(t, result)
+	assert.False(t, result.PosterGenerated)
+	assert.Equal(t, models.JobStatusCompleted, result.Status)
+}
+
 func TestScrapePhase_StagesMetadataBeforeTranslationAndCheckpointsEveryRecord(t *testing.T) {
 	const total = 4
 	wf := &stagedTranslationWorkflow{total: total, releaseTranslation: make(chan struct{}, total)}

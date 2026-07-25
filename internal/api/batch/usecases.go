@@ -123,17 +123,18 @@ func ListJobsUseCase(ctx context.Context, deps *core.APIDeps, input ListJobsInpu
 
 // StartScrapeInput holds the parameters for starting a batch scrape job.
 type StartScrapeInput struct {
-	Files            []string
-	Destination      string
-	OperationMode    string
-	Preset           string
-	ScalarStrategy   string
-	ArrayStrategy    string
-	Update           *bool
-	SelectedScrapers []string
-	Strict           bool
-	Force            bool
-	ManualInputs     map[string]string
+	Files                  []string
+	Destination            string
+	OperationMode          string
+	Preset                 string
+	ScalarStrategy         string
+	ArrayStrategy          string
+	Update                 *bool
+	SelectedScrapers       []string
+	Strict                 bool
+	Force                  bool
+	RefreshTranslationOnly bool
+	ManualInputs           map[string]string
 }
 
 // StartScrapeOutput holds the result of starting a batch scrape job.
@@ -153,6 +154,10 @@ func StartScrapeUseCase(
 	// epoch. Reading them via separate accessors could mix old/new state if a
 	// config reload lands between the calls (issue #44).
 	snap := rt.Snapshot()
+
+	if err := validateRefreshTranslationOnlyInput(input, snap.APIConfig().BatchConfig().TranslationEnabled); err != nil {
+		return nil, err
+	}
 
 	// Auto-discover sibling multi-part files
 	allFiles, fileMatchInfoMap := discoverSiblingPartsWithMetadata(ctx, input.Files, snap, snap.APIConfig().SecurityConfig(), snap.APIConfig().ScannerConfig())
@@ -207,6 +212,7 @@ func StartScrapeUseCase(
 	})
 
 	scrapeOpts := factory.NewScrapeConfig(input.SelectedScrapers, input.Strict, input.Force)
+	scrapeOpts.RefreshTranslationOnly = input.RefreshTranslationOnly
 	// Propagate the discovered file match metadata into the scrape phase so it
 	// is available during scraping (mirrors BatchJobOptions.FileMatchInfo above);
 	// otherwise metadata collected earlier in the usecase never reaches the
@@ -228,4 +234,17 @@ func StartScrapeUseCase(
 	}()
 
 	return &StartScrapeOutput{JobID: job.GetID()}, nil
+}
+
+func validateRefreshTranslationOnlyInput(input StartScrapeInput, translationEnabled bool) error {
+	if !input.RefreshTranslationOnly {
+		return nil
+	}
+	if !translationEnabled {
+		return fmt.Errorf("translation-only refresh requires metadata translation to be enabled")
+	}
+	if input.Force || len(input.SelectedScrapers) > 0 || len(input.ManualInputs) > 0 {
+		return fmt.Errorf("refresh_translation_only is mutually exclusive with force, selected_scrapers, and manual_inputs")
+	}
+	return nil
 }

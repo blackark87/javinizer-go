@@ -71,6 +71,90 @@ func TestApplyTranslation_Success(t *testing.T) {
 	assert.Equal(t, "translation:openai", jaTrans.SourceName)
 }
 
+func TestApplyTranslationWithOptions_ForceOverwrite(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": `["새 번역"]`}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(response))
+	}))
+	defer ts.Close()
+
+	translationCfg := &config.TranslationConfig{
+		Enabled:                 true,
+		Provider:                "openai",
+		SourceLanguage:          "ja",
+		TargetLanguage:          "ko",
+		ApplyToPrimary:          true,
+		OverwriteExistingTarget: false,
+		OpenAI: config.OpenAITranslationConfig{
+			BaseURL: ts.URL,
+			APIKey:  "k",
+			Model:   "m",
+		},
+		Fields: config.TranslationFieldsConfig{Title: true},
+	}
+	movie := &models.Movie{
+		ID:            "ABC-001",
+		Title:         "기존 기본 제목",
+		OriginalTitle: "原題",
+		Translations: []models.MovieTranslation{
+			{
+				Language:      "ja",
+				Title:         "原題",
+				OriginalTitle: "原題",
+			},
+			{Language: "ko", Title: "기존 번역", SettingsHash: "old"},
+		},
+	}
+
+	warning, _ := applyTranslationWithOptions(
+		context.Background(),
+		movie,
+		helperToTranslator(translationCfg),
+		TranslationOptions{ForceOverwrite: true},
+	)
+
+	assert.Empty(t, warning)
+	require.Len(t, movie.Translations, 2)
+	assert.Equal(t, "ja", movie.Translations[0].Language)
+	assert.Equal(t, "새 번역", movie.Translations[1].Title)
+	assert.Equal(t, translationCfg.SettingsHash(), movie.Translations[1].SettingsHash)
+	assert.Equal(t, "새 번역", movie.Title)
+	assert.Equal(t, "原題", movie.OriginalTitle)
+}
+
+func TestTranslationRefreshSourceMovie_UsesCachedSourceLanguageRecord(t *testing.T) {
+	movie := &models.Movie{
+		Title:         "기존 한국어 제목",
+		OriginalTitle: "일본어 원제 fallback",
+		Description:   "기존 한국어 설명",
+		Translations: []models.MovieTranslation{
+			{
+				Language:      "ja",
+				Title:         "日本語タイトル",
+				OriginalTitle: "日本語原題",
+				Description:   "日本語説明",
+				Maker:         "日本語メーカー",
+			},
+			{Language: "ko", Title: "기존 한국어 제목"},
+		},
+	}
+
+	source := translationRefreshSourceMovie(movie, "JA")
+
+	require.NotSame(t, movie, source)
+	assert.Equal(t, "日本語タイトル", source.Title)
+	assert.Equal(t, "日本語原題", source.OriginalTitle)
+	assert.Equal(t, "日本語説明", source.Description)
+	assert.Equal(t, "日本語メーカー", source.Maker)
+	assert.Nil(t, source.Genres)
+	assert.Equal(t, "기존 한국어 제목", movie.Title)
+}
+
 func TestApplyTranslation_FailureReturnsWarning(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "boom", http.StatusInternalServerError)

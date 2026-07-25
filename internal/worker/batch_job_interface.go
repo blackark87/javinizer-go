@@ -713,12 +713,13 @@ var (
 // factory/job level instead of per-call phase config overrides.
 type ScrapePhaseConfig struct {
 	// Per-scrape configuration
-	SelectedScrapers []string          // Restrict scraping to these scrapers (empty = all)
-	Strict           bool              // Strict mode: fail if no results from any scraper
-	Force            bool              // Force refresh: bypass cache and re-scrape
-	MovieIDOverride  map[string]string // Override movie ID per file path (rescrape use case)
-	RawInputOverride map[string]string // Per-file manual input (ID or URL) keyed by file path; takes precedence over the matcher and MovieIDOverride — resolveScrapeInput parses it into MovieID + PriorityOverride
-	PriorityOverride []string          // Reorder scraper priority instead of restricting
+	SelectedScrapers       []string          // Restrict scraping to these scrapers (empty = all)
+	Strict                 bool              // Strict mode: fail if no results from any scraper
+	Force                  bool              // Force refresh: bypass cache and re-scrape
+	RefreshTranslationOnly bool              // Re-translate cached metadata without querying scrapers or generating artwork
+	MovieIDOverride        map[string]string // Override movie ID per file path (rescrape use case)
+	RawInputOverride       map[string]string // Per-file manual input (ID or URL) keyed by file path; takes precedence over the matcher and MovieIDOverride — resolveScrapeInput parses it into MovieID + PriorityOverride
+	PriorityOverride       []string          // Reorder scraper priority instead of restricting
 
 	// Job-level config applied before scrape starts
 	FileMatchInfo map[string]models.FileMatchInfo // Match metadata per file

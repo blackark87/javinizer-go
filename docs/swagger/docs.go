@@ -4913,6 +4913,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "conservative"
                 },
+                "refresh_translation_only": {
+                    "description": "Re-translate DB-cached metadata without querying scrapers or regenerating artwork",
+                    "type": "boolean",
+                    "example": false
+                },
                 "scalar_strategy": {
                     "description": "For Update mode: prefer-nfo, prefer-scraper, preserve-existing, fill-missing-only",
                     "type": "string",

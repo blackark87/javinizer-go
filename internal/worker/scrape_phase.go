@@ -223,7 +223,7 @@ func finalizeDeferredTranslationOutcome(ctx context.Context, outcome *scrapeFile
 	}
 	fileResult.ResultID = outcome.ResultID
 	fileResult.StartedAt = outcome.Result.StartedAt
-	if inputs.PosterGen != nil && fileResult.Movie != nil {
+	if inputs.PosterGen != nil && fileResult.Movie != nil && !outcome.Result.Cached {
 		if err := inputs.PosterGen.GeneratePoster(ctx, inputs.JobID.String(), fileResult.Movie); err != nil {
 			message := err.Error()
 			fileResult.PosterError = &message
@@ -313,12 +313,13 @@ func buildScrapeCmd(
 	}
 
 	return scrape.ScrapeCmd{
-		MovieID:          movieID,
-		SourcePath:       filePath,
-		RawInput:         rawInput,
-		ForceRefresh:     cfg.Force,
-		SelectedScrapers: scrapersToUse,
-		PriorityOverride: cfg.PriorityOverride,
+		MovieID:                movieID,
+		SourcePath:             filePath,
+		RawInput:               rawInput,
+		ForceRefresh:           cfg.Force,
+		RefreshTranslationOnly: cfg.RefreshTranslationOnly,
+		SelectedScrapers:       scrapersToUse,
+		PriorityOverride:       cfg.PriorityOverride,
 		// Batch scrape opts out of the workflow's inline DB persist so the
 		// errgroup-gated scrape workers don't block on SQLite's single-writer
 		// lock. The Run checkpoint writer persists each outcome as it arrives.
@@ -414,7 +415,7 @@ func interpretScrapeResult(
 	// Poster generation — moved from the workflow's scrape orchestrator
 	// to the worker phase so that ScrapeCmd stays a pure query and
 	// the side-effect (filesystem write) is owned by the orchestration layer.
-	if !inputs.DeferredTranslation && inputs.PosterGen != nil && fileResult.Movie != nil {
+	if !inputs.DeferredTranslation && inputs.PosterGen != nil && fileResult.Movie != nil && !result.Cached {
 		posterErr := inputs.PosterGen.GeneratePoster(taskCtx, inputs.JobID.String(), fileResult.Movie)
 		if posterErr != nil {
 			s := posterErr.Error()

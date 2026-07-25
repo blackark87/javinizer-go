@@ -174,3 +174,22 @@ describe('BatchScrapeRequest.manual_inputs wire contract', () => {
 		expect(JSON.stringify(req)).not.toContain('manual_inputs');
 	});
 });
+
+describe('BatchScrapeRequest.refresh_translation_only wire contract', () => {
+	it('serializes the translation-only refresh flag under its snake_case key', () => {
+		const req: BatchScrapeRequest = {
+			files: ['/test/a.mp4'],
+			strict: false,
+			force: false,
+			refresh_translation_only: true
+		};
+		const wire = JSON.stringify(req);
+		expect(wire).toContain('"refresh_translation_only":true');
+		expect((JSON.parse(wire) as BatchScrapeRequest).refresh_translation_only).toBe(true);
+	});
+
+	it('omits the flag for existing callers', () => {
+		const req: BatchScrapeRequest = { files: ['/test/a.mp4'], strict: false, force: false };
+		expect(JSON.stringify(req)).not.toContain('refresh_translation_only');
+	});
+});

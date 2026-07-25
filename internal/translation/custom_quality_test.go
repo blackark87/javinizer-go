@@ -200,6 +200,38 @@ func TestTranslationPromptForbidsSubstitutingPerformerNames(t *testing.T) {
 	assert.Contains(t, systemPrompt, "Never invent, anglicize, or substitute a different performer name")
 }
 
+func TestBuildLLMTranslationPrompts_CoversLatestMissTranslationCases(t *testing.T) {
+	texts := []string{
+		"メンズエステで中出しまでさせてくれる痴女お姉さんはガチ恋営業chu 斎藤あみり",
+		"ピンク髪のギャルJ系に監禁されて、ざこざこざぁ～こと罵られて大人のプライドを打ち砕かれて逆レ搾精されまくった 斎藤あみり",
+		"佐倉絆 初アナル解禁",
+	}
+	systemPrompt, userPrompt, err := buildLLMTranslationPromptsWithMarkers(
+		"ja",
+		"ko",
+		texts,
+		[]string{"<<<title[0]>>>", "<<<title[1]>>>", "<<<title[2]>>>"},
+	)
+	require.NoError(t, err)
+	for _, source := range texts {
+		assert.Contains(t, userPrompt, source)
+	}
+
+	for _, expected := range []string{
+		"Latin title suffix chu is a cute kiss sound",
+		"ガチ恋営業chu must end in 츄, never 중",
+		"逆レ and 逆レイプ are abbreviations for reverse rape and are not 逆パコ",
+		"逆レ搾精 means forced semen extraction by a woman",
+		"never invent or insert 역파코 or 파코 when パコ is absent from the source",
+		"アナル → 애널 in JAV sexual-act and genre wording",
+		"初アナル解禁 → 첫 애널 해금",
+		"ちんぐり返しアナル舐め → 남자의 다리를 뒤로 젖혀 애널 핥기",
+	} {
+		assert.Contains(t, systemPrompt, expected)
+	}
+	assert.NotContains(t, systemPrompt, "ちんぐり返しアナル舐め → 남자의 다리를 뒤로 젖혀 항문 핥기")
+}
+
 func TestKoreanJAVPromptTranslatesNewContextualSlangByMeaning(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
 	assert.Contains(t, rules, "吸引おしゃぶり → 빨아들이는 펠라")

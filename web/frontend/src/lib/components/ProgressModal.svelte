@@ -298,10 +298,17 @@
 						{#if showCompleted}
 							<div class="space-y-1 pl-5" transition:slide|local={{ duration: 180, easing: cubicOut }}>
 								{#each completedFiles as result (result.file_path)}
-									<div animate:flip={{ duration: 180, easing: cubicOut }} class="flex items-center gap-3 px-3 py-1.5 text-sm">
-										<CircleCheckBig class="h-3.5 w-3.5 text-green-600 dark:text-green-400 shrink-0" />
-										<span class="truncate text-green-900 dark:text-green-200">{result.movie_id || 'Unknown'}</span>
-										<span class="text-xs text-green-700/50 dark:text-green-300/50 truncate">{getFileDisplayName(result.file_path)}</span>
+									<div animate:flip={{ duration: 180, easing: cubicOut }} class="flex items-start gap-3 px-3 py-1.5 text-sm">
+										<CircleCheckBig class="h-3.5 w-3.5 text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
+										<div class="flex-1 min-w-0">
+											<div class="flex items-center gap-2">
+												<span class="truncate text-green-900 dark:text-green-200">{result.movie_id || 'Unknown'}</span>
+												<span class="text-xs text-green-700/50 dark:text-green-300/50 truncate">{getFileDisplayName(result.file_path)}</span>
+											</div>
+											{#if result.translation_warning}
+												<p class="text-xs text-amber-600 dark:text-amber-400 mt-0.5 break-words">{result.translation_warning}</p>
+											{/if}
+										</div>
 									</div>
 								{/each}
 							</div>

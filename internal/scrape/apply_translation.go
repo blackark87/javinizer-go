@@ -20,15 +20,24 @@ func applyTranslation(ctx context.Context, scraped *models.Movie, translator Tra
 }
 
 func applyTranslationWithOptions(ctx context.Context, scraped *models.Movie, translator Translator, options TranslationOptions) (string, *translation.TranslationOutput) {
+	warning, output, _ := applyTranslationWithOptionsResult(ctx, scraped, translator, options)
+	return warning, output
+}
+
+func applyTranslationWithOptionsResult(ctx context.Context, scraped *models.Movie, translator Translator, options TranslationOptions) (string, *translation.TranslationOutput, error) {
 	if scraped == nil || translator == nil {
-		return "", nil
+		return "", nil, nil
+	}
+	if resultTranslator, ok := translator.(translatorWithResult); ok {
+		warning, _, output, err := resultTranslator.TranslateWithOptionsResult(ctx, scraped, options)
+		return warning, output, err
 	}
 	if configurable, ok := translator.(translatorWithOptions); ok {
 		warning, _, output := configurable.TranslateWithOptions(ctx, scraped, options)
-		return warning, output
+		return warning, output, nil
 	}
 	warning, _, output := translator.Translate(ctx, scraped)
-	return warning, output
+	return warning, output, nil
 }
 
 // translationService wraps a pre-constructed translation.Service to avoid
@@ -64,9 +73,9 @@ func newTranslationService(provider string, sourceLanguage string, targetLanguag
 // context deadline, mirroring main's ApplyConfiguredTranslation which wrapped
 // TranslateMovie in context.WithTimeout. A value <= 0 defaults to 120s; the
 // caller's ctx is always respected as the parent.
-func (ts *translationService) translateWithContext(ctx context.Context, scraped *models.Movie, forceOverwrite bool) (string, *translation.TranslationOutput) {
+func (ts *translationService) translateWithContext(ctx context.Context, scraped *models.Movie, forceOverwrite bool) (string, *translation.TranslationOutput, error) {
 	if scraped == nil {
-		return "", nil
+		return "", nil, nil
 	}
 
 	logging.Debugf("Translation: starting (provider=%s, source=%s, target=%s, hash=%s)", ts.provider, ts.sourceLanguage, ts.targetLanguage, ts.settingsHash)
@@ -89,11 +98,11 @@ func (ts *translationService) translateWithContext(ctx context.Context, scraped 
 			id = scraped.ContentID
 		}
 		logging.Warnf("[%s] Metadata translation failed: %v", id, err)
-		return warning, nil
+		return warning, nil, err
 	}
 	if output == nil || (output.Movie == nil && len(output.Movies) == 0) {
 		logging.Debugf("Translation: returned nil record (no fields to translate or source==target)")
-		return "", nil
+		return "", nil, nil
 	}
 	if forceOverwrite && ts.applyToPrimary && translationInput != scraped {
 		copyTranslatedPrimary(scraped, translationInput, output)
@@ -110,7 +119,7 @@ func (ts *translationService) translateWithContext(ctx context.Context, scraped 
 	}
 
 	logging.Debugf("Translation: movie now has %d translation(s)", len(scraped.Translations))
-	return warning, output
+	return warning, output, nil
 }
 
 // translationRefreshSourceMovie rebuilds request-scoped translation input from

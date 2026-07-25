@@ -274,7 +274,11 @@ func postProcessScraped(ctx context.Context, scraped *models.Movie, results []*m
 	var translationWarning string
 	var translationOutput *translation.TranslationOutput
 	if cfg.TranslationEnabled && !cmd.SkipTranslation {
-		translationWarning, translationOutput = applyTranslation(ctx, scraped, translator)
+		var translationErr error
+		translationWarning, translationOutput, translationErr = applyTranslationWithOptionsResult(ctx, scraped, translator, TranslationOptions{})
+		if translationErr != nil {
+			return nil, translationErr
+		}
 	}
 
 	if cfg.TranslationEnabled && !cmd.SkipTranslation {
@@ -305,17 +309,22 @@ func postProcessScraped(ctx context.Context, scraped *models.Movie, results []*m
 
 // TranslateResult applies deferred primary/source translation to a completed
 // scrape result. Cached records with a current settings hash are reused.
-func (s *Scraper) TranslateResult(ctx context.Context, result *ScrapeResult) {
+func (s *Scraper) TranslateResult(ctx context.Context, result *ScrapeResult) error {
 	if s == nil || result == nil || result.Movie == nil || s.cfg == nil || !s.cfg.TranslationEnabled {
-		return
+		return nil
 	}
 	if result.Cached && !result.NeedsPersistence && hasTranslationSettingsHash(result.Movie, s.cfg.TranslationTargetLang, s.cfg.TranslationSettingsHash) {
-		return
+		return nil
 	}
 
-	warning, output := applyTranslationWithOptions(ctx, result.Movie, s.translator, TranslationOptions{
+	warning, output, err := applyTranslationWithOptionsResult(ctx, result.Movie, s.translator, TranslationOptions{
 		ForceOverwrite: result.RefreshTranslationOnly,
 	})
+	result.TranslationWarning = warning
+	result.TranslationOutput = output
+	if err != nil {
+		return err
+	}
 	// Translation-only cache refreshes do not need a second provider pass for
 	// synthetic source-viewer rows. Their translations are not persisted and
 	// the cached row already carries its retained language records.
@@ -330,6 +339,7 @@ func (s *Scraper) TranslateResult(ctx context.Context, result *ScrapeResult) {
 	result.TranslationWarning = warning
 	result.TranslationOutput = output
 	result.NeedsPersistence = true
+	return nil
 }
 
 func hasTranslationSettingsHash(movie *models.Movie, language, settingsHash string) bool {

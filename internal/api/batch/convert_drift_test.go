@@ -30,9 +30,8 @@ func TestMovieResultToBatchFileResultDriftGuard(t *testing.T) {
 		"Revision":      "internal versioning counter, not exposed to API consumers",
 		"FileMatchInfo": "flattened into BatchFileResult top-level fields (FilePath, MovieID, IsMultiPart, PartNumber, PartSuffix)",
 		// OrchestrationState is embedded — its sub-fields are checked separately below.
-		// The OrchestrationState itself (DisplayTitleApplied, PosterGenerated, Persisted,
-		// PosterError, TranslationWarning) is internal orchestration metadata not exposed
-		// in the API response.
+		// Most OrchestrationState fields remain internal. TranslationWarning is
+		// deliberately exposed so partial translation is visible to API clients.
 	}
 
 	// Fields intentionally omitted from the slim variant (in addition to full unmapped).

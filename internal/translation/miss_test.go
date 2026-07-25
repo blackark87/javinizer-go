@@ -310,7 +310,7 @@ func (m *mockProvider) Translate(ctx context.Context, sourceLang, targetLang str
 
 // --- TranslateMovie with actual provider and warning on empty ---
 
-func TestTranslateMovie_EmptyTranslationFallsBack(t *testing.T) {
+func TestTranslateMovie_EmptyTranslationFails(t *testing.T) {
 	provider := &mockProvider{
 		translateFunc: func(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
 			// Return empty strings for translations
@@ -330,10 +330,11 @@ func TestTranslateMovie_EmptyTranslationFallsBack(t *testing.T) {
 
 	movie := &models.Movie{Title: "テスト"}
 	out, warning, err := svc.TranslateMovie(context.Background(), movie, "hash123")
-	require.NoError(t, err)
-	require.NotNil(t, out)
-	assert.Contains(t, warning, "empty translation")
-	assert.Equal(t, "テスト", movie.Title) // Falls back to original
+	require.Error(t, err)
+	assert.Nil(t, out)
+	assert.Contains(t, warning, "invalid model output")
+	assert.Contains(t, err.Error(), "empty translation after retry")
+	assert.Equal(t, "テスト", movie.Title)
 }
 
 // --- TranslateMovie count mismatch ---

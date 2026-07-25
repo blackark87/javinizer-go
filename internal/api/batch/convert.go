@@ -54,17 +54,18 @@ func movieResultToResponse(mr *worker.MovieResult, prov *worker.ProvenanceData, 
 		return nil
 	}
 	result := &contracts.BatchFileResult{
-		ResultID:    mr.ResultID,
-		FilePath:    mr.FileMatchInfo.Path,
-		MovieID:     mr.FileMatchInfo.MovieID,
-		IsMultiPart: mr.FileMatchInfo.IsMultiPart,
-		PartNumber:  mr.FileMatchInfo.PartNumber,
-		PartSuffix:  mr.FileMatchInfo.PartSuffix,
-		Status:      mr.Status,
-		Error:       mr.Error,
-		Movie:       contracts.MovieViewFromModel(movieWithBackfilledActressThumbs(mr.Movie, actressRepos...)),
-		StartedAt:   contracts.FormatTime(mr.StartedAt),
-		EndedAt:     contracts.FormatTimePtr(mr.EndedAt),
+		ResultID:           mr.ResultID,
+		FilePath:           mr.FileMatchInfo.Path,
+		MovieID:            mr.FileMatchInfo.MovieID,
+		IsMultiPart:        mr.FileMatchInfo.IsMultiPart,
+		PartNumber:         mr.FileMatchInfo.PartNumber,
+		PartSuffix:         mr.FileMatchInfo.PartSuffix,
+		Status:             mr.Status,
+		Error:              mr.Error,
+		TranslationWarning: mr.TranslationWarning,
+		Movie:              contracts.MovieViewFromModel(movieWithBackfilledActressThumbs(mr.Movie, actressRepos...)),
+		StartedAt:          contracts.FormatTime(mr.StartedAt),
+		EndedAt:            contracts.FormatTimePtr(mr.EndedAt),
 	}
 	if prov != nil {
 		result.FieldSources = prov.FieldSources
@@ -80,16 +81,17 @@ func movieResultToSlimResponse(mr *worker.MovieResult, prov *worker.ProvenanceDa
 		return nil
 	}
 	result := &contracts.BatchFileResultSlim{
-		ResultID:    mr.ResultID,
-		FilePath:    mr.FileMatchInfo.Path,
-		MovieID:     mr.FileMatchInfo.MovieID,
-		IsMultiPart: mr.FileMatchInfo.IsMultiPart,
-		PartNumber:  mr.FileMatchInfo.PartNumber,
-		PartSuffix:  mr.FileMatchInfo.PartSuffix,
-		Status:      mr.Status,
-		Error:       mr.Error,
-		StartedAt:   contracts.FormatTime(mr.StartedAt),
-		EndedAt:     contracts.FormatTimePtr(mr.EndedAt),
+		ResultID:           mr.ResultID,
+		FilePath:           mr.FileMatchInfo.Path,
+		MovieID:            mr.FileMatchInfo.MovieID,
+		IsMultiPart:        mr.FileMatchInfo.IsMultiPart,
+		PartNumber:         mr.FileMatchInfo.PartNumber,
+		PartSuffix:         mr.FileMatchInfo.PartSuffix,
+		Status:             mr.Status,
+		Error:              mr.Error,
+		TranslationWarning: mr.TranslationWarning,
+		StartedAt:          contracts.FormatTime(mr.StartedAt),
+		EndedAt:            contracts.FormatTimePtr(mr.EndedAt),
 	}
 	if prov != nil {
 		result.FieldSources = prov.FieldSources

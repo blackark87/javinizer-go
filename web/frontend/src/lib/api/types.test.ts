@@ -22,6 +22,7 @@ import type {
 	TranslationFieldsConfig,
 	ProxyProfile,
 	BatchScrapeRequest,
+	FileResult,
 } from './types';
 
 describe('types.ts has no unnecessary any', () => {
@@ -181,7 +182,7 @@ describe('BatchScrapeRequest.refresh_translation_only wire contract', () => {
 			files: ['/test/a.mp4'],
 			strict: false,
 			force: false,
-			refresh_translation_only: true
+			refresh_translation_only: true,
 		};
 		const wire = JSON.stringify(req);
 		expect(wire).toContain('"refresh_translation_only":true');
@@ -191,5 +192,23 @@ describe('BatchScrapeRequest.refresh_translation_only wire contract', () => {
 	it('omits the flag for existing callers', () => {
 		const req: BatchScrapeRequest = { files: ['/test/a.mp4'], strict: false, force: false };
 		expect(JSON.stringify(req)).not.toContain('refresh_translation_only');
+	});
+});
+
+describe('FileResult.translation_warning wire contract', () => {
+	it('retains a per-file translation warning from the batch API', () => {
+		const result: FileResult = {
+			result_id: 'result-1',
+			file_path: '/test/a.mp4',
+			movie_id: 'ABC-001',
+			status: 'completed',
+			translation_warning: 'Translation failed: invalid model output',
+			started_at: '2026-07-25T00:00:00Z',
+			is_multi_part: false,
+			part_number: 0,
+			part_suffix: '',
+		};
+
+		expect(result.translation_warning).toBe('Translation failed: invalid model output');
 	});
 });

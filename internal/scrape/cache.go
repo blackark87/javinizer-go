@@ -2,6 +2,7 @@ package scrape
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"time"
@@ -57,9 +58,16 @@ func (s *Scraper) tryCache(ctx context.Context, cmd ScrapeCmd, actressRepo datab
 		}
 		if !hasValidTranslation || actressesChanged || cmd.RefreshTranslationOnly {
 			logging.Infof("[scrape] Cached metadata or translation settings changed, re-translating result for %s", cmd.MovieID)
-			warn, transOutput := applyTranslationWithOptions(ctx, cached, s.translator, TranslationOptions{
+			warn, transOutput, translationErr := applyTranslationWithOptionsResult(ctx, cached, s.translator, TranslationOptions{
 				ForceOverwrite: cmd.RefreshTranslationOnly,
 			})
+			if translationErr != nil {
+				failed := failedResult(cmd.MovieID, fmt.Sprintf("translation failed for cached %s: %v", cmd.MovieID, translationErr), startTime)
+				failed.Cached = true
+				failed.RefreshTranslationOnly = cmd.RefreshTranslationOnly
+				failed.TranslationWarning = warn
+				return failed
+			}
 			if warn != "" {
 				translationWarning = warn
 				logging.Warnf("[scrape] Partial translation warning for cached %s: %s", cmd.MovieID, warn)

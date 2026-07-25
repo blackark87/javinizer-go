@@ -29,35 +29,37 @@ type BatchScrapeResponse struct {
 // BatchFileResult represents a per-file result in a batch job response.
 // Flattened from FileMatchInfo to match the frontend FileResult contract.
 type BatchFileResult struct {
-	ResultID       string            `json:"result_id"` // Stable UUID — survives movie_id changes
-	FilePath       string            `json:"file_path"`
-	MovieID        string            `json:"movie_id"`
-	IsMultiPart    bool              `json:"is_multi_part"`
-	PartNumber     int               `json:"part_number"`
-	PartSuffix     string            `json:"part_suffix"`
-	Status         models.JobStatus  `json:"status"`
-	Error          string            `json:"error,omitempty"`
-	FieldSources   map[string]string `json:"field_sources,omitempty"`
-	ActressSources map[string]string `json:"actress_sources,omitempty"`
-	Movie          *MovieView        `json:"movie,omitempty"`
-	StartedAt      string            `json:"started_at"`
-	EndedAt        *string           `json:"ended_at,omitempty"`
+	ResultID           string            `json:"result_id"` // Stable UUID — survives movie_id changes
+	FilePath           string            `json:"file_path"`
+	MovieID            string            `json:"movie_id"`
+	IsMultiPart        bool              `json:"is_multi_part"`
+	PartNumber         int               `json:"part_number"`
+	PartSuffix         string            `json:"part_suffix"`
+	Status             models.JobStatus  `json:"status"`
+	Error              string            `json:"error,omitempty"`
+	TranslationWarning *string           `json:"translation_warning,omitempty"`
+	FieldSources       map[string]string `json:"field_sources,omitempty"`
+	ActressSources     map[string]string `json:"actress_sources,omitempty"`
+	Movie              *MovieView        `json:"movie,omitempty"`
+	StartedAt          string            `json:"started_at"`
+	EndedAt            *string           `json:"ended_at,omitempty"`
 }
 
 // BatchFileResultSlim is a lightweight per-file result without movie data.
 type BatchFileResultSlim struct {
-	ResultID       string            `json:"result_id"` // Stable UUID — survives movie_id changes
-	FilePath       string            `json:"file_path"`
-	MovieID        string            `json:"movie_id"`
-	IsMultiPart    bool              `json:"is_multi_part"`
-	PartNumber     int               `json:"part_number"`
-	PartSuffix     string            `json:"part_suffix"`
-	Status         models.JobStatus  `json:"status"`
-	Error          string            `json:"error,omitempty"`
-	FieldSources   map[string]string `json:"field_sources,omitempty"`
-	ActressSources map[string]string `json:"actress_sources,omitempty"`
-	StartedAt      string            `json:"started_at"`
-	EndedAt        *string           `json:"ended_at,omitempty"`
+	ResultID           string            `json:"result_id"` // Stable UUID — survives movie_id changes
+	FilePath           string            `json:"file_path"`
+	MovieID            string            `json:"movie_id"`
+	IsMultiPart        bool              `json:"is_multi_part"`
+	PartNumber         int               `json:"part_number"`
+	PartSuffix         string            `json:"part_suffix"`
+	Status             models.JobStatus  `json:"status"`
+	Error              string            `json:"error,omitempty"`
+	TranslationWarning *string           `json:"translation_warning,omitempty"`
+	FieldSources       map[string]string `json:"field_sources,omitempty"`
+	ActressSources     map[string]string `json:"actress_sources,omitempty"`
+	StartedAt          string            `json:"started_at"`
+	EndedAt            *string           `json:"ended_at,omitempty"`
 }
 
 // BatchJobResponse represents a batch job status

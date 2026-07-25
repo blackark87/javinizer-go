@@ -67,7 +67,7 @@ func TestTranslateResult_RefreshTranslationOnlyBypassesCurrentSettingsHash(t *te
 		},
 	}
 
-	s.TranslateResult(context.Background(), result)
+	require.NoError(t, s.TranslateResult(context.Background(), result))
 
 	assert.Equal(t, 1, translator.calls)
 	assert.True(t, translator.forceOverwrite)

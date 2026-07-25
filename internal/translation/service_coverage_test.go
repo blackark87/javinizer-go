@@ -127,6 +127,7 @@ func TestOpenAIProvider_Translate_Success(t *testing.T) {
 			Message struct {
 				Content json.RawMessage `json:"content"`
 			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
 		}{{Message: struct {
 			Content json.RawMessage `json:"content"`
 		}{Content: content}}}
@@ -304,6 +305,21 @@ func TestParseLLMTranslationPayload_CompactMissingMarker(t *testing.T) {
 	payload := "<<<JZ_0>>>\nhello"
 	_, err := parseLLMTranslationPayload(payload, 2)
 	assert.Error(t, err)
+}
+
+func TestDecodeOpenAIChatTranslation_RejectsTruncatedOutput(t *testing.T) {
+	body := []byte(`{
+		"choices": [{
+			"message": {"content": "<<<title>>>\n불완전한 번역"},
+			"finish_reason": "length"
+		}]
+	}`)
+
+	result, err := decodeOpenAIChatTranslation("openai-compatible", body, []string{"<<<title>>>"})
+	require.Error(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "<<<title>>>\n불완전한 번역", result.RawLLM)
+	assert.Contains(t, err.Error(), "truncated")
 }
 
 func TestOpenAICompatibleProvider_Translate_MissingModel(t *testing.T) {

@@ -726,6 +726,38 @@ She says "It's forceful..." but looks happy while being teased.`
 		assert.Contains(t, err.Error(), "first output marker not found")
 	})
 
+	t.Run("uses final complete marker set after prompt echo", func(t *testing.T) {
+		input := `Translate each labeled section below:
+<<<title>>>
+未翻訳の題名
+<<<description>>>
+未翻訳の説明
+
+Return output in the same labeled format:
+<<<title>>>
+[translation]
+<<<description>>>
+[translation]
+
+<<<title>>>
+번역된 제목
+<<<description>>>
+번역된 설명`
+
+		got, err := parseLLMTranslationPayload(input, []string{"<<<title>>>", "<<<description>>>"})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"번역된 제목", "번역된 설명"}, got)
+	})
+
+	t.Run("rejects embedded marker contamination", func(t *testing.T) {
+		_, err := parseLLMTranslationPayload(
+			"<<<title>>>\n번역된 제목\n<<<description>>>\n번역된 설명\n<<<unexpected>>>\n오염",
+			[]string{"<<<title>>>", "<<<description>>>"},
+		)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unexpected embedded output marker")
+	})
+
 	t.Run("rejects empty unmarked single-item response", func(t *testing.T) {
 		_, err := parseLLMTranslationPayload("   ", []string{"<<<quality_review_description>>>"})
 		require.Error(t, err)

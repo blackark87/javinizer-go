@@ -189,6 +189,26 @@ func TestMovieResultToResponse_WithError(t *testing.T) {
 	assert.Nil(t, resp.Movie)
 }
 
+func TestMovieResultResponses_ExposeTranslationWarning(t *testing.T) {
+	warning := "Translation failed: invalid model output"
+	mr := &worker.MovieResult{
+		FileMatchInfo: models.FileMatchInfo{Path: "/test/movie.mp4"},
+		Status:        models.JobStatusCompleted,
+		StartedAt:     time.Now(),
+	}
+	mr.TranslationWarning = &warning
+
+	full := movieResultToResponse(mr, nil)
+	require.NotNil(t, full)
+	require.NotNil(t, full.TranslationWarning)
+	assert.Equal(t, warning, *full.TranslationWarning)
+
+	slim := movieResultToSlimResponse(mr, nil)
+	require.NotNil(t, slim)
+	require.NotNil(t, slim.TranslationWarning)
+	assert.Equal(t, warning, *slim.TranslationWarning)
+}
+
 func TestMovieResultToSlimResponse_WithoutProvenance(t *testing.T) {
 	mr := &worker.MovieResult{
 		FileMatchInfo: models.FileMatchInfo{Path: "/test/movie.mp4"},

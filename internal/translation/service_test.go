@@ -3462,13 +3462,13 @@ func TestSanitizeTranslationWarning(t *testing.T) {
 			name:         "parse error",
 			provider:     "google",
 			err:          &translationError{Kind: TranslationErrorParse, Message: "bad json"},
-			wantContains: "service unavailable",
+			wantContains: "invalid model output",
 		},
 		{
 			name:         "count mismatch",
 			provider:     "google",
 			err:          &translationError{Kind: TranslationErrorCountMismatch, Message: "3 vs 5"},
-			wantContains: "service unavailable",
+			wantContains: "invalid model output",
 		},
 		{
 			name:         "provider error",
@@ -3611,7 +3611,7 @@ func TestTranslationError_Unwrap(t *testing.T) {
 	})
 }
 
-func TestTranslateMovie_EmptyTranslationWarning(t *testing.T) {
+func TestTranslateMovie_EmptyTranslationFailsWithoutApplyingSource(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode([]interface{}{[]interface{}{[]interface{}{""}}})
@@ -3643,11 +3643,11 @@ func TestTranslateMovie_EmptyTranslationWarning(t *testing.T) {
 	)
 	movie := &models.Movie{Title: "テスト"}
 	translation, warning, err := s.TranslateMovie(context.Background(), movie, "")
-	require.NoError(t, err)
-	require.NotNil(t, translation)
-	require.NotNil(t, translation.Movie)
-	assert.Contains(t, warning, "title: empty translation, kept original")
-	assert.Equal(t, "テスト", movie.Title, "original text preserved on empty translation")
+	require.Error(t, err)
+	assert.Nil(t, translation)
+	assert.Contains(t, warning, "invalid model output")
+	assert.Contains(t, err.Error(), "empty translation after retry")
+	assert.Equal(t, "テスト", movie.Title, "invalid output must not be applied as a successful translation")
 }
 
 func TestTranslateMovie_CountMismatchWarning(t *testing.T) {

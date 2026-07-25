@@ -49,12 +49,14 @@ func (o *scrapeOrchImpl) TranslateScrapeResult(ctx context.Context, result *scra
 		return nil, fmt.Errorf("cannot translate an empty scrape result")
 	}
 	translator, ok := o.scraper.(interface {
-		TranslateResult(context.Context, *scrape.ScrapeResult)
+		TranslateResult(context.Context, *scrape.ScrapeResult) error
 	})
 	if !ok {
 		return nil, fmt.Errorf("workflow scraper does not support deferred translation")
 	}
-	translator.TranslateResult(ctx, result)
+	if err := translator.TranslateResult(ctx, result); err != nil {
+		return nil, err
+	}
 
 	var meta OrchestrationMeta
 	if result.TranslationWarning != "" {

@@ -103,8 +103,9 @@ func TestLookupActress_FirstNameOnly_NoLookup(t *testing.T) {
 
 func TestTranslateWithContext_NilMovie(t *testing.T) {
 	ts := &translationService{provider: "test"}
-	warning, _ := ts.translateWithContext(context.Background(), nil, false)
+	warning, _, err := ts.translateWithContext(context.Background(), nil, false)
 	assert.Empty(t, warning)
+	assert.NoError(t, err)
 }
 
 // --- translationAdapter.Translate nil movie ---

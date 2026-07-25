@@ -49,6 +49,14 @@ type translatorWithOptions interface {
 	TranslateWithOptions(ctx context.Context, movie *models.Movie, options TranslationOptions) (warning string, translated bool, output *translation.TranslationOutput)
 }
 
+// translatorWithResult is implemented by the production adapter so orchestration
+// can distinguish a hard provider/output-validation failure from a non-fatal
+// warning. The public Translator interface remains backward compatible for test
+// and third-party implementations.
+type translatorWithResult interface {
+	TranslateWithOptionsResult(ctx context.Context, movie *models.Movie, options TranslationOptions) (warning string, translated bool, output *translation.TranslationOutput, err error)
+}
+
 // noOpTranslator is returned when translation is disabled. It satisfies the Translator
 // interface without doing any work, so the Scraper never needs a nil check.
 type noOpTranslator struct{}
@@ -113,11 +121,16 @@ func (a *translationAdapter) Translate(ctx context.Context, movie *models.Movie)
 }
 
 func (a *translationAdapter) TranslateWithOptions(ctx context.Context, movie *models.Movie, options TranslationOptions) (string, bool, *translation.TranslationOutput) {
+	warning, translated, output, _ := a.TranslateWithOptionsResult(ctx, movie, options)
+	return warning, translated, output
+}
+
+func (a *translationAdapter) TranslateWithOptionsResult(ctx context.Context, movie *models.Movie, options TranslationOptions) (string, bool, *translation.TranslationOutput, error) {
 	if movie == nil {
-		return "", false, nil
+		return "", false, nil, nil
 	}
-	warning, output := a.svc.translateWithContext(ctx, movie, options.ForceOverwrite)
-	return warning, true, output
+	warning, output, err := a.svc.translateWithContext(ctx, movie, options.ForceOverwrite)
+	return warning, true, output, err
 }
 
 // ConfigFromAppConfig extracts Scrape-relevant fields from the application config.

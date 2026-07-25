@@ -494,6 +494,70 @@ func TestTranslateMovie_RetriesResidualJapaneseSlot(t *testing.T) {
 	assert.Equal(t, "격차가 너무 좋다", movie.Title)
 }
 
+func TestTranslateMovie_RejectsResidualJapaneseAfterRetry(t *testing.T) {
+	calls := 0
+	provider := &mockProvider{translateFunc: func(_ context.Context, _, _ string, _ []string) (*translationResult, error) {
+		calls++
+		return &translationResult{Texts: []string{"격차가 최고すぎる"}}, nil
+	}}
+	service := New(Config{
+		Enabled: true, Provider: "mock", SourceLanguage: "ja", TargetLanguage: "ko", ApplyToPrimary: true,
+		Fields: fieldsConfig{Title: true},
+	}, provider)
+	movie := &models.Movie{Title: "格差が最高すぎる"}
+
+	output, warning, err := service.TranslateMovie(context.Background(), movie, "")
+	require.Error(t, err)
+	assert.Nil(t, output)
+	assert.Contains(t, warning, "invalid model output")
+	assert.Equal(t, 2, calls)
+	assert.Equal(t, "格差が最高すぎる", movie.Title, "invalid partial output must not replace the source")
+}
+
+func TestTranslateMovie_RejectsPromptTemplateAndKeepsFieldsAtomic(t *testing.T) {
+	calls := 0
+	provider := &mockProvider{translateFunc: func(_ context.Context, _, _ string, texts []string) (*translationResult, error) {
+		calls++
+		if len(texts) == 2 {
+			return &translationResult{Texts: []string{"번역된 제목", "[translation]"}}, nil
+		}
+		return &translationResult{Texts: []string{"[translation]"}}, nil
+	}}
+	service := New(Config{
+		Enabled: true, Provider: "mock", SourceLanguage: "ja", TargetLanguage: "ko", ApplyToPrimary: true,
+		Fields: fieldsConfig{Title: true, Description: true},
+	}, provider)
+	movie := &models.Movie{Title: "原題", Description: "原文の説明"}
+
+	output, _, err := service.TranslateMovie(context.Background(), movie, "")
+	require.Error(t, err)
+	assert.Nil(t, output)
+	assert.Contains(t, err.Error(), "prompt template leaked")
+	assert.Equal(t, 2, calls)
+	assert.Equal(t, "原題", movie.Title)
+	assert.Equal(t, "原文の説明", movie.Description)
+}
+
+func TestTranslateMovie_RejectsUnchangedEnglishDescription(t *testing.T) {
+	calls := 0
+	provider := &mockProvider{translateFunc: func(_ context.Context, _, _ string, texts []string) (*translationResult, error) {
+		calls++
+		return &translationResult{Texts: append([]string(nil), texts...)}, nil
+	}}
+	service := New(Config{
+		Enabled: true, Provider: "mock", SourceLanguage: "auto", TargetLanguage: "ko", ApplyToPrimary: true,
+		Fields: fieldsConfig{Description: true},
+	}, provider)
+	movie := &models.Movie{Description: "An amateur performer visits the studio for her first scene."}
+
+	output, _, err := service.TranslateMovie(context.Background(), movie, "")
+	require.Error(t, err)
+	assert.Nil(t, output)
+	assert.Contains(t, err.Error(), "unchanged from source")
+	assert.Equal(t, 2, calls)
+	assert.Equal(t, "An amateur performer visits the studio for her first scene.", movie.Description)
+}
+
 func TestTranslateTexts_FallsBackOnMergedSlotAnomaly(t *testing.T) {
 	calls := 0
 	provider := &mockProvider{translateFunc: func(_ context.Context, _, _ string, texts []string) (*translationResult, error) {

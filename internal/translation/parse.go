@@ -81,6 +81,48 @@ func parseLLMTranslationPayload(payload string, markerSpec any) ([]string, error
 
 func parseCompactTranslationPayload(payload string, markerSpec any) ([]string, error) {
 	markers := normalizeTranslationMarkers(markerSpec)
+	if len(markers) == 0 {
+		return nil, fmt.Errorf("failed to parse compact translation payload: no output markers")
+	}
+
+	// Chat models sometimes echo the entire user prompt before returning the
+	// actual marked translation. The prompt itself contains a complete marker
+	// sequence, so selecting the first sequence silently treats the source text
+	// as translated output. Try marker groups from the end and accept only the
+	// last complete, internally clean group.
+	starts := markerStartPositions(payload, markers[0])
+	var lastErr error
+	for i := len(starts) - 1; i >= 0; i-- {
+		parsed, err := parseCompactTranslationPayloadAt(payload[starts[i]:], markers)
+		if err == nil {
+			if i != 0 {
+				logging.Debugf("Translation: selected the last complete marker set from %d candidates", len(starts))
+			}
+			return parsed, nil
+		}
+		lastErr = err
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("failed to parse compact translation payload: missing output marker 0")
+}
+
+func markerStartPositions(payload, marker string) []int {
+	var positions []int
+	for offset := 0; offset < len(payload); {
+		index := strings.Index(payload[offset:], marker)
+		if index < 0 {
+			break
+		}
+		absolute := offset + index
+		positions = append(positions, absolute)
+		offset = absolute + len(marker)
+	}
+	return positions
+}
+
+func parseCompactTranslationPayloadAt(payload string, markers []string) ([]string, error) {
 	pos := 0
 	out := make([]string, 0, len(markers))
 
@@ -102,11 +144,10 @@ func parseCompactTranslationPayload(payload string, markerSpec any) ([]string, e
 		}
 
 		raw := payload[start:end]
-		content := embeddedMarkerRE.ReplaceAllString(raw, "")
-		if content != raw {
-			logging.Debugf("Translation: stripped embedded markers from slot %d (had: %q, now: %q)", i, strings.TrimSpace(raw), strings.TrimSpace(content))
+		if embeddedMarkerRE.MatchString(raw) {
+			return nil, fmt.Errorf("failed to parse compact translation payload: unexpected embedded output marker in slot %d", i)
 		}
-		out = append(out, strings.TrimSpace(content))
+		out = append(out, strings.TrimSpace(raw))
 		pos = end
 	}
 

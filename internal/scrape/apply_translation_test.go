@@ -127,6 +127,66 @@ func TestApplyTranslationWithOptions_ForceOverwrite(t *testing.T) {
 	assert.Equal(t, "原題", movie.OriginalTitle)
 }
 
+func TestTranslateResult_InvalidRefreshDoesNotOverwriteCachedTranslation(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": `[""]`}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(response))
+	}))
+	defer ts.Close()
+
+	translationCfg := &config.TranslationConfig{
+		Enabled:                 true,
+		Provider:                "openai",
+		SourceLanguage:          "ja",
+		TargetLanguage:          "ko",
+		ApplyToPrimary:          true,
+		OverwriteExistingTarget: true,
+		OpenAI: config.OpenAITranslationConfig{
+			BaseURL: ts.URL,
+			APIKey:  "k",
+			Model:   "m",
+		},
+		Fields: config.TranslationFieldsConfig{Title: true},
+	}
+	movie := &models.Movie{
+		ID:            "ABC-001",
+		Title:         "기존 기본 제목",
+		OriginalTitle: "原題",
+		Translations: []models.MovieTranslation{
+			{Language: "ja", Title: "原題"},
+			{Language: "ko", Title: "기존 번역", SettingsHash: "old"},
+		},
+	}
+	scraper := &Scraper{
+		cfg: &Config{
+			TranslationEnabled:      true,
+			TranslationTargetLang:   "ko",
+			TranslationSettingsHash: translationCfg.SettingsHash(),
+		},
+		translator: helperToTranslator(translationCfg),
+	}
+	result := &ScrapeResult{
+		Movie:                  movie,
+		Cached:                 true,
+		RefreshTranslationOnly: true,
+		NeedsPersistence:       true,
+	}
+
+	err := scraper.TranslateResult(context.Background(), result)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "empty translation after retry")
+	assert.Equal(t, "기존 기본 제목", movie.Title)
+	require.Len(t, movie.Translations, 2)
+	assert.Equal(t, "기존 번역", movie.Translations[1].Title)
+	assert.Nil(t, result.TranslationOutput)
+}
+
 func TestTranslationRefreshSourceMovie_UsesCachedSourceLanguageRecord(t *testing.T) {
 	movie := &models.Movie{
 		Title:         "기존 한국어 제목",

@@ -598,7 +598,12 @@ func (s *Service) TranslateMovie(ctx context.Context, scraped *models.Movie, set
 			if len(translatedTexts) != len(providerFields) {
 				return nil, "", fmt.Errorf("translation provider returned %d items for %d inputs", len(translatedTexts), len(providerFields))
 			}
-			translatedTexts, qualityWarnings := s.retryLowQualitySlots(ctx, sourceLang, targetLang, providerFields, translatedTexts)
+			translatedTexts, qualityWarnings, qualityErr := s.retryLowQualitySlots(ctx, sourceLang, targetLang, providerFields, translatedTexts)
+			if qualityErr != nil {
+				logging.Debugf("Translation: output validation failed for %s: %v", targetLang, qualityErr)
+				warning := sanitizeTranslationWarning(normalizeProvider(s.cfg.Provider), qualityErr)
+				return nil, warning, qualityErr
+			}
 			warnings = append(warnings, qualityWarnings...)
 			for i, field := range providerFields {
 				translated := strings.TrimSpace(translatedTexts[i])
@@ -826,48 +831,109 @@ func isTitleTranslationField(fieldName string) bool {
 	return fieldName == "title" || fieldName == "title_as_name"
 }
 
-func (s *Service) retryLowQualitySlots(ctx context.Context, sourceLang, targetLang string, fields []TranslationField, translated []string) ([]string, []string) {
+var latinNaturalWordRE = regexp.MustCompile(`[A-Za-z]+`)
+
+func translationSlotIssue(field TranslationField, targetLang, value string) string {
+	current := strings.TrimSpace(value)
+	if current == "" {
+		if field.AllowEmpty {
+			return ""
+		}
+		return "empty translation"
+	}
+
+	lower := strings.ToLower(current)
+	for _, artifact := range []string{
+		"[translation]",
+		"[japanese source]",
+		"[korean candidate]",
+		"translate each labeled section",
+		"return output in the same labeled format",
+	} {
+		if strings.Contains(lower, artifact) {
+			return "prompt template leaked into translation"
+		}
+	}
+
+	fieldName := fieldKey(field)
+	if normalizeLanguage(targetLang) == "ko" && isPersonNameField(fieldName) && !containsHangul(current) {
+		return "person name is not Hangul"
+	}
+	if normalizeLanguage(targetLang) != "ja" && !isPersonNameField(fieldName) && containsResidualJapanese(current) {
+		return "untranslated Japanese remains"
+	}
+	if isUnchangedSemanticTranslation(field, targetLang, current) {
+		return "translation is unchanged from source"
+	}
+	return ""
+}
+
+func isUnchangedSemanticTranslation(field TranslationField, targetLang, translated string) bool {
+	if field.FieldName != "title" && field.FieldName != "description" {
+		return false
+	}
+	source := strings.TrimSpace(field.Text)
+	if strings.Join(strings.Fields(source), " ") != strings.Join(strings.Fields(translated), " ") {
+		return false
+	}
+	if containsResidualJapanese(source) {
+		return true
+	}
+	if normalizeLanguage(targetLang) != "ko" || containsHangul(source) {
+		return false
+	}
+
+	// With source_language=auto, unchanged English prose is another common
+	// non-translation mode. Avoid rejecting short all-caps industry acronyms and
+	// product codes, while requiring natural-language descriptions and multi-word
+	// titles to produce a target-language result.
+	words := latinNaturalWordRE.FindAllString(source, -1)
+	lowercaseLetters := 0
+	for _, r := range source {
+		if r >= 'a' && r <= 'z' {
+			lowercaseLetters++
+		}
+	}
+	if field.FieldName == "description" {
+		return len(words) > 0 && lowercaseLetters >= 3
+	}
+	return len(words) >= 2 && lowercaseLetters >= 3
+}
+
+func invalidTranslationSlotError(field TranslationField, issue string) error {
+	return &translationError{
+		Kind:    TranslationErrorParse,
+		Message: fmt.Sprintf("invalid translation output for %s: %s", fieldKey(field), issue),
+	}
+}
+
+func (s *Service) retryLowQualitySlots(ctx context.Context, sourceLang, targetLang string, fields []TranslationField, translated []string) ([]string, []string, error) {
 	if normalizeLanguage(targetLang) == "ja" {
-		return translated, nil
+		return translated, nil, nil
 	}
 	result := append([]string(nil), translated...)
 	var warnings []string
 	for i, field := range fields {
 		current := strings.TrimSpace(result[i])
-		if current == "" {
-			continue
-		}
-		personNeedsHangul := targetLang == "ko" && isPersonNameField(fieldKey(field)) && !containsHangul(current)
-		textHasJapanese := !isPersonNameField(fieldKey(field)) && containsResidualJapanese(current)
-		if !personNeedsHangul && !textHasJapanese {
+		issue := translationSlotIssue(field, targetLang, current)
+		if issue == "" {
 			continue
 		}
 
 		retried, err := s.translateTexts(ctx, sourceLang, targetLang, []string{field.Text}, []string{fieldKey(field)})
-		retryValue := ""
-		if err == nil && len(retried) == 1 {
-			retryValue = strings.TrimSpace(retried[0])
+		if err != nil {
+			return nil, warnings, fmt.Errorf("%w; retry failed: %v", invalidTranslationSlotError(field, issue), err)
 		}
-		if personNeedsHangul {
-			if containsHangul(retryValue) {
-				result[i] = retryValue
-				continue
-			}
-			result[i] = field.Text
-			warnings = append(warnings, fmt.Sprintf("%s: LLM returned non-Hangul, kept source name", fieldKey(field)))
-			continue
+		if len(retried) != 1 {
+			return nil, warnings, invalidTranslationSlotError(field, "retry returned an unexpected item count")
 		}
-
-		if retryValue != "" && !containsResidualJapanese(retryValue) {
-			result[i] = retryValue
-			continue
+		retryValue := strings.TrimSpace(retried[0])
+		if retryIssue := translationSlotIssue(field, targetLang, retryValue); retryIssue != "" {
+			return nil, warnings, invalidTranslationSlotError(field, retryIssue+" after retry")
 		}
-		if retryValue != "" && countResidualJapanese(retryValue) < countResidualJapanese(current) {
-			result[i] = retryValue
-		}
-		warnings = append(warnings, fmt.Sprintf("%s: LLM left untranslated Japanese, kept best partial", fieldKey(field)))
+		result[i] = retryValue
 	}
-	return result, warnings
+	return result, warnings, nil
 }
 
 // TargetLanguages returns normalized targets in configured order, removing blanks and duplicates.
@@ -963,6 +1029,9 @@ func sanitizeTranslationWarning(provider string, err error) string {
 		}
 	}
 	if errors.As(err, &te) {
+		if te.Kind == TranslationErrorParse || te.Kind == TranslationErrorCountMismatch {
+			return "Translation failed: invalid model output"
+		}
 		return "Translation failed: service unavailable"
 	}
 	return "Translation failed: internal error"

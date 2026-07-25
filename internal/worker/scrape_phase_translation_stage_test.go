@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -67,6 +68,21 @@ func (w *cachedTranslationWorkflow) TranslateScrapeResult(_ context.Context, _ *
 	return &workflow.OrchestrationMeta{}, nil
 }
 
+type failingTranslationWorkflow struct {
+	stubWorkflow
+}
+
+func (w *failingTranslationWorkflow) Scrape(_ context.Context, cmd scrape.ScrapeCmd, _ scrape.ProgressFunc) (*scrape.ScrapeResult, *workflow.OrchestrationMeta, error) {
+	result := makeScrapeResult(cmd.MovieID)
+	result.Cached = true
+	result.RefreshTranslationOnly = true
+	return result, &workflow.OrchestrationMeta{}, nil
+}
+
+func (w *failingTranslationWorkflow) TranslateScrapeResult(_ context.Context, _ *scrape.ScrapeResult, _ string) (*workflow.OrchestrationMeta, error) {
+	return nil, errors.New("invalid translation output for title: untranslated Japanese remains")
+}
+
 type countingPosterGenerator struct {
 	calls int32
 }
@@ -103,6 +119,32 @@ func TestScrapePhase_TranslationOnlyCacheHitSkipsPosterGeneration(t *testing.T) 
 	require.NotNil(t, result)
 	assert.False(t, result.PosterGenerated)
 	assert.Equal(t, models.JobStatusCompleted, result.Status)
+}
+
+func TestScrapePhase_TranslationFailureMarksCachedRefreshFailed(t *testing.T) {
+	const file = "ABC-001.mp4"
+	inputs := scrapePhaseInputs{
+		JobID:                  "translation-failure-job",
+		Concurrency:            concurrencyConfig{MaxWorkers: 1},
+		WF:                     &failingTranslationWorkflow{},
+		Matcher:                &stubMatcher{result: "ABC-001"},
+		FileMatchInfo:          map[string]models.FileMatchInfo{file: {Path: file, MovieID: "ABC-001"}},
+		DeferredTranslation:    true,
+		TranslationConcurrency: 1,
+		Broadcaster:            &stubBroadcaster{},
+		Updater:                newStubUpdater(),
+		Lifecycle:              &stubLifecycle{},
+	}
+
+	NewScrapePhase().Run(context.Background(), inputs, []string{file}, ScrapePhaseConfig{
+		RefreshTranslationOnly: true,
+	})
+
+	result := inputs.Updater.(*stubUpdater).getResult(file)
+	require.NotNil(t, result)
+	assert.Equal(t, models.JobStatusFailed, result.Status)
+	assert.Contains(t, result.Error, "translation stage failed")
+	assert.Contains(t, result.Error, "untranslated Japanese remains")
 }
 
 func TestScrapePhase_StagesMetadataBeforeTranslationAndCheckpointsEveryRecord(t *testing.T) {

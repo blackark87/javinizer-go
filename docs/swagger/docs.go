@@ -4726,6 +4726,9 @@ const docTemplate = `{
                 },
                 "status": {
                     "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.JobStatus"
+                },
+                "translation_warning": {
+                    "type": "string"
                 }
             }
         },

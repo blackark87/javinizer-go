@@ -37,6 +37,7 @@ type openAIChatResponse struct {
 		Message struct {
 			Content json.RawMessage `json:"content"`
 		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 }
 
@@ -242,7 +243,15 @@ func decodeOpenAIChatTranslation(provider string, respBody []byte, markerSpec an
 		return nil, fmt.Errorf("%s response contained no choices", provider)
 	}
 
-	return buildLLMTranslationResult(extractContentString(decoded.Choices[0].Message.Content), markerSpec)
+	content := extractContentString(decoded.Choices[0].Message.Content)
+	finishReason := strings.ToLower(strings.TrimSpace(decoded.Choices[0].FinishReason))
+	if finishReason == "length" || finishReason == "max_tokens" {
+		return &translationResult{RawLLM: content}, &translationError{
+			Kind:    TranslationErrorParse,
+			Message: fmt.Sprintf("%s translation output was truncated (%s)", provider, finishReason),
+		}
+	}
+	return buildLLMTranslationResult(content, markerSpec)
 }
 
 // executeLLMChatTranslation is the shared pipeline for LLM chat-based translation.

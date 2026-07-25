@@ -745,7 +745,8 @@ func (s *Service) ReviewJAVTranslations(ctx context.Context, fields []QualityRev
 	reviewCtx := withQualityReview(withTranslationMarkers(ctx, markers), items)
 	reviewed, err := s.translateWithProvider(reviewCtx, provider, sourceLangAuto, targetLanguages[0], texts)
 	if err != nil {
-		if len(fields) > 1 && shouldSplitLLMRequest(err) {
+		var translationErr *translationError
+		if len(fields) > 1 && ((errors.As(err, &translationErr) && translationErr.Kind == TranslationErrorParse) || shouldSplitLLMRequest(err)) {
 			result := make([]string, 0, len(fields))
 			for _, field := range fields {
 				one, oneErr := s.ReviewJAVTranslations(ctx, []QualityReviewField{field})

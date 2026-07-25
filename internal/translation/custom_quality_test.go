@@ -57,141 +57,138 @@ func TestBuildTranslationPlanPrefersProfileReadingOverOldThumbnailSlug(t *testin
 
 func TestKoreanJAVPromptTreatsMomoSiriAsBodyDescription(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
-	assert.Contains(t, rules, "桃Siri")
-	assert.Contains(t, rules, "애플힙")
-	assert.Contains(t, rules, "never treated as a person name")
+	assert.Contains(t, rules, "桃尻/桃Siri→애플힙")
+	assert.Contains(t, rules, "never treat as a person name")
 }
 
 func TestKoreanJAVPromptUsesNaturalMiluchioAndVirilityTerms(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
-	assert.Contains(t, rules, "ミルチオ")
-	assert.Contains(t, rules, "미루치오")
-	assert.Contains(t, rules, "ミルチオの愛人 means a mistress who performs the technique")
-	assert.Contains(t, rules, "미루치오를 해주는 불륜 상대")
-	assert.Contains(t, rules, "never the nonsensical possessive 미루치오의 정부")
-	assert.Contains(t, rules, "絶倫性欲者 referring to a woman → 절륜 색녀")
-	assert.Contains(t, rules, "never 절륜 성욕자")
+	assert.Contains(t, rules, "ミルチオ→미루치오")
+	assert.Contains(t, rules, "ミルチオの愛人→미루치오를 해주는 불륜 상대")
+	assert.Contains(t, rules, "금지: 미루치오의 정부")
+	assert.Contains(t, rules, "female 絶倫性欲者→절륜 색녀")
+	assert.Contains(t, rules, "금지: 절륜 성욕자")
 }
 
 func TestKoreanJAVPromptDoesNotTransliterateShigoki(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
-	assert.Contains(t, rules, "舐めシゴきフルコース → 혀와 손으로 뽑아주는 풀코스")
-	assert.Contains(t, rules, "Never write 시고키")
-	assert.Contains(t, rules, "must not mechanically become the corny phrase 사랑의")
+	assert.Contains(t, rules, "舐めシゴきフルコース→혀와 손으로 뽑아주는 풀코스")
+	assert.Contains(t, rules, "금지: 시고키/핥기 시고키")
+	assert.Contains(t, rules, "사랑의로 기계 번역하지 않는다")
 }
 
 func TestKoreanJAVPromptUsesNaturalEbisoriMassageWording(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
-	assert.Contains(t, rules, "エビ反りオーガズム → 허리가 휘는 오르가슴")
-	assert.Contains(t, rules, "Never write 허리 꺾인, 새우등처럼 휜")
-	assert.NotContains(t, rules, "エビ反りオーガズム → 허리를 뒤로 젖히는 오르가슴")
-	assert.Contains(t, rules, "特別施術 → 특별 코스")
+	assert.Contains(t, rules, "エビ反りオーガズム→허리가 휘는 오르가슴")
+	assert.Contains(t, rules, "금지: 허리 꺾인/새우등처럼 휜")
+	assert.NotContains(t, rules, "エビ反りオーガズム→허리를 뒤로 젖히는 오르가슴")
+	assert.Contains(t, rules, "特別施術→특별 코스")
 }
 
 func TestKoreanJAVPromptUsesYubunyeoInsteadOfIncheo(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
-	assert.Contains(t, rules, "人妻 → 유부녀")
-	assert.Contains(t, rules, "人妻もの → 유부녀물")
-	assert.Contains(t, rules, "Never use the dated Japanese-calque term 인처")
+	assert.Contains(t, rules, "人妻→유부녀")
+	assert.Contains(t, rules, "人妻もの→유부녀물")
+	assert.Contains(t, rules, "금지: 인처")
 }
 
 func TestKoreanJAVPromptAvoidsJapaneseCalquesForSexFriendAndPrivateParts(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
-	assert.Contains(t, rules, "セフレ志願の女の子 → 섹파를 자처하는 여자")
-	assert.Contains(t, rules, "never transliterate it as 세프레")
-	assert.Contains(t, rules, "ちんちんおっきしたら → 자지가 서면")
-	assert.Contains(t, rules, "never the dictionary calque 비부")
-	assert.Contains(t, rules, "きわどい秘部を触られすぎて → 은밀한 곳을 집요하게 만져져")
-	assert.Contains(t, rules, "Do not mechanically transliterate 寝取られました as 네토라레 당했습니다")
+	assert.Contains(t, rules, "セフレ志願の女の子→섹파를 자처하는 여자")
+	assert.Contains(t, rules, "금지: 세프레")
+	assert.Contains(t, rules, "ちんちんおっきしたら→자지가 서면")
+	assert.Contains(t, rules, "금지: 비부")
+	assert.Contains(t, rules, "きわどい秘部を触られすぎて→은밀한 곳을 집요하게 만져져")
+	assert.Contains(t, rules, "寝取られました→다른 남자에게 넘어가 버렸다")
+	assert.Contains(t, rules, "네토라레 당했습니다로 음차하지 않는다")
 }
 
 func TestKoreanJAVPromptTranslatesRemoteVibeAndFawnClimaxByMeaning(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
-	assert.Contains(t, rules, "寸止めリモバイ調教 → 리모트 바이브로 절정 직전까지 애태우는 조교")
-	assert.Contains(t, rules, "must be rendered as 리모트 바이브")
-	assert.Contains(t, rules, "never transliterated as 리모바이")
-	assert.Contains(t, rules, "膝ガクガク小鹿アクメ → 무릎이 후들거리는 절정")
-	assert.Contains(t, rules, "never 새끼 사슴 오르가슴")
+	assert.Contains(t, rules, "寸止めリモバイ調教→리모트 바이브로 절정 직전까지 애태우는 조교")
+	assert.Contains(t, rules, "リモバイ→리모트 바이브")
+	assert.Contains(t, rules, "금지: 리모바이")
+	assert.Contains(t, rules, "膝ガクガク小鹿アクメ→무릎이 후들거리는 절정")
+	assert.Contains(t, rules, "금지: 새끼 사슴 오르가슴")
 }
 
 func TestKoreanJAVPromptTreatsDoPrefixAsEmphasis(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
-	assert.Contains(t, rules, "ド痴女 → 극강의 치녀")
-	assert.Contains(t, rules, "never 도치녀")
-	assert.Contains(t, rules, "結婚した妻 should normally be the concise 아내")
-	assert.Contains(t, rules, "性欲おさまらない → 멈출 줄 모르는 성욕")
+	assert.Contains(t, rules, "ド痴女→극강의 치녀")
+	assert.Contains(t, rules, "금지: 도치녀")
+	assert.Contains(t, rules, "結婚した妻→아내")
+	assert.Contains(t, rules, "性欲おさまらない→멈출 줄 모르는 성욕")
 }
 
 func TestKoreanJAVPromptTranslatesIinariDoMByMeaning(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
-	assert.Contains(t, rules, "言いなり and イイナリ")
-	assert.Contains(t, rules, "never transliterate them as 이이나리")
-	assert.Contains(t, rules, "ドM means an extreme masochist")
-	assert.Contains(t, rules, "never 도M")
+	assert.Contains(t, rules, "言いなり/イイナリ→시키는 대로 하는")
+	assert.Contains(t, rules, "금지: 이이나리")
+	assert.Contains(t, rules, "ドM→극M")
+	assert.Contains(t, rules, "금지: 도M")
 }
 
 func TestKoreanJAVPromptTranslatesGyakuPakoByMeaning(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
-	assert.Contains(t, rules, "逆パコ is a woman initiating")
-	assert.Contains(t, rules, "never transliterate them as 파코")
-	assert.Contains(t, rules, "Never use the clinical 자궁경부")
-	assert.Contains(t, rules, "Do not exaggerate it as 강타하다 or 집중 공략하다")
-	assert.Contains(t, rules, "Never output 쥬보쥬보")
-	assert.Contains(t, rules, "Never transliterate Japanese sexual sound-symbolic words into Hangul")
-	assert.Contains(t, rules, "never the food term 자지 샤브샤브")
-	assert.Contains(t, rules, "おしゃぶり means 펠라 or 자지 빨기")
-	assert.Contains(t, rules, "never use the awkward 한 판 박아버리다")
-	assert.Contains(t, rules, "never transliterate it as 역파코")
-	assert.Contains(t, rules, "がっつり痴女られたい → 치녀에게 실컷 농락당하고 싶다")
-	assert.Contains(t, rules, "never 듬뿍 치녀 취급당하고 싶다")
+	assert.Contains(t, rules, "逆パコ→여자가 덮치는")
+	assert.Contains(t, rules, "パコ/パコる/パコパコ→섹스/섹스하다/박아대다")
+	assert.Contains(t, rules, "금지: 강타하다/집중 공략하다/자궁경부")
+	assert.Contains(t, rules, "금지: 쥬보쥬보")
+	assert.Contains(t, rules, "Japanese sexual sounds must describe action/result")
+	assert.Contains(t, rules, "금지: 자지 샤브샤브")
+	assert.Contains(t, rules, "sexual おしゃぶり→펠라|자지 빨기")
+	assert.Contains(t, rules, "금지: 한 판 박아버리다")
+	assert.Contains(t, rules, "금지: 역파코")
+	assert.Contains(t, rules, "がっつり痴女られたい→치녀에게 실컷 농락당하고 싶다")
+	assert.Contains(t, rules, "금지: 듬뿍 치녀 취급당하고 싶다")
 }
 
 func TestKoreanJAVPromptTranslatesOrificeSwallowingAndSquirtingCompounds(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
-	assert.Contains(t, rules, "3穴 → 3홀 or 세 구멍")
-	assert.Contains(t, rules, "2穴セフレ → 2홀 섹파 or 두 구멍을 내주는 섹파")
-	assert.Contains(t, rules, "never the Hanja reading 혈")
-	assert.Contains(t, rules, "never transliterate it as 고쿤")
-	assert.Contains(t, rules, "ケツマンコ means 후장")
-	assert.Contains(t, rules, "ストゼロ is the alcoholic drink brand Strong Zero")
-	assert.Contains(t, rules, "never 스트로제로 or 스트로 제로")
-	assert.Contains(t, rules, "潮吹き means squirting sexual fluid")
-	assert.Contains(t, rules, "限界ストゼロ潮吹きFUCK → 스트롱 제로를 마시며 한계까지 분수를 뿜는 섹스")
+	assert.Contains(t, rules, "3穴→3홀|세 구멍")
+	assert.Contains(t, rules, "2穴セフレ→2홀 섹파|두 구멍을 내주는 섹파")
+	assert.Contains(t, rules, "금지: 혈/untranslated 穴")
+	assert.Contains(t, rules, "금지: 고쿤")
+	assert.Contains(t, rules, "ケツマンコ→후장")
+	assert.Contains(t, rules, "ストゼロ is Strong Zero→스트롱 제로")
+	assert.Contains(t, rules, "금지: 스트로제로/스트로 제로")
+	assert.Contains(t, rules, "潮吹き→분수|애액 분출|애액을 뿜다")
+	assert.Contains(t, rules, "限界ストゼロ潮吹きFUCK→스트롱 제로를 마시며 한계까지 분수를 뿜는 섹스")
 }
 
 func TestKoreanJAVPromptTranslatesAmateurHostessPoseAndNTRTerms(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
-	assert.Contains(t, rules, "never transliterate them as 시로토 or 시로트")
-	assert.Contains(t, rules, "逆ナンパ has the same female-pickup meaning")
-	assert.Contains(t, rules, "キャバ嬢 means a hostess")
-	assert.Contains(t, rules, "never transliterate it as 캬바죠 or 카바죠")
-	assert.Contains(t, rules, "スタイル最強 and 最強スタイル → 최강 몸매")
-	assert.Contains(t, rules, "理想のモテ体型 and 理想のモテ体系 → 이상적인 인기 몸매")
-	assert.Contains(t, rules, "極エロ → 극도로 야한 or 극강의 야함")
-	assert.Contains(t, rules, "寝取り is the act of taking or seducing someone else's partner")
-	assert.Contains(t, rules, "ちんぐり返し depicts a man on his back")
-	assert.Contains(t, rules, "ちんぐり返し騎乗位 → 남자의 다리를 뒤로 젖힌 기승위")
-	assert.Contains(t, rules, "Do not name the pose or add domination and violence absent from the source")
-	assert.Contains(t, rules, "never use shape metaphors such as 새우, 쟁기, or 활")
-	assert.Contains(t, rules, "タイマン4本番 → 1대1 맞대결 본방 4회")
-	assert.Contains(t, rules, "胸糞NTR → 역겨운 NTR or 기분 더러운 NTR")
-	assert.Contains(t, rules, "never 울울한 발기")
+	assert.Contains(t, rules, "금지: 시로토/시로트")
+	assert.Contains(t, rules, "逆ナン/逆ナンパ→여자가 남자를 헌팅하는")
+	assert.Contains(t, rules, "キャバ嬢→캬바걸|캬바클럽 호스티스")
+	assert.Contains(t, rules, "금지: 캬바죠/카바죠")
+	assert.Contains(t, rules, "スタイル最強/最強スタイル→최강 몸매")
+	assert.Contains(t, rules, "理想のモテ体型/理想のモテ体系→이상적인 인기 몸매")
+	assert.Contains(t, rules, "極エロ→극도로 야한|극강의 야함")
+	assert.Contains(t, rules, "寝取り=남이 가진 파트너를 빼앗음")
+	assert.Contains(t, rules, "ちんぐり返し는 남자를 눕혀")
+	assert.Contains(t, rules, "ちんぐり返し騎乗位→남자의 다리를 뒤로 젖힌 기승위")
+	assert.Contains(t, rules, "지배/폭력을 추가하지 않는다")
+	assert.Contains(t, rules, "금지: 친구리/친구리카에시/치무가에리/새우/쟁기/활 비유")
+	assert.Contains(t, rules, "タイマン4本番→1대1 맞대결 본방 4회")
+	assert.Contains(t, rules, "胸糞NTR→역겨운 NTR|기분 더러운 NTR")
+	assert.Contains(t, rules, "금지: 울울한 발기")
 }
 
 func TestKoreanJAVPromptTranslatesExplicitMetaphorsAndKeywordProperNouns(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
-	assert.Contains(t, rules, "蜜壺 is a metaphor for the vagina")
-	assert.Contains(t, rules, "never use the dictionary calques 밀통, 꿀단지, or 비부")
-	assert.Contains(t, rules, "手マン performed by another person means 핑거링")
-	assert.Contains(t, rules, "浅草 is the place name 아사쿠사")
-	assert.Contains(t, rules, "ordinary fortune-result 大吉 means 대길 or 대박")
-	assert.Contains(t, rules, "玩具責め in promotional headlines means 성인용품 공세")
-	assert.Contains(t, rules, "確定ビッチ describes an unmistakably promiscuous woman")
-	assert.Contains(t, rules, "大・連・発 or 大連発 describes a woman's climax")
-	assert.Contains(t, rules, "ヤリモクインフルエンサー → 섹스만 노리는 인플루언서")
-	assert.Contains(t, rules, "完全主観 means 완전 1인칭 시점")
-	assert.Contains(t, rules, "青春グラフィティ means 청춘 이야기 or 청춘 기록")
-	assert.Contains(t, rules, "【...】 must remain 【...】")
+	assert.Contains(t, rules, "蜜壺→보지|질")
+	assert.Contains(t, rules, "금지: 밀통/꿀단지/비부")
+	assert.Contains(t, rules, "another-person 手マン→핑거링")
+	assert.Contains(t, rules, "浅草→아사쿠사")
+	assert.Contains(t, rules, "ordinary fortune 大吉→대길|대박")
+	assert.Contains(t, rules, "玩具責め→성인용품 공세|장난감 조교")
+	assert.Contains(t, rules, "確定ビッチ→확실한 문란녀")
+	assert.Contains(t, rules, "female-climax 大・連・発/大連発→연속 절정")
+	assert.Contains(t, rules, "ヤリモクインフルエンサー→섹스만 노리는 인플루언서")
+	assert.Contains(t, rules, "完全主観→완전 1인칭 시점")
+	assert.Contains(t, rules, "青春グラフィティ→청춘 이야기|청춘 기록")
+	assert.Contains(t, rules, "【...】 stays 【...】")
 }
 
 func TestTranslationPromptForbidsSubstitutingPerformerNames(t *testing.T) {
@@ -218,62 +215,112 @@ func TestBuildLLMTranslationPrompts_CoversLatestMissTranslationCases(t *testing.
 	}
 
 	for _, expected := range []string{
-		"Latin title suffix chu is a cute kiss sound",
-		"ガチ恋営業chu must end in 츄, never 중",
-		"逆レ and 逆レイプ are abbreviations for reverse rape and are not 逆パコ",
-		"逆レ搾精 means forced semen extraction by a woman",
-		"never invent or insert 역파코 or 파코 when パコ is absent from the source",
-		"アナル → 애널 in JAV sexual-act and genre wording",
-		"初アナル解禁 → 첫 애널 해금",
-		"ちんぐり返しアナル舐め → 남자의 다리를 뒤로 젖혀 애널 핥기",
+		"HIGHEST PRIORITY exact form",
+		"Latin suffix chu is a kiss sound",
+		"ガチ恋営業chu→진심인 척하는 영업 츄",
+		"금지: 영업 중/가치코이",
+		"逆レ/逆レイプ→역강간",
+		"逆レ搾精→역강간 착정",
+		"source에 パコ가 없으면 역파코/파코를 넣지 않는다",
+		"アナル→애널 for JAV act/genre",
+		"初アナル解禁→첫 애널 해금",
 	} {
 		assert.Contains(t, systemPrompt, expected)
 	}
-	assert.NotContains(t, systemPrompt, "ちんぐり返しアナル舐め → 남자의 다리를 뒤로 젖혀 항문 핥기")
+	assert.NotContains(t, systemPrompt, "ちんぐり返しアナル舐め→남자의 다리를 뒤로 젖혀 항문 핥기")
+	assert.Contains(t, systemPrompt, "鉄マン→강철 보지")
+	assert.NotContains(t, userPrompt, "[translation]")
+	for _, marker := range []string{"<<<title[0]>>>", "<<<title[1]>>>", "<<<title[2]>>>"} {
+		assert.Equal(t, 1, strings.Count(userPrompt, marker))
+	}
 }
 
 func TestKoreanJAVPromptTranslatesNewContextualSlangByMeaning(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
-	assert.Contains(t, rules, "吸引おしゃぶり → 빨아들이는 펠라")
-	assert.Contains(t, rules, "Never output 키메섹")
-	assert.Contains(t, rules, "キメセクの巣 → 약물 섹스의 소굴")
-	assert.Contains(t, rules, "タイパを気にし過ぎる → 시간 효율을 지나치게 따지는")
-	assert.Contains(t, rules, "never 페더 손가락 핸드잡")
-	assert.Contains(t, rules, "never write 러브호텔 물바다")
-	assert.Contains(t, rules, "never transliterate it as 야리만")
-	assert.Contains(t, rules, "逆ナンドライブ → 남자를 헌팅하는 드라이브")
-	assert.Contains(t, rules, "never default to the stiff legal calque 음행")
-	assert.Contains(t, rules, "never 말뚝박기 피스톤")
+	assert.Contains(t, rules, "吸引おしゃぶり→빨아들이는 펠라")
+	assert.Contains(t, rules, "금지: 키메섹/킴세쿠/키메세쿠")
+	assert.Contains(t, rules, "キメセクの巣→약물 섹스의 소굴")
+	assert.Contains(t, rules, "タイパを気にし過ぎる→시간 효율을 지나치게 따지는")
+	assert.Contains(t, rules, "금지: 페더 손가락 핸드잡")
+	assert.Contains(t, rules, "금지: 러브호텔 물바다")
+	assert.Contains(t, rules, "금지: 야리만")
+	assert.Contains(t, rules, "逆ナンドライブ→남자를 헌팅하는 드라이브")
+	assert.Contains(t, rules, "use 음행 only for clear legal misconduct")
+	assert.Contains(t, rules, "금지: 말뚝박기 피스톤")
 }
 
 func TestKoreanJAVPromptTranslatesTetsumanAsExplicitSlang(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
-	assert.Contains(t, rules, "鉄マン is explicit JAV slang")
-	assert.Contains(t, rules, "translate it as 강철 보지")
-	assert.Contains(t, rules, "never transliterate it as 철맨")
-	assert.Contains(t, rules, "秘技教本 → 비법 교본")
-	assert.Contains(t, rules, "never 생하메, 생삽입")
+	assert.Contains(t, rules, "鉄マン→강철 보지")
+	assert.Contains(t, rules, "금지: 철맨")
+	assert.Contains(t, rules, "秘技教本→비법 교본")
+	assert.Contains(t, rules, "금지: 생하메/생삽입")
 }
 
 func TestKoreanJAVPromptCoversNewMissTranslationTerms(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
 	for _, expected := range []string{
-		"never use the literal 늪",
-		"never the objectifying dictionary calque 편리한",
-		"枕営業 means 성상납",
-		"never transliterate it as 농교",
-		"never the dictionary calque 색백",
-		"never the stacked calque 미거유",
-		"エロかわ and エロ可愛い mean 야하고 귀여운",
-		"乳首エステ means 유두 마사지",
-		"舐めテク and ハンドテク mean 혀 테크닉 and 손 테크닉",
-		"僕の身代わりに means 나 대신",
-		"never transliterate it as 바쿠누키",
-		"挟射 means ejaculation while held between the breasts",
-		"おま○こよわよわ → 보지 허접",
+		"slang-suffix 沼→푹 빠지는|헤어나올 수 없는",
+		"금지: 편리한/조건 좋은",
+		"枕営業→성상납",
+		"금지: 농교",
+		"금지: 색백",
+		"금지: 미거유",
+		"エロかわ/エロ可愛い→야하고 귀여운",
+		"乳首エステ→유두 마사지",
+		"舐めテク/ハンドテク→혀 테크닉/손 테크닉",
+		"僕の身代わりに→나 대신",
+		"금지: 바쿠누키",
+		"挟射→가슴 사이에 끼워 사정",
+		"おま○こよわよわ→보지 허접",
+		"マンスジ→보지 윤곽",
+		"title 食い込みマンスジ→옷 위로 선명한 보지 윤곽",
+		"금지: 옷이 끼어 도드라진 보지 윤곽",
+		"彼女のお姉ちゃんの→여자친구 언니의",
+		"Title 無自覚透け乳首→무방비 유두",
+		"여자친구 언니의 무방비 유두와 옷 위로 선명한 보지 윤곽! 더블 유혹에 참지 못한 폭주 피스톤!",
+		"開花宣言→벚꽃 개화 발표",
+		"紙パン→종이 팬티",
+		"万引き→절도|좀도둑질",
+		"女子○生→여고생",
+		"我慢汁→쿠퍼액",
+		"性感開発→성감 개발",
+		"敏感なのに更に性感開発→민감한데 성감 개발까지 더해져",
 	} {
 		assert.Contains(t, rules, expected)
 	}
+	assert.Less(t, len(rules), 18000)
+}
+
+func TestBuildLLMTranslationPrompts_AlwaysIncludesCompressedKoreanRules(t *testing.T) {
+	texts := []string{
+		"彼女のお姉ちゃんの無自覚透け乳首と食い込みマンスジのW誘惑",
+		"開花宣言が出た途端、上司の一声でお花見をすることになった。森に惹かれていく七緒。カラダの関係だけがエスカレートしていく。",
+		"我慢汁も精液もドッバドバ 手加減無し20発ぶっこ抜き",
+	}
+	systemPrompt, _, err := buildLLMTranslationPromptsWithMarkers(
+		"ja",
+		"ko",
+		texts,
+		[]string{"<<<title[0]>>>", "<<<description[0]>>>", "<<<title[1]>>>"},
+	)
+	require.NoError(t, err)
+
+	for _, expected := range []string{
+		"マンスジ→보지 윤곽",
+		"開花宣言→벚꽃 개화 발표",
+		"上司の一声→상사의 한마디",
+		"惹かれていく→점점 마음이 끌리다",
+		"エスカレートしていく→점점 깊어지다",
+		"我慢汁→쿠퍼액",
+		"ドッバドバ→콸콸",
+		"手加減無し→봐주지 않는",
+		"鉄マン→강철 보지",
+		"桃尻/桃Siri→애플힙",
+	} {
+		assert.Contains(t, systemPrompt, expected)
+	}
+	assert.Less(t, len(systemPrompt), 20000)
 }
 
 func TestBuildLLMQualityReviewPromptIncludesSourceCandidateAndStrictOutput(t *testing.T) {
@@ -282,10 +329,14 @@ func TestBuildLLMQualityReviewPromptIncludesSourceCandidateAndStrictOutput(t *te
 	require.NoError(t, err)
 	assert.Contains(t, systemPrompt, "mandatory second-pass quality reviewer")
 	assert.Contains(t, systemPrompt, "鉄マン")
+	assert.Contains(t, systemPrompt, "Every original <<<quality_review_...>>> marker is mandatory")
+	assert.Contains(t, systemPrompt, "Never echo [JAPANESE SOURCE] or [KOREAN CANDIDATE]")
 	assert.Contains(t, userPrompt, "[JAPANESE SOURCE]\n鉄マン")
 	assert.Contains(t, userPrompt, "[KOREAN CANDIDATE]\n철맨")
 	assert.Contains(t, userPrompt, "<<<quality_review_title>>>")
 	assert.NotContains(t, userPrompt, "[corrected Korean]")
+	assert.Equal(t, 1, strings.Count(userPrompt, "<<<quality_review_title>>>"))
+	assert.Contains(t, systemPrompt, "桃尻/桃Siri→애플힙")
 }
 
 func TestSanitizeQualityReviewTextRemovesEchoedOutputLabel(t *testing.T) {
@@ -378,7 +429,7 @@ func (p *splittingQualityReviewProvider) Name() string { return "openai-compatib
 func (p *splittingQualityReviewProvider) Translate(_ context.Context, _, _ string, texts []string) (*translationResult, error) {
 	p.calls = append(p.calls, len(texts))
 	if len(texts) > 1 {
-		return nil, &translationError{Kind: TranslationErrorProvider, Message: "peg-gemma4 format"}
+		return nil, &translationError{Kind: TranslationErrorParse, Message: "first output marker not found"}
 	}
 	return &translationResult{Texts: []string{"검수 성공"}}, nil
 }

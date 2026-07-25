@@ -62,43 +62,25 @@ func TestNew(t *testing.T) {
 }
 
 func TestBuildLLMTranslationPrompts_KoreanJAVStudioRules(t *testing.T) {
-	systemPrompt, _, err := buildLLMTranslationPromptsWithMarkers("ja", "ko", []string{"テスト"}, []string{"<<<title>>>"})
+	systemPrompt, userPrompt, err := buildLLMTranslationPromptsWithMarkers("ja", "ko", []string{"テスト"}, []string{"<<<title>>>"})
 	require.NoError(t, err)
 
 	for _, expected := range []string{
-		"strictly with Japanese adult video (JAV)",
-		"actual AV production studio",
-		"corny, dated",
-		"faithful Hangul transliteration",
-		"never merely spell their Japanese pronunciation",
-		"数珠つなぎ", "たすきリレー", "芋づる式", "ハシゴ酒", "朝までハシゴ酒", "밤새 술집 투어", "never 아침까지 하시고주",
-		"パパ活", "一本釣り", "箱入り娘", "逆指名",
-		"垢抜け", "初々しい", "玄人肌", "中出し", "顔射", "ぶっかけ", "個撮", "개인촬영", "ハメ撮り", "汁男優",
-		"パイパンま〇こ", "백보지", "never 무모 소중이", "소중이", "まんこ", "보지", "チンポ", "자지",
-		"おま●こ", "マン汁", "애액", "never 보짓물", "クンニ", "보빨", "never 쿤니", "アクメ", "절정", "never 아크메",
-		"レ×プ", "강간", "never 레프", "デカチン", "巨根", "대물", "never 대물 자지", "왕자지", "デカチン緩急ピストン → 대물 완급 피스톤",
-		"compressed headline style", "short, forceful noun phrases", "~을 조절하는",
-		"ご開帳", "手取り足取り", "骨抜き", "毒牙", "生殺し",
-		"middle dot ・", "never turn it into a comma",
-		"顔騎 → 안면기승", "never 페이스시팅", "足コキ → 풋잡", "never 발코키",
-		"生ハメ → 노콘", "生ハメ中出し → 노콘 질내사정", "シコサポ", "자위 서포트",
-		"媚薬 → 최음제", "never 피임약", "キメセク", "never 킴세쿠",
-		"雑魚チ●ポ → 허접 자지", "never 잡어 자지", "喰い意地爆発", "욕정 폭발",
-		"むしゃぶりつく", "never use the food-like adverb 게걸스럽게",
-		"みあたん → 미아짱", "never 미아탄", "자지 저작",
+		"Japanese adult video (JAV) metadata and AV-studio metadata",
+		"actual studio use",
+		"concise contemporary titles",
+		"Translate ordinary Japanese, idioms, transparent compounds, and sound words by meaning",
+		"Never invent, anglicize, or substitute a different performer name",
+		"never shorten or translate it or turn kanji into emoji",
+		"middle dot ・",
+		"Protected tokens of the form ⟦N⟧",
 	} {
 		assert.Contains(t, systemPrompt, expected)
 	}
-	assert.NotContains(t, systemPrompt, "sensual marketing copy")
-	assert.NotContains(t, systemPrompt, "パパ活 → 파파카츠")
-	assert.NotContains(t, systemPrompt, "ぶっかけ → 부카케")
-	assert.Contains(t, systemPrompt, "bracketed 個撮 must become [개인촬영], never [POV]")
-	assert.Contains(t, systemPrompt, "パイパンま〇こから溢れ出る精子 → 백보지에서 흘러넘치는 정액")
-	assert.Contains(t, systemPrompt, "マン汁 and 本気マン汁 → 애액 (never 보짓물)")
-	assert.Contains(t, systemPrompt, "クンニ and クンニリングス → 보빨")
-	assert.Contains(t, systemPrompt, "アクメ → 절정 or 오르가슴")
-	assert.Contains(t, systemPrompt, "デカチン and 巨根 → 대물")
-	assert.NotContains(t, systemPrompt, "むしゃぶりつく →")
+	assert.Contains(t, systemPrompt, "数珠つなぎ→릴레이|연속")
+	assert.Contains(t, systemPrompt, "鉄マン→강철 보지")
+	assert.NotContains(t, userPrompt, "[translation]")
+	assert.Equal(t, 1, strings.Count(userPrompt, "<<<title>>>"))
 }
 
 func TestBuildLLMTranslationPrompts_KoreanRulesAreTargetSpecific(t *testing.T) {
@@ -106,7 +88,7 @@ func TestBuildLLMTranslationPrompts_KoreanRulesAreTargetSpecific(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, systemPrompt, "Korean JAV rules")
 	assert.NotContains(t, systemPrompt, "질내사정")
-	assert.Contains(t, systemPrompt, "strictly with Japanese adult video (JAV)")
+	assert.Contains(t, systemPrompt, "Japanese adult video (JAV) metadata")
 }
 
 // =============================================================================

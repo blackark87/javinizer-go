@@ -720,6 +720,35 @@ She says "It's forceful..." but looks happy while being teased.`
 		assert.Contains(t, err.Error(), "first output marker not found")
 	})
 
+	t.Run("recovers structured multi-item quality review prompt echo", func(t *testing.T) {
+		input := `[JAPANESE SOURCE]
+原題
+[KOREAN CANDIDATE]
+교정된 제목
+
+[JAPANESE SOURCE]
+説明
+[KOREAN CANDIDATE]
+교정된 설명`
+
+		got, err := parseLLMTranslationPayload(input, []string{"<<<quality_review_title>>>", "<<<quality_review_description>>>"})
+		require.NoError(t, err)
+		require.Len(t, got, 2)
+		assert.Equal(t, "교정된 제목", sanitizeQualityReviewText(got[0]))
+		assert.Equal(t, "교정된 설명", sanitizeQualityReviewText(got[1]))
+	})
+
+	t.Run("rejects incomplete multi-item quality review prompt echo", func(t *testing.T) {
+		input := `[JAPANESE SOURCE]
+原題
+[KOREAN CANDIDATE]
+교정된 제목`
+
+		_, err := parseLLMTranslationPayload(input, []string{"<<<quality_review_title>>>", "<<<quality_review_description>>>"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "first output marker not found")
+	})
+
 	t.Run("requires marker for ordinary single-item translation", func(t *testing.T) {
 		_, err := parseLLMTranslationPayload("hello", []string{"<<<title>>>"})
 		require.Error(t, err)

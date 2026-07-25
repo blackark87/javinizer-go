@@ -59,6 +59,10 @@ func parseLLMTranslationPayload(payload string, markerSpec any) ([]string, error
 		// marker format while requests now use semantic field labels.
 		fallback := indexedTranslationMarkers(len(markers))
 		if len(fallback) == 0 || !strings.Contains(cleaned, fallback[0]) {
+			if reviewed, ok := parseUnmarkedQualityReviewBlocks(cleaned, markers); ok {
+				logging.Debugf("Translation: recovered %d quality-review items from a structured prompt echo", len(reviewed))
+				return reviewed, nil
+			}
 			// Some models omit the requested marker when reviewing only one output
 			// slot. In that unambiguous review case, treat the whole response as the
 			// slot; ordinary translations and multi-slot reviews still require their
@@ -77,6 +81,44 @@ func parseLLMTranslationPayload(payload string, markerSpec any) ([]string, error
 	}
 	logging.Debugf("Translation: parseLLMTranslationPayload parsed %d compact tagged items", len(parsed))
 	return parsed, nil
+}
+
+func parseUnmarkedQualityReviewBlocks(payload string, markers []string) ([]string, bool) {
+	if len(markers) < 2 {
+		return nil, false
+	}
+	for _, marker := range markers {
+		if !strings.HasPrefix(marker, "<<<quality_review_") {
+			return nil, false
+		}
+	}
+
+	const (
+		sourceLabel    = "[japanese source]"
+		candidateLabel = "[korean candidate]"
+	)
+	lower := strings.ToLower(payload)
+	starts := markerStartPositions(lower, sourceLabel)
+	if len(starts) != len(markers) || strings.TrimSpace(payload[:starts[0]]) != "" {
+		return nil, false
+	}
+
+	blocks := make([]string, len(starts))
+	for i, start := range starts {
+		end := len(payload)
+		if i+1 < len(starts) {
+			end = starts[i+1]
+		}
+		block := strings.TrimSpace(payload[start:end])
+		lowerBlock := strings.ToLower(block)
+		if strings.Count(lowerBlock, sourceLabel) != 1 ||
+			strings.Count(lowerBlock, candidateLabel) != 1 ||
+			strings.Index(lowerBlock, candidateLabel) <= strings.Index(lowerBlock, sourceLabel) {
+			return nil, false
+		}
+		blocks[i] = block
+	}
+	return blocks, true
 }
 
 func parseCompactTranslationPayload(payload string, markerSpec any) ([]string, error) {

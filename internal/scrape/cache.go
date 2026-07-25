@@ -27,6 +27,9 @@ func (s *Scraper) tryCache(ctx context.Context, cmd ScrapeCmd, actressRepo datab
 	if err != nil {
 		if !database.IsNotFound(err) {
 			logging.Debugf("[scrape] Cache lookup failed for %s: %v", cmd.MovieID, err)
+			if cmd.RefreshTranslationOnly {
+				return failedResult(cmd.MovieID, fmt.Sprintf("translation-only cache lookup failed for %s: %v", cmd.MovieID, err), startTime)
+			}
 		}
 		return nil
 	}

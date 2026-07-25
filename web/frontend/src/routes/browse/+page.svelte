@@ -965,7 +965,7 @@
 						/>
 						<div class="flex-1">
 							<span class="text-sm font-medium">Refresh Translation Only</span>
-							<p class="text-xs text-muted-foreground">Re-translate cached metadata without fetching scrapers or artwork</p>
+							<p class="text-xs text-muted-foreground">Re-translate cached metadata; if cache is missing, run a full scrape</p>
 						</div>
 					</label>
 

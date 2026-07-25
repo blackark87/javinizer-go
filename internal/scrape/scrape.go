@@ -402,11 +402,9 @@ func (s *Scraper) Scrape(ctx context.Context, cmd ScrapeCmd, progress ProgressFu
 	}
 
 	if cmd.RefreshTranslationOnly {
-		return failedResult(
-			cmd.MovieID,
-			fmt.Sprintf("translation-only refresh requires cached metadata for %s", cmd.MovieID),
-			startTime,
-		), nil
+		logging.Infof("[scrape] No cached metadata for %s; falling back from translation-only refresh to a general scrape", cmd.MovieID)
+		prog(progress, ProgressStepScrape, 0.1, "No cached metadata; falling back to a general scrape")
+		cmd.RefreshTranslationOnly = false
 	}
 
 	prog(progress, ProgressStepScrape, 0.2, "Querying scrapers...")

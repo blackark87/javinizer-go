@@ -247,7 +247,7 @@ describe('/browse D4 — sessionStorage hydrate + Manual Scrape checkbox', () =>
 });
 
 describe('/browse — translation-only refresh', () => {
-	it('clears conflicting scrape options and submits a cache-only translation request', async () => {
+	it('clears conflicting scrape options and submits a translation-first request with scrape fallback', async () => {
 		const { findByText, getByText, getByRole, getByLabelText } = renderPage();
 		await findByText('a.mp4');
 		await fireEvent.click(getByText('a.mp4'));
@@ -259,7 +259,7 @@ describe('/browse — translation-only refresh', () => {
 		expect(forceCheckbox.checked).toBe(true);
 
 		const translationOnlyCheckbox = getByLabelText(
-			/Re-translate cached metadata without fetching scrapers or artwork/
+			/Re-translate cached metadata; if cache is missing, run a full scrape/
 		) as HTMLInputElement;
 		await fireEvent.click(translationOnlyCheckbox);
 

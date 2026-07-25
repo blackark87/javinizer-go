@@ -215,15 +215,46 @@ func TestScrape_CacheMiss_Scrapes(t *testing.T) {
 	assert.Equal(t, "TEST-001", result.Movie.ID)
 }
 
-func TestScrape_RefreshTranslationOnlyCacheMissDoesNotQueryScrapers(t *testing.T) {
+func TestScrape_RefreshTranslationOnlyCacheMissFallsBackToGeneralScrape(t *testing.T) {
 	f := newFixture(t)
 	provider := &mockScraper{
 		name:    "mock",
 		enabled: true,
-		result:  &models.ScraperResult{ID: "TEST-001", Title: "Should not be fetched"},
+		result:  &models.ScraperResult{ID: "TEST-001", Title: "Fresh metadata", Maker: "Test Studio", Source: "mock"},
 	}
 	f.registry.RegisterInstance(provider)
 	f.cfg.Scrapers.Priority = []string{"mock"}
+	s := f.build()
+	var progressMessages []string
+
+	result, err := s.Scrape(context.Background(), ScrapeCmd{
+		MovieID:                "TEST-001",
+		RefreshTranslationOnly: true,
+	}, func(_ ProgressStep, _ float64, message string) {
+		progressMessages = append(progressMessages, message)
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, StatusCompleted, result.Status)
+	require.NotNil(t, result.Movie)
+	assert.Equal(t, "Fresh metadata", result.Movie.Title)
+	assert.False(t, result.Cached)
+	assert.False(t, result.RefreshTranslationOnly)
+	assert.Equal(t, 1, provider.callCount)
+	assert.Contains(t, progressMessages, "No cached metadata; falling back to a general scrape")
+}
+
+func TestScrape_RefreshTranslationOnlyCacheLookupErrorDoesNotFallback(t *testing.T) {
+	f := newFixture(t)
+	provider := &mockScraper{
+		name:    "mock",
+		enabled: true,
+		result:  &models.ScraperResult{ID: "TEST-001", Title: "Should not be fetched", Source: "mock"},
+	}
+	f.registry.RegisterInstance(provider)
+	f.cfg.Scrapers.Priority = []string{"mock"}
+	f.withMockOverrides(nil, nil, errors.New("database unavailable"))
 	s := f.build()
 
 	result, err := s.Scrape(context.Background(), ScrapeCmd{
@@ -234,7 +265,8 @@ func TestScrape_RefreshTranslationOnlyCacheMissDoesNotQueryScrapers(t *testing.T
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Equal(t, StatusFailed, result.Status)
-	assert.Contains(t, result.Message, "requires cached metadata")
+	assert.Contains(t, result.Message, "cache lookup failed")
+	assert.Contains(t, result.Message, "database unavailable")
 	assert.Zero(t, provider.callCount)
 }
 

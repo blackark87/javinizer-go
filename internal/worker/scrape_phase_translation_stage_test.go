@@ -68,6 +68,23 @@ func (w *cachedTranslationWorkflow) TranslateScrapeResult(_ context.Context, _ *
 	return &workflow.OrchestrationMeta{}, nil
 }
 
+type translationFallbackWorkflow struct {
+	stubWorkflow
+	translateCalls int32
+}
+
+func (w *translationFallbackWorkflow) Scrape(_ context.Context, cmd scrape.ScrapeCmd, _ scrape.ProgressFunc) (*scrape.ScrapeResult, *workflow.OrchestrationMeta, error) {
+	result := makeScrapeResult(cmd.MovieID)
+	result.Cached = false
+	result.RefreshTranslationOnly = false
+	return result, &workflow.OrchestrationMeta{}, nil
+}
+
+func (w *translationFallbackWorkflow) TranslateScrapeResult(_ context.Context, _ *scrape.ScrapeResult, _ string) (*workflow.OrchestrationMeta, error) {
+	atomic.AddInt32(&w.translateCalls, 1)
+	return &workflow.OrchestrationMeta{}, nil
+}
+
 type failingTranslationWorkflow struct {
 	stubWorkflow
 }
@@ -118,6 +135,36 @@ func TestScrapePhase_TranslationOnlyCacheHitSkipsPosterGeneration(t *testing.T) 
 	result := inputs.Updater.(*stubUpdater).getResult(file)
 	require.NotNil(t, result)
 	assert.False(t, result.PosterGenerated)
+	assert.Equal(t, models.JobStatusCompleted, result.Status)
+}
+
+func TestScrapePhase_TranslationOnlyCacheMissFallbackGeneratesPoster(t *testing.T) {
+	const file = "ABC-001.mp4"
+	wf := &translationFallbackWorkflow{}
+	posterGen := &countingPosterGenerator{}
+	inputs := scrapePhaseInputs{
+		JobID:                  "translation-fallback-job",
+		Concurrency:            concurrencyConfig{MaxWorkers: 1},
+		WF:                     wf,
+		Matcher:                &stubMatcher{result: "ABC-001"},
+		PosterGen:              posterGen,
+		FileMatchInfo:          map[string]models.FileMatchInfo{file: {Path: file, MovieID: "ABC-001"}},
+		DeferredTranslation:    true,
+		TranslationConcurrency: 1,
+		Broadcaster:            &stubBroadcaster{},
+		Updater:                newStubUpdater(),
+		Lifecycle:              &stubLifecycle{},
+	}
+
+	NewScrapePhase().Run(context.Background(), inputs, []string{file}, ScrapePhaseConfig{
+		RefreshTranslationOnly: true,
+	})
+
+	assert.Equal(t, int32(1), atomic.LoadInt32(&wf.translateCalls))
+	assert.Equal(t, int32(1), atomic.LoadInt32(&posterGen.calls))
+	result := inputs.Updater.(*stubUpdater).getResult(file)
+	require.NotNil(t, result)
+	assert.True(t, result.PosterGenerated)
 	assert.Equal(t, models.JobStatusCompleted, result.Status)
 }
 

@@ -4917,7 +4917,7 @@ const docTemplate = `{
                     "example": "conservative"
                 },
                 "refresh_translation_only": {
-                    "description": "Re-translate DB-cached metadata without querying scrapers or regenerating artwork",
+                    "description": "Re-translate DB-cached metadata; fall back to a general scrape when cache is missing",
                     "type": "boolean",
                     "example": false
                 },

@@ -7,6 +7,7 @@
 	import Button from '$lib/components/ui/Button.svelte';
 	import { apiClient } from '$lib/api/client';
 	import type { Actress } from '$lib/api/types';
+	import { shouldToggleCardFromClick, shouldToggleCardFromKey } from './card-selection';
 
 	let {
 		actresses,
@@ -35,13 +36,33 @@
 	// stale onerror display:none from a prior failed load.
 	let actressImgErrors = $state<Set<string | undefined>>(new Set());
 	$effect(() => { actresses; actressImgErrors = new Set(); });
+
+	function handleCardClick(event: MouseEvent, actress: Actress) {
+		if (!actress.id || !shouldToggleCardFromClick(event.target)) return;
+		onToggleSelection(actress);
+	}
+
+	function handleCardKeydown(event: KeyboardEvent, actress: Actress) {
+		if (!actress.id || !shouldToggleCardFromKey(event)) return;
+		event.preventDefault();
+		onToggleSelection(actress);
+	}
 </script>
 
 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
 	{#each actresses as actress, index (`${actress.id ?? 'na'}-${index}`)}
 		<div animate:flip={{ duration: 220, easing: quintOut }} in:fly|local={{ y: 10, duration: 220, delay: itemDelay(index), easing: quintOut }}>
-			<Card class="p-3 h-full {isSelected(actress) ? 'ring-2 ring-primary' : ''}">
-				<div class="flex items-start gap-3 h-full">
+			<Card class="h-full {isSelected(actress) ? 'ring-2 ring-primary' : ''}">
+				<div
+					class="flex h-full cursor-pointer items-start gap-3 rounded-lg p-3 outline-none transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+					role="checkbox"
+					aria-checked={isSelected(actress)}
+					aria-disabled={!actress.id}
+					aria-label={`Select ${getDisplayName(actress)} for merge`}
+					tabindex={actress.id ? 0 : -1}
+					onclick={(event) => handleCardClick(event, actress)}
+					onkeydown={(event) => handleCardKeydown(event, actress)}
+				>
 					<div class="pt-1">
 						<input
 							type="checkbox"

@@ -421,6 +421,57 @@ definitions:
         example: /path/to
         type: string
     type: object
+  github_com_javinizer_javinizer-go_internal_api_contracts.CompletedContentItem:
+    properties:
+      actresses:
+        items:
+          $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_models.Actress'
+        type: array
+      content_id:
+        example: 300mium00985
+        type: string
+      cropped_poster_url:
+        type: string
+      display_title:
+        type: string
+      latest_job_id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      movie_id:
+        example: MIUM-985
+        type: string
+      organized_at:
+        example: "2026-07-26T12:00:00Z"
+        type: string
+      original_title:
+        type: string
+      paths:
+        example:
+        - /media/MIUM-985/MIUM-985.mp4
+        items:
+          type: string
+        type: array
+      poster_url:
+        type: string
+      title:
+        type: string
+    type: object
+  github_com_javinizer_javinizer-go_internal_api_contracts.CompletedContentListResponse:
+    properties:
+      contents:
+        items:
+          $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.CompletedContentItem'
+        type: array
+      limit:
+        example: 20
+        type: integer
+      offset:
+        example: 0
+        type: integer
+      total:
+        example: 42
+        type: integer
+    type: object
   github_com_javinizer_javinizer-go_internal_api_contracts.DataSource:
     properties:
       confidence:
@@ -4796,6 +4847,46 @@ paths:
       summary: Autocomplete directory path
       tags:
       - web
+  /api/v1/completed-content:
+    get:
+      description: List successfully organized content grouped by movie, searchable
+        by title or actress
+      parameters:
+      - description: Search title, movie ID, path, or actress name
+        in: query
+        name: q
+        type: string
+      - default: 20
+        description: Maximum number of movies to return
+        in: query
+        maximum: 100
+        minimum: 1
+        name: limit
+        type: integer
+      - default: 0
+        description: Number of movies to skip
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.CompletedContentListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse'
+      summary: List completed content
+      tags:
+      - jobs
   /api/v1/config:
     get:
       description: Retrieve the current server configuration including all settings

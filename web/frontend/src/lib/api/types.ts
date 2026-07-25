@@ -1315,6 +1315,33 @@ export interface OperationListResponse {
 	total: number;
 }
 
+export interface CompletedContentItem {
+	movie_id: string;
+	content_id?: string;
+	display_title?: string;
+	title?: string;
+	original_title?: string;
+	poster_url?: string;
+	cropped_poster_url?: string;
+	actresses: Actress[];
+	paths: string[];
+	latest_job_id: string;
+	organized_at: string;
+}
+
+export interface CompletedContentListParams {
+	q?: string;
+	limit?: number;
+	offset?: number;
+}
+
+export interface CompletedContentListResponse {
+	contents: CompletedContentItem[];
+	total: number;
+	limit: number;
+	offset: number;
+}
+
 export interface RevertResultResponse {
 	job_id: string;
 	status: string;

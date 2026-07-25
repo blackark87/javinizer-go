@@ -9,6 +9,7 @@ import (
 // router group, guarding :id routes with ValidateJobID.
 func RegisterRoutes(protected *gin.RouterGroup, deps JobDeps) {
 	protected.GET("/jobs", listJobs(deps))
+	protected.GET("/completed-content", listCompletedContent(deps))
 
 	// All routes with :id param are protected by ValidateJobID middleware
 	// to prevent path traversal when jobID is used in filesystem operations.

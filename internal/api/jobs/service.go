@@ -18,12 +18,13 @@ import (
 // routing through one-line pass-through methods, eliminating the
 // indirection layer that JobQueryService provided.
 type JobDeps struct {
-	JobRepo         database.JobRepositoryInterface
-	BatchFileOpRepo database.BatchFileOperationRepositoryInterface
-	JobStore        worker.JobStoreInterface
-	Reverter        history.BatchReverter // Per D-10: interface, not concrete *history.Reverter
-	EventEmitter    eventlog.EventEmitter
-	AllowRevert     bool
+	JobRepo              database.JobRepositoryInterface
+	BatchFileOpRepo      database.BatchFileOperationRepositoryInterface
+	CompletedContentRepo database.CompletedContentRepositoryInterface
+	JobStore             worker.JobStoreInterface
+	Reverter             history.BatchReverter // Per D-10: interface, not concrete *history.Reverter
+	EventEmitter         eventlog.EventEmitter
+	AllowRevert          bool
 }
 
 // NewJobDeps creates a JobDeps from individual dependencies.
@@ -35,13 +36,15 @@ func NewJobDeps(
 	eventEmitter eventlog.EventEmitter,
 	allowRevert bool,
 ) JobDeps {
+	completedContentRepo, _ := batchFileOpRepo.(database.CompletedContentRepositoryInterface)
 	return JobDeps{
-		JobRepo:         jobRepo,
-		BatchFileOpRepo: batchFileOpRepo,
-		JobStore:        jobStore,
-		Reverter:        reverter,
-		EventEmitter:    eventEmitter,
-		AllowRevert:     allowRevert,
+		JobRepo:              jobRepo,
+		BatchFileOpRepo:      batchFileOpRepo,
+		CompletedContentRepo: completedContentRepo,
+		JobStore:             jobStore,
+		Reverter:             reverter,
+		EventEmitter:         eventEmitter,
+		AllowRevert:          allowRevert,
 	}
 }
 

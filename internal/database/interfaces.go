@@ -166,6 +166,14 @@ type BatchFileOperationRepositoryInterface interface {
 	CountRevertedByBatchJobIDs(ctx context.Context, jobIDs []string) (map[string]int64, error)
 }
 
+// CompletedContentRepositoryInterface provides the read model used by the
+// completed-content library screen. It is intentionally separate from
+// BatchFileOperationRepositoryInterface so revert-focused test doubles do not
+// need to implement listing and search behavior.
+type CompletedContentRepositoryInterface interface {
+	ListCompletedContent(ctx context.Context, query string, limit, offset int) ([]CompletedContent, int64, error)
+}
+
 // ApiTokenRepositoryInterface defines the contract for API token operations
 type ApiTokenRepositoryInterface interface {
 	Create(ctx context.Context, token *models.ApiToken) error

@@ -369,6 +369,9 @@ class APIClient {
 	}
 
 	// Organized jobs
+	async listCompletedContent(params?: Parameters<JobsClient['listCompletedContent']>[0]) {
+		return this.organizedJobs.listCompletedContent(params);
+	}
 	async listOrganizedJobs(params?: Parameters<JobsClient['listOrganizedJobs']>[0]) {
 		return this.organizedJobs.listOrganizedJobs(params);
 	}

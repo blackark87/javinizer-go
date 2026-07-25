@@ -56,7 +56,7 @@ func TestRunMigrationsOnStartup_UpgradesLegacyFeatureV12(t *testing.T) {
 	currentProvider := newMigrationProvider(t, sqlDB)
 	currentVersion, err := currentProvider.GetDBVersion(context.Background())
 	require.NoError(t, err)
-	assert.Equal(t, int64(16), currentVersion)
+	assert.Equal(t, int64(17), currentVersion)
 
 	assertSchemaColumn(t, db, "jobs", "operation_mode_override", true)
 	assertSchemaColumn(t, db, "movies", "original_cover_url", true)
@@ -70,6 +70,7 @@ func TestRunMigrationsOnStartup_UpgradesLegacyFeatureV12(t *testing.T) {
 	assertSchemaColumn(t, db, "actress_aliases", "alias_actress_id", true)
 	assertSchemaColumn(t, db, "actress_aliases", "canonical_actress_id", true)
 	assertSchemaColumn(t, db, "actresses", "reading", true)
+	assertSchemaIndex(t, db, "idx_bfo_revert_movie_created", true)
 
 	var translation struct {
 		ID           uint
@@ -114,13 +115,14 @@ func TestRunMigrationsOnStartup_UpgradesUpstreamV11(t *testing.T) {
 	require.NoError(t, db.RunMigrationsOnStartup(context.Background()))
 	version, err := provider.GetDBVersion(context.Background())
 	require.NoError(t, err)
-	assert.Equal(t, int64(16), version)
+	assert.Equal(t, int64(17), version)
 	assertSchemaColumn(t, db, "movie_translations", "actresses", true)
 	assertSchemaColumn(t, db, "actress_translations", "settings_hash", true)
 	assertSchemaTable(t, db, "actress_sync_jobs", true)
 	assertSchemaColumn(t, db, "actress_aliases", "alias_actress_id", true)
 	assertSchemaColumn(t, db, "actress_aliases", "canonical_actress_id", true)
 	assertSchemaColumn(t, db, "actresses", "reading", true)
+	assertSchemaIndex(t, db, "idx_bfo_revert_movie_created", true)
 }
 
 func legacyFeatureV12Filesystem(t *testing.T) fs.FS {
@@ -167,4 +169,14 @@ func assertSchemaTable(t *testing.T, db *DB, table string, want bool) {
 	var count int64
 	require.NoError(t, db.Raw(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&count).Error)
 	assert.Equal(t, want, count == 1, "%s presence", table)
+}
+
+func assertSchemaIndex(t *testing.T, db *DB, index string, want bool) {
+	t.Helper()
+	var count int64
+	require.NoError(t, db.Raw(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?`,
+		index,
+	).Scan(&count).Error)
+	assert.Equal(t, want, count == 1, "%s presence", index)
 }

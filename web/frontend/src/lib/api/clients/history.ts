@@ -7,6 +7,8 @@ import type {
 	JobListResponse,
 	JobListItem,
 	OperationListResponse,
+	CompletedContentListParams,
+	CompletedContentListResponse,
 	RevertResultResponse,
 	EventListResponse,
 	EventListParams,
@@ -49,6 +51,17 @@ export class HistoryClient extends BaseClient {
 
 // JobsClient handles the organized-jobs listing endpoint (separate from batch jobs).
 export class JobsClient extends BaseClient {
+	async listCompletedContent(
+		params?: CompletedContentListParams,
+	): Promise<CompletedContentListResponse> {
+		const queryParams = new URLSearchParams();
+		if (params?.q) queryParams.set('q', params.q);
+		if (params?.limit) queryParams.set('limit', params.limit.toString());
+		if (params?.offset) queryParams.set('offset', params.offset.toString());
+		const query = queryParams.toString() ? `?${queryParams}` : '';
+		return this.request<CompletedContentListResponse>(`/api/v1/completed-content${query}`);
+	}
+
 	async listOrganizedJobs(params?: {
 		status?: string;
 		limit?: number;

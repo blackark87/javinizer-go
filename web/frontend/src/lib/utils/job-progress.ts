@@ -45,6 +45,30 @@ export function isTerminalStatus(status: string | null | undefined): boolean {
 	return TERMINAL_STATUSES.has(status.toLowerCase());
 }
 
+// A persisted terminal job state is authoritative over stale WebSocket frames.
+// Browsers can miss the final aggregate frame during a reconnect, leaving their
+// last in-memory message at pending/running even though the DB-backed REST
+// response already says the job finished.
+export function resolveJobActivityStatus(
+	websocketStatus: string | null | undefined,
+	persistedStatus: string | null | undefined,
+): string {
+	if (isTerminalStatus(persistedStatus)) return persistedStatus!.toLowerCase();
+	return websocketStatus?.toLowerCase() ?? '';
+}
+
+export function isJobActivityActive(
+	latest: ProgressMessage,
+	messagesByFile: Record<string, ProgressMessage> | undefined,
+	persistedStatus: string | null | undefined,
+): boolean {
+	if (isTerminalStatus(persistedStatus)) return false;
+	if (!isTerminalStatus(latest.status)) return true;
+	return messagesByFile
+		? Object.values(messagesByFile).some((message) => !isTerminalStatus(message.status))
+		: false;
+}
+
 /**
  * Compute overall job progress as a percentage (0–100).
  *

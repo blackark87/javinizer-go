@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { computeJobProgress, isTerminalStatus, nextOrganizeProgress } from './job-progress';
+import {
+	computeJobProgress,
+	isJobActivityActive,
+	isTerminalStatus,
+	nextOrganizeProgress,
+	resolveJobActivityStatus,
+} from './job-progress';
 import type { ProgressMessage } from '$lib/api/types';
 
 function makeMessage(overrides: Partial<ProgressMessage> = {}): ProgressMessage {
@@ -95,6 +101,29 @@ describe('isTerminalStatus: organize/update phase-complete aggregates', () => {
 		});
 		expect(isTerminalStatus(latest.status)).toBe(true);
 		expect(!isTerminalStatus(latest.status)).toBe(false);
+	});
+});
+
+describe('persisted job activity reconciliation', () => {
+	it('uses a DB-backed terminal status over a stale running WebSocket frame', () => {
+		const latest = makeMessage({ job_id: '5b9bd74d', status: 'pending' });
+
+		expect(resolveJobActivityStatus(latest.status, 'completed')).toBe('completed');
+		expect(isJobActivityActive(latest, { [latest.file_path]: latest }, 'completed')).toBe(false);
+	});
+
+	it('keeps a genuinely running persisted job active', () => {
+		const latest = makeMessage({ status: 'running' });
+
+		expect(resolveJobActivityStatus(latest.status, 'running')).toBe('running');
+		expect(isJobActivityActive(latest, { [latest.file_path]: latest }, 'running')).toBe(true);
+	});
+
+	it('still detects an in-flight file when no persisted status is available', () => {
+		const latest = makeMessage({ status: 'success' });
+		const pending = makeMessage({ file_path: '/path/to/pending.mkv', status: 'pending' });
+
+		expect(isJobActivityActive(latest, { [pending.file_path]: pending }, undefined)).toBe(true);
 	});
 });
 
@@ -228,7 +257,7 @@ describe('computeJobProgress', () => {
 		function organizeMessages(done: number): Record<string, ProgressMessage> {
 			// 'done' terminal files at Progress:100 (organized) + one in-flight
 			// 'Organizing <file>' pending file at Progress:0 (the verbose per-file
-		// start message from OnFileOrganizeStart). Mirrors the live messagesByFile.
+			// start message from OnFileOrganizeStart). Mirrors the live messagesByFile.
 			const msgs: Record<string, ProgressMessage> = {};
 			for (let i = 0; i < done; i++) {
 				msgs[organizeFiles[i]] = makeMessage({
@@ -263,9 +292,9 @@ describe('computeJobProgress', () => {
 			let prev = 0;
 			for (let done = 1; done <= 10; done++) {
 				const isRunning = done < 10;
-			const result = computeJobProgress(organizeMessages(done), 10, 0, isRunning, done);
-			expect(result).toBeGreaterThanOrEqual(prev);
-			prev = result;
+				const result = computeJobProgress(organizeMessages(done), 10, 0, isRunning, done);
+				expect(result).toBeGreaterThanOrEqual(prev);
+				prev = result;
 			}
 			expect(prev).toBe(100);
 		});

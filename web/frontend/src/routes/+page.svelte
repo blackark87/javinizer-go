@@ -23,8 +23,14 @@
 	import Card from '$lib/components/ui/Card.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import { apiClient } from '$lib/api/client';
+	import { createBatchJobsQuery } from '$lib/query/queries';
 	import { websocketStore } from '$lib/stores/websocket';
-	import { isTerminalStatus, computeJobProgress } from '$lib/utils/job-progress';
+	import {
+		isJobActivityActive,
+		isTerminalStatus,
+		computeJobProgress,
+		resolveJobActivityStatus
+	} from '$lib/utils/job-progress';
 	import type { HealthResponse, HistoryRecord, HistoryStats, ProgressMessage } from '$lib/api/types';
 
 	const STORAGE_KEY_INPUT = 'javinizer_input_path';
@@ -68,12 +74,15 @@
 		staleTime: 30_000
 	}));
 
+	const batchJobsQuery = createBatchJobsQuery();
+
 	let health = $derived(healthQuery.data ?? null);
 	let stats = $derived(statsQuery.data ?? null);
 	let recentRuns = $derived(recentRunsQuery.data?.records ?? []);
 	let historyWindow = $derived(historyWindowQuery.data?.records ?? []);
 	let actressTotal = $derived(actressCountQuery.data?.total ?? null);
 	let currentWorkingDirectory = $derived(cwdQuery.data?.path ?? '');
+	let persistedBatchJobs = $derived(batchJobsQuery.data?.jobs ?? []);
 
 	let inputPath = $state('');
 	let outputPath = $state('');
@@ -89,7 +98,8 @@
 			recentRunsQuery.isPending &&
 			historyWindowQuery.isPending &&
 			actressCountQuery.isPending &&
-			cwdQuery.isPending
+			cwdQuery.isPending &&
+			batchJobsQuery.isPending
 	);
 
 	let refreshing = $derived(
@@ -99,7 +109,8 @@
 				recentRunsQuery.isFetching ||
 				historyWindowQuery.isFetching ||
 				actressCountQuery.isFetching ||
-				cwdQuery.isFetching)
+				cwdQuery.isFetching ||
+				batchJobsQuery.isFetching)
 	);
 
 	let dashboardError = $derived.by(() => {
@@ -109,10 +120,11 @@
 			recentRunsQuery.error,
 			historyWindowQuery.error,
 			actressCountQuery.error,
-			cwdQuery.error
+			cwdQuery.error,
+			batchJobsQuery.error
 		].filter(Boolean);
 		if (errors.length === 0) return null;
-		if (errors.length === 6) return 'Unable to load dashboard data.';
+		if (errors.length === 7) return 'Unable to load dashboard data.';
 		return `Loaded with ${errors.length} partial error${errors.length > 1 ? 's' : ''}.`;
 	});
 
@@ -127,6 +139,9 @@
 
 
 	const wsState = $derived($websocketStore);
+	const persistedJobsById = $derived.by(
+		() => new Map(persistedBatchJobs.map((job) => [job.id, job]))
+	);
 	const recentRunCount = $derived(recentRuns.length);
 	const releaseVersion = $derived(health?.version ?? 'unknown');
 
@@ -150,6 +165,19 @@
 		if (wsState.messages.length === 0) return null;
 		return wsState.messages[wsState.messages.length - 1];
 	});
+	const latestPersistedJob = $derived(
+		latestActivity ? persistedJobsById.get(latestActivity.job_id) : undefined
+	);
+	const latestActivityStatus = $derived(
+		resolveJobActivityStatus(latestActivity?.status, latestPersistedJob?.status)
+	);
+	const latestActivityMessage = $derived.by(() => {
+		if (!latestActivity) return '';
+		if (latestPersistedJob && isTerminalStatus(latestPersistedJob.status) && !isTerminalStatus(latestActivity.status)) {
+			return `Job finished: ${latestPersistedJob.completed} completed, ${latestPersistedJob.failed} failed`;
+		}
+		return latestActivity.message;
+	});
 
 	// Overall (monotonic) progress for the latest activity's job, so the Home
 	// "Current Activity" bar advances 0→100 for BOTH scrape and organize/update
@@ -169,21 +197,26 @@
 		const latest = latestActivity;
 		if (!latest) return 0;
 		const jobId = latest.job_id;
+		const persistedJob = persistedJobsById.get(jobId);
+		const terminalPersistedJob =
+			persistedJob && isTerminalStatus(persistedJob.status) ? persistedJob : undefined;
 
 		// Derive authoritative job-level totals from the newest WS message that
 		// carries them (scan backwards). Invariant #1: NEVER use
 		// Object.values(files).length / msgs.length as total — that is the
 		// iter-6 MAJOR. The only exception is the early-window fallback below.
-		let totalFiles = 0;
-		let completed = 0;
-		let failed = 0;
-		for (let i = wsState.messages.length - 1; i >= 0; i--) {
-			const m = wsState.messages[i];
-			if (m.job_id === jobId && typeof m.total_files === 'number' && m.total_files > 0) {
-				totalFiles = m.total_files;
-				completed = m.completed ?? 0;
-				failed = m.failed ?? 0;
-				break;
+		let totalFiles = terminalPersistedJob?.total_files ?? 0;
+		let completed = terminalPersistedJob?.completed ?? 0;
+		let failed = terminalPersistedJob?.failed ?? 0;
+		if (!terminalPersistedJob) {
+			for (let i = wsState.messages.length - 1; i >= 0; i--) {
+				const m = wsState.messages[i];
+				if (m.job_id === jobId && typeof m.total_files === 'number' && m.total_files > 0) {
+					totalFiles = m.total_files;
+					completed = m.completed ?? 0;
+					failed = m.failed ?? 0;
+					break;
+				}
 			}
 		}
 
@@ -201,15 +234,10 @@
 
 		// isRunning: the job has any non-terminal in-flight file, OR the latest
 		// status is pending/running (job-level message before per-file rows exist).
-		let isRunning = false;
-		if (filesForJob) {
-			isRunning = Object.values(filesForJob).some((m) => !isTerminalStatus(m.status));
-		}
-		if (!isRunning && (latest.status === 'pending' || latest.status === 'running')) {
-			isRunning = true;
-		}
+		const isRunning = isJobActivityActive(latest, filesForJob, persistedJob?.status);
 
-		return computeJobProgress(filesForJob, totalFiles, latest.progress, isRunning, completed + failed);
+		const restProgress = terminalPersistedJob?.progress ?? latest.progress;
+		return computeJobProgress(filesForJob, totalFiles, restProgress, isRunning, completed + failed);
 	});
 
 	// Clamped view of latestActivityProgress so the bar width and the label
@@ -239,16 +267,11 @@
 
 		let active = 0;
 		for (const [jobId, latest] of latestByJob) {
-			// Active if the latest message is non-terminal, OR any per-file row is
-			// still in flight (defensive: a per-file 'pending' can coexist with a
-			// recent non-terminal aggregate before the terminal frame lands).
-			let hasActive = !isTerminalStatus(latest.status);
-			if (!hasActive) {
-				const files = wsState.messagesByFile[jobId];
-				if (files) {
-					hasActive = Object.values(files).some((status) => !isTerminalStatus(status.status));
-				}
-			}
+			const hasActive = isJobActivityActive(
+				latest,
+				wsState.messagesByFile[jobId],
+				persistedJobsById.get(jobId)?.status
+			);
 			if (hasActive) active += 1;
 		}
 
@@ -400,12 +423,12 @@
 								<Activity class="h-4 w-4 text-primary" />
 								<span class="font-medium">Job {latestActivity.job_id.slice(0, 8)}</span>
 							</div>
-							<p class="text-sm text-muted-foreground line-clamp-2">{latestActivity.message}</p>
+							<p class="text-sm text-muted-foreground line-clamp-2">{latestActivityMessage}</p>
 							<div class="h-2 rounded-full bg-muted overflow-hidden">
 								<div class="h-full bg-primary transition-all duration-300" style="width: {latestActivityProgressPercent}%"></div>
 							</div>
 							<div class="flex items-center justify-between text-xs text-muted-foreground">
-								<span>Status: {latestActivity.status}</span>
+								<span>Status: {latestActivityStatus}</span>
 								<span>{latestActivityProgressPercent.toFixed(0)}%</span>
 							</div>
 							<div class="flex gap-2 pt-1">

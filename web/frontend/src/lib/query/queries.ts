@@ -29,7 +29,7 @@ export function createBatchJobsQuery() {
 		// hasRunningJobs; this is its query-level replacement, so the list no
 		// longer freezes mid-run when started from elsewhere.
 		refetchInterval: (query) =>
-			query.state.data?.jobs?.some((j) => j.status?.toLowerCase() === 'running') ? 5_000 : false,
+			query.state.data?.jobs?.some((j) => !isTerminalStatus(j.status)) ? 5_000 : false,
 	}));
 }
 

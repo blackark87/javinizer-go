@@ -385,7 +385,7 @@ func TestKoreanJAVPromptCoversERK091FC2AndSIRO5432(t *testing.T) {
 		"EXACT 小柄マンコ貫かれ→아담한 그녀의 보지가 꿰뚫리고",
 		"濃厚ぶっかけ→진한 정액 세례",
 		"レビュー特典→리뷰 작성 특전",
-		"オホ声→오호 신음",
+		"オホ声→거친 신음",
 		"体重37キロの逸材→체중 37kg의 대어",
 		"EXACT 見た目とは真逆の超清楚な経験人数3人の彼女とお泊まりSeX→겉모습과 정반대로 남자 경험이 3명뿐인 초청순녀와 숙박 섹스",
 		"爆美女→초미녀≠폭녀",
@@ -397,6 +397,7 @@ func TestKoreanJAVPromptCoversERK091FC2AndSIRO5432(t *testing.T) {
 	} {
 		assert.Contains(t, rules, expected)
 	}
+	assert.NotContains(t, rules, "オホ声→오호 신음")
 	assert.NotContains(t, rules, "性癖→성적 취향")
 	assert.Less(t, utf8.RuneCountInString(rules), 10000)
 }

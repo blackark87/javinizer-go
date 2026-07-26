@@ -3,6 +3,7 @@ package scrape
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/javinizer/javinizer-go/internal/database"
@@ -12,6 +13,8 @@ import (
 )
 
 const actressResolverScraperName = "sougouwiki"
+
+var dmmSourceContentIDPattern = regexp.MustCompile(`(?i)(?:/cid=|[?&]id=)([a-z0-9_-]+)`)
 
 // resolveMissingActresses asks the dedicated actress resolver when the regular
 // results contain no cast or at least one actress without a verified DMM
@@ -38,7 +41,8 @@ func (s *Scraper) resolveMissingActresses(ctx context.Context, movieID string, r
 		}
 	}
 
-	resolved, err := callActressResolver(ctx, resolver, movieID)
+	resolverMovieID := exactActressResolverMovieID(movieID, results)
+	resolved, err := callActressResolver(ctx, resolver, resolverMovieID)
 	if err != nil {
 		return nil, &models.ScraperError{Scraper: actressResolverScraperName, Cause: err}
 	}
@@ -54,6 +58,37 @@ func (s *Scraper) resolveMissingActresses(ctx context.Context, movieID string, r
 	inheritResolvedActressAssets(resolved, results)
 	s.enrichResolvedActressProfiles(ctx, resolved)
 	return resolved, nil
+}
+
+// exactActressResolverMovieID retains DMM's numeric distributor prefix when it
+// is present in the source URL. Prefixes such as 118JAC and 390JAC identify
+// different products even though both normalize to JAC-024; discarding them
+// can attach a verified performer from an unrelated movie.
+func exactActressResolverMovieID(movieID string, results []*models.ScraperResult) string {
+	for _, result := range results {
+		if result == nil || !strings.EqualFold(strings.TrimSpace(result.Source), "dmm") {
+			continue
+		}
+		match := dmmSourceContentIDPattern.FindStringSubmatch(strings.TrimSpace(result.SourceURL))
+		if len(match) < 2 {
+			continue
+		}
+		contentID := strings.TrimSpace(match[1])
+		if hasNumericDistributorPrefix(contentID) {
+			return contentID
+		}
+	}
+	return movieID
+}
+
+func hasNumericDistributorPrefix(value string) bool {
+	value = strings.TrimSpace(value)
+	index := 0
+	for index < len(value) && value[index] >= '0' && value[index] <= '9' {
+		index++
+	}
+	return index > 0 && index < len(value) &&
+		((value[index] >= 'a' && value[index] <= 'z') || (value[index] >= 'A' && value[index] <= 'Z'))
 }
 
 func resolvePrimaryCastIdentities(

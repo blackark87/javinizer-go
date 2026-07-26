@@ -228,6 +228,18 @@ func (r *ActressRepository) ListAll(ctx context.Context) ([]models.Actress, erro
 	return r.BaseRepository.ListAll(ctx)
 }
 
+// ListByIDs returns actress rows in stable ID order.
+func (r *ActressRepository) ListByIDs(ctx context.Context, ids []uint) ([]models.Actress, error) {
+	if len(ids) == 0 {
+		return []models.Actress{}, nil
+	}
+	var actresses []models.Actress
+	if err := r.GetDB().WithContext(ctx).Where("id IN ?", ids).Order("id ASC").Find(&actresses).Error; err != nil {
+		return nil, wrapDBErr("find", "actresses by IDs", err)
+	}
+	return actresses, nil
+}
+
 // ListMissingMetadataIDs returns stable actress IDs missing a verified DMM ID
 // or profile thumbnail. It is used to seed explicit actress-sync jobs.
 func (r *ActressRepository) ListMissingMetadataIDs() ([]uint, error) {

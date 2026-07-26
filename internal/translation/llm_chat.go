@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -67,6 +68,8 @@ type qualityReviewItem struct {
 const llmCompletionMarker = "<<<JZ_DONE>>>"
 
 const defaultLLMRequestTimeout = 120 * time.Second
+
+var jac024TailPromptPattern = regexp.MustCompile(`極選エロギャル([0-9０-９]+|⟦[0-9]+⟧)名([0-9０-９]+|⟦[0-9]+⟧)分`)
 
 // llmRequestContext gives each outbound LLM request its own timeout budget.
 // The parent context still propagates caller cancellation, but time spent by a
@@ -187,6 +190,15 @@ func koreanBatchPromptConstraints(targetLang string, sources []string) string {
 	hasOppaiMankoPhrase := false
 	hasReverseBunnyBusiness := false
 	hasEighteenWorks := false
+	hasWarikiri := false
+	hasHiddenYenRecruitment := false
+	hasWarikiriHiddenYenRecruitment := false
+	hasBlackHairSujiPaipan := false
+	hasSujiPaipan := false
+	hasGyarushibeChoja := false
+	hasIntroductionChain := false
+	hasGokusen := false
+	jac024TailRule := ""
 	for _, source := range sources {
 		if strings.Contains(source, "逆レ") ||
 			strings.Contains(source, "レイプ") ||
@@ -208,6 +220,38 @@ func koreanBatchPromptConstraints(targetLang string, sources []string) string {
 		if strings.Contains(source, "18作品") {
 			hasEighteenWorks = true
 		}
+		if strings.Contains(source, "ワリキリ") || strings.Contains(source, "割り切り") {
+			hasWarikiri = true
+		}
+		if strings.Contains(source, "裏￥募集") {
+			hasHiddenYenRecruitment = true
+		}
+		if strings.Contains(source, "ワリキリ裏￥募集") {
+			hasWarikiriHiddenYenRecruitment = true
+		}
+		if strings.Contains(source, "黒髪清楚系スジパイパン") {
+			hasBlackHairSujiPaipan = true
+		}
+		if strings.Contains(source, "スジパイパン") {
+			hasSujiPaipan = true
+		}
+		if strings.Contains(source, "ギャルしべ長者") {
+			hasGyarushibeChoja = true
+		}
+		if strings.Contains(source, "数珠つなぎ") && strings.Contains(source, "紹介") {
+			hasIntroductionChain = true
+		}
+		if strings.Contains(source, "極選") {
+			hasGokusen = true
+		}
+		if match := jac024TailPromptPattern.FindStringSubmatch(source); len(match) == 3 {
+			jac024TailRule = fmt.Sprintf(
+				"HIGHEST PRIORITY exact tail: %s→엄선한 야한 갸루 %s명, %s분; copy the spacing and comma exactly",
+				match[0],
+				match[1],
+				match[2],
+			)
+		}
 	}
 	if hasDirectionCheck {
 		constraints.WriteString("BATCH DIRECTION CHECK: In each Japanese source, レイプ/レ×プ/レ〇プ/レ○プ/レ●プ without an immediately preceding 逆 must be 강간, never 역강간. Correct a wrong 역강간 in the candidate. Only an explicit 逆レ/逆レイプ may be 역강간.\n")
@@ -226,6 +270,32 @@ func koreanBatchPromptConstraints(targetLang string, sources []string) string {
 	}
 	if hasOppaiManko {
 		termChecks = append(termChecks, "never append the Japanese original in parentheses or insert Latin fragments")
+	}
+	if hasWarikiriHiddenYenRecruitment {
+		termChecks = append(termChecks, "ワリキリ裏￥募集→비밀 조건만남 모집, 금지: 와리키리/뒷 ￥/뒷돈 모집/조건만남 비밀 조건만남 모집")
+	} else {
+		if hasWarikiri {
+			termChecks = append(termChecks, "ワリキリ/割り切り→조건만남, 금지: 와리키리")
+		}
+		if hasHiddenYenRecruitment {
+			termChecks = append(termChecks, "裏￥募集→비밀 조건만남 모집, 금지: 뒷 ￥/뒷돈 모집")
+		}
+	}
+	if hasBlackHairSujiPaipan {
+		termChecks = append(termChecks, "HIGHEST PRIORITY exact phrase: 黒髪清楚系スジパイパン→흑발 청순녀의 선명한 백보지; copy this Korean phrase verbatim in both translation and review, 금지: 흑발 청순계 백보지/검은 머리 청순계 스지 백보지/머리 청순계/스지 백보지")
+	} else if hasSujiPaipan {
+		termChecks = append(termChecks, "スジパイパン→보지 라인이 선명한 백보지|선명한 백보지, 금지: 스지 백보지")
+	}
+	if hasGyarushibeChoja {
+		termChecks = append(termChecks, "ギャルしべ長者→갸루시베 장자, 금지: 갸루 시베초자/갸루시베초자")
+	}
+	if hasIntroductionChain {
+		termChecks = append(termChecks, "소개 문맥 数珠つなぎ→줄줄이 소개|연쇄 소개, 금지: 구슬/염주/릴레이 소개")
+	}
+	if jac024TailRule != "" {
+		termChecks = append(termChecks, jac024TailRule)
+	} else if hasGokusen {
+		termChecks = append(termChecks, "極選→엄선, 금지: 극선/엄선한 극상")
 	}
 	if len(termChecks) > 0 {
 		_, _ = fmt.Fprintf(&constraints, "BATCH TERM CHECK: %s.\n", strings.Join(termChecks, "; "))

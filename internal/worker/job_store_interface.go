@@ -84,10 +84,16 @@ type JobStoreInterface interface {
 	CleanupStaleTempDirs(ctx context.Context) (int, error)
 
 	// SetReconstructionDeps sets the infrastructure dependencies (matcher,
-	// posterGen, batchCfg) used when reconstructing jobs from the database.
+	// posterGen, batchCfg, actress translation queue) used when reconstructing
+	// jobs from the database.
 	// Called by APIRuntime after the BatchJobFactory is built, since these deps
 	// are not available at NewJobStore time. Also re-hydrates already-loaded jobs.
-	SetReconstructionDeps(m matcher.MatcherInterface, pg poster.PosterGenerator, batchCfg BatchJobConfig)
+	SetReconstructionDeps(
+		m matcher.MatcherInterface,
+		pg poster.PosterGenerator,
+		batchCfg BatchJobConfig,
+		queueActressSync func(context.Context, []uint) error,
+	)
 }
 
 // Compile-time assertion that JobStore satisfies JobStoreInterface.

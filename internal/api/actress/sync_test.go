@@ -13,6 +13,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/api/core"
 	"github.com/javinizer/javinizer-go/internal/api/testkit"
 	"github.com/javinizer/javinizer-go/internal/config"
+	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -46,24 +47,37 @@ func performActressSyncAPIJSONRequest(router *gin.Engine, method, path, body str
 
 func TestListActressSyncCandidates(t *testing.T) {
 	router, deps, _ := newActressSyncAPITest(t)
+	cfg := deps.CoreDeps.GetConfig()
+	cfg.Metadata.Translation.Enabled = true
+	cfg.Metadata.Translation.Fields.Actresses = true
+	cfg.Metadata.Translation.TargetLanguage = "ko"
+	cfg.Metadata.Translation.TargetLanguages = nil
 	actresses := []*models.Actress{
 		{DMMID: 1, JapaneseName: "Complete", ThumbURL: "complete.jpg"},
 		{DMMID: 0, JapaneseName: "Missing ID", ThumbURL: "id.jpg"},
 		{DMMID: 2, JapaneseName: "Missing thumbnail"},
+		{DMMID: 3, JapaneseName: "Missing translation", ThumbURL: "translation.jpg"},
 	}
 	for _, actress := range actresses {
 		require.NoError(t, deps.Repos.ActressRepo.Create(context.Background(), actress))
+	}
+	translationRepo := database.NewActressTranslationRepository(deps.CoreDeps.DB)
+	for _, actress := range actresses[:3] {
+		require.NoError(t, translationRepo.Upsert(context.Background(), &models.ActressTranslation{
+			ActressID: actress.ID, Language: "ko", DisplayName: "번역 이름",
+		}))
 	}
 
 	response := performActressSyncAPIRequest(router, http.MethodGet, "/api/v1/actresses/sync-candidates")
 	assert.Equal(t, http.StatusOK, response.Code)
 	var body actressSyncCandidatesResponse
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
-	assert.Equal(t, []uint{actresses[1].ID, actresses[2].ID}, body.IDs)
-	require.Len(t, body.Actresses, 2)
+	assert.Equal(t, []uint{actresses[1].ID, actresses[2].ID, actresses[3].ID}, body.IDs)
+	require.Len(t, body.Actresses, 3)
 	assert.Equal(t, "Missing ID", body.Actresses[0].JapaneseName)
 	assert.Equal(t, "Missing thumbnail", body.Actresses[1].JapaneseName)
-	assert.Equal(t, 2, body.Total)
+	assert.Equal(t, "Missing translation", body.Actresses[2].JapaneseName)
+	assert.Equal(t, 3, body.Total)
 }
 
 func TestListActressSyncCandidatesDatabaseError(t *testing.T) {

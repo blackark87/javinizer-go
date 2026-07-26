@@ -16,8 +16,8 @@ type actressSyncCandidatesResponse struct {
 }
 
 // listActressSyncCandidates godoc
-// @Summary List actresses missing metadata
-// @Description Return IDs of actresses missing a DMM ID or profile thumbnail
+// @Summary List actresses missing metadata or translation
+// @Description Return IDs of actresses missing a DMM ID, profile thumbnail, or configured actress translation
 // @Tags actress
 // @Produce json
 // @Success 200 {object} actressSyncCandidatesResponse
@@ -30,14 +30,23 @@ func listActressSyncCandidates(rt *core.APIRuntime) gin.HandlerFunc {
 			return
 		}
 		actressRepo := database.NewActressRepository(rt.Deps().CoreDeps.DB)
-		actresses, err := actressRepo.ListMissingMetadata()
+		cfg := rt.Deps().CoreDeps.GetConfig()
+		targetLanguages := []string(nil)
+		if cfg.Metadata.Translation.Enabled && cfg.Metadata.Translation.Fields.Actresses {
+			targetLanguages = append(targetLanguages, cfg.Metadata.Translation.TargetLanguages...)
+			if len(targetLanguages) == 0 {
+				targetLanguages = []string{cfg.Metadata.Translation.TargetLanguage}
+			}
+		}
+		ids, err := actressRepo.ListMissingMetadataOrTranslationIDs(targetLanguages)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 			return
 		}
-		ids := make([]uint, 0, len(actresses))
-		for _, actress := range actresses {
-			ids = append(ids, actress.ID)
+		actresses, err := actressRepo.ListByIDs(c.Request.Context(), ids)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+			return
 		}
 		c.JSON(http.StatusOK, actressSyncCandidatesResponse{IDs: ids, Actresses: actresses, Total: len(ids)})
 	}

@@ -343,17 +343,17 @@ func (s *Service) BuildTranslationPlan(scraped *models.Movie, targetLang, source
 		}
 		return direct, protected, placeholders
 	}
-	protectField := func(value string) (direct, protected string, namePlaceholders, immutablePlaceholders map[string]string) {
+	protectField := func(value string, protectAllNumbers bool) (direct, protected string, namePlaceholders, immutablePlaceholders map[string]string) {
 		direct, protected, namePlaceholders = protectNames(value)
 		if targetLang != "ja" {
-			protected, immutablePlaceholders = protectImmutableMetadataTokens(protected)
+			protected, immutablePlaceholders = protectImmutableMetadataTokens(protected, protectAllNumbers)
 		}
 		return direct, protected, namePlaceholders, immutablePlaceholders
 	}
 
 	if fields.Title {
 		cleaned := prepareTitleForTranslation(scraped.Title, targetLang)
-		direct, protected, placeholders, immutablePlaceholders := protectField(cleaned)
+		direct, protected, placeholders, immutablePlaceholders := protectField(cleaned, true)
 		titleField := "title"
 		if romanized := romanizedByJapaneseName[strings.TrimSpace(cleaned)]; romanized != "" {
 			titleField = "title_as_name"
@@ -379,7 +379,7 @@ func (s *Service) BuildTranslationPlan(scraped *models.Movie, targetLang, source
 		if cleaned == "" && strings.TrimSpace(scraped.Description) != "" {
 			queuePreset("description", scraped.Description, "", -1, true)
 		} else {
-			direct, protected, placeholders, immutablePlaceholders := protectField(cleaned)
+			direct, protected, placeholders, immutablePlaceholders := protectField(cleaned, false)
 			if field := queue("description", protected, -1); field != nil {
 				field.Placeholders = placeholders
 				field.ImmutablePlaceholders = immutablePlaceholders
@@ -685,6 +685,8 @@ type protectedQualityReviewText struct {
 	fallback          string
 	placeholders      map[string]string
 	placeholderCounts map[string]int
+	titleNumbers      []string
+	numericMismatch   bool
 }
 
 func protectQualityReviewActressNames(field QualityReviewField) protectedQualityReviewText {
@@ -701,6 +703,14 @@ func protectQualityReviewActressNames(field QualityReviewField) protectedQuality
 		fallback:          strings.TrimSpace(field.Candidate),
 		placeholders:      make(map[string]string),
 		placeholderCounts: make(map[string]int),
+	}
+	protectAllNumbers := strings.Contains(field.FieldName, "title")
+	if protectAllNumbers {
+		protected.titleNumbers = normalizedNumericValues(source, true)
+		protected.numericMismatch = !equalStringSlices(
+			protected.titleNumbers,
+			normalizedNumericValues(protected.candidate, true),
+		)
 	}
 	for _, actress := range field.Actresses {
 		japanese := strings.TrimSpace(actress.JapaneseName)
@@ -719,23 +729,18 @@ func protectQualityReviewActressNames(field QualityReviewField) protectedQuality
 		protected.placeholders[token] = korean
 		protected.placeholderCounts[token] = strings.Count(protected.candidate, token)
 	}
-	for _, sourceText := range immutableMetadataTokenRE.FindAllString(protected.source, -1) {
-		if sourceText == "" || !strings.Contains(protected.candidate, sourceText) {
-			continue
+	protectMetadata := func(sourceText string) {
+		if sourceText == "" || !containsOutsideProtectedTokens(protected.candidate, sourceText) {
+			return
 		}
-		alreadyProtected := false
 		for token, value := range protected.placeholders {
 			if value != sourceText {
 				continue
 			}
-			protected.source = strings.ReplaceAll(protected.source, sourceText, token)
-			protected.candidate = strings.ReplaceAll(protected.candidate, sourceText, token)
+			protected.source = replaceOutsideProtectedTokens(protected.source, sourceText, token)
+			protected.candidate = replaceOutsideProtectedTokens(protected.candidate, sourceText, token)
 			protected.placeholderCounts[token] = strings.Count(protected.candidate, token)
-			alreadyProtected = true
-			break
-		}
-		if alreadyProtected {
-			continue
+			return
 		}
 		tokenIndex := 8000 + len(protected.placeholders)
 		token := fmt.Sprintf("⟦%d⟧", tokenIndex)
@@ -743,10 +748,16 @@ func protectQualityReviewActressNames(field QualityReviewField) protectedQuality
 			tokenIndex++
 			token = fmt.Sprintf("⟦%d⟧", tokenIndex)
 		}
-		protected.source = strings.ReplaceAll(protected.source, sourceText, token)
-		protected.candidate = strings.ReplaceAll(protected.candidate, sourceText, token)
+		protected.source = replaceOutsideProtectedTokens(protected.source, sourceText, token)
+		protected.candidate = replaceOutsideProtectedTokens(protected.candidate, sourceText, token)
 		protected.placeholders[token] = sourceText
 		protected.placeholderCounts[token] = strings.Count(protected.candidate, token)
+	}
+	for _, sourceText := range immutableMetadataTokenRE.FindAllString(protected.source, -1) {
+		protectMetadata(sourceText)
+	}
+	for _, sourceText := range immutableNumericValues(protected.source, protectAllNumbers) {
+		protectMetadata(sourceText)
 	}
 	return protected
 }
@@ -760,6 +771,10 @@ func (p protectedQualityReviewText) restore(reviewed string) (string, bool) {
 		restored = strings.ReplaceAll(restored, token, actressName)
 	}
 	return restored, true
+}
+
+func (p protectedQualityReviewText) titleNumbersMatch(value string) bool {
+	return len(p.titleNumbers) == 0 || equalStringSlices(p.titleNumbers, normalizedNumericValues(value, true))
 }
 
 // ReviewJAVTranslations performs a mandatory second LLM pass over first-pass JAV translations.
@@ -791,6 +806,9 @@ func (s *Service) ReviewJAVTranslations(ctx context.Context, fields []QualityRev
 		}
 		markers[i] = name
 		protected[i] = protectQualityReviewActressNames(field)
+		if protected[i].numericMismatch {
+			return nil, fmt.Errorf("quality review candidate changed numeric metadata for %s", markers[i])
+		}
 		texts[i] = protected[i].candidate
 		items[i] = qualityReviewItem{Source: protected[i].source, Candidate: protected[i].candidate}
 	}
@@ -823,6 +841,9 @@ func (s *Service) ReviewJAVTranslations(ctx context.Context, fields []QualityRev
 		restored, ok := protected[i].restore(reviewed[i])
 		if !ok {
 			return nil, fmt.Errorf("quality reviewer dropped a protected performer name for %s", markers[i])
+		}
+		if !protected[i].titleNumbersMatch(restored) {
+			return nil, fmt.Errorf("quality reviewer changed numeric metadata for %s", markers[i])
 		}
 		reviewed[i] = restored
 		if strings.Contains(markers[i], "title") {
@@ -930,26 +951,133 @@ func isTitleTranslationField(fieldName string) bool {
 var latinNaturalWordRE = regexp.MustCompile(`[A-Za-z]+`)
 
 var immutableMetadataTokenRE = regexp.MustCompile(`(?i)\b(?:[A-Z0-9]*[A-Z][A-Z0-9]*-[0-9]{2,5}(?:-[A-Z0-9]+)*|case[0-9]+)\b`)
+var protectedPlaceholderTokenRE = regexp.MustCompile(`⟦[0-9]+⟧`)
+var immutableNumericValueRE = regexp.MustCompile(`[0-9０-９]+`)
+var immutableMetadataNumericUnitRE = regexp.MustCompile(`(?i)([0-9０-９]+)[[:space:]]*(?:分|名|歳|才|本|発|回|時間|枚|作品?|年|月|日|cm|％|%)`)
 
-func protectImmutableMetadataTokens(value string) (string, map[string]string) {
+func protectImmutableMetadataTokens(value string, protectAllNumbers bool) (string, map[string]string) {
 	protected := value
 	placeholders := make(map[string]string)
 	tokenByValue := make(map[string]string)
-	for _, sourceText := range immutableMetadataTokenRE.FindAllString(value, -1) {
+	protect := func(sourceText string) {
+		if sourceText == "" || !containsOutsideProtectedTokens(protected, sourceText) {
+			return
+		}
 		token := tokenByValue[sourceText]
 		if token == "" {
 			tokenIndex := 9000 + len(placeholders)
 			token = fmt.Sprintf("⟦%d⟧", tokenIndex)
-			for strings.Contains(value, token) {
+			for strings.Contains(protected, token) {
 				tokenIndex++
 				token = fmt.Sprintf("⟦%d⟧", tokenIndex)
 			}
 			tokenByValue[sourceText] = token
 			placeholders[token] = sourceText
 		}
-		protected = strings.ReplaceAll(protected, sourceText, token)
+		protected = replaceOutsideProtectedTokens(protected, sourceText, token)
+	}
+	for _, sourceText := range immutableMetadataTokenRE.FindAllString(value, -1) {
+		protect(sourceText)
+	}
+	for _, sourceText := range immutableNumericValues(protected, protectAllNumbers) {
+		protect(sourceText)
 	}
 	return protected, placeholders
+}
+
+func immutableNumericValues(value string, all bool) []string {
+	values := make([]string, 0)
+	for _, segment := range outsideProtectedTokenSegments(value) {
+		if all {
+			values = append(values, immutableNumericValueRE.FindAllString(segment, -1)...)
+			continue
+		}
+		for _, match := range immutableMetadataNumericUnitRE.FindAllStringSubmatch(segment, -1) {
+			if len(match) > 1 {
+				values = append(values, match[1])
+			}
+		}
+	}
+	return values
+}
+
+func normalizedNumericValues(value string, all bool) []string {
+	values := immutableNumericValues(value, all)
+	for i := range values {
+		values[i] = normalizeFullwidthDigits(values[i])
+	}
+	return values
+}
+
+func normalizeFullwidthDigits(value string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= '０' && r <= '９' {
+			return '0' + (r - '０')
+		}
+		return r
+	}, value)
+}
+
+func equalStringSlices(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func outsideProtectedTokenSegments(value string) []string {
+	matches := protectedPlaceholderTokenRE.FindAllStringIndex(value, -1)
+	if len(matches) == 0 {
+		return []string{value}
+	}
+	segments := make([]string, 0, len(matches)+1)
+	start := 0
+	for _, match := range matches {
+		if match[0] > start {
+			segments = append(segments, value[start:match[0]])
+		}
+		start = match[1]
+	}
+	if start < len(value) {
+		segments = append(segments, value[start:])
+	}
+	return segments
+}
+
+func containsOutsideProtectedTokens(value, target string) bool {
+	if target == "" {
+		return false
+	}
+	for _, segment := range outsideProtectedTokenSegments(value) {
+		if strings.Contains(segment, target) {
+			return true
+		}
+	}
+	return false
+}
+
+func replaceOutsideProtectedTokens(value, old, replacement string) string {
+	if old == "" {
+		return value
+	}
+	matches := protectedPlaceholderTokenRE.FindAllStringIndex(value, -1)
+	if len(matches) == 0 {
+		return strings.ReplaceAll(value, old, replacement)
+	}
+	var result strings.Builder
+	start := 0
+	for _, match := range matches {
+		result.WriteString(strings.ReplaceAll(value[start:match[0]], old, replacement))
+		result.WriteString(value[match[0]:match[1]])
+		start = match[1]
+	}
+	result.WriteString(strings.ReplaceAll(value[start:], old, replacement))
+	return result.String()
 }
 
 func translationSlotIssue(field TranslationField, targetLang, value string) string {

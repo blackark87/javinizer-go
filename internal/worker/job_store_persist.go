@@ -170,6 +170,7 @@ func (s *JobStore) reconstructBatchJob(dbJob *models.Job) *BatchJob {
 	if !s.reconBatchCfg.isZero() {
 		batchJob.deps.BatchCfg = s.reconBatchCfg
 	}
+	batchJob.deps.QueueActressSync = s.reconQueueActressSync
 	batchJob.mu.Unlock()
 
 	// Inline setOperationModeFromDB: DB reconstruction must not fail on corrupted data.

@@ -15,6 +15,7 @@ var (
 	cjkRegex                     = regexp.MustCompile(`[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]`)
 	conditionalTokenRegex        = regexp.MustCompile(`(?i)<IF:[A-Z_]+(?::[a-zA-Z]{2,5})?>|</IF>`)
 	conditionalControlTokenRegex = regexp.MustCompile(`(?i)<IF:([A-Z_]+(?::[a-zA-Z]{2,5})?)>|<ELSE>|</IF>`)
+	explicitActressCountRegex    = regexp.MustCompile(`([0-9０-９]{1,3})\s*(?:名|명)`)
 )
 
 // DefaultMaxTemplateBytes, DefaultMaxOutputBytes, and DefaultMaxConditionalDepth are the default size and depth limits for template rendering.
@@ -649,13 +650,12 @@ func newListTagRegistry() map[string]tagResolver {
 	registry := make(map[string]tagResolver)
 
 	registry["ACTORS"] = func(ctx *Context) (string, error) {
+		if ctx.GroupActress && hasExplicitMultiActressCount(ctx) {
+			return resolvedGroupActressName(ctx), nil
+		}
 		if len(ctx.Actresses) > 0 {
 			if ctx.GroupActress && len(ctx.Actresses) > 1 {
-				groupName := ctx.GroupActressName
-				if groupName == "" {
-					groupName = "@Group"
-				}
-				return groupName, nil
+				return resolvedGroupActressName(ctx), nil
 			}
 			names := ctx.formatActressNames()
 			return strings.Join(names, listDelimiterSentinel), nil
@@ -681,6 +681,9 @@ func newActressTagRegistry() map[string]tagResolver {
 	actressNameResolver := func(ctx *Context) (string, error) {
 		if ctx.ActressName != "" {
 			return ctx.ActressName, nil
+		}
+		if ctx.GroupActress && hasExplicitMultiActressCount(ctx) {
+			return resolvedGroupActressName(ctx), nil
 		}
 		if len(ctx.ActressDetails) > 0 {
 			return ctx.formatActressName(ctx.ActressDetails[0]), nil
@@ -893,6 +896,9 @@ func (e *Engine) applyCaseModifier(value, modifier string) string {
 // DELIM= keyword for the joiner. It also honours GroupActress substitution
 // (multiple -> @Group, empty/unknown -> @Unknown).
 func (e *Engine) resolveActressListTag(modifier string, ctx *Context) string {
+	if ctx.GroupActress && hasExplicitMultiActressCount(ctx) {
+		return resolvedGroupActressName(ctx)
+	}
 	if len(ctx.Actresses) == 0 && len(ctx.ActressDetails) == 0 {
 		// No actresses at all. Under GroupActress, mirror the original
 		// PowerShell javinizer which substitutes @Unknown when the actress
@@ -916,11 +922,7 @@ func (e *Engine) resolveActressListTag(modifier string, ctx *Context) string {
 
 	if ctx.GroupActress {
 		if len(names) > 1 {
-			groupName := ctx.GroupActressName
-			if groupName == "" {
-				groupName = "@Group"
-			}
-			return groupName
+			return resolvedGroupActressName(ctx)
 		}
 		// Single actress: mirror the original javinizer which substitutes
 		// @Unknown when the only name is unknown or empty.
@@ -961,6 +963,9 @@ func (e *Engine) resolveActressNameTag(modifier string, ctx *Context) string {
 	if ctx.ActressName != "" {
 		return ctx.ActressName
 	}
+	if ctx.GroupActress && hasExplicitMultiActressCount(ctx) {
+		return resolvedGroupActressName(ctx)
+	}
 	pm := e.parseActressModifier(modifier)
 	if ctx.GroupActress {
 		names := e.resolveTranslatedActressNames(pm.languageSpec, ctx)
@@ -972,10 +977,7 @@ func (e *Engine) resolveActressNameTag(modifier string, ctx *Context) string {
 			names = ctx.formatActressNamesLang(preferJa, pm.firstNameOrder)
 		}
 		if len(names) > 1 {
-			if ctx.GroupActressName != "" {
-				return ctx.GroupActressName
-			}
-			return "@Group"
+			return resolvedGroupActressName(ctx)
 		}
 	}
 	if names := e.resolveTranslatedActressNames(pm.languageSpec, ctx); len(names) > 0 {
@@ -1137,6 +1139,42 @@ func languageSpecPrefersJapanese(languageSpec string) bool {
 	for _, lang := range strings.Split(languageSpec, "|") {
 		if strings.EqualFold(strings.TrimSpace(lang), "ja") {
 			return true
+		}
+	}
+	return false
+}
+
+func resolvedGroupActressName(ctx *Context) string {
+	if ctx != nil && ctx.GroupActressName != "" {
+		return ctx.GroupActressName
+	}
+	return "@Group"
+}
+
+// hasExplicitMultiActressCount lets folder templates represent compilation
+// titles whose scraper cast is incomplete or entirely unavailable. A strong
+// metadata phrase such as "3名" is safer than treating one accidentally
+// resolved performer as a complete single-actress cast.
+func hasExplicitMultiActressCount(ctx *Context) bool {
+	if ctx == nil {
+		return false
+	}
+	for _, value := range []string{ctx.OriginalTitle, ctx.Title} {
+		for _, match := range explicitActressCountRegex.FindAllStringSubmatch(value, -1) {
+			if len(match) < 2 {
+				continue
+			}
+			var digits strings.Builder
+			for _, r := range match[1] {
+				if r >= '０' && r <= '９' {
+					r = '0' + (r - '０')
+				}
+				digits.WriteRune(r)
+			}
+			count, err := strconv.Atoi(digits.String())
+			if err == nil && count > 1 {
+				return true
+			}
 		}
 	}
 	return false

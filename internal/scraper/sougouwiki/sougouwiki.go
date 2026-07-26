@@ -532,18 +532,23 @@ func equivalentMovieID(left, right string) bool {
 	if left == right {
 		return true
 	}
-	return stripNumericDistributorPrefix(left) == stripNumericDistributorPrefix(right)
+	leftPrefix, leftBase := splitNumericDistributorPrefix(left)
+	rightPrefix, rightBase := splitNumericDistributorPrefix(right)
+	if leftPrefix != "" && rightPrefix != "" && leftPrefix != rightPrefix {
+		return false
+	}
+	return leftBase == rightBase
 }
 
-func stripNumericDistributorPrefix(value string) string {
+func splitNumericDistributorPrefix(value string) (string, string) {
 	index := 0
 	for index < len(value) && value[index] >= '0' && value[index] <= '9' {
 		index++
 	}
 	if index > 0 && index < len(value) && value[index] >= 'A' && value[index] <= 'Z' {
-		return value[index:]
+		return value[:index], value[index:]
 	}
-	return value
+	return "", value
 }
 
 var (

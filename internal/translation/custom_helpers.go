@@ -261,9 +261,12 @@ func finalizeTitleTranslation(source, translated, targetLang string) string {
 }
 
 var japaneseTitleSeparatorRE = regexp.MustCompile(`[ \t]*ー[ \t]*`)
+var koreanCountRuntimeSeparatorRE = regexp.MustCompile(`([0-9]+명)[ \t]*,?[ \t]*([0-9]+분)`)
 
 func normalizeKoreanTitleSeparators(value string) string {
-	return strings.TrimSpace(japaneseTitleSeparatorRE.ReplaceAllString(value, " - "))
+	value = japaneseTitleSeparatorRE.ReplaceAllString(value, " - ")
+	value = koreanCountRuntimeSeparatorRE.ReplaceAllString(value, "$1, $2")
+	return strings.TrimSpace(value)
 }
 
 func stripVRMarkers(title string) string {

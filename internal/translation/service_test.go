@@ -101,6 +101,94 @@ func TestBuildLLMTranslationPrompts_PBD471OppaiMankoRule(t *testing.T) {
 	assert.NotContains(t, genericUserPrompt, "おっぱいマンコ→가슴 보지")
 }
 
+func TestBuildLLMTranslationPrompts_WarikiriHiddenYenRecruitmentRule(t *testing.T) {
+	source := "＃新・制服娘ワリキリ裏￥募集 01 るか"
+	systemPrompt, userPrompt, err := buildLLMTranslationPromptsWithMarkers(
+		"ja",
+		"ko",
+		[]string{source},
+		[]string{"<<<title>>>"},
+	)
+	require.NoError(t, err)
+
+	assert.NotContains(t, systemPrompt, "ワリキリ裏￥募集")
+	assert.Contains(t, userPrompt, "ワリキリ裏￥募集→비밀 조건만남 모집")
+	assert.Contains(t, userPrompt, "금지: 와리키리/뒷 ￥/뒷돈 모집/조건만남 비밀 조건만남 모집")
+
+	_, reviewUserPrompt, err := buildLLMQualityReviewPromptsWithMarkers(
+		"ko",
+		[]qualityReviewItem{{Source: source, Candidate: "#신·교복녀 와리키리 뒷 ￥ 모집 01 루카"}},
+		[]string{"<<<quality_review_title>>>"},
+	)
+	require.NoError(t, err)
+	assert.Contains(t, reviewUserPrompt, "ワリキリ裏￥募集→비밀 조건만남 모집")
+	assert.Contains(t, reviewUserPrompt, "[KOREAN CANDIDATE]\n#신·교복녀 와리키리 뒷 ￥ 모집 01 루카")
+
+	_, genericUserPrompt, err := buildLLMTranslationPromptsWithMarkers(
+		"ja",
+		"ko",
+		[]string{"ワリキリで会える女の子"},
+		[]string{"<<<title>>>"},
+	)
+	require.NoError(t, err)
+	assert.Contains(t, genericUserPrompt, "ワリキリ/割り切り→조건만남")
+	assert.NotContains(t, genericUserPrompt, "裏￥募集→비밀 조건만남 모집")
+
+	_, unrelatedUserPrompt, err := buildLLMTranslationPromptsWithMarkers(
+		"ja",
+		"ko",
+		[]string{"制服娘 るか"},
+		[]string{"<<<title>>>"},
+	)
+	require.NoError(t, err)
+	assert.NotContains(t, unrelatedUserPrompt, "ワリキリ")
+	assert.NotContains(t, unrelatedUserPrompt, "裏￥募集")
+}
+
+func TestBuildLLMTranslationPrompts_FC2PPV1891491Rule(t *testing.T) {
+	source := "黒髪清楚系スジパイパンの美少女"
+	_, userPrompt, err := buildLLMTranslationPromptsWithMarkers(
+		"ja",
+		"ko",
+		[]string{source},
+		[]string{"<<<title>>>"},
+	)
+	require.NoError(t, err)
+
+	assert.Contains(t, userPrompt, "黒髪清楚系スジパイパン→흑발 청순녀의 선명한 백보지")
+	assert.Contains(t, userPrompt, "금지: 흑발 청순계 백보지/검은 머리 청순계 스지 백보지/머리 청순계/스지 백보지")
+
+	_, unrelatedPrompt, err := buildLLMTranslationPromptsWithMarkers(
+		"ja",
+		"ko",
+		[]string{"黒髪の美少女"},
+		[]string{"<<<title>>>"},
+	)
+	require.NoError(t, err)
+	assert.NotContains(t, unrelatedPrompt, "スジパイパン")
+}
+
+func TestBuildLLMTranslationPrompts_JAC024Rule(t *testing.T) {
+	source := "ギャルしべ長者【中出しギャル×数珠つなぎ紹介】13 極選エロギャル3名245分"
+	_, userPrompt, err := buildLLMTranslationPromptsWithMarkers(
+		"ja",
+		"ko",
+		[]string{source},
+		[]string{"<<<title>>>"},
+	)
+	require.NoError(t, err)
+
+	for _, expected := range []string{
+		"ギャルしべ長者→갸루시베 장자",
+		"소개 문맥 数珠つなぎ→줄줄이 소개|연쇄 소개",
+		"極選エロギャル3名245分→엄선한 야한 갸루 3명, 245분",
+		"금지: 갸루 시베초자/갸루시베초자",
+		"금지: 구슬/염주/릴레이 소개",
+	} {
+		assert.Contains(t, userPrompt, expected)
+	}
+}
+
 func TestBuildLLMTranslationPrompts_KoreanRulesAreTargetSpecific(t *testing.T) {
 	systemPrompt, _, err := buildLLMTranslationPromptsWithMarkers("ja", "en", []string{"テスト"}, []string{"<<<title>>>"})
 	require.NoError(t, err)

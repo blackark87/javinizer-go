@@ -415,14 +415,14 @@ const docTemplate = `{
         },
         "/api/v1/actresses/sync-candidates": {
             "get": {
-                "description": "Return IDs of actresses missing a DMM ID or profile thumbnail",
+                "description": "Return IDs of actresses missing a DMM ID, profile thumbnail, or configured actress translation",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "actress"
                 ],
-                "summary": "List actresses missing metadata",
+                "summary": "List actresses missing metadata or translation",
                 "responses": {
                     "200": {
                         "description": "OK",

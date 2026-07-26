@@ -499,7 +499,12 @@ func TestReconstructBatchJob_RestoresBatchCfgAndPosterGen(t *testing.T) {
 
 	mockRepo := &mockJobRepoForPersist{}
 	jq := NewJobStore(mockRepo, nil, nil, t.TempDir(), nil, nil)
-	jq.SetReconstructionDeps(m, pg, batchCfg)
+	var queued []uint
+	queueActressSync := func(_ context.Context, ids []uint) error {
+		queued = append(queued, ids...)
+		return nil
+	}
+	jq.SetReconstructionDeps(m, pg, batchCfg, queueActressSync)
 
 	dbJob := &models.Job{
 		ID:         "test-recon-infra-deps",
@@ -518,11 +523,13 @@ func TestReconstructBatchJob_RestoresBatchCfgAndPosterGen(t *testing.T) {
 	assert.Equal(t, pg, reconstructed.deps.PosterGen, "reconstructed job should have PosterGen restored")
 	assert.Equal(t, 4, reconstructed.deps.BatchCfg.MaxWorkers, "reconstructed job should have BatchCfg.MaxWorkers restored")
 	assert.True(t, reconstructed.deps.BatchCfg.NFOEnabled, "reconstructed job should have BatchCfg.NFOEnabled restored")
+	require.NotNil(t, reconstructed.deps.QueueActressSync)
+	require.NoError(t, reconstructed.deps.QueueActressSync(context.Background(), []uint{51}))
+	assert.Equal(t, []uint{51}, queued)
 }
 
 // TestSetReconstructionDeps_RehydratesExistingJobs verifies that
 // SetReconstructionDeps sets infrastructure deps on already-loaded jobs
-// (reconstructed at startup before the factory was built), not just on
 // future jobs reconstructed afterwards.
 func TestSetReconstructionDeps_RehydratesExistingJobs(t *testing.T) {
 	t.Parallel()
@@ -550,13 +557,19 @@ func TestSetReconstructionDeps_RehydratesExistingJobs(t *testing.T) {
 	assert.Nil(t, reconstructed.deps.Matcher)
 	assert.Nil(t, reconstructed.deps.PosterGen)
 	assert.False(t, reconstructed.deps.BatchCfg.NFOEnabled)
+	assert.Nil(t, reconstructed.deps.QueueActressSync)
 	reconstructed.mu.RUnlock()
 
 	// Now set reconstruction deps — simulates factory being built after startup
 	m := &stubReconMatcher{}
 	pg := &stubReconPosterGen{}
 	batchCfg := BatchJobConfig{NFOEnabled: true, MaxWorkers: 2}
-	jq.SetReconstructionDeps(m, pg, batchCfg)
+	var queued []uint
+	queueActressSync := func(_ context.Context, ids []uint) error {
+		queued = append(queued, ids...)
+		return nil
+	}
+	jq.SetReconstructionDeps(m, pg, batchCfg, queueActressSync)
 
 	// The existing job should now have the deps set
 	reconstructed.mu.RLock()
@@ -564,4 +577,7 @@ func TestSetReconstructionDeps_RehydratesExistingJobs(t *testing.T) {
 	assert.Equal(t, m, reconstructed.deps.Matcher, "existing job should have Matcher re-hydrated")
 	assert.Equal(t, pg, reconstructed.deps.PosterGen, "existing job should have PosterGen re-hydrated")
 	assert.True(t, reconstructed.deps.BatchCfg.NFOEnabled, "existing job should have BatchCfg re-hydrated")
+	require.NotNil(t, reconstructed.deps.QueueActressSync)
+	require.NoError(t, reconstructed.deps.QueueActressSync(context.Background(), []uint{41, 42}))
+	assert.Equal(t, []uint{41, 42}, queued)
 }

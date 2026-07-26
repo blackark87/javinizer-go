@@ -177,12 +177,12 @@
 		try {
 			const candidates = await apiClient.listActressSyncCandidates();
 			if (candidates.total === 0) {
-				toastStore.success('All actresses already have a DMM ID and profile thumbnail');
+				toastStore.success('All actresses already have complete metadata and translations');
 				return;
 			}
 			const confirmed = await confirmDialog(
-				'Sync Missing Actress Metadata',
-				`Queue ${candidates.total} actress(es) for background sync? Unknown actresses expand into one task per linked movie.`,
+				'Sync Missing Actress Data',
+				`Queue ${candidates.total} actress(es) missing metadata or translation? Unknown actresses expand into one task per linked movie.`,
 				{ confirmLabel: 'Start Sync' },
 			);
 			if (confirmed) await startSyncJob({ scope: 'missing', missing: true });

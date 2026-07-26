@@ -271,6 +271,7 @@ func TestMovieIDEquivalence(t *testing.T) {
 	}{
 		{pageID: "300MIUM-834", query: "MIUM-834", want: true},
 		{pageID: "MIUM-834", query: "300MIUM-834", want: true},
+		{pageID: "390JAC-024", query: "118JAC-024", want: false},
 		{pageID: "300MIUM-835", query: "MIUM-834", want: false},
 		{pageID: "JNT-051", query: "JNT-051", want: true},
 		{pageID: "FC2-PPV-123456", query: "FC2-PPV-123456", want: true},

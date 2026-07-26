@@ -565,7 +565,7 @@ func (r *APIRuntime) buildBatchJobFactory() any {
 	// batchCfg) that were not available at JobStore construction time. This
 	// ensures jobs loaded from DB on startup can run apply/rescrape with the
 	// correct BatchCfg (e.g. NFOEnabled) and PosterGen after restart.
-	r.deps.JobStore.SetReconstructionDeps(matcher, posterGen, workerBatchCfg)
+	r.deps.JobStore.SetReconstructionDeps(matcher, posterGen, workerBatchCfg, r.queueMissingActressTranslations)
 
 	return worker.NewBatchJobFactory(
 		r.deps.JobStore,

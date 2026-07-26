@@ -42,11 +42,13 @@ type JobStore struct {
 	// reconstructionDeps are infrastructure dependencies that reconstructed jobs
 	// (loaded from DB on startup) need for apply/rescrape phases. They are set
 	// after JobStore construction via SetReconstructionDeps, once the
-	// BatchJobFactory (which owns matcher, posterGen, batchCfg) is built.
+	// BatchJobFactory (which owns matcher, posterGen, batchCfg, and API-only
+	// background integrations) is built.
 	// New jobs created via createJob get these from JobConfig.BatchJobDeps instead.
-	reconMatcher   matcher.MatcherInterface
-	reconPosterGen poster.PosterGenerator
-	reconBatchCfg  BatchJobConfig
+	reconMatcher          matcher.MatcherInterface
+	reconPosterGen        poster.PosterGenerator
+	reconBatchCfg         BatchJobConfig
+	reconQueueActressSync func(context.Context, []uint) error
 }
 
 // JobStoreOption configures a JobStore during construction.
@@ -142,11 +144,17 @@ func NewJobStore(jobRepo database.JobRepositoryInterface, batchFileOpRepo databa
 // The method also re-hydrates all already-loaded in-memory jobs so that jobs
 // reconstructed during NewJobStore.loadFromDatabase (before this call) get
 // the same deps as jobs reconstructed afterwards.
-func (s *JobStore) SetReconstructionDeps(m matcher.MatcherInterface, pg poster.PosterGenerator, batchCfg BatchJobConfig) {
+func (s *JobStore) SetReconstructionDeps(
+	m matcher.MatcherInterface,
+	pg poster.PosterGenerator,
+	batchCfg BatchJobConfig,
+	queueActressSync func(context.Context, []uint) error,
+) {
 	s.mu.Lock()
 	s.reconMatcher = m
 	s.reconPosterGen = pg
 	s.reconBatchCfg = batchCfg
+	s.reconQueueActressSync = queueActressSync
 	for _, job := range s.jobs {
 		job.mu.Lock()
 		if m != nil {
@@ -158,6 +166,7 @@ func (s *JobStore) SetReconstructionDeps(m matcher.MatcherInterface, pg poster.P
 		// BatchCfg is a value type (not a pointer), so we always overwrite to
 		// pick up the latest config snapshot.
 		job.deps.BatchCfg = batchCfg
+		job.deps.QueueActressSync = queueActressSync
 		job.mu.Unlock()
 	}
 	s.mu.Unlock()

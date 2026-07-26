@@ -583,15 +583,15 @@ func TestReviewJAVTranslationsCleansPromotionalSourceBeforeSecondPass(t *testing
 }
 
 func TestReviewJAVTranslationsAcceptsFinalTextAfterGemmaPromptEcho(t *testing.T) {
-	candidate := "청춘 교복 미소녀와 보내는 성춘 3SEX. 160분 ⟦7000⟧"
-	provider := &qualityReviewMockProvider{response: "[JAPANESE SOURCE]\nアオハル 制服美少女 160分 ⟦7000⟧\n" +
+	candidate := "청춘 교복 미소녀와 보내는 성춘 ⟦8001⟧SEX. ⟦8002⟧분 ⟦7000⟧"
+	provider := &qualityReviewMockProvider{response: "[JAPANESE SOURCE]\nアオハル 制服美少女 ⟦8001⟧SEX ⟦8002⟧分 ⟦7000⟧\n" +
 		"[KOREAN CANDIDATE]\n" + candidate + "\n\n" +
-		"청춘 교복 미소녀와 보내는 성춘 3SEX. 160분 ⟦7000⟧"}
+		candidate}
 	service := New(Config{Enabled: true, Provider: "openai-compatible", TargetLanguage: "ko"}, provider)
 
 	result, err := service.ReviewJAVTranslations(context.Background(), []QualityReviewField{{
 		FieldName: "quality_review_title",
-		Source:    "アオハル 制服美少女 160分 流川夕",
+		Source:    "アオハル 制服美少女 3SEX 160分 流川夕",
 		Candidate: "청춘 교복 미소녀와 보내는 성춘 3SEX. 160분 루카와 유",
 		Actresses: []models.Actress{{JapaneseName: "流川夕", LastName: "루카와", FirstName: "유"}},
 	}})
@@ -648,6 +648,87 @@ func TestReviewJAVTranslationsProtectsImmutableMetadataTokens(t *testing.T) {
 	require.Len(t, provider.items, 1)
 	assert.Equal(t, "⟦8000⟧ ⟦8001⟧ 原題", provider.items[0].Source)
 	assert.Equal(t, "⟦8000⟧ ⟦8001⟧ 기존 제목", provider.items[0].Candidate)
+}
+
+func TestReviewJAVTranslationsProtectsTitleNumbers(t *testing.T) {
+	provider := &qualityReviewMockProvider{response: "갸루시베 장자 ⟦8000⟧ 엄선한 갸루 ⟦8001⟧명, ⟦8002⟧분"}
+	service := New(Config{Enabled: true, Provider: "openai-compatible", TargetLanguage: "ko"}, provider)
+
+	result, err := service.ReviewJAVTranslations(context.Background(), []QualityReviewField{{
+		FieldName: "quality_review_title",
+		Source:    "ギャルしべ長者 13 極選エロギャル3名245分",
+		Candidate: "갸루시베 장자 13 엄선한 갸루 3명, 245분",
+	}})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"갸루시베 장자 13 엄선한 갸루 3명, 245분"}, result)
+	require.Len(t, provider.items, 1)
+	assert.Equal(t, "ギャルしべ長者 ⟦8000⟧ 極選エロギャル⟦8001⟧名⟦8002⟧分", provider.items[0].Source)
+	assert.Equal(t, "갸루시베 장자 ⟦8000⟧ 엄선한 갸루 ⟦8001⟧명, ⟦8002⟧분", provider.items[0].Candidate)
+}
+
+func TestReviewJAVTranslationsRejectsCandidateWithChangedTitleNumbers(t *testing.T) {
+	provider := &qualityReviewMockProvider{response: "사용되지 않아야 하는 응답"}
+	service := New(Config{Enabled: true, Provider: "openai-compatible", TargetLanguage: "ko"}, provider)
+
+	_, err := service.ReviewJAVTranslations(context.Background(), []QualityReviewField{{
+		FieldName: "quality_review_title",
+		Source:    "極選エロギャル3名245分",
+		Candidate: "엄선한 야한 갸루 3명 2량 245분",
+	}})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "candidate changed numeric metadata")
+	assert.Empty(t, provider.items)
+}
+
+func TestReviewJAVTranslationsRejectsReviewerAddedTitleNumber(t *testing.T) {
+	provider := &qualityReviewMockProvider{response: "엄선한 갸루 ⟦8000⟧명, ⟦8001⟧분 2량"}
+	service := New(Config{Enabled: true, Provider: "openai-compatible", TargetLanguage: "ko"}, provider)
+
+	_, err := service.ReviewJAVTranslations(context.Background(), []QualityReviewField{{
+		FieldName: "quality_review_title",
+		Source:    "極選エロギャル3名245分",
+		Candidate: "엄선한 야한 갸루 3명, 245분",
+	}})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reviewer changed numeric metadata")
+}
+
+func TestBuildTranslationPlanProtectsTitleNumbersAndDescriptionMetadataNumbers(t *testing.T) {
+	service := New(Config{Enabled: true, Fields: fieldsConfig{Title: true, Description: true}})
+	plan := service.BuildTranslationPlan(&models.Movie{
+		Title:       "ギャルしべ長者 13 極選エロギャル3名245分",
+		Description: "1人目を紹介。収録時間は245分。",
+	}, "ko", "ja", "test")
+	require.Len(t, plan.Fields, 2)
+
+	title := plan.Fields[0]
+	assert.NotContains(t, title.Text, "13")
+	assert.NotContains(t, title.Text, "245")
+	assert.ElementsMatch(t, []string{"13", "3", "245"}, mapValues(title.ImmutablePlaceholders))
+
+	description := plan.Fields[1]
+	assert.Contains(t, description.Text, "1人目")
+	assert.NotContains(t, description.Text, "245分")
+	assert.ElementsMatch(t, []string{"245"}, mapValues(description.ImmutablePlaceholders))
+}
+
+func TestNormalizeKoreanTitleSeparatorsFormatsCountAndRuntime(t *testing.T) {
+	assert.Equal(
+		t,
+		"엄선한 야한 갸루 3명, 245분",
+		normalizeKoreanTitleSeparators("엄선한 야한 갸루 3명 245분"),
+	)
+}
+
+func mapValues(values map[string]string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		result = append(result, value)
+	}
+	return result
 }
 
 func TestTranslateMovieRetriesAndRestoresImmutableMetadataTokens(t *testing.T) {

@@ -842,6 +842,30 @@ func TestTemplateEngine_GroupActress(t *testing.T) {
 	}
 }
 
+func TestTemplateEngine_GroupActressUsesExplicitTitleCountWhenCastIsIncomplete(t *testing.T) {
+	engine := NewEngine()
+	const originalTitle = "ギャルしべ長者から極選エロギャル3名245分"
+
+	for _, test := range []struct {
+		name      string
+		actresses []string
+		template  string
+	}{
+		{name: "single incorrectly resolved actress", actresses: []string{"타카미 하루카"}, template: "<ACTORS>"},
+		{name: "no resolved actresses", actresses: nil, template: "<ACTRESS>"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := engine.Execute(test.template, &Context{
+				OriginalTitle: originalTitle,
+				Actresses:     test.actresses,
+				GroupActress:  true,
+			})
+			require.NoError(t, err)
+			assert.Equal(t, "@Group", got)
+		})
+	}
+}
+
 func TestTemplateEngine_FirstNameOrder(t *testing.T) {
 	engine := NewEngine()
 

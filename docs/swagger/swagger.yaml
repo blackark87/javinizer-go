@@ -3930,7 +3930,7 @@ paths:
       - actress
   /api/v1/actresses/sync-candidates:
     get:
-      description: Return IDs of actresses missing a DMM ID or profile thumbnail
+      description: Return IDs of actresses missing a DMM ID, profile thumbnail, or configured actress translation
       produces:
       - application/json
       responses:
@@ -3942,7 +3942,7 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/internal_api_actress.ErrorResponse'
-      summary: List actresses missing metadata
+      summary: List actresses missing metadata or translation
       tags:
       - actress
   /api/v1/actresses/sync-jobs:

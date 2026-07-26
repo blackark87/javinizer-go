@@ -142,6 +142,26 @@ func TestResolveMissingActressesRunsWhenAnyActressLacksVerifiedDMMProfile(t *tes
 	assert.Equal(t, "https://pics.dmm.co.jp/mono/actjpgs/mei.jpg", result.Actresses[0].ThumbURL)
 }
 
+func TestResolveMissingActressesUsesExactDMMDistributorContentID(t *testing.T) {
+	resolver := &actressResolverScraper{
+		name: actressResolverScraperName,
+		err:  models.NewScraperNotFoundError("SougouWiki", "no exact movie match"),
+	}
+	registry := scraperutil.NewScraperRegistry()
+	registry.RegisterInstance(resolver)
+	s := &Scraper{registry: registry}
+
+	result, failure := s.resolveMissingActresses(context.Background(), "jac024", []*models.ScraperResult{{
+		Source:    "dmm",
+		SourceURL: "https://www.dmm.co.jp/mono/dvd/-/detail/=/cid=118jac024/?i3_ref=search",
+		Title:     "ギャルしべ長者 エロギャル3名245分",
+	}})
+
+	assert.Nil(t, result)
+	require.NotNil(t, failure)
+	assert.Equal(t, "118jac024", resolver.resolveID)
+}
+
 func TestScrapePaipanconDescriptiveActressFallsBackToUnknown(t *testing.T) {
 	const movieID = "FC2-PPV-2733270"
 	fixture := newFixture(t).withScraper("paipancon", &models.ScraperResult{

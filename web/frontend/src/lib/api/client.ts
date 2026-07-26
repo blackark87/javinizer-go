@@ -227,6 +227,12 @@ class APIClient {
 	async updateMovie(id: string, movie: Parameters<ScraperClient['updateMovie']>[1]) {
 		return this.scrapers.updateMovie(id, movie);
 	}
+	async reviewMovieTranslation(
+		id: string,
+		request: Parameters<ScraperClient['reviewMovieTranslation']>[1],
+	) {
+		return this.scrapers.reviewMovieTranslation(id, request);
+	}
 	async listMovies(limit?: number, offset?: number) {
 		return this.scrapers.listMovies(limit, offset);
 	}

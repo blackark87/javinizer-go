@@ -278,6 +278,19 @@ export class ScraperClient extends BaseClient {
 		return response.movie;
 	}
 
+	async reviewMovieTranslation(
+		id: string,
+		request: TranslationReviewRequest,
+	): Promise<TranslationReviewResponse> {
+		return this.request<TranslationReviewResponse>(
+			`/api/v1/movies/${encodeURIComponent(id)}/translation-review`,
+			{
+				method: 'POST',
+				body: JSON.stringify(request),
+			},
+		);
+	}
+
 	async listMovies(limit?: number, offset?: number): Promise<{ movies: Movie[]; count: number }> {
 		const params = new URLSearchParams();
 		if (limit) params.set('limit', limit.toString());

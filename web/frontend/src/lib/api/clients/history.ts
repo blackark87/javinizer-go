@@ -56,6 +56,9 @@ export class JobsClient extends BaseClient {
 	): Promise<CompletedContentListResponse> {
 		const queryParams = new URLSearchParams();
 		if (params?.q) queryParams.set('q', params.q);
+		if (params?.actress_id) queryParams.set('actress_id', params.actress_id.toString());
+		if (params?.sort) queryParams.set('sort', params.sort);
+		if (params?.order) queryParams.set('order', params.order);
 		if (params?.limit) queryParams.set('limit', params.limit.toString());
 		if (params?.offset) queryParams.set('offset', params.offset.toString());
 		const query = queryParams.toString() ? `?${queryParams}` : '';

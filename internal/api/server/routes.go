@@ -28,6 +28,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/api/temp"
 	"github.com/javinizer/javinizer-go/internal/api/token"
 	apiversion "github.com/javinizer/javinizer-go/internal/api/version"
+	"github.com/javinizer/javinizer-go/internal/config"
 	historypkg "github.com/javinizer/javinizer-go/internal/history"
 	"github.com/javinizer/javinizer-go/internal/logging"
 
@@ -150,6 +151,9 @@ func registerAPIV1Routes(router *gin.Engine, rt *core.APIRuntime) {
 		movie.WithWorkflow(rt.GetWorkflow),
 		movie.WithAllowedDirs(secCfg.AllowedDirectories),
 		movie.WithPosterGen(posterGenForMovie),
+		movie.WithTranslationConfig(func() config.TranslationConfig {
+			return rt.Snapshot().APIConfig().TranslationConfig
+		}),
 	)
 	tokenSvc := token.NewTokenService(deps.Repos.ApiTokenRepo)
 

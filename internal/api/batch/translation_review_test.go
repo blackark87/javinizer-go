@@ -29,10 +29,10 @@ func TestReviewBatchMovieTranslation_Title(t *testing.T) {
 		requestBodies = append(requestBodies, requestBody)
 		w.Header().Set("Content-Type", "application/json")
 		if strings.Contains(requestBody, "mandatory second-pass quality reviewer") {
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"<<<quality_review_title>>>\n교정 제목"}}]}`))
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"<<<quality_review_title>>>\n교정 제목\n<<<JZ_DONE>>>"}}]}`))
 			return
 		}
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"<<<title>>>\n새 1차 제목"}}]}`))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"<<<title>>>\n새 1차 제목\n<<<JZ_DONE>>>"}}]}`))
 	}))
 	defer llm.Close()
 

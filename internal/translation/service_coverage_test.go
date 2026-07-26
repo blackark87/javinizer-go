@@ -315,11 +315,29 @@ func TestDecodeOpenAIChatTranslation_RejectsTruncatedOutput(t *testing.T) {
 		}]
 	}`)
 
-	result, err := decodeOpenAIChatTranslation("openai-compatible", body, []string{"<<<title>>>"})
+	result, err := decodeOpenAIChatTranslation("openai-compatible", body, []string{"<<<title>>>"}, 4096)
 	require.Error(t, err)
 	require.NotNil(t, result)
 	assert.Equal(t, "<<<title>>>\n불완전한 번역", result.RawLLM)
 	assert.Contains(t, err.Error(), "truncated")
+	assert.Contains(t, err.Error(), "received_chars=")
+	assert.Contains(t, err.Error(), "max_output_tokens=4096")
+}
+
+func TestDecodeOpenAIChatTranslation_RejectsMissingCompletionMarker(t *testing.T) {
+	body := []byte(`{
+		"choices": [{
+			"message": {"content": "<<<title>>>\n중간에서 끊긴 번역"},
+			"finish_reason": "stop"
+		}]
+	}`)
+
+	result, err := decodeOpenAIChatTranslation("openai-compatible", body, []string{"<<<title>>>"}, 2048)
+	require.Error(t, err)
+	require.NotNil(t, result)
+	assert.Contains(t, err.Error(), "missing completion marker <<<JZ_DONE>>>")
+	assert.Contains(t, err.Error(), "received_chars=")
+	assert.Contains(t, err.Error(), "max_output_tokens=2048")
 }
 
 func TestOpenAICompatibleProvider_Translate_MissingModel(t *testing.T) {

@@ -69,7 +69,7 @@ func TestBuildLLMTranslationPrompts_KoreanJAVStudioRules(t *testing.T) {
 		"Japanese adult video (JAV) metadata and AV-studio metadata",
 		"actual studio use",
 		"concise contemporary titles",
-		"Translate ordinary Japanese, idioms, transparent compounds, and sound words by meaning",
+		"Translate language/idioms/compounds/sounds by meaning",
 		"Never invent, anglicize, or substitute a different performer name",
 		"never shorten or translate it or turn kanji into emoji",
 		"middle dot ・",
@@ -1105,7 +1105,7 @@ func TestTranslateWithOpenAI(t *testing.T) {
 
 		_, err := s.translateTexts(context.Background(), "ja", "en", []string{"test"})
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to parse translated output payload")
+		assert.Contains(t, err.Error(), "missing completion marker")
 	})
 }
 
@@ -2113,7 +2113,7 @@ func TestTranslateWithOpenAI_MalformedResponses(t *testing.T) {
 				_ = json.NewEncoder(w).Encode(response)
 			},
 			wantErr:     true,
-			errContains: "failed to parse translated output payload",
+			errContains: "missing completion marker",
 		},
 		{
 			name: "returns_error_for_empty_content",
@@ -2130,7 +2130,7 @@ func TestTranslateWithOpenAI_MalformedResponses(t *testing.T) {
 				_ = json.NewEncoder(w).Encode(response)
 			},
 			wantErr:     true,
-			errContains: "failed to parse translated output payload",
+			errContains: "missing completion marker",
 		},
 	}
 
@@ -2791,6 +2791,7 @@ func TestTranslateWithOpenAICompatible_UsesCompactMarkerPromptAndResponse(t *tes
 Karen
 <<<JZ_1>>>
 She says "It's forceful..." but looks happy while being teased.
+<<<JZ_DONE>>>
 `,
 					},
 				},
@@ -2854,6 +2855,7 @@ func TestTranslateWithOpenAICompatible_ThinkingControls(t *testing.T) {
 						"message": map[string]string{
 							"content": `<<<JZ_0>>>
 translated
+<<<JZ_DONE>>>
 `,
 						},
 					},
@@ -2904,6 +2906,7 @@ translated
 						"message": map[string]string{
 							"content": `<<<JZ_0>>>
 translated
+<<<JZ_DONE>>>
 `,
 						},
 					},
@@ -2953,6 +2956,7 @@ translated
 						"message": map[string]string{
 							"content": `<<<JZ_0>>>
 translated
+<<<JZ_DONE>>>
 `,
 						},
 					},
@@ -2989,6 +2993,53 @@ translated
 		assert.NotContains(t, capturedBody, "reasoning_effort")
 	})
 
+	t.Run("truncated thinking response retries once without thinking", func(t *testing.T) {
+		var thinkingValues []bool
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body map[string]interface{}
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+			thinking, ok := body["enable_thinking"].(bool)
+			require.True(t, ok)
+			thinkingValues = append(thinkingValues, thinking)
+
+			content := "<<<JZ_0>>>\n중간에서 끊긴 번역"
+			if !thinking {
+				content = "<<<JZ_0>>>\n완전한 번역\n<<<JZ_DONE>>>"
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"choices": []map[string]interface{}{{
+					"message":       map[string]string{"content": content},
+					"finish_reason": "stop",
+				}},
+			})
+		}))
+		defer server.Close()
+
+		httpClient := server.Client()
+		cfg := Config{
+			Provider: "openai-compatible",
+			OpenAICompatible: openAICompatibleConfig{
+				BaseURL:        server.URL,
+				Model:          "test-model.gguf",
+				EnableThinking: true,
+				BackendType:    "llama.cpp",
+			},
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
+
+		result, err := s.translateTexts(context.Background(), "ja", "ko", []string{"テスト"})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"완전한 번역"}, result)
+		assert.Equal(t, []bool{true, false}, thinkingValues)
+	})
+
 	t.Run("auto fallback tries another backend control", func(t *testing.T) {
 		requestKinds := make([]string, 0, 2)
 		thinkingEnabled := true
@@ -3010,6 +3061,7 @@ translated
 							"message": map[string]string{
 								"content": `<<<JZ_0>>>
 translated
+<<<JZ_DONE>>>
 `,
 							},
 						},

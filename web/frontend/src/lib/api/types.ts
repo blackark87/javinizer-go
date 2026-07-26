@@ -1331,16 +1331,27 @@ export interface CompletedContentItem {
 	paths: string[];
 	latest_job_id: string;
 	organized_at: string;
+	metadata_created_at?: string;
+	metadata_updated_at?: string;
+}
+
+export interface CompletedContentActressFilter {
+	actress: Actress;
+	count: number;
 }
 
 export interface CompletedContentListParams {
 	q?: string;
+	actress_id?: number;
+	sort?: 'organized_at' | 'metadata_created_at' | 'metadata_updated_at';
+	order?: 'asc' | 'desc';
 	limit?: number;
 	offset?: number;
 }
 
 export interface CompletedContentListResponse {
 	contents: CompletedContentItem[];
+	actress_filters: CompletedContentActressFilter[];
 	total: number;
 	limit: number;
 	offset: number;

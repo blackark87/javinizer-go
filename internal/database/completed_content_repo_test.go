@@ -113,7 +113,9 @@ func TestBatchFileOperationRepository_ListCompletedContent(t *testing.T) {
 	})
 
 	t.Run("groups applied paths and keeps metadata", func(t *testing.T) {
-		items, total, err := repo.ListCompletedContent(ctx, "", 20, 0)
+		items, total, err := repo.ListCompletedContent(ctx, CompletedContentListOptions{
+			Sort: CompletedContentSortOrganized, Order: CompletedContentSortDescending, Limit: 20,
+		})
 		require.NoError(t, err)
 		require.Equal(t, int64(2), total)
 		require.Len(t, items, 2)
@@ -139,6 +141,9 @@ func TestBatchFileOperationRepository_ListCompletedContent(t *testing.T) {
 		assert.Empty(t, fallback.ContentID)
 		assert.Equal(t, []string{"/dest/NO-CACHE-001.mp4"}, fallback.Paths)
 		assert.Empty(t, fallback.Actresses)
+		require.NotNil(t, first.MetadataCreatedAt)
+		require.NotNil(t, first.MetadataUpdatedAt)
+		assert.Nil(t, fallback.MetadataCreatedAt)
 	})
 
 	t.Run("searches title and actress identity fields", func(t *testing.T) {
@@ -151,7 +156,9 @@ func TestBatchFileOperationRepository_ListCompletedContent(t *testing.T) {
 			"시라이와 토모",
 		}
 		for _, query := range queries {
-			items, total, err := repo.ListCompletedContent(ctx, query, 20, 0)
+			items, total, err := repo.ListCompletedContent(ctx, CompletedContentListOptions{
+				Query: query, Sort: CompletedContentSortOrganized, Order: CompletedContentSortDescending, Limit: 20,
+			})
 			require.NoError(t, err, query)
 			assert.Equal(t, int64(1), total, query)
 			require.Len(t, items, 1, query)
@@ -160,7 +167,9 @@ func TestBatchFileOperationRepository_ListCompletedContent(t *testing.T) {
 	})
 
 	t.Run("searches fallback movie ID and path", func(t *testing.T) {
-		items, total, err := repo.ListCompletedContent(ctx, "NO-CACHE", 20, 0)
+		items, total, err := repo.ListCompletedContent(ctx, CompletedContentListOptions{
+			Query: "NO-CACHE", Sort: CompletedContentSortOrganized, Order: CompletedContentSortDescending, Limit: 20,
+		})
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), total)
 		require.Len(t, items, 1)
@@ -168,10 +177,45 @@ func TestBatchFileOperationRepository_ListCompletedContent(t *testing.T) {
 	})
 
 	t.Run("paginates newest movies", func(t *testing.T) {
-		items, total, err := repo.ListCompletedContent(ctx, "", 1, 1)
+		items, total, err := repo.ListCompletedContent(ctx, CompletedContentListOptions{
+			Sort: CompletedContentSortOrganized, Order: CompletedContentSortDescending, Limit: 1, Offset: 1,
+		})
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), total)
 		require.Len(t, items, 1)
 		assert.Equal(t, "NO-CACHE-001", items[0].MovieID)
+	})
+
+	t.Run("filters by actress and exposes global work counts", func(t *testing.T) {
+		items, total, err := repo.ListCompletedContent(ctx, CompletedContentListOptions{
+			ActressID: actress.ID, Sort: CompletedContentSortOrganized, Order: CompletedContentSortDescending, Limit: 20,
+		})
+		require.NoError(t, err)
+		assert.Equal(t, int64(1), total)
+		require.Len(t, items, 1)
+		assert.Equal(t, "MIUM-985", items[0].MovieID)
+
+		filters, err := repo.ListCompletedContentActressFilters(ctx)
+		require.NoError(t, err)
+		require.Len(t, filters, 1)
+		assert.Equal(t, actress.ID, filters[0].Actress.ID)
+		assert.Equal(t, int64(1), filters[0].Count)
+		require.Len(t, filters[0].Actress.Translations, 1)
+	})
+
+	t.Run("keeps missing metadata last for metadata date sorts", func(t *testing.T) {
+		for _, sortBy := range []CompletedContentSort{
+			CompletedContentSortMetadataCreated,
+			CompletedContentSortMetadataUpdated,
+		} {
+			items, total, err := repo.ListCompletedContent(ctx, CompletedContentListOptions{
+				Sort: sortBy, Order: CompletedContentSortAscending, Limit: 20,
+			})
+			require.NoError(t, err)
+			assert.Equal(t, int64(2), total)
+			require.Len(t, items, 2)
+			assert.Equal(t, "MIUM-985", items[0].MovieID)
+			assert.Equal(t, "NO-CACHE-001", items[1].MovieID)
+		}
 	})
 }

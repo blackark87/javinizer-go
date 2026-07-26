@@ -173,6 +173,16 @@ func isRetryableThinkingStrategyError(err error) bool {
 	return false
 }
 
+func isTruncatedTranslationError(err error) bool {
+	var te *translationError
+	if !errors.As(err, &te) || te.Kind != TranslationErrorParse {
+		return false
+	}
+	message := strings.ToLower(te.Message)
+	return strings.Contains(message, "output was truncated") ||
+		strings.Contains(message, "missing completion marker")
+}
+
 func isModelOutputFormatError(err error) bool {
 	if err == nil {
 		return false

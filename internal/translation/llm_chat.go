@@ -64,6 +64,8 @@ type qualityReviewItem struct {
 	Candidate string
 }
 
+const llmCompletionMarker = "<<<JZ_DONE>>>"
+
 func withQualityReview(ctx context.Context, items []qualityReviewItem) context.Context {
 	return context.WithValue(ctx, qualityReviewContextKey{}, append([]qualityReviewItem(nil), items...))
 }
@@ -119,7 +121,7 @@ func buildLLMTranslationPromptsWithMarkers(sourceLang, targetLang string, texts,
 	placeholderRule := "Any Hangul already present is final and must be copied verbatim. Protected tokens of the form ⟦N⟧ must be reproduced exactly and never translated, removed, or renumbered. "
 	koreanRules := koreanJAVPromptRules(targetLang)
 
-	systemPrompt := fmt.Sprintf("You translate Japanese adult video (JAV) metadata and AV-studio metadata for actual studio use. Write concise contemporary titles and complete natural descriptions; avoid corny, dated, literary, moralizing, euphemistic, or invented wording. %s%s%s%s%s%sReturn each translation under its original marker in the same order. Return only markers and one-line translations; no JSON or commentary. Source: %s. Target: %s.", terminologyRules, koreanRules, personNameRule, properNounRule, cleanupRules, placeholderRule, sourceLang, targetLang)
+	systemPrompt := fmt.Sprintf("You translate Japanese adult video (JAV) metadata and AV-studio metadata for actual studio use. Write concise contemporary titles and complete natural descriptions; avoid corny, dated, literary, moralizing, euphemistic, or invented wording. %s%s%s%s%s%sReturn marker+one-line translation for each, then exact final line %s; no JSON or commentary. Source: %s. Target: %s.", terminologyRules, koreanRules, personNameRule, properNounRule, cleanupRules, placeholderRule, llmCompletionMarker, sourceLang, targetLang)
 
 	var userPrompt strings.Builder
 	userPrompt.WriteString("Translate each labeled section below:\n")
@@ -136,7 +138,7 @@ func buildLLMQualityReviewPromptsWithMarkers(targetLang string, items []qualityR
 	if len(items) == 0 || len(markers) != len(items) {
 		return "", "", fmt.Errorf("quality review prompt requires one marker per item (%d markers for %d items)", len(markers), len(items))
 	}
-	systemPrompt := "You are the mandatory second-pass quality reviewer for Japanese AV metadata translated into Korean. Compare source and candidate, then silently fix mistranslation, calques, untranslated or transliterated slang, omissions, inventions, broken text, awkward grammar, and outdated terminology. Preserve explicitness, tone, protected tokens, and performer identity. Return the complete corrected Korean text, not an assessment. " + koreanJAVPromptRules(targetLang) + "Every original <<<quality_review_...>>> marker is mandatory: copy it exactly, followed by only the complete corrected Korean text. Never echo [JAPANESE SOURCE] or [KOREAN CANDIDATE]. Return no other labels, explanation, JSON, or commentary."
+	systemPrompt := "You are the mandatory second-pass quality reviewer for Japanese AV metadata translated into Korean. Compare source and candidate, then silently fix mistranslation, calques, untranslated or transliterated slang, omissions, inventions, broken text, awkward grammar, and outdated terminology. Preserve explicitness, tone, protected tokens, and performer identity. Do not restore omitted release tags, playback/device notices, or sales/store promotions. Return the complete corrected Korean text, not an assessment. " + koreanJAVPromptRules(targetLang) + "Copy every <<<quality_review_...>>> marker with its complete corrected Korean text, then exact final line " + llmCompletionMarker + ". Never echo source/candidate labels or add commentary."
 
 	var userPrompt strings.Builder
 	userPrompt.WriteString("Review and, where necessary, rewrite each candidate by comparing it with its Japanese source:\n")
@@ -158,7 +160,7 @@ func koreanJAVPromptRules(targetLang string) string {
 	}
 
 	rules := []string{
-		"Korean JAV rules: preserve exact explicitness, meaning, direction, and tone; add or omit nothing. Write concise natural current Korean AV copy. Translate ordinary Japanese, idioms, transparent compounds, and sound words by meaning; transliterate only opaque names or established loanwords. Avoid literal calques, coy euphemisms, dated terms, invented words, and Japanese left in Korean. In mappings A→B|C, choose one contextual result; never output the separators or alternatives.",
+		"Korean JAV: preserve meaning/direction/tone; no add/omit. Use concise Korean AV. Translate language/idioms/compounds/sounds by meaning; transliterate only names/loanwords. Avoid calques/euphemisms/dated/invented terms/Japanese leftovers. A→B|C context.",
 		"HIGHEST PRIORITY exact form: ガチ恋営業chu→진심인 척하는 영업 츄. Latin suffix chu is a kiss sound, not Japanese 中 or Korean 중; the final syllable must be 츄. 금지: 영업 중/가치코이/가치코이 영업 중/chu omission.",
 		"数珠つなぎ→릴레이|연속; たすきリレー/バトンリレー→바통 터치|릴레이; 芋づる式→연쇄|연속; ハシゴ酒→술집 투어|술집 순례; 朝までハシゴ酒→밤새 술집 투어, 금지: 아침까지 하시고주.",
 		"パパ活/Sugar Dating→스폰|조건; 一本釣り→독점 스카우트|길거리 캐스팅; 箱入り/箱入り娘→아가씨|순진녀; 逆指名→여배우의 선택|역지명; 垢抜け→비주얼 업그레이드|세련된; 初々しい→풋풋한|앳된; 玄人/玄人肌→프로|능숙한.",
@@ -191,7 +193,7 @@ func koreanJAVPromptRules(targetLang string) string {
 		"ヤリマン→문란녀|헤픈 여자|아무하고나 자는 여자, 금지: 야리만; 逆ナン/逆ナンパ→여자가 남자를 헌팅하는|남자 사냥, 금지: 역나/역난/역지명; 逆ナンドライブ→남자를 헌팅하는 드라이브|남자 사냥 드라이브. AV-title 淫行→섹스|남자를 꼬셔 섹스하는, use 음행 only for clear legal misconduct. 甘サド→달콤하게 괴롭히는 S|상냥한 S플레이, 금지: 달콤 사디스틱. 杭打ちピストン→위에서 거칠게 내리꽂는 피스톤|찍어 누르는 피스톤, 금지: 말뚝박기 피스톤; 杭打ち騎乗位→말뚝박기 기승위.",
 		"しろーと/素人→아마추어|일반인, 금지: 시로토/시로트; キャバ嬢→캬바걸|캬바클럽 호스티스, 금지: 캬바죠/카바죠; 美乳/超美乳→예쁜 가슴|아름다운 가슴|매우 아름다운 가슴, 금지: 미유/초미유; インフルエンサー→인플루언서, 금지: 인플루큐언서.",
 		"body スタイル/体型/typo 体系→몸매|체형, not 스타일/체계; スタイル最強/最強スタイル→최강 몸매; 理想のモテ体型/理想のモテ体系→이상적인 인기 몸매; praise 極上→최고|최상급, 금지: 극상; エロい→야한, 금지: 에로한; 極エロ→극도로 야한|극강의 야함, 금지: 극에로; びんびんフル勃起→빳빳하게 완전 발기, 금지: 풀 발기.",
-		"寝取り=남이 가진 파트너를 빼앗음; 寝取られ=자기 파트너를 빼앗김; direction을 보존하고 寝取り를 네토라레로 바꾸지 않는다. ちんぐり返し는 남자를 눕혀 양다리를 머리 쪽으로 젖혀 엉덩이/애널을 드러낸 자세이나 자세명을 만들지 말고 실제 행위를 번역한다; 지배/폭력을 추가하지 않는다. ちんぐり返し騎乗位→남자의 다리를 뒤로 젖힌 기승위; ちんぐり返しアナル舐め→남자의 다리를 뒤로 젖혀 애널 핥기. 금지: 친구리/친구리카에시/치무가에리/새우/쟁기/활 비유. タイマン→일대일 맞대결|1대1 승부; タイマン4本番→1대1 맞대결 본방 4회.",
+		"寝取り=남의 파트너 빼앗기;寝取られ=자기 파트너 빼앗김;寝取られ願望→아내 뺏기길 바람;もとから寝取られ願望のある男→원래부터 아내 뺏기길 바라는 남자;寝取り屋→아내를 빼앗아주는 업자;旦那→남편;방향 보존,寝取り≠네토라레.ちんぐり返し=남자를 눕혀 다리를 머리 쪽으로 젖혀 엉덩이/애널 노출;자세명·지배·폭력 창작 금지.ちんぐり返し騎乗位→남자의 다리를 뒤로 젖힌 기승위;ちんぐり返しアナル舐め→남자의 다리를 뒤로 젖혀 애널 핥기.금지:친구리/친구리카에시/치무가에리/새우/쟁기/활 비유.タイマン→1대1 맞대결|승부;タイマン4本番→1대1 본방4회.",
 		"胸糞→역겨운|기분 더러운; 胸糞NTR→역겨운 NTR|기분 더러운 NTR; 鬱勃起→우울한데도 발기되는|우울 발기, 금지: 울울한 발기; NTR copy 壊される→망가지다|망가뜨리다, never omit.",
 		"sexual-prose 蜜壺→보지|질, 금지: 밀통/꿀단지/비부; another-person 手マン→핑거링|손가락으로 보지를 자극하다, 금지: 손가락 자위; 美意識溢れる体→아름답게 가꾼 몸, 금지: 미적 감각이 넘치는 몸; keyword 浅草→아사쿠사; ordinary fortune 大吉→대길|대박, use 다이키치 only for a person.",
 		"玩具責め→성인용품 공세|장난감 조교, 금지: 장난감 괴롭히기/장난감 괴롭힘; 確定ビッチ→확실한 문란녀, 금지: 확정 비치; female-climax 大・連・発/大連発→연속 절정, 금지: 연속 사정/untranslated 대·연·발; ヤリモクインフルエンサー→섹스만 노리는 인플루언서, 금지: 섹스 목적인 인플루언서.",
@@ -204,11 +206,12 @@ func koreanJAVPromptRules(targetLang string) string {
 		"雑魚: fish→잡어, sexual insult→허접|하찮은|찌질한; 雑魚チ●ポ→허접 자지, 금지: 잡어 자지. 食い意地: food→식탐; when governing 肉棒/巨根/sex→욕정; 喰い意地爆発→욕정 폭발, 금지: 식탐 폭발.",
 		"むしゃぶりつく: translate fluently by object/action, never use food-like 게걸스럽게. ASMR compounds describe act+sound: ベチョレロ唾液チ〇ポ咀嚼→타액 범벅 펠라 소리; ヌチュグチュ粘着マン汁音→끈적한 애액이 질척이는 소리; 금지: 자지 저작/invented trailing 섹스!.",
 		"name honorifics: さん/氏→씨; 様→님; ちゃん/たん→짱; くん/君→군; みあたん→미아짱, 금지: 미아탄/미아상/미아사마. Grammatical 様 meaning 모습 is not an honorific.",
-		"Never sanitize explicit anatomy or censored genitals: ま〇こ/ま○こ/ま●こ/おま〇こ/おま○こ/おま●こ/おまんこ/まんこ/マンコ→보지; パイパンま〇こ/パイパンま○こ/パイパンま●こ/パイパンまんこ/無毛まんこ→백보지, 금지: 무모 소중이; standalone パイパン→무모|백보지; ち〇ぽ/ち○ぽ/ち●ぽ/ちんこ/チンポ→자지; マン汁/本気マン汁→애액, 금지: 보짓물; ザーメン/ejaculation 精子→정액; レイプ/レ×プ/レ〇プ/レ○プ/レ●プ→강간, 금지: 레프; アナル→애널 for JAV act/genre, anatomical 肛門→항문; 初アナル→첫 애널; 初アナル解禁→첫 애널 해금, 금지: 첫 항문/첫 항문 해금; クンニ/クンニリングス→보빨, 금지: 쿤니; アクメ→절정|오르가슴, 금지: 아크메; デカチン/巨根→대물, 금지: 대물 자지/거대 자지/왕자지. Examples: パイパンま〇こから溢れ出る精子→백보지에서 흘러넘치는 정액; デカチン緩急ピストン→대물 완급 피스톤. Never use 소중이/그곳/중요 부위/여성의 신체.",
-		"JAV titles use compressed forceful noun phrases; do not expand into explanatory ~하는/~하게 되는/~을 조절하는 clauses.",
-		"Preserve source brackets exactly and never invent them: 【...】 stays 【...】, [...] stays [...]; bracketed 個撮→[개인촬영], never [POV].",
-		"JAV trope intent: ご開帳→은밀한 부위 전체 공개; 手取り足取り→하나부터 열까지 직접 가르치는; 骨抜き→쾌감에 녹초가 된; 毒牙→위험한 유혹에 걸린; 生殺し→사정시키지 않고 애태우기.",
-		"Additional terms: 股下→다리 길이; 美脚→각선미; 爆乳→폭유; 神乳→신의 가슴; 騎乗位→기승위; 背面騎乗位→후배위 기승위; 杭打ち騎乗位→말뚝박기 기승위; デカ尻→큰 엉덩이; 尻コキ→엉덩이 성교; フェラ→펠라.",
+		"半中半外半彼女→반은 질내·반은 질외·반쪽 여친;円光→조건만남;タダまん→공짜 섹스;ヌける→꼴리는|딸감;種付け→수정섹스|임신시키기;淫裸MIDARA/淫裸（ミダラ）→음란한 알몸;性獣→색마≠성녀;ナンパ→헌팅;パリピ→파티광;セフレちゃん→섹파짱;ヤラせてくれる女→대주는 여자.",
+		"Explicit/censored anatomy: ま〇こ/ま○こ/ま●こ/おま〇こ/おま○こ/おま●こ/おまんこ/まんこ/マンコ→보지; パイパンま〇こ/パイパンま○こ/パイパンま●こ/パイパンまんこ/無毛まんこ→백보지, 금지: 무모 소중이; alone パイパン→무모|백보지; ち〇ぽ/ち○ぽ/ち●ぽ/ちんこ/チンポ→자지; マン汁/本気マン汁→애액, 금지: 보짓물; ザーメン/ejaculation 精子→정액; レイプ/レ×プ/レ〇プ/レ○プ/レ●プ→강간, 금지: 레프; アナル→애널 for JAV act/genre, anatomical 肛門→항문; 初アナル→첫 애널; 初アナル解禁→첫 애널 해금, 금지: 첫 항문/첫 항문 해금; クンニ/クンニリングス→보빨, 금지: 쿤니; アクメ→절정|오르가슴, 금지: 아크메; デカチン/巨根→대물, 금지: 대물 자지/거대 자지/왕자지. Ex: パイパンま〇こから溢れ出る精子→백보지에서 흘러넘치는 정액; デカチン緩急ピストン→대물 완급 피스톤. 금지:소중이/그곳/중요 부위/여성의 신체.",
+		"JAV titles: forceful noun phrases; no explanatory ~하는/~하게 되는/~을 조절하는 clauses.",
+		"Source brackets: 【...】 stays 【...】, [...] stays [...]; never invent; bracketed 個撮→[개인촬영], never [POV].",
+		"Trope: ご開帳→은밀한 부위 전체 공개; 手取り足取り→하나부터 열까지 직접 가르치는; 骨抜き→쾌감에 녹초가 된; 毒牙→위험한 유혹에 걸린; 生殺し→사정시키지 않고 애태우기.",
+		"Terms: 股下→다리 길이; 美脚→각선미; 爆乳→폭유; 神乳→신의 가슴; 騎乗位→기승위; 背面騎乗位→후배위 기승위; デカ尻→큰 엉덩이; 尻コキ→엉덩이 성교; フェラ→펠라.",
 	}
 	return strings.Join(rules, " ") + " "
 }
@@ -232,7 +235,7 @@ func buildLLMTranslationResult(content string, markerSpec any) (*translationResu
 
 // decodeOpenAIChatTranslation decodes an OpenAI chat completion response into
 // a translation result.
-func decodeOpenAIChatTranslation(provider string, respBody []byte, markerSpec any) (*translationResult, error) {
+func decodeOpenAIChatTranslation(provider string, respBody []byte, markerSpec any, maxOutputTokens ...int) (*translationResult, error) {
 	var decoded openAIChatResponse
 	if err := json.Unmarshal(respBody, &decoded); err != nil {
 		return nil, fmt.Errorf("failed to decode %s response: %w", provider, err)
@@ -246,10 +249,45 @@ func decodeOpenAIChatTranslation(provider string, respBody []byte, markerSpec an
 	if finishReason == "length" || finishReason == "max_tokens" {
 		return &translationResult{RawLLM: content}, &translationError{
 			Kind:    TranslationErrorParse,
-			Message: fmt.Sprintf("%s translation output was truncated (%s)", provider, finishReason),
+			Message: truncatedLLMOutputMessage(provider, content, finishReason, maxOutputTokens),
 		}
 	}
-	return buildLLMTranslationResult(content, markerSpec)
+	complete, ok := stripLLMCompletionMarker(content)
+	if !ok {
+		// Older OpenAI integrations returned a JSON string array. Its closing
+		// bracket is structurally self-terminating, so keep accepting that
+		// legacy shape while requiring an explicit completion marker for the
+		// current compact marker protocol.
+		if legacy, legacyErr := parseStringArrayPayload(content); legacyErr == nil {
+			return &translationResult{Texts: legacy, RawLLM: content}, nil
+		}
+		return &translationResult{RawLLM: content}, &translationError{
+			Kind:    TranslationErrorParse,
+			Message: truncatedLLMOutputMessage(provider, content, "missing completion marker "+llmCompletionMarker, maxOutputTokens),
+		}
+	}
+	return buildLLMTranslationResult(complete, markerSpec)
+}
+
+func stripLLMCompletionMarker(content string) (string, bool) {
+	trimmed := strings.TrimSpace(content)
+	if !strings.HasSuffix(trimmed, llmCompletionMarker) {
+		return content, false
+	}
+	return strings.TrimSpace(strings.TrimSuffix(trimmed, llmCompletionMarker)), true
+}
+
+func truncatedLLMOutputMessage(provider, content, reason string, maxOutputTokens []int) string {
+	message := fmt.Sprintf(
+		"%s translation output was truncated (%s; received_chars=%d",
+		provider,
+		reason,
+		len([]rune(content)),
+	)
+	if len(maxOutputTokens) > 0 && maxOutputTokens[0] > 0 {
+		message += fmt.Sprintf("; max_output_tokens=%d", maxOutputTokens[0])
+	}
+	return message + ")"
 }
 
 // executeLLMChatTranslation is the shared pipeline for LLM chat-based translation.
@@ -348,13 +386,14 @@ func executeOpenAIChatTranslation(ctx context.Context, httpClient httpclient.HTT
 	if len(opts.markers) > 0 {
 		markerSpec = opts.markers
 	}
-	return decodeOpenAIChatTranslation(opts.provider, respBody, markerSpec)
+	return decodeOpenAIChatTranslation(opts.provider, respBody, markerSpec, opts.request.MaxTokens)
 }
 
 // openAIChatAdapter implements LLMChatAdapter for OpenAI-compatible chat APIs.
 type openAIChatAdapter struct {
-	headers map[string]string
-	markers []string
+	headers         map[string]string
+	markers         []string
+	maxOutputTokens int
 }
 
 func (a *openAIChatAdapter) BuildRequest(ctx context.Context, baseURL, model string, systemPrompt, userPrompt string, textCount int) (*http.Request, error) {
@@ -386,9 +425,9 @@ func (a *openAIChatAdapter) BuildRequest(ctx context.Context, baseURL, model str
 
 func (a *openAIChatAdapter) DecodeResponse(providerName string, respBody []byte, textCount int) (*translationResult, error) {
 	if len(a.markers) > 0 {
-		return decodeOpenAIChatTranslation(providerName, respBody, a.markers)
+		return decodeOpenAIChatTranslation(providerName, respBody, a.markers, a.maxOutputTokens)
 	}
-	return decodeOpenAIChatTranslation(providerName, respBody, textCount)
+	return decodeOpenAIChatTranslation(providerName, respBody, textCount, a.maxOutputTokens)
 }
 
 // extractContentString extracts a string value from a JSON RawMessage,

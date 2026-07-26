@@ -97,6 +97,7 @@ func (a *anthropicChatAdapter) DecodeResponse(providerName string, respBody []by
 			Type string `json:"type"`
 			Text string `json:"text"`
 		} `json:"content"`
+		StopReason string `json:"stop_reason"`
 	}
 	if err := json.Unmarshal(respBody, &decoded); err != nil {
 		return nil, fmt.Errorf("failed to decode %s response: %w", providerName, err)
@@ -104,8 +105,31 @@ func (a *anthropicChatAdapter) DecodeResponse(providerName string, respBody []by
 	if len(decoded.Content) == 0 {
 		return nil, fmt.Errorf("%s response contained no content blocks", providerName)
 	}
-	if len(a.markers) > 0 {
-		return buildLLMTranslationResult(strings.TrimSpace(decoded.Content[0].Text), a.markers)
+	content := strings.TrimSpace(decoded.Content[0].Text)
+	if strings.EqualFold(strings.TrimSpace(decoded.StopReason), "max_tokens") {
+		return &translationResult{RawLLM: content}, &translationError{
+			Kind:    TranslationErrorParse,
+			Message: truncatedLLMOutputMessage(providerName, content, decoded.StopReason, []int{4096}),
+		}
 	}
-	return buildLLMTranslationResult(strings.TrimSpace(decoded.Content[0].Text), textCount)
+	complete, ok := stripLLMCompletionMarker(content)
+	if !ok {
+		// Preserve the structurally complete legacy JSON-array response format.
+		if legacy, legacyErr := parseStringArrayPayload(content); legacyErr == nil {
+			return &translationResult{Texts: legacy, RawLLM: content}, nil
+		}
+		return &translationResult{RawLLM: content}, &translationError{
+			Kind: TranslationErrorParse,
+			Message: truncatedLLMOutputMessage(
+				providerName,
+				content,
+				"missing completion marker "+llmCompletionMarker,
+				[]int{4096},
+			),
+		}
+	}
+	if len(a.markers) > 0 {
+		return buildLLMTranslationResult(complete, a.markers)
+	}
+	return buildLLMTranslationResult(complete, textCount)
 }

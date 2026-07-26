@@ -171,7 +171,8 @@ type BatchFileOperationRepositoryInterface interface {
 // BatchFileOperationRepositoryInterface so revert-focused test doubles do not
 // need to implement listing and search behavior.
 type CompletedContentRepositoryInterface interface {
-	ListCompletedContent(ctx context.Context, query string, limit, offset int) ([]CompletedContent, int64, error)
+	ListCompletedContent(ctx context.Context, options CompletedContentListOptions) ([]CompletedContent, int64, error)
+	ListCompletedContentActressFilters(ctx context.Context) ([]CompletedContentActressFilter, error)
 }
 
 // ApiTokenRepositoryInterface defines the contract for API token operations

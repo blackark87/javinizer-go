@@ -2049,6 +2049,36 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "minimum": 1,
+                        "type": "integer",
+                        "description": "Filter by exact actress ID",
+                        "name": "actress_id",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "organized_at",
+                            "metadata_created_at",
+                            "metadata_updated_at"
+                        ],
+                        "type": "string",
+                        "default": "organized_at",
+                        "description": "Sort field",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "default": "desc",
+                        "description": "Sort direction",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
                         "maximum": 100,
                         "minimum": 1,
                         "type": "integer",
@@ -3717,6 +3747,71 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/movies/{id}/translation-review": {
+            "post": {
+                "description": "Creates a fresh Korean translation from retained Japanese metadata, runs the second-pass JAV quality reviewer, and persists only the reviewed field.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "movies"
+                ],
+                "summary": "Retranslate one stored movie field with the configured LLM",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Movie ID or content ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Field to review",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.TranslationReviewRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.TranslationReviewResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/posters/{filename}": {
             "get": {
                 "description": "Serves persistent cropped posters from the database. These persist across scraping sessions.",
@@ -5102,6 +5197,18 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.CompletedContentActressFilter": {
+            "type": "object",
+            "properties": {
+                "actress": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_models.Actress"
+                },
+                "count": {
+                    "type": "integer",
+                    "example": 12
+                }
+            }
+        },
         "github_com_javinizer_javinizer-go_internal_api_contracts.CompletedContentItem": {
             "type": "object",
             "properties": {
@@ -5127,6 +5234,14 @@ const docTemplate = `{
                 "latest_job_id": {
                     "type": "string",
                     "example": "550e8400-e29b-41d4-a716-446655440000"
+                },
+                "metadata_created_at": {
+                    "type": "string",
+                    "example": "2026-07-25T12:00:00Z"
+                },
+                "metadata_updated_at": {
+                    "type": "string",
+                    "example": "2026-07-26T09:30:00Z"
                 },
                 "movie_id": {
                     "type": "string",
@@ -5168,6 +5283,12 @@ const docTemplate = `{
         "github_com_javinizer_javinizer-go_internal_api_contracts.CompletedContentListResponse": {
             "type": "object",
             "properties": {
+                "actress_filters": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.CompletedContentActressFilter"
+                    }
+                },
                 "contents": {
                     "type": "array",
                     "items": {

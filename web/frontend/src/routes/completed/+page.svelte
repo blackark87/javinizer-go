@@ -14,7 +14,7 @@
 		X,
 	} from 'lucide-svelte';
 	import { apiClient } from '$lib/api/client';
-	import type { CompletedContentItem } from '$lib/api/types';
+	import type { CompletedContentActressFilter, CompletedContentItem } from '$lib/api/types';
 	import Button from '$lib/components/ui/Button.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 	import { toastStore } from '$lib/stores/toast';
@@ -25,14 +25,27 @@
 		completedContentPageCount,
 		completedContentSearchURL,
 		completedContentTitle,
+		type CompletedContentSortValue,
 	} from './completed-utils';
 
-	const pageSize = 20;
+	const pageSizes = [20, 50, 100] as const;
+	const sortValues: CompletedContentSortValue[] = [
+		'organized_at_desc',
+		'organized_at_asc',
+		'metadata_created_at_desc',
+		'metadata_created_at_asc',
+		'metadata_updated_at_desc',
+		'metadata_updated_at_asc',
+	];
 
 	let contents = $state<CompletedContentItem[]>([]);
+	let actressFilters = $state<CompletedContentActressFilter[]>([]);
 	let total = $state(0);
 	let query = $state('');
 	let activeQuery = $state('');
+	let selectedActressID = $state(0);
+	let pageSize = $state<(typeof pageSizes)[number]>(20);
+	let sortValue = $state<CompletedContentSortValue>('organized_at_desc');
 	let currentPage = $state(1);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
@@ -48,37 +61,68 @@
 		const urlQuery = $page.url.searchParams.get('q')?.trim() ?? '';
 		const rawPage = Number.parseInt($page.url.searchParams.get('page') ?? '1', 10);
 		const urlPage = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
-		const key = `${urlQuery}\u0000${urlPage}`;
+		const rawActressID = Number.parseInt($page.url.searchParams.get('actress') ?? '0', 10);
+		const urlActressID = Number.isFinite(rawActressID) && rawActressID > 0 ? rawActressID : 0;
+		const rawLimit = Number.parseInt($page.url.searchParams.get('limit') ?? '20', 10);
+		const urlLimit = pageSizes.includes(rawLimit as (typeof pageSizes)[number])
+			? (rawLimit as (typeof pageSizes)[number])
+			: 20;
+		const rawSort = $page.url.searchParams.get('sort') as CompletedContentSortValue | null;
+		const urlSort =
+			rawSort && sortValues.includes(rawSort) ? rawSort : 'organized_at_desc';
+		const key = `${urlQuery}\u0000${urlActressID}\u0000${urlLimit}\u0000${urlSort}\u0000${urlPage}`;
 
 		query = urlQuery;
 		activeQuery = urlQuery;
+		selectedActressID = urlActressID;
+		pageSize = urlLimit;
+		sortValue = urlSort;
 		currentPage = urlPage;
 		if (key !== loadedKey) {
 			loadedKey = key;
-			void loadContents(urlQuery, urlPage);
+			void loadContents(urlQuery, urlActressID, urlLimit, urlSort, urlPage);
 		}
 	});
 
-	async function loadContents(searchQuery: string, pageNumber: number) {
+	async function loadContents(
+		searchQuery: string,
+		actressID: number,
+		limit: (typeof pageSizes)[number],
+		sort: CompletedContentSortValue,
+		pageNumber: number,
+	) {
 		const requestID = ++requestSequence;
 		loading = true;
 		error = null;
 
 		try {
+			const [sortField, sortOrder] = sort.endsWith('_asc')
+				? [sort.slice(0, -4), 'asc']
+				: [sort.slice(0, -5), 'desc'];
 			const response = await apiClient.listCompletedContent({
 				q: searchQuery || undefined,
-				limit: pageSize,
-				offset: (pageNumber - 1) * pageSize,
+				actress_id: actressID || undefined,
+				sort: sortField as 'organized_at' | 'metadata_created_at' | 'metadata_updated_at',
+				order: sortOrder as 'asc' | 'desc',
+				limit,
+				offset: (pageNumber - 1) * limit,
 			});
 			if (requestID !== requestSequence) return;
 
 			contents = response.contents ?? [];
+			actressFilters = response.actress_filters ?? [];
 			total = response.total;
 			posterIndexes = new Map();
 
-			const resolvedPages = completedContentPageCount(response.total, pageSize);
+			const resolvedPages = completedContentPageCount(response.total, limit);
 			if (pageNumber > resolvedPages) {
-				await goto(completedContentSearchURL(searchQuery, resolvedPages), {
+				await goto(completedContentSearchURL({
+					query: searchQuery,
+					actressID,
+					pageSize: limit,
+					sort,
+					page: resolvedPages,
+				}), {
 					replaceState: true,
 					noScroll: true,
 				});
@@ -95,7 +139,13 @@
 
 	function submitSearch(event: SubmitEvent) {
 		event.preventDefault();
-		void goto(completedContentSearchURL(query, 1), {
+		void goto(completedContentSearchURL({
+			query,
+			actressID: selectedActressID,
+			pageSize,
+			sort: sortValue,
+			page: 1,
+		}), {
 			noScroll: true,
 			keepFocus: true,
 		});
@@ -103,14 +153,61 @@
 
 	function clearSearch() {
 		query = '';
-		void goto('/completed', { noScroll: true, keepFocus: true });
+		void goto(completedContentSearchURL({
+			actressID: selectedActressID,
+			pageSize,
+			sort: sortValue,
+			page: 1,
+		}), { noScroll: true, keepFocus: true });
 	}
 
 	function changePage(nextPage: number) {
 		if (nextPage < 1 || nextPage > totalPages || nextPage === currentPage) return;
-		void goto(completedContentSearchURL(activeQuery, nextPage), {
+		void goto(completedContentSearchURL({
+			query: activeQuery,
+			actressID: selectedActressID,
+			pageSize,
+			sort: sortValue,
+			page: nextPage,
+		}), {
 			noScroll: false,
 		});
+	}
+
+	function updateControls(
+		nextActressID: number,
+		nextPageSize: (typeof pageSizes)[number],
+		nextSort: CompletedContentSortValue,
+	) {
+		void goto(completedContentSearchURL({
+			query: activeQuery,
+			actressID: nextActressID,
+			pageSize: nextPageSize,
+			sort: nextSort,
+			page: 1,
+		}), { noScroll: true });
+	}
+
+	function changeActressFilter(event: Event) {
+		const value = Number.parseInt((event.target as HTMLSelectElement).value, 10);
+		updateControls(Number.isFinite(value) ? value : 0, pageSize, sortValue);
+	}
+
+	function changePageSize(event: Event) {
+		const value = Number.parseInt((event.target as HTMLSelectElement).value, 10);
+		const next = pageSizes.includes(value as (typeof pageSizes)[number])
+			? (value as (typeof pageSizes)[number])
+			: 20;
+		updateControls(selectedActressID, next, sortValue);
+	}
+
+	function changeSort(event: Event) {
+		const value = (event.target as HTMLSelectElement).value as CompletedContentSortValue;
+		updateControls(
+			selectedActressID,
+			pageSize,
+			sortValues.includes(value) ? value : 'organized_at_desc',
+		);
 	}
 
 	function advancePoster(content: CompletedContentItem) {
@@ -119,7 +216,7 @@
 		posterIndexes = next;
 	}
 
-	function formatOrganizedAt(value: string): string {
+	function formatDateTime(value: string): string {
 		const date = new Date(value);
 		if (Number.isNaN(date.getTime())) return value;
 		return new Intl.DateTimeFormat('en-US', {
@@ -188,6 +285,54 @@
 		</form>
 	</div>
 
+	<div class="mb-4 grid gap-3 rounded-lg border bg-card p-3 sm:grid-cols-3">
+		<label class="space-y-1 text-sm">
+			<span class="font-medium">Actress</span>
+			<select
+				value={selectedActressID}
+				onchange={changeActressFilter}
+				class="h-10 w-full rounded-md border border-input bg-background px-3"
+				aria-label="Filter completed content by actress"
+			>
+				<option value="0">All actresses</option>
+				{#each actressFilters as filter (filter.actress.id)}
+					<option value={filter.actress.id}>
+						{completedActressName(filter.actress)} ({filter.count.toLocaleString()})
+					</option>
+				{/each}
+			</select>
+		</label>
+		<label class="space-y-1 text-sm">
+			<span class="font-medium">Sort</span>
+			<select
+				value={sortValue}
+				onchange={changeSort}
+				class="h-10 w-full rounded-md border border-input bg-background px-3"
+				aria-label="Sort completed content"
+			>
+				<option value="organized_at_desc">Organized · newest</option>
+				<option value="organized_at_asc">Organized · oldest</option>
+				<option value="metadata_created_at_desc">Metadata created · newest</option>
+				<option value="metadata_created_at_asc">Metadata created · oldest</option>
+				<option value="metadata_updated_at_desc">Metadata updated · newest</option>
+				<option value="metadata_updated_at_asc">Metadata updated · oldest</option>
+			</select>
+		</label>
+		<label class="space-y-1 text-sm">
+			<span class="font-medium">Items per page</span>
+			<select
+				value={pageSize}
+				onchange={changePageSize}
+				class="h-10 w-full rounded-md border border-input bg-background px-3"
+				aria-label="Completed content items per page"
+			>
+				{#each pageSizes as size}
+					<option value={size}>{size}</option>
+				{/each}
+			</select>
+		</label>
+	</div>
+
 	<div class="mb-4 flex min-h-6 items-center justify-between text-sm text-muted-foreground">
 		<p>
 			{#if activeQuery}
@@ -213,7 +358,16 @@
 			<p class="font-medium text-destructive">Could not load completed content</p>
 			<p class="mt-1 text-sm text-muted-foreground">{error}</p>
 			<div class="mt-4">
-				<Button variant="outline" onclick={() => loadContents(activeQuery, currentPage)}>
+				<Button
+					variant="outline"
+					onclick={() => loadContents(
+						activeQuery,
+						selectedActressID,
+						pageSize,
+						sortValue,
+						currentPage,
+					)}
+				>
 					Try again
 				</Button>
 			</div>
@@ -263,9 +417,22 @@
 											{content.movie_id}
 										</span>
 										<span class="text-xs text-muted-foreground">
-											{formatOrganizedAt(content.organized_at)}
+											Organized {formatDateTime(content.organized_at)}
 										</span>
 									</div>
+									{#if content.metadata_created_at || content.metadata_updated_at}
+										<p class="mt-1 text-xs text-muted-foreground">
+											{#if content.metadata_created_at}
+												Created {formatDateTime(content.metadata_created_at)}
+											{/if}
+											{#if content.metadata_created_at && content.metadata_updated_at}
+												·
+											{/if}
+											{#if content.metadata_updated_at}
+												Updated {formatDateTime(content.metadata_updated_at)}
+											{/if}
+										</p>
+									{/if}
 									<h2 class="mt-2 text-lg font-semibold">{completedContentTitle(content)}</h2>
 									{#if content.original_title && content.original_title !== completedContentTitle(content)}
 										<p class="mt-0.5 line-clamp-2 text-sm text-muted-foreground">

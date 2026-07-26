@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/poster"
@@ -14,16 +15,18 @@ import (
 // This function type allows handlers to obtain a workflow without depending on
 // *core.APIDeps directly — callers inject the factory at construction time.
 type WorkflowFunc func() workflow.WorkflowInterface
+type TranslationConfigFunc func() config.TranslationConfig
 
 // MovieDeps holds the dependencies that movie handlers need.
 // Replaces the removed MovieService — handlers take this directly,
 // matching the ActressDeps pattern used in the actress package.
 type MovieDeps struct {
-	MovieRepo   database.MovieRepositoryInterface
-	ActressRepo database.ActressRepositoryInterface
-	WorkflowFn  WorkflowFunc
-	PosterGen   poster.PosterGenerator
-	AllowedDirs []string
+	MovieRepo           database.MovieRepositoryInterface
+	ActressRepo         database.ActressRepositoryInterface
+	WorkflowFn          WorkflowFunc
+	PosterGen           poster.PosterGenerator
+	AllowedDirs         []string
+	TranslationConfigFn TranslationConfigFunc
 }
 
 // NewMovieDeps creates a MovieDeps from the given repository and options.
@@ -56,6 +59,10 @@ func WithPosterGen(pg poster.PosterGenerator) MovieDepsOption {
 // WithActressRepository enables persistence of explicit actress name edits.
 func WithActressRepository(repo database.ActressRepositoryInterface) MovieDepsOption {
 	return func(d *MovieDeps) { d.ActressRepo = repo }
+}
+
+func WithTranslationConfig(fn TranslationConfigFunc) MovieDepsOption {
+	return func(d *MovieDeps) { d.TranslationConfigFn = fn }
 }
 
 // getWorkflow returns a workflow instance or nil if unavailable.

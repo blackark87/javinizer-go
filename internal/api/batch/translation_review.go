@@ -1,18 +1,15 @@
 package batch
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/javinizer/javinizer-go/internal/api/contracts"
 	"github.com/javinizer/javinizer-go/internal/api/core"
-	"github.com/javinizer/javinizer-go/internal/config"
+	"github.com/javinizer/javinizer-go/internal/api/translationreview"
 	"github.com/javinizer/javinizer-go/internal/models"
-	"github.com/javinizer/javinizer-go/internal/translation"
 	"github.com/javinizer/javinizer-go/internal/worker"
 )
 
@@ -81,50 +78,19 @@ func reviewBatchMovieTranslation(rt *core.APIRuntime) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: fmt.Sprintf("retained Japanese source for %s is unavailable", req.Field)})
 			return
 		}
-		if strings.TrimSpace(candidate) == "" {
-			c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: fmt.Sprintf("current Korean %s is empty", req.Field)})
-			return
-		}
-
-		freshConfig := translationReviewConfig(tc, req.Field)
-		service := translation.New(freshConfig)
-		freshMovie := &models.Movie{Actresses: result.Movie.Actresses}
-		if req.Field == "title" {
-			freshMovie.Title = source
-		} else {
-			freshMovie.Description = source
-		}
-		freshCtx, freshCancel := translationReviewContext(c.Request.Context(), tc.TimeoutSeconds)
-		freshOutput, _, err := service.TranslateMovie(freshCtx, freshMovie, freshConfig.SettingsHash())
-		freshCancel()
+		reviewed, err := translationreview.ReviewField(
+			c.Request.Context(),
+			tc,
+			req.Field,
+			source,
+			result.Movie.Actresses,
+		)
 		if err != nil {
-			c.JSON(http.StatusBadGateway, contracts.ErrorResponse{Error: fmt.Sprintf("fresh translation failed: %v", err)})
-			return
-		}
-		freshCandidate := translatedReviewFieldValue(freshOutput, req.Field)
-		if strings.TrimSpace(freshCandidate) == "" {
-			c.JSON(http.StatusBadGateway, contracts.ErrorResponse{Error: "fresh translator returned an empty result"})
+			c.JSON(http.StatusBadGateway, contracts.ErrorResponse{Error: err.Error()})
 			return
 		}
 
-		reviewCtx, reviewCancel := translationReviewContext(c.Request.Context(), tc.TimeoutSeconds)
-		reviewed, err := service.ReviewJAVTranslations(reviewCtx, []translation.QualityReviewField{{
-			FieldName: "quality_review_" + req.Field,
-			Source:    source,
-			Candidate: freshCandidate,
-			Actresses: result.Movie.Actresses,
-		}})
-		reviewCancel()
-		if err != nil {
-			c.JSON(http.StatusBadGateway, contracts.ErrorResponse{Error: fmt.Sprintf("translation review failed: %v", err)})
-			return
-		}
-		if len(reviewed) != 1 || strings.TrimSpace(reviewed[0]) == "" {
-			c.JSON(http.StatusBadGateway, contracts.ErrorResponse{Error: "translation reviewer returned an empty result"})
-			return
-		}
-
-		changed := strings.TrimSpace(reviewed[0]) != strings.TrimSpace(candidate)
+		changed := strings.TrimSpace(reviewed.Value) != strings.TrimSpace(candidate)
 		if !changed {
 			c.JSON(http.StatusOK, contracts.TranslationReviewResponse{
 				Movie:   contracts.MovieViewFromModel(result.Movie),
@@ -133,7 +99,13 @@ func reviewBatchMovieTranslation(rt *core.APIRuntime) gin.HandlerFunc {
 			return
 		}
 
-		updated, err := job.ApplyTranslationReview(c.Request.Context(), resultID, req.Field, reviewed[0], freshConfig.TargetLanguage)
+		updated, err := job.ApplyTranslationReview(
+			c.Request.Context(),
+			resultID,
+			req.Field,
+			reviewed.Value,
+			reviewed.TargetLanguage,
+		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: err.Error()})
 			return
@@ -141,39 +113,6 @@ func reviewBatchMovieTranslation(rt *core.APIRuntime) gin.HandlerFunc {
 		rt.Deps().GetJobStore().PersistJobByID(jobID)
 		c.JSON(http.StatusOK, contracts.TranslationReviewResponse{Movie: contracts.MovieViewFromModel(updated.Movie), Changed: true})
 	}
-}
-
-func translationReviewConfig(tc config.TranslationConfig, field string) config.TranslationConfig {
-	tc.ApplyToPrimary = false
-	tc.Fields = config.TranslationFieldsConfig{
-		Title:       field == "title",
-		Description: field == "description",
-	}
-	if len(tc.TargetLanguages) > 0 {
-		tc.TargetLanguage = tc.TargetLanguages[0]
-		tc.TargetLanguages = []string{tc.TargetLanguage}
-	}
-	return tc
-}
-
-func translationReviewContext(parent context.Context, timeoutSeconds int) (context.Context, context.CancelFunc) {
-	if timeoutSeconds <= 0 {
-		timeoutSeconds = 60
-	}
-	return context.WithTimeout(parent, time.Duration(timeoutSeconds)*time.Second)
-}
-
-func translatedReviewFieldValue(output *translation.TranslationOutput, field string) string {
-	if output == nil || output.Movie == nil {
-		return ""
-	}
-	if field == "title" {
-		return output.Movie.Title
-	}
-	if field == "description" {
-		return output.Movie.Description
-	}
-	return ""
 }
 
 func reviewedFieldValue(movie *models.Movie, field string) string {

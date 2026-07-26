@@ -436,6 +436,13 @@ func TestCleanDescriptionForTranslation(t *testing.T) {
 			input:    "彼女との甘い時間を描いた本編の説明です。",
 			expected: "彼女との甘い時間を描いた本編の説明です。",
 		},
+		{
+			name: "FANZA bonus wrapper and Blu-ray notice are removed",
+			input: "特典・セット商品イメージ 特典・セット商品情報 【特典内容】 ・生写真2枚 " +
+				"特典付き商品・セット商品について【専属第2弾！】本編の説明です。" +
+				"※こちらはBlu-ray Disc専用ソフトです。対応プレイヤー以外では再生できません。",
+			expected: "【専属第2弾！】本編の説明です。",
+		},
 	}
 
 	for _, tt := range tests {
@@ -454,6 +461,10 @@ func TestCleanTitleForTranslation(t *testing.T) {
 		{"[VR] 모리 히나코", "모리 히나코"},
 		{"【8K VR】素敵なタイトル", "素敵なタイトル"},
 		{"彼女とVRデート", "彼女とVRデート"},
+		{
+			"【数量限定】本編タイトル （ブルーレイディスク） 生写真2枚付き",
+			"本編タイトル",
+		},
 	}
 
 	for _, tt := range tests {
@@ -471,6 +482,14 @@ func TestKoreanPrivateShootTitleMarkers(t *testing.T) {
 
 	literalPOV := prepareTitleForTranslation("[POV] オリジナルタイトル", "ko")
 	assert.Equal(t, "[POV] 오리지널 타이틀", finalizeTitleTranslation(literalPOV, "[POV] 오리지널 타이틀", "ko"))
+	assert.Equal(t,
+		"섹파짱 카스미 - 만나면 무조건 대주는 여자 - 츠키노 카스미",
+		finalizeTitleTranslation(
+			"セフレちゃん かすみ ー会えば絶対ヤラせてくれる女ー 月野かすみ",
+			"섹파짱 카스미 ー만나면 무조건 대주는 여자ー 츠키노 카스미",
+			"ko",
+		),
+	)
 }
 
 // =============================================================================

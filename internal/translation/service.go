@@ -670,8 +670,15 @@ type protectedQualityReviewText struct {
 }
 
 func protectQualityReviewActressNames(field QualityReviewField) protectedQualityReviewText {
+	source := strings.TrimSpace(field.Source)
+	switch {
+	case strings.Contains(field.FieldName, "description"):
+		source = cleanDescriptionForTranslation(source)
+	case strings.Contains(field.FieldName, "title"):
+		source = prepareTitleForTranslation(source, "ko")
+	}
 	protected := protectedQualityReviewText{
-		source:       field.Source,
+		source:       source,
 		candidate:    field.Candidate,
 		fallback:     strings.TrimSpace(field.Candidate),
 		placeholders: make(map[string]string),
@@ -769,6 +776,9 @@ func (s *Service) ReviewJAVTranslations(ctx context.Context, fields []QualityRev
 			return nil, fmt.Errorf("quality reviewer dropped a protected performer name for %s", markers[i])
 		}
 		reviewed[i] = restored
+		if strings.Contains(markers[i], "title") {
+			reviewed[i] = normalizeKoreanTitleSeparators(reviewed[i])
+		}
 	}
 	return reviewed, nil
 }
@@ -785,6 +795,20 @@ func sanitizeQualityReviewTextWithCandidate(value, candidate string) string {
 		}
 	}
 	lower := strings.ToLower(value)
+	for _, marker := range []string{
+		"[rewritten_korean_description]",
+		"[rewritten_korean_title]",
+		"[rewritten korean description]",
+		"[rewritten korean title]",
+		"[final korean]",
+	} {
+		if markerIndex := strings.LastIndex(lower, marker); markerIndex >= 0 {
+			tail := strings.TrimSpace(value[markerIndex+len(marker):])
+			if tail != "" && !isInvalidQualityReviewText(tail) {
+				return tail
+			}
+		}
+	}
 	const candidateMarker = "[korean candidate]"
 	if markerIndex := strings.LastIndex(lower, candidateMarker); markerIndex >= 0 {
 		tail := strings.TrimSpace(value[markerIndex+len(candidateMarker):])
@@ -820,7 +844,17 @@ func isInvalidQualityReviewText(value string) bool {
 		return true
 	}
 	lower := strings.ToLower(trimmed)
-	for _, marker := range []string{"[japanese source]", "[korean candidate]", "translate each labeled section", "review and, where necessary"} {
+	for _, marker := range []string{
+		"[japanese source]",
+		"[korean candidate]",
+		"[rewritten_korean_description]",
+		"[rewritten_korean_title]",
+		"[rewritten korean description]",
+		"[rewritten korean title]",
+		"[final korean]",
+		"translate each labeled section",
+		"review and, where necessary",
+	} {
 		if strings.Contains(lower, marker) {
 			return true
 		}
@@ -861,6 +895,10 @@ func translationSlotIssue(field TranslationField, targetLang, value string) stri
 		return "person name is not Hangul"
 	}
 	if normalizeLanguage(targetLang) != "ja" && !isPersonNameField(fieldName) && containsResidualJapanese(current) {
+		excerpt := residualJapaneseExcerpt(current, 12)
+		if excerpt != "" {
+			return fmt.Sprintf("untranslated Japanese remains: %q", excerpt)
+		}
 		return "untranslated Japanese remains"
 	}
 	if isUnchangedSemanticTranslation(field, targetLang, current) {

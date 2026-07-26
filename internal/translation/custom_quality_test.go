@@ -165,12 +165,16 @@ func TestKoreanJAVPromptTranslatesAmateurHostessPoseAndNTRTerms(t *testing.T) {
 	assert.Contains(t, rules, "スタイル最強/最強スタイル→최강 몸매")
 	assert.Contains(t, rules, "理想のモテ体型/理想のモテ体系→이상적인 인기 몸매")
 	assert.Contains(t, rules, "極エロ→극도로 야한|극강의 야함")
-	assert.Contains(t, rules, "寝取り=남이 가진 파트너를 빼앗음")
-	assert.Contains(t, rules, "ちんぐり返し는 남자를 눕혀")
+	assert.Contains(t, rules, "寝取り=남의 파트너 빼앗기")
+	assert.Contains(t, rules, "寝取られ願望→아내 뺏기길 바람")
+	assert.Contains(t, rules, "もとから寝取られ願望のある男→원래부터 아내 뺏기길 바라는 남자")
+	assert.Contains(t, rules, "寝取り屋→아내를 빼앗아주는 업자")
+	assert.Contains(t, rules, "旦那→남편")
+	assert.Contains(t, rules, "ちんぐり返し=남자를 눕혀")
 	assert.Contains(t, rules, "ちんぐり返し騎乗位→남자의 다리를 뒤로 젖힌 기승위")
-	assert.Contains(t, rules, "지배/폭력을 추가하지 않는다")
-	assert.Contains(t, rules, "금지: 친구리/친구리카에시/치무가에리/새우/쟁기/활 비유")
-	assert.Contains(t, rules, "タイマン4本番→1대1 맞대결 본방 4회")
+	assert.Contains(t, rules, "자세명·지배·폭력 창작 금지")
+	assert.Contains(t, rules, "금지:친구리/친구리카에시/치무가에리/새우/쟁기/활 비유")
+	assert.Contains(t, rules, "タイマン4本番→1대1 본방4회")
 	assert.Contains(t, rules, "胸糞NTR→역겨운 NTR|기분 더러운 NTR")
 	assert.Contains(t, rules, "금지: 울울한 발기")
 }
@@ -286,9 +290,21 @@ func TestKoreanJAVPromptCoversNewMissTranslationTerms(t *testing.T) {
 		"我慢汁→쿠퍼액",
 		"性感開発→성감 개발",
 		"敏感なのに更に性感開発→민감한데 성감 개발까지 더해져",
+		"半中半外半彼女→반은 질내·반은 질외·반쪽 여친",
+		"円光→조건만남",
+		"タダまん→공짜 섹스",
+		"ヌける→꼴리는|딸감",
+		"種付け→수정섹스|임신시키기",
+		"淫裸MIDARA/淫裸（ミダラ）→음란한 알몸",
+		"性獣→색마≠성녀",
+		"ナンパ→헌팅",
+		"パリピ→파티광",
+		"セフレちゃん→섹파짱",
+		"ヤラせてくれる女→대주는 여자",
 	} {
 		assert.Contains(t, rules, expected)
 	}
+	assert.Equal(t, 1, strings.Count(rules, "杭打ち騎乗位→말뚝박기 기승위"))
 	assert.Less(t, len(rules), 18000)
 }
 
@@ -329,8 +345,10 @@ func TestBuildLLMQualityReviewPromptIncludesSourceCandidateAndStrictOutput(t *te
 	require.NoError(t, err)
 	assert.Contains(t, systemPrompt, "mandatory second-pass quality reviewer")
 	assert.Contains(t, systemPrompt, "鉄マン")
-	assert.Contains(t, systemPrompt, "Every original <<<quality_review_...>>> marker is mandatory")
-	assert.Contains(t, systemPrompt, "Never echo [JAPANESE SOURCE] or [KOREAN CANDIDATE]")
+	assert.Contains(t, systemPrompt, "Copy every <<<quality_review_...>>> marker")
+	assert.Contains(t, systemPrompt, llmCompletionMarker)
+	assert.Contains(t, systemPrompt, "Never echo source/candidate labels")
+	assert.Contains(t, systemPrompt, "Do not restore omitted release tags")
 	assert.Contains(t, userPrompt, "[JAPANESE SOURCE]\n鉄マン")
 	assert.Contains(t, userPrompt, "[KOREAN CANDIDATE]\n철맨")
 	assert.Contains(t, userPrompt, "<<<quality_review_title>>>")
@@ -358,6 +376,15 @@ func TestSanitizeQualityReviewTextExtractsFinalTextAfterGemmaPromptEcho(t *testi
 		candidate+"\n\n청춘 교복 미소녀와 보내는 성춘 3SEX. 160분 ⟦7000⟧",
 		sanitizeQualityReviewTextWithCandidate(echoed, "다른 후보"),
 	)
+}
+
+func TestSanitizeQualityReviewTextExtractsRewrittenDescription(t *testing.T) {
+	first := "카린짱이 파르기 떨며 패배 절정해버린다."
+	rewritten := "카린짱이 파르르 떨며 패배 절정해버린다."
+	value := first + "\n\n[REWRITTEN_KOREAN_DESCRIPTION]\n" + rewritten
+
+	assert.Equal(t, rewritten, sanitizeQualityReviewTextWithCandidate(value, first))
+	assert.True(t, isInvalidQualityReviewText(value), "unextracted rewrite labels must be rejected")
 }
 
 func TestSanitizeQualityReviewTextUsesEchoedKoreanCandidate(t *testing.T) {
@@ -477,6 +504,24 @@ func TestReviewJAVTranslationsPassesOriginalAndCandidateToSecondPass(t *testing.
 	require.Len(t, provider.items, 1)
 	assert.Equal(t, "鉄マン", provider.items[0].Source)
 	assert.Equal(t, "철맨", provider.items[0].Candidate)
+}
+
+func TestReviewJAVTranslationsCleansPromotionalSourceBeforeSecondPass(t *testing.T) {
+	provider := &qualityReviewMockProvider{response: "【전속 제2탄!】 본편 설명"}
+	service := New(Config{Enabled: true, Provider: "openai-compatible", TargetLanguage: "ko"}, provider)
+
+	result, err := service.ReviewJAVTranslations(context.Background(), []QualityReviewField{{
+		FieldName: "quality_review_description",
+		Source: "特典・セット商品イメージ 特典・セット商品情報 【特典内容】 ・生写真2枚 " +
+			"特典付き商品・セット商品について【専属第2弾！】本編の説明。" +
+			"※こちらはBlu-ray Disc専用ソフトです。対応プレイヤー以外では再生できません。",
+		Candidate: "【전속 제2탄!】 본편 설명",
+	}})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"【전속 제2탄!】 본편 설명"}, result)
+	require.Len(t, provider.items, 1)
+	assert.Equal(t, "【専属第2弾！】本編の説明。", provider.items[0].Source)
 }
 
 func TestReviewJAVTranslationsAcceptsFinalTextAfterGemmaPromptEcho(t *testing.T) {

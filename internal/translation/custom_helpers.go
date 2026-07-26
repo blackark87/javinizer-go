@@ -181,6 +181,7 @@ func extractHonorificNameToken(name string) (string, bool) {
 }
 
 var descriptionPromoStoreRE = regexp.MustCompile(`(?:特集\s*)?最新作やセール商品など、お得な情報満載[の의]\s*『[^』]*KMPストア[^』]*』はこちら！?`)
+var descriptionFANZABonusPrefixRE = regexp.MustCompile(`^特典・セット商品イメージ\s*特典・セット商品情報\s*【特典内容】.*?特典付き商品・セット商品について`)
 
 var descriptionPromotionalAnchors = []string{
 	"※この作品はバイノーラル録音されております", "※ この作品はバイノーラル録音されております",
@@ -189,10 +190,12 @@ var descriptionPromotionalAnchors = []string{
 	"「動作環境・対応デバイス」について", "※ 配信方法によって収録内容が異なる場合があります",
 	"※配信方法によって収録内容が異なる場合があります", "特集 最新作やセール商品など、お得な情報満載",
 	"最新作やセール商品など、お得な情報満載",
+	"※こちらはBlu-ray Disc専用ソフトです", "※ こちらはBlu-ray Disc専用ソフトです",
 }
 
 func cleanDescriptionForTranslation(description string) string {
 	description = strings.TrimSpace(description)
+	description = descriptionFANZABonusPrefixRE.ReplaceAllString(description, "")
 	cutAt := len(description)
 	for _, anchor := range descriptionPromotionalAnchors {
 		if index := strings.Index(description, anchor); index >= 0 && index < cutAt {
@@ -207,12 +210,16 @@ func cleanDescriptionForTranslation(description string) string {
 
 var vrMarkerRE = regexp.MustCompile(`[\[【［(（][\s　]*(?:\d+[\s　]*[KkＫｋ][\s　]*)?[VvＶｖ][RrＲｒ](?:[\s　]*(?:専用|動画|作品))?[\s　]*[\]】］)）]`)
 var promoMarkerRE = regexp.MustCompile(`[\[【［(（][^\]】］)）]*(?:限定|特典|セール|キャンペーン|独占|割引)[^\]】］)）]*[\]】］)）]`)
+var titleDevicePromoSuffixRE = regexp.MustCompile(`[ \t　]*(?:[（(]ブルーレイディスク[）)](?:[ \t　]*生写真[0-9０-９]+枚付き)?|生写真[0-9０-９]+枚付き)[ \t　]*$`)
 var asciiSpaceRunRE = regexp.MustCompile(`[ \t]{2,}`)
 var bracketedPrivateShootRE = regexp.MustCompile(`[\[【［][\s　]*(?:個撮|個人撮影)[\s　]*[\]】］]`)
 var bracketedKoreanPrivateShootRE = regexp.MustCompile(`[\[【［][\s　]*개인\s*촬영[\s　]*[\]】］]`)
 var bracketedPOVRE = regexp.MustCompile(`(?i)[\[【［][\s　]*POV[\s　]*[\]】］]`)
 
-func cleanTitleForTranslation(title string) string { return stripPromoMarkers(stripVRMarkers(title)) }
+func cleanTitleForTranslation(title string) string {
+	title = stripPromoMarkers(stripVRMarkers(title))
+	return strings.TrimSpace(titleDevicePromoSuffixRE.ReplaceAllString(title, ""))
+}
 
 // prepareTitleForTranslation protects Korean title terminology whose source
 // punctuation is semantically significant. LLMs otherwise tend to conflate
@@ -231,6 +238,9 @@ func prepareTitleForTranslation(title, targetLang string) string {
 func finalizeTitleTranslation(source, translated, targetLang string) string {
 	translated = strings.TrimSpace(translated)
 	if normalizeLanguage(targetLang) != "ko" || !strings.Contains(source, "[개인촬영]") {
+		if normalizeLanguage(targetLang) == "ko" {
+			return normalizeKoreanTitleSeparators(translated)
+		}
 		return translated
 	}
 	translated = bracketedPOVRE.ReplaceAllString(translated, "[개인촬영]")
@@ -238,7 +248,13 @@ func finalizeTitleTranslation(source, translated, targetLang string) string {
 	if !strings.Contains(translated, "[개인촬영]") {
 		translated = strings.TrimSpace("[개인촬영] " + translated)
 	}
-	return translated
+	return normalizeKoreanTitleSeparators(translated)
+}
+
+var japaneseTitleSeparatorRE = regexp.MustCompile(`[ \t]*ー[ \t]*`)
+
+func normalizeKoreanTitleSeparators(value string) string {
+	return strings.TrimSpace(japaneseTitleSeparatorRE.ReplaceAllString(value, " - "))
 }
 
 func stripVRMarkers(title string) string {
@@ -279,10 +295,39 @@ func containsHangul(value string) bool {
 }
 
 func isResidualJapaneseRune(r rune) bool {
+	// Katakana punctuation is valid in otherwise Korean metadata. The middle
+	// dot separates names and title fragments, while the prolonged sound mark
+	// is often preserved as a dash-like title separator. Neither is evidence
+	// of an untranslated Japanese word by itself.
+	if r == '・' || r == 'ー' {
+		return false
+	}
 	return r >= 0x3040 && r <= 0x30ff || r >= 0x3400 && r <= 0x4dbf || r >= 0x4e00 && r <= 0x9fff
 }
 
 func containsResidualJapanese(value string) bool { return countResidualJapanese(value) > 0 }
+
+func residualJapaneseExcerpt(value string, maxRunes int) string {
+	if maxRunes <= 0 {
+		maxRunes = 12
+	}
+	excerpt := make([]rune, 0, maxRunes)
+	started := false
+	for _, r := range value {
+		if isResidualJapaneseRune(r) {
+			started = true
+			excerpt = append(excerpt, r)
+			if len(excerpt) >= maxRunes {
+				break
+			}
+			continue
+		}
+		if started {
+			break
+		}
+	}
+	return string(excerpt)
+}
 
 func countResidualJapanese(value string) int {
 	count := 0

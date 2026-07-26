@@ -421,6 +421,14 @@ definitions:
         example: /path/to
         type: string
     type: object
+  github_com_javinizer_javinizer-go_internal_api_contracts.CompletedContentActressFilter:
+    properties:
+      actress:
+        $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_models.Actress'
+      count:
+        example: 12
+        type: integer
+    type: object
   github_com_javinizer_javinizer-go_internal_api_contracts.CompletedContentItem:
     properties:
       actresses:
@@ -438,6 +446,12 @@ definitions:
         type: string
       latest_job_id:
         example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      metadata_created_at:
+        example: "2026-07-25T12:00:00Z"
+        type: string
+      metadata_updated_at:
+        example: "2026-07-26T09:30:00Z"
         type: string
       movie_id:
         example: MIUM-985
@@ -466,6 +480,10 @@ definitions:
     type: object
   github_com_javinizer_javinizer-go_internal_api_contracts.CompletedContentListResponse:
     properties:
+      actress_filters:
+        items:
+          $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.CompletedContentActressFilter'
+        type: array
       contents:
         items:
           $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.CompletedContentItem'
@@ -4864,6 +4882,28 @@ paths:
         in: query
         name: q
         type: string
+      - description: Filter by exact actress ID
+        in: query
+        minimum: 1
+        name: actress_id
+        type: integer
+      - default: organized_at
+        description: Sort field
+        enum:
+        - organized_at
+        - metadata_created_at
+        - metadata_updated_at
+        in: query
+        name: sort
+        type: string
+      - default: desc
+        description: Sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
       - default: 20
         description: Maximum number of movies to return
         in: query
@@ -5992,6 +6032,51 @@ paths:
           schema:
             $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse'
       summary: Rescrape movie with specific scrapers
+      tags:
+      - movies
+  /api/v1/movies/{id}/translation-review:
+    post:
+      consumes:
+      - application/json
+      description: Creates a fresh Korean translation from retained Japanese metadata,
+        runs the second-pass JAV quality reviewer, and persists only the reviewed
+        field.
+      parameters:
+      - description: Movie ID or content ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Field to review
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.TranslationReviewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.TranslationReviewResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse'
+      summary: Retranslate one stored movie field with the configured LLM
       tags:
       - movies
   /api/v1/posters/{filename}:

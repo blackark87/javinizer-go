@@ -45,10 +45,18 @@ describe('completed content utilities', () => {
 	it('builds stable search and pagination values', () => {
 		expect(completedContentPageCount(41, 20)).toBe(3);
 		expect(completedContentPageCount(0, 20)).toBe(1);
-		expect(completedContentSearchURL(' 白岩冬萌 ', 2)).toBe(
-			'/completed?q=%E7%99%BD%E5%B2%A9%E5%86%AC%E8%90%8C&page=2',
+		expect(
+			completedContentSearchURL({
+				query: ' 白岩冬萌 ',
+				actressID: 7,
+				pageSize: 50,
+				sort: 'metadata_updated_at_asc',
+				page: 2,
+			}),
+		).toBe(
+			'/completed?q=%E7%99%BD%E5%B2%A9%E5%86%AC%E8%90%8C&actress=7&limit=50&sort=metadata_updated_at_asc&page=2',
 		);
-		expect(completedContentSearchURL('  ', 1)).toBe('/completed');
+		expect(completedContentSearchURL({ query: '  ', page: 1 })).toBe('/completed');
 	});
 
 	it('builds an encoded cached-movie metadata route', () => {

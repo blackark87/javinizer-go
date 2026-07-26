@@ -16,6 +16,7 @@
 	let originalMovie = $state<Movie | null>(null);
 	let loading = $state(true);
 	let saving = $state(false);
+	let retranslatingField = $state<'title' | 'description' | null>(null);
 	let error = $state<string | null>(null);
 	let loadedID = '';
 	let requestSequence = 0;
@@ -82,6 +83,27 @@
 			);
 		} finally {
 			saving = false;
+		}
+	}
+
+	async function retranslateField(field: 'title' | 'description') {
+		if (!movie || hasChanges || saving || retranslatingField !== null) return;
+		retranslatingField = field;
+		try {
+			const response = await apiClient.reviewMovieTranslation(movieID, { field });
+			originalMovie = cloneMovie(response.movie);
+			movie = cloneMovie(response.movie);
+			if (response.changed) {
+				toastStore.success(`${field === 'title' ? 'Title' : 'Description'} retranslated`);
+			} else {
+				toastStore.success('The reviewed translation was unchanged');
+			}
+		} catch (cause) {
+			toastStore.error(
+				cause instanceof Error ? cause.message : 'Failed to retranslate metadata',
+			);
+		} finally {
+			retranslatingField = null;
 		}
 	}
 
@@ -163,6 +185,9 @@
 					{movie}
 					{originalMovie}
 					onUpdate={updateMovie}
+					onRetranslate={retranslateField}
+					{retranslatingField}
+					retranslationDisabled={hasChanges || saving}
 					identifiersReadonly={true}
 				/>
 			</Card>

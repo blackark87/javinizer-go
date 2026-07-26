@@ -60,7 +60,8 @@ func (p *OpenAIProvider) Translate(ctx context.Context, sourceLang, targetLang s
 		headers: map[string]string{
 			"Authorization": "Bearer " + apiKey,
 		},
-		markers: markers,
+		markers:         markers,
+		maxOutputTokens: 4096,
 	}
 	return executeLLMChatTranslation(ctx, p.httpClient, adapter, "openai", baseURL, model, systemPrompt, userPrompt, len(texts))
 }
@@ -128,6 +129,7 @@ func (p *OpenAICompatibleProvider) Translate(ctx context.Context, sourceLang, ta
 	strategies := buildOpenAICompatibleThinkingStrategies(baseURL, model, p.cfg.OpenAICompatible)
 
 	var lastErr error
+	truncationFallbackAttempted := false
 	for _, strategy := range strategies {
 		request := applyOpenAICompatibleThinkingStrategy(baseRequest, strategy, thinkingEnabled, p.cfg.OpenAICompatible.ThinkingMode)
 		result, err := executeOpenAIChatTranslation(ctx, p.httpClient, openAIChatCallOptions{
@@ -147,8 +149,42 @@ func (p *OpenAICompatibleProvider) Translate(ctx context.Context, sourceLang, ta
 		}
 
 		lastErr = err
+		if thinkingEnabled &&
+			strategy != openAICompatibleThinkingStrategyNone &&
+			!truncationFallbackAttempted &&
+			isTruncatedTranslationError(err) {
+			truncationFallbackAttempted = true
+			logging.Debugf(
+				"Translation (openai-compatible): output was truncated with thinking enabled; retrying once with thinking disabled",
+			)
+			disabledRequest := applyOpenAICompatibleThinkingStrategy(
+				baseRequest,
+				strategy,
+				false,
+				p.cfg.OpenAICompatible.ThinkingMode,
+			)
+			result, disabledErr := executeOpenAIChatTranslation(ctx, p.httpClient, openAIChatCallOptions{
+				provider:  "openai-compatible",
+				baseURL:   baseURL,
+				endpoint:  "/chat/completions",
+				model:     model,
+				headers:   headers,
+				request:   disabledRequest,
+				textCount: len(texts),
+				markers:   markers,
+				logInput:  true,
+				logTiming: true,
+			})
+			if disabledErr == nil {
+				return result, nil
+			}
+			lastErr = disabledErr
+			if !isRetryableThinkingStrategyError(disabledErr) {
+				return nil, disabledErr
+			}
+		}
 		if strategy == openAICompatibleThinkingStrategyNone || !isRetryableThinkingStrategyError(err) {
-			return nil, err
+			return nil, lastErr
 		}
 
 		logging.Debugf("Translation (openai-compatible): thinking strategy %q failed (%v), trying fallback", strategy, err)

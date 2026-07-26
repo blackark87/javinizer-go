@@ -20,12 +20,20 @@ type CompletedContentItem struct {
 	Paths                    []string         `json:"paths" example:"/media/MIUM-985/MIUM-985.mp4"`
 	LatestJobID              string           `json:"latest_job_id" example:"550e8400-e29b-41d4-a716-446655440000"`
 	OrganizedAt              string           `json:"organized_at" example:"2026-07-26T12:00:00Z"`
+	MetadataCreatedAt        string           `json:"metadata_created_at,omitempty" example:"2026-07-25T12:00:00Z"`
+	MetadataUpdatedAt        string           `json:"metadata_updated_at,omitempty" example:"2026-07-26T09:30:00Z"`
+}
+
+type CompletedContentActressFilter struct {
+	Actress models.Actress `json:"actress"`
+	Count   int64          `json:"count" example:"12"`
 }
 
 // CompletedContentListResponse is a paginated completed-content response.
 type CompletedContentListResponse struct {
-	Contents []CompletedContentItem `json:"contents"`
-	Total    int64                  `json:"total" example:"42"`
-	Limit    int                    `json:"limit" example:"20"`
-	Offset   int                    `json:"offset" example:"0"`
+	Contents       []CompletedContentItem          `json:"contents"`
+	ActressFilters []CompletedContentActressFilter `json:"actress_filters"`
+	Total          int64                           `json:"total" example:"42"`
+	Limit          int                             `json:"limit" example:"20"`
+	Offset         int                             `json:"offset" example:"0"`
 }

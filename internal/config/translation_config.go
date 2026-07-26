@@ -44,6 +44,8 @@ type TranslationConfig struct {
 	MaxConcurrency          int                               `yaml:"max_concurrency" json:"max_concurrency"`                     // Maximum concurrent translation requests
 	ApplyToPrimary          bool                              `yaml:"apply_to_primary" json:"apply_to_primary"`                   // Replace primary movie metadata with translated text
 	OverwriteExistingTarget bool                              `yaml:"overwrite_existing_target" json:"overwrite_existing_target"` // Overwrite target-language translation if already present
+	DictionaryEnabled       bool                              `yaml:"dictionary_enabled" json:"dictionary_enabled"`               // Use the compact Korean JAV prompt with the editable dictionary
+	Dictionary              string                            `yaml:"dictionary" json:"dictionary"`                               // User-editable Korean JAV terminology dictionary
 	Fields                  TranslationFieldsConfig           `yaml:"fields" json:"fields"`                                       // Per-field translation controls
 	OpenAI                  OpenAITranslationConfig           `yaml:"openai" json:"openai"`                                       // OpenAI/OpenAI-compatible provider settings
 	DeepL                   DeepLTranslationConfig            `yaml:"deepl" json:"deepl"`                                         // DeepL provider settings
@@ -423,7 +425,11 @@ func (tc *TranslationConfig) SettingsHash() string {
 		TargetLanguages:         normalizeLanguageList(tc.TargetLanguages),
 		ApplyToPrimary:          tc.ApplyToPrimary,
 		OverwriteExistingTarget: tc.OverwriteExistingTarget,
+		DictionaryEnabled:       tc.DictionaryEnabled,
 		Fields:                  tc.Fields,
+	}
+	if tc.DictionaryEnabled {
+		hashInput.Dictionary = strings.TrimSpace(tc.Dictionary)
 	}
 
 	// Add provider-specific model settings (these affect output)
@@ -467,6 +473,8 @@ type settingsHashInput struct {
 	TargetLanguages                 []string                `json:"target_languages,omitempty"`
 	ApplyToPrimary                  bool                    `json:"apply_to_primary"`
 	OverwriteExistingTarget         bool                    `json:"overwrite_existing_target"`
+	DictionaryEnabled               bool                    `json:"dictionary_enabled"`
+	Dictionary                      string                  `json:"dictionary,omitempty"`
 	Fields                          TranslationFieldsConfig `json:"fields"`
 	OpenAIModel                     string                  `json:"openai_model,omitempty"`
 	OpenAICompatibleModel           string                  `json:"openai_compatible_model,omitempty"`

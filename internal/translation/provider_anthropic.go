@@ -50,7 +50,7 @@ func (p *AnthropicProvider) Translate(ctx context.Context, sourceLang, targetLan
 	}
 
 	markers := translationMarkersFromContext(ctx, len(texts))
-	systemPrompt, userPrompt, err := buildLLMTranslationPromptsWithMarkers(sourceLang, targetLang, texts, markers)
+	systemPrompt, userPrompt, err := buildLLMTranslationPromptsWithMarkers(sourceLang, targetLang, texts, markers, promptOptionsFromConfig(p.cfg))
 	if err != nil {
 		return nil, err
 	}

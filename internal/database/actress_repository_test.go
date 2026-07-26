@@ -490,7 +490,7 @@ func TestActressRepository_ListMissingMetadataIDs(t *testing.T) {
 	assert.Equal(t, []uint{actresses[1].ID, actresses[2].ID, actresses[3].ID}, ids)
 }
 
-func TestActressRepository_ListMissingMetadataOrTranslationIDsExcludesUnknown(t *testing.T) {
+func TestActressRepository_ListMissingMetadataOrTranslationIDsExcludesUnknownAndDescriptions(t *testing.T) {
 	cfg := &Config{Type: "sqlite", DSN: filepath.Join(t.TempDir(), "missing-data.db"), LogLevel: "error"}
 	db, err := New(cfg)
 	require.NoError(t, err)
@@ -505,7 +505,10 @@ func TestActressRepository_ListMissingMetadataOrTranslationIDsExcludesUnknown(t 
 	missingTranslation := &models.Actress{
 		DMMID: 10, JapaneseName: "翻訳待ち", ThumbURL: "https://example.com/translated.jpg",
 	}
-	for _, actress := range []*models.Actress{unknown, missingMetadata, missingTranslation} {
+	descriptive := &models.Actress{
+		FirstName: "37kg의 인재", LastName: "몸무게", JapaneseName: "体重37キロの逸材",
+	}
+	for _, actress := range []*models.Actress{unknown, missingMetadata, missingTranslation, descriptive} {
 		require.NoError(t, repo.Create(context.Background(), actress))
 	}
 

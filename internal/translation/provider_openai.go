@@ -48,9 +48,10 @@ func (p *OpenAIProvider) Translate(ctx context.Context, sourceLang, targetLang s
 	}
 
 	markers := translationMarkersFromContext(ctx, len(texts))
-	systemPrompt, userPrompt, err := buildLLMTranslationPromptsWithMarkers(sourceLang, targetLang, texts, markers)
+	promptOptions := promptOptionsFromConfig(p.cfg)
+	systemPrompt, userPrompt, err := buildLLMTranslationPromptsWithMarkers(sourceLang, targetLang, texts, markers, promptOptions)
 	if reviewItems, ok := qualityReviewFromContext(ctx, len(texts)); ok {
-		systemPrompt, userPrompt, err = buildLLMQualityReviewPromptsWithMarkers(targetLang, reviewItems, markers)
+		systemPrompt, userPrompt, err = buildLLMQualityReviewPromptsWithMarkers(targetLang, reviewItems, markers, promptOptions)
 	}
 	if err != nil {
 		return nil, err
@@ -104,9 +105,10 @@ func (p *OpenAICompatibleProvider) Translate(ctx context.Context, sourceLang, ta
 	}
 
 	markers := translationMarkersFromContext(ctx, len(texts))
-	systemPrompt, userPrompt, err := buildLLMTranslationPromptsWithMarkers(sourceLang, targetLang, texts, markers)
+	promptOptions := promptOptionsFromConfig(p.cfg)
+	systemPrompt, userPrompt, err := buildLLMTranslationPromptsWithMarkers(sourceLang, targetLang, texts, markers, promptOptions)
 	if reviewItems, ok := qualityReviewFromContext(ctx, len(texts)); ok {
-		systemPrompt, userPrompt, err = buildLLMQualityReviewPromptsWithMarkers(targetLang, reviewItems, markers)
+		systemPrompt, userPrompt, err = buildLLMQualityReviewPromptsWithMarkers(targetLang, reviewItems, markers, promptOptions)
 	}
 	if err != nil {
 		return nil, err

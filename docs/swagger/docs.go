@@ -7621,6 +7621,14 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "dictionary": {
+                    "description": "User-editable Korean JAV terminology dictionary",
+                    "type": "string"
+                },
+                "dictionary_enabled": {
+                    "description": "Use the compact Korean JAV prompt with the editable dictionary",
+                    "type": "boolean"
+                },
                 "enabled": {
                     "description": "Enable metadata translation after aggregation",
                     "type": "boolean"

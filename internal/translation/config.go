@@ -13,6 +13,8 @@ type Config struct {
 	MaxConcurrency          int
 	ApplyToPrimary          bool
 	OverwriteExistingTarget bool
+	DictionaryEnabled       bool
+	Dictionary              string
 	Fields                  fieldsConfig
 	OpenAI                  openAIConfig
 	DeepL                   deepLConfig

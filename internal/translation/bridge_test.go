@@ -18,6 +18,8 @@ func TestConfigFromAppMapsAllFields(t *testing.T) {
 		TimeoutSeconds:          30,
 		ApplyToPrimary:          true,
 		OverwriteExistingTarget: true,
+		DictionaryEnabled:       true,
+		Dictionary:              "中出し -> 질내사정",
 		Fields: config.TranslationFieldsConfig{
 			Title:         true,
 			OriginalTitle: true,
@@ -68,6 +70,8 @@ func TestConfigFromAppMapsAllFields(t *testing.T) {
 		TimeoutSeconds:          30,
 		ApplyToPrimary:          true,
 		OverwriteExistingTarget: true,
+		DictionaryEnabled:       true,
+		Dictionary:              "中出し -> 질내사정",
 		Fields:                  fieldsConfig{Title: true, OriginalTitle: true, Description: true, Director: true, Maker: true, Label: true, Series: true, Genres: true, Actresses: true},
 		OpenAI:                  openAIConfig{BaseURL: "https://api.openai.com/v1", APIKey: "openai-key", Model: "gpt-4o-mini"},
 		DeepL:                   deepLConfig{Mode: models.DeepLModePro, BaseURL: "https://api.deepl.com", APIKey: "deepl-key"},

@@ -359,6 +359,8 @@ func TestCleanActressNameForTranslation(t *testing.T) {
 		// bracket stripping (existing)
 		{"[カレン]", "カレン"},
 		{"[田中香]", "田中香"},
+		{"みなみ(", "みなみ"},
+		{"みなみ（旧名", "みなみ"},
 		// comma stripping (existing)
 		{"カレン, 25歳, 歯科衛生士", "カレン"},
 		// middle-dot descriptor stripping
@@ -479,6 +481,14 @@ func TestCleanTitleForTranslation(t *testing.T) {
 		{
 			"【数量限定】本編タイトル （ブルーレイディスク） 生写真2枚付き",
 			"本編タイトル",
+		},
+		{
+			"「「めちゃくちゃにしてほしいです・・・。」小動物系美少女 【初撮り】ネット…」：Mgs動画＜プレステージ グループ＞アダルト動画配信サイト",
+			"「「めちゃくちゃにしてほしいです・・・。」小動物系美少女 【初撮り】ネット…」",
+		},
+		{
+			"タイトル：副題",
+			"タイトル：副題",
 		},
 	}
 

@@ -1,11 +1,56 @@
 package config
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestDefaultKoreanJAVDictionaryUsesDirectContextualTerminology(t *testing.T) {
+	for _, expected := range []string{
+		"성기·성행위·사정 표현은 원문의 노골성을 유지",
+		"소중이, 그곳, 중요 부위 같은 완곡어로 순화하지 않음",
+		"中出し -> 질내사정(제목·장르) / 안에 싸다(거친 대사·서술)",
+		"フェラ / フェラチオ -> 펠라(제목·장르) / 자지 빨기(거친 행위 묘사)",
+		"クンニ -> 보빨",
+		"爆美女 -> 초미녀",
+		"桃尻 / 桃Siri -> 애플힙",
+		"白桃尻 -> 뽀얀 애플힙",
+		"ツルツルパイパンの綺麗なマ●コ -> 매끈하고 예쁜 백보지",
+		"手マン -> 핑거링(제목·장르) / 보지를 손가락으로 쑤시다(거친 서술)",
+		"ガシガシ手マン -> 거친 핑거링 / 보지를 손가락으로 거칠게 쑤시다",
+		"潮吹き -> 분수 / 분수 폭발",
+		"潮を部屋中に大噴出 -> 방 안 가득 분수 폭발",
+		"潮吹き処女も頂いちゃった模様 -> 생애 첫 분수까지 터뜨려버린 듯",
+		"ごっくん -> 정액 삼키기 / 정액을 삼키다",
+		"即尺 -> 바로 빨기",
+		"激ピス -> 격렬한 피스톤",
+		"電クリ -> 전동 클리 자극",
+		"鬼イカセ -> 무자비 강제 절정",
+		"ガン突き -> 쑤셔박기",
+		"激イキ -> 격렬 절정",
+		"ガン突き激イキ大放出セックス -> 쑤셔박기·격렬 절정·분수 대방출 섹스",
+		"性獣 -> 색마",
+		"ヤリモク -> 섹스만 노리는",
+		"ハメ撮り -> POV 섹스 / 셀프 섹스 촬영",
+		"シュートを決める -> 성적 JAV 문맥: 한 발 쏘다",
+		"華麗なシュートを決めてきました -> 성적 JAV 문맥: 제대로 한 발 쏘고 왔습니다",
+		"チームを勝利に導くマネージャーに華麗なシュートを決めてきました -> 팀을 승리로 이끄는 매니저에게 제대로 한 발 쏘고 왔습니다",
+		"小動物系 / 小動物系美少女 -> 소동물계 / 소동물계 미소녀",
+	} {
+		assert.Contains(t, defaultKoreanJAVDictionary, expected)
+	}
+	for _, softened := range []string{
+		"シュート -> 슛 (스포츠 문맥)",
+		"ハメ撮り -> POV 또는 셀프카메라",
+		"潮吹き -> 분수 또는 애액 분출",
+		"潮吹き -> 분수 / 애액을 뿜다",
+	} {
+		assert.False(t, strings.Contains(defaultKoreanJAVDictionary, softened))
+	}
+}
 
 func TestTranslationConfig_SettingsHash(t *testing.T) {
 	t.Run("deterministic hash for same config", func(t *testing.T) {
@@ -219,6 +264,33 @@ func TestTranslationConfig_SettingsHash(t *testing.T) {
 		}
 
 		assert.NotEqual(t, cfg1.SettingsHash(), cfg2.SettingsHash(), "thinking toggle should affect hash")
+	})
+
+	t.Run("dictionary mode changes output hash", func(t *testing.T) {
+		base := TranslationConfig{Provider: "openai", TargetLanguage: "ko", Dictionary: "中出し -> 질내사정"}
+		dictionaryMode := base
+		dictionaryMode.DictionaryEnabled = true
+
+		assert.NotEqual(t, base.SettingsHash(), dictionaryMode.SettingsHash())
+	})
+
+	t.Run("enabled dictionary content changes output hash", func(t *testing.T) {
+		first := TranslationConfig{
+			Provider: "openai", TargetLanguage: "ko",
+			DictionaryEnabled: true, Dictionary: "中出し -> 질내사정",
+		}
+		second := first
+		second.Dictionary = "中出し -> 안에 싸기"
+
+		assert.NotEqual(t, first.SettingsHash(), second.SettingsHash())
+	})
+
+	t.Run("inactive dictionary edits do not change output hash", func(t *testing.T) {
+		first := TranslationConfig{Provider: "openai", TargetLanguage: "ko", Dictionary: "中出し -> 질내사정"}
+		second := first
+		second.Dictionary = "中出し -> 안에 싸기"
+
+		assert.Equal(t, first.SettingsHash(), second.SettingsHash())
 	})
 }
 

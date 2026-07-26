@@ -22,6 +22,8 @@ func ConfigFromApp(cfg config.TranslationConfig) Config {
 		MaxConcurrency:          cfg.MaxConcurrency,
 		ApplyToPrimary:          cfg.ApplyToPrimary,
 		OverwriteExistingTarget: cfg.OverwriteExistingTarget,
+		DictionaryEnabled:       cfg.DictionaryEnabled,
+		Dictionary:              cfg.Dictionary,
 		Fields:                  fieldsConfigFromApp(cfg.Fields),
 		OpenAI:                  openAIConfigFromApp(cfg.OpenAI),
 		DeepL:                   deepLConfigFromApp(cfg.DeepL),

@@ -2101,6 +2101,12 @@ definitions:
         allOf:
         - $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_config.DeepLTranslationConfig'
         description: DeepL provider settings
+      dictionary:
+        description: User-editable Korean JAV terminology dictionary
+        type: string
+      dictionary_enabled:
+        description: Use the compact Korean JAV prompt with the editable dictionary
+        type: boolean
       enabled:
         description: Enable metadata translation after aggregation
         type: boolean
@@ -3930,7 +3936,8 @@ paths:
       - actress
   /api/v1/actresses/sync-candidates:
     get:
-      description: Return IDs of actresses missing a DMM ID, profile thumbnail, or configured actress translation
+      description: Return IDs of actresses missing a DMM ID, profile thumbnail, or
+        configured actress translation
       produces:
       - application/json
       responses:

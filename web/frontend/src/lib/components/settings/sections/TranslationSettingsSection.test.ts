@@ -64,3 +64,34 @@ describe('TranslationSettingsSection thinking mode', () => {
 		expect(select.disabled).toBe(true);
 	});
 });
+
+describe('TranslationSettingsSection dictionary mode', () => {
+	it('shows and edits the dictionary only when dictionary mode is enabled', async () => {
+		const config = makeConfig(false);
+		config.metadata.translation!.dictionary = '中出し -> 질내사정';
+		const { container, getByLabelText } = render(TranslationSettingsSection, {
+			config,
+			inputClass: 'input',
+			fetchTranslationModels: vi.fn(),
+			fetchingTranslationModels: false,
+			translationModelOptions: [],
+		});
+
+		const header = container.querySelector('button[aria-expanded="false"]') as HTMLButtonElement;
+		await fireEvent.click(header);
+		await waitFor(() => expect(getByLabelText('Dictionary-based prompt')).toBeTruthy());
+		expect(container.querySelector('#translation-dictionary')).toBeNull();
+
+		await fireEvent.click(getByLabelText('Dictionary-based prompt'));
+		const editor = await waitFor(() => {
+			const textarea = container.querySelector('#translation-dictionary') as HTMLTextAreaElement | null;
+			expect(textarea).toBeTruthy();
+			return textarea!;
+		});
+		expect(config.metadata.translation?.dictionary_enabled).toBe(true);
+		expect(editor.value).toBe('中出し -> 질내사정');
+
+		await fireEvent.input(editor, { target: { value: '手コキ -> 대딸' } });
+		expect(config.metadata.translation?.dictionary).toBe('手コキ -> 대딸');
+	});
+});

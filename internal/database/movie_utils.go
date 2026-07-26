@@ -7,8 +7,10 @@ import (
 )
 
 // filterIdentifiableActresses removes actresses from the list that have no
-// identifying information (no DMMID, no JapaneseName, no FirstName, no LastName).
-// This prevents zero-value placeholders from being persisted as real actress records.
+// identifying information and canonicalizes promotional blurbs to Unknown.
+// This is the final persistence boundary: even if an upstream scraper or
+// translation path misses its cleanup, descriptive text must never create an
+// actress row.
 func filterIdentifiableActresses(actresses []models.Actress) []models.Actress {
 	if len(actresses) == 0 {
 		return actresses
@@ -16,6 +18,12 @@ func filterIdentifiableActresses(actresses []models.Actress) []models.Actress {
 
 	filtered := make([]models.Actress, 0, len(actresses))
 	for _, actress := range actresses {
+		if models.IsDescriptiveNonName(actress.LastName, actress.FirstName, actress.JapaneseName) {
+			actress = models.Actress{
+				FirstName:    models.UnknownActressName,
+				JapaneseName: models.UnknownActressName,
+			}
+		}
 		if actress.DMMID != 0 ||
 			strings.TrimSpace(actress.JapaneseName) != "" ||
 			strings.TrimSpace(actress.FirstName) != "" ||

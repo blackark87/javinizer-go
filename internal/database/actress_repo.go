@@ -288,7 +288,8 @@ func (r *ActressRepository) ListMissingMetadataOrTranslationIDs(targetLanguages 
 	}
 	filtered := make([]uint, 0, len(actresses))
 	for _, actress := range actresses {
-		if models.IsUnknownActressFields(actress.LastName, actress.FirstName, actress.JapaneseName) {
+		if models.IsUnknownActressFields(actress.LastName, actress.FirstName, actress.JapaneseName) ||
+			models.IsDescriptiveNonName(actress.LastName, actress.FirstName, actress.JapaneseName) {
 			continue
 		}
 		filtered = append(filtered, actress.ID)

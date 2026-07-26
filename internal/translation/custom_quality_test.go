@@ -390,16 +390,110 @@ func TestKoreanJAVPromptCoversERK091FC2AndSIRO5432(t *testing.T) {
 		"EXACT 見た目とは真逆の超清楚な経験人数3人の彼女とお泊まりSeX→겉모습과 정반대로 남자 경험이 3명뿐인 초청순녀와 숙박 섹스",
 		"爆美女→초미녀≠폭녀",
 		"ツルツルパイパンの綺麗なマ●コを豪快に広げられ→매끈하고 예쁜 백보지가 과감하게 쫙 벌려지고",
-		"潮を部屋中に大噴出→방 안 가득 분수를 뿜어내다",
-		"EXACT 潮吹き処女も頂いちゃった模様→첫 분수 경험까지 빼앗은 모양",
-		"ガン突き激イキ大放出セックス→거칠게 박아 격렬하게 가버리고 마구 쏟아내는 섹스",
+		"潮を部屋中に大噴出→방 안 가득 분수 폭발",
+		"潮吹き処女も頂いちゃった模様→생애 첫 분수까지 터뜨려버린 듯",
+		"ガン突き激イキ大放出セックス→쑤셔박기·격렬 절정·분수 대방출 섹스",
 		"Truncated →A stays →A",
 	} {
 		assert.Contains(t, rules, expected)
 	}
 	assert.NotContains(t, rules, "オホ声→오호 신음")
 	assert.NotContains(t, rules, "性癖→성적 취향")
+	assert.NotContains(t, rules, "→첫 분수 경험까지 빼앗은 모양")
+	assert.NotContains(t, rules, "→첫 분수까지 따먹은 듯")
+	assert.NotContains(t, rules, "거칠게 박아 격렬하게 가버리고 마구 쏟아내는 섹스")
 	assert.Less(t, utf8.RuneCountInString(rules), 10000)
+}
+
+func TestKoreanJAVPromptCoversLatestProductionMistranslations(t *testing.T) {
+	rules := koreanJAVPromptRules("ko")
+	for _, expected := range []string{
+		"げんえ./き→げんえき→현역",
+		"금지: 음란녀/경험 있음",
+		"秘蔵→미공개|비공개 소장",
+		"금지: 비장",
+		"蔵出し/蔵出し動画→미공개 영상|소장 영상 공개",
+		"ガルバ→걸즈바",
+		"気弱な→소심한",
+		"sports シュート→슛",
+		"JAV double meaning シュートを決める→한 발 쏘다",
+		"Aにシュートを決める→A에게 한 발 쏘다",
+		"EXACT チームを勝利に導くマネージャーに華麗なシュートを決めてきました→팀을 승리로 이끄는 매니저에게 제대로 한 발 쏘고 왔습니다",
+		"금지: 슈트/화려한 슛/매니저가 한 발 쏘다",
+		"小動物系→소동물계",
+		"小動物系美少女→소동물계 미소녀",
+		"금지: 작고 귀여운으로 설명",
+		"利き手→주로 쓰는 손",
+		"좌우를 임의로 만들지 않는다",
+		"erotic-change 確変",
+	} {
+		assert.Contains(t, rules, expected)
+	}
+}
+
+func TestBuildLLMPrompts_DictionaryModeUsesCompactPromptAndSkipsLegacyConstraints(t *testing.T) {
+	options := llmPromptOptions{
+		dictionaryEnabled: true,
+		dictionary:        "ギャルしべ長者 -> 갸루 소개 릴레이\n中出し -> 질내사정",
+	}
+	systemPrompt, userPrompt, err := buildLLMTranslationPromptsWithMarkers(
+		"ja",
+		"ko",
+		[]string{"ギャルしべ長者で中出し"},
+		[]string{"<<<title>>>"},
+		options,
+	)
+	require.NoError(t, err)
+
+	assert.Contains(t, systemPrompt, "Korean JAV dictionary mode:")
+	assert.Contains(t, systemPrompt, "USER JAV DICTIONARY")
+	assert.Contains(t, systemPrompt, "Translate each labeled section independently")
+	assert.Contains(t, systemPrompt, "preserve IDs and numbers")
+	assert.Contains(t, systemPrompt, "never complete a source that ends truncated")
+	assert.Contains(t, systemPrompt, "ギャルしべ長者 -> 갸루 소개 릴레이")
+	assert.Contains(t, systemPrompt, "中出し -> 질내사정")
+	assert.NotContains(t, systemPrompt, "鉄マン→강철 보지")
+	assert.NotContains(t, userPrompt, "BATCH TERM CHECK")
+	assert.Contains(t, userPrompt, "ギャルしべ長者で中出し")
+
+	reviewPrompt, reviewUserPrompt, err := buildLLMQualityReviewPromptsWithMarkers(
+		"ko",
+		[]qualityReviewItem{{Source: "ギャルしべ長者", Candidate: "갸루시베 장자"}},
+		[]string{"<<<quality_review_title>>>"},
+		options,
+	)
+	require.NoError(t, err)
+	assert.Contains(t, reviewPrompt, "Korean JAV dictionary mode:")
+	assert.Contains(t, reviewPrompt, "ギャルしべ長者 -> 갸루 소개 릴레이")
+	assert.NotContains(t, reviewPrompt, "鉄マン→강철 보지")
+	assert.NotContains(t, reviewUserPrompt, "BATCH TERM CHECK")
+}
+
+func TestBuildLLMPrompts_DisabledDictionaryKeepsFullPrompt(t *testing.T) {
+	systemPrompt, userPrompt, err := buildLLMTranslationPromptsWithMarkers(
+		"ja",
+		"ko",
+		[]string{"ギャルしべ長者"},
+		[]string{"<<<title>>>"},
+		llmPromptOptions{dictionary: "中出し -> 안에 싸기"},
+	)
+	require.NoError(t, err)
+
+	assert.Contains(t, systemPrompt, "鉄マン→강철 보지")
+	assert.NotContains(t, systemPrompt, "USER JAV DICTIONARY")
+	assert.Contains(t, userPrompt, "BATCH TERM CHECK")
+}
+
+func TestBuildLLMPrompts_RemoveScrapedSiteAttributionFromTitles(t *testing.T) {
+	systemPrompt, _, err := buildLLMTranslationPromptsWithMarkers(
+		"ja",
+		"ko",
+		[]string{"作品名：Mgs動画＜プレステージ グループ＞アダルト動画配信サイト"},
+		[]string{"<<<title>>>"},
+		llmPromptOptions{dictionaryEnabled: true},
+	)
+	require.NoError(t, err)
+	assert.Contains(t, systemPrompt, "trailing source-site, streaming-platform, or store attribution")
 }
 
 func TestBuildLLMTranslationPrompts_AlwaysIncludesCompressedKoreanRules(t *testing.T) {

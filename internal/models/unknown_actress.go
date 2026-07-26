@@ -85,6 +85,7 @@ var descriptorKeywords = []string{
 	"女子大生", "大学", "年生", "専門学生", "職業", // student / occupation
 	"OL", "ＯＬ", "素人", // office lady / amateur
 	"美女", "美人", "美少女", "高飛車", "プライド", "清楚系", // appearance / personality blurbs
+	"美ボディ", "デカパイ", "色白", // body-based promotional blurbs
 	"体重", "キロ", "kg", "ｋｇ", "逸材", // weight-based promotional blurbs
 	"パイパン", // explicit anatomy blurbs cannot be performer names
 }
@@ -122,6 +123,15 @@ func IsDescriptiveNonName(lastName, firstName, japaneseName string) bool {
 		}
 		if ContainsDescriptorKeyword(field) {
 			return true
+		}
+		// Scrapers sometimes return a short promotional noun phrase that does
+		// not contain the stronger markers above, e.g. "クビレ美ボディ少女".
+		// A compound ending in 少女/女子 is descriptive, while a bare nickname
+		// such as あいちゃん remains a valid name.
+		for _, suffix := range []string{"少女", "女子"} {
+			if strings.HasSuffix(field, suffix) && len([]rune(field)) > len([]rune(suffix)) {
+				return true
+			}
 		}
 		if len([]rune(field)) > descriptiveNonNameMaxRunes {
 			return true

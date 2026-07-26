@@ -26,6 +26,10 @@
 		translationModelOptions
 	}: Props = $props();
 	const translationEnabled = $derived(config?.metadata?.translation?.enabled ?? false);
+	let dictionaryEnabled = $state(false);
+	$effect(() => {
+		dictionaryEnabled = config?.metadata?.translation?.dictionary_enabled ?? false;
+	});
 
 	let deeplUsage: DeepLUsageResponse | null = $state<DeepLUsageResponse | null>(null);
 	let fetchingDeepLUsage = $state(false);
@@ -85,6 +89,36 @@
 		/>
 
 		<fieldset disabled={!translationEnabled} class={`space-y-0 ${!translationEnabled ? 'opacity-60' : ''}`}>
+			<FormToggle
+				label="Dictionary-based prompt"
+				description="Use the compact Korean JAV prompt and the editable terminology dictionary instead of the full built-in prompt"
+				checked={dictionaryEnabled}
+				onchange={(val) => {
+					if (!config.metadata.translation) config.metadata.translation = {} as TranslationConfigType;
+					config.metadata.translation!.dictionary_enabled = val;
+					dictionaryEnabled = val;
+				}}
+			/>
+
+			{#if dictionaryEnabled}
+				<div class="py-4 border-b border-border">
+					<label class="block text-sm font-medium mb-2" for="translation-dictionary">Korean JAV terminology dictionary</label>
+					<p class="text-xs text-muted-foreground mb-2">
+						Enter one source-to-Korean mapping or contextual note per line. These entries are used with the compact prompt.
+					</p>
+					<textarea
+						id="translation-dictionary"
+						value={config.metadata.translation?.dictionary ?? ''}
+						oninput={(e) => {
+							if (!config.metadata.translation) config.metadata.translation = {} as TranslationConfigType;
+							config.metadata.translation!.dictionary = e.currentTarget.value;
+						}}
+						class={`${inputClass} min-h-64 resize-y font-mono text-sm`}
+						spellcheck="false"
+					></textarea>
+				</div>
+			{/if}
+
 			<div class="py-4 border-b border-border">
 				<label class="block text-sm font-medium mb-2" for="translation-provider">Provider</label>
 				<select id="translation-provider" bind:value={config.metadata.translation!.provider} class={inputClass}>

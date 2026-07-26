@@ -7,3 +7,9 @@ import _ "embed"
 //
 //go:embed prompts/korean_jav.md
 var koreanJAVPromptMarkdown string
+
+// koreanJAVCompactPromptMarkdown provides the small, principle-based prompt
+// used when the editable dictionary mode is enabled.
+//
+//go:embed prompts/korean_jav_compact.md
+var koreanJAVCompactPromptMarkdown string

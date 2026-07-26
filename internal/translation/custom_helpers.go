@@ -73,6 +73,11 @@ func CleanStoredActress(actress *models.Actress) bool {
 
 func cleanActressNameForTranslation(name string) string {
 	name = strings.TrimSpace(name)
+	for _, paren := range []string{"（", "("} {
+		if index := strings.Index(name, paren); index >= 0 {
+			name = strings.TrimSpace(name[:index])
+		}
+	}
 	if strings.HasPrefix(name, "[") {
 		if end := strings.LastIndex(name, "]"); end > 0 {
 			name = strings.TrimSpace(name[1:end])
@@ -220,6 +225,7 @@ func cleanDescriptionForTranslation(description string) string {
 var vrMarkerRE = regexp.MustCompile(`[\[【［(（][\s　]*(?:\d+[\s　]*[KkＫｋ][\s　]*)?[VvＶｖ][RrＲｒ](?:[\s　]*(?:専用|動画|作品))?[\s　]*[\]】］)）]`)
 var promoMarkerRE = regexp.MustCompile(`[\[【［(（][^\]】］)）]*(?:限定|特典|セール|キャンペーン|独占|割引)[^\]】］)）]*[\]】］)）]`)
 var titleDevicePromoSuffixRE = regexp.MustCompile(`[ \t　]*(?:[（(]ブルーレイディスク[）)](?:[ \t　]*生写真[0-9０-９]+枚付き)?|生写真[0-9０-９]+枚付き)[ \t　]*$`)
+var titleSourceAttributionSuffixRE = regexp.MustCompile(`[ \t　]*(?:：|:)[^：:]{0,200}(?:MGS動画|Mgs動画|アダルト動画配信サイト|プレステージ[ \t　]*グループ)[^：:]*$`)
 var asciiSpaceRunRE = regexp.MustCompile(`[ \t]{2,}`)
 var bracketedPrivateShootRE = regexp.MustCompile(`[\[【［][\s　]*(?:個撮|個人撮影)[\s　]*[\]】］]`)
 var bracketedKoreanPrivateShootRE = regexp.MustCompile(`[\[【［][\s　]*개인\s*촬영[\s　]*[\]】］]`)
@@ -227,6 +233,7 @@ var bracketedPOVRE = regexp.MustCompile(`(?i)[\[【［][\s　]*POV[\s　]*[\]】
 
 func cleanTitleForTranslation(title string) string {
 	title = stripPromoMarkers(stripVRMarkers(title))
+	title = titleSourceAttributionSuffixRE.ReplaceAllString(title, "")
 	return strings.TrimSpace(titleDevicePromoSuffixRE.ReplaceAllString(title, ""))
 }
 

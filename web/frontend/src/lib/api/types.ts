@@ -1014,6 +1014,8 @@ export interface TranslationConfig {
 	max_concurrency?: number;
 	apply_to_primary?: boolean;
 	overwrite_existing_target?: boolean;
+	dictionary_enabled?: boolean;
+	dictionary?: string;
 	fields?: TranslationFieldsConfig;
 	openai?: OpenAITranslationConfig;
 	deepl?: DeepLTranslationConfig;

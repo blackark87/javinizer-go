@@ -186,14 +186,45 @@ func TestFilterIdentifiableActresses(t *testing.T) {
 		{FirstName: "A"},
 		{LastName: "B"},
 		{FirstName: " ", LastName: " "},
+		{FirstName: "37kg의 인재", LastName: "몸무게", JapaneseName: "体重37キロの逸材"},
 	}
 
 	got := filterIdentifiableActresses(input)
-	require.Len(t, got, 4)
+	require.Len(t, got, 5)
 	assert.Equal(t, 123, got[0].DMMID)
 	assert.Equal(t, "  女優A  ", got[1].JapaneseName)
 	assert.Equal(t, "A", got[2].FirstName)
 	assert.Equal(t, "B", got[3].LastName)
+	assert.Equal(t, models.UnknownActressName, got[4].FirstName)
+	assert.Equal(t, models.UnknownActressName, got[4].JapaneseName)
+	assert.Zero(t, got[4].DMMID)
+}
+
+func TestMovieUpsertCanonicalizesDescriptiveActressBeforePersistence(t *testing.T) {
+	db := newDatabaseTestDB(t)
+	repo := NewMovieRepository(db)
+
+	movie, err := repo.Upsert(context.Background(), &models.Movie{
+		ContentID: "fc2ppv4758035",
+		ID:        "FC2-PPV-4758035",
+		Title:     "test",
+		Actresses: []models.Actress{{
+			FirstName:    "37kg의 인재",
+			LastName:     "몸무게",
+			JapaneseName: "体重37キロの逸材",
+		}},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, movie.Actresses, 1)
+	assert.Equal(t, models.UnknownActressName, movie.Actresses[0].FirstName)
+	assert.Equal(t, models.UnknownActressName, movie.Actresses[0].JapaneseName)
+
+	var descriptiveCount int64
+	require.NoError(t, db.DB.Model(&models.Actress{}).
+		Where("japanese_name = ?", "体重37キロの逸材").
+		Count(&descriptiveCount).Error)
+	assert.Zero(t, descriptiveCount)
 }
 
 func TestMovieRepositoryEnsureGenresExistTx(t *testing.T) {

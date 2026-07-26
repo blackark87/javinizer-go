@@ -490,6 +490,30 @@ func TestActressRepository_ListMissingMetadataIDs(t *testing.T) {
 	assert.Equal(t, []uint{actresses[1].ID, actresses[2].ID, actresses[3].ID}, ids)
 }
 
+func TestActressRepository_ListMissingMetadataOrTranslationIDsExcludesUnknown(t *testing.T) {
+	cfg := &Config{Type: "sqlite", DSN: filepath.Join(t.TempDir(), "missing-data.db"), LogLevel: "error"}
+	db, err := New(cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, db.RunMigrationsOnStartup(context.Background()))
+	repo := NewActressRepository(db)
+
+	unknown := &models.Actress{
+		FirstName: models.UnknownActressName, JapaneseName: models.UnknownActressName,
+	}
+	missingMetadata := &models.Actress{JapaneseName: "確認女優"}
+	missingTranslation := &models.Actress{
+		DMMID: 10, JapaneseName: "翻訳待ち", ThumbURL: "https://example.com/translated.jpg",
+	}
+	for _, actress := range []*models.Actress{unknown, missingMetadata, missingTranslation} {
+		require.NoError(t, repo.Create(context.Background(), actress))
+	}
+
+	ids, err := repo.ListMissingMetadataOrTranslationIDs([]string{"ko"})
+	require.NoError(t, err)
+	assert.Equal(t, []uint{missingMetadata.ID, missingTranslation.ID}, ids)
+}
+
 func TestActressRepository_ListMissingTranslationsAcceptsKoreanMononym(t *testing.T) {
 	cfg := &Config{Type: "sqlite", DSN: filepath.Join(t.TempDir(), "missing-translation.db"), LogLevel: "error"}
 	db, err := New(cfg)

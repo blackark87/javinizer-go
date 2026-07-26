@@ -57,6 +57,7 @@ func TestListActressSyncCandidates(t *testing.T) {
 		{DMMID: 0, JapaneseName: "Missing ID", ThumbURL: "id.jpg"},
 		{DMMID: 2, JapaneseName: "Missing thumbnail"},
 		{DMMID: 3, JapaneseName: "Missing translation", ThumbURL: "translation.jpg"},
+		{DMMID: 0, FirstName: models.UnknownActressName, JapaneseName: models.UnknownActressName},
 	}
 	for _, actress := range actresses {
 		require.NoError(t, deps.Repos.ActressRepo.Create(context.Background(), actress))

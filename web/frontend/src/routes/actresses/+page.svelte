@@ -182,7 +182,7 @@
 			}
 			const confirmed = await confirmDialog(
 				'Sync Missing Actress Data',
-				`Queue ${candidates.total} actress(es) missing metadata or translation? Unknown actresses expand into one task per linked movie.`,
+				`Queue ${candidates.total} actress(es) missing metadata or translation? Unknown actresses are excluded.`,
 				{ confirmLabel: 'Start Sync' },
 			);
 			if (confirmed) await startSyncJob({ scope: 'missing', missing: true });

@@ -254,8 +254,11 @@ func (r *ActressRepository) ListMissingMetadataIDs() ([]uint, error) {
 	return ids, nil
 }
 
-// ListMissingMetadataOrTranslationIDs returns stable actress IDs that need
-// either identity/profile enrichment or at least one configured translation.
+// ListMissingMetadataOrTranslationIDs returns stable non-placeholder actress
+// IDs that need either identity/profile enrichment or at least one configured
+// translation. Canonical Unknown rows are deliberately excluded from bulk
+// "missing" sync; callers may still explicitly select them for per-movie
+// identity resolution.
 // A Korean mononym is valid: completeness is determined from DisplayName, not
 // from whether both first_name and last_name are populated.
 func (r *ActressRepository) ListMissingMetadataOrTranslationIDs(targetLanguages []string) ([]uint, error) {
@@ -279,7 +282,18 @@ func (r *ActressRepository) ListMissingMetadataOrTranslationIDs(targetLanguages 
 		}
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	return ids, nil
+	actresses, err := r.ListByIDs(context.Background(), ids)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]uint, 0, len(actresses))
+	for _, actress := range actresses {
+		if models.IsUnknownActressFields(actress.LastName, actress.FirstName, actress.JapaneseName) {
+			continue
+		}
+		filtered = append(filtered, actress.ID)
+	}
+	return filtered, nil
 }
 
 // ListMissingTranslationIDs filters selected actress IDs (or all actresses

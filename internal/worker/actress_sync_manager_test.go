@@ -118,6 +118,27 @@ func TestActressSyncManagerUsesFiveGeneralWorkers(t *testing.T) {
 	assert.Equal(t, 5, completed.Completed)
 }
 
+func TestActressSyncManagerMissingScopeExcludesSelectedUnknown(t *testing.T) {
+	manager, _, actressRepo, _ := newActressSyncManagerTest(t, &config.Config{}, nil)
+	unknown := &models.Actress{
+		FirstName: models.UnknownActressName, JapaneseName: models.UnknownActressName,
+	}
+	known := &models.Actress{DMMID: 101, JapaneseName: "確認女優"}
+	require.NoError(t, actressRepo.Create(context.Background(), unknown))
+	require.NoError(t, actressRepo.Create(context.Background(), known))
+
+	job, err := manager.CreateJob(context.Background(), ActressSyncCreateRequest{
+		Scope: "missing", Missing: true, ActressIDs: []uint{unknown.ID, known.ID},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, job.TotalTasks)
+	tasks, err := manager.ListTasks(job.ID)
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	require.NotNil(t, tasks[0].ActressID)
+	assert.Equal(t, known.ID, *tasks[0].ActressID)
+}
+
 func TestActressSyncManagerCancelStopsPendingAfterRunningItems(t *testing.T) {
 	entered := make(chan struct{}, 4)
 	release := make(chan struct{})

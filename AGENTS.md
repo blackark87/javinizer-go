@@ -23,6 +23,8 @@ Format Go code with `make fmt` (`gofmt`) and validate it with `make vet` and `ma
 
 Use Go's `testing` package, typically with `testify`; name tests `TestThing_Scenario` and prefer table-driven cases. Mark slow or integration-dependent tests so `-short` can skip them. Frontend unit tests use Vitest, while browser flows use Playwright (`npm run test:e2e --prefix web/frontend`). New behavior should include regression coverage. `make coverage-check` enforces the repository's 75% line-coverage threshold; run `make test-race` for concurrency changes.
 
+Prefer the smallest focused tests that cover the changed behavior. `make test-short` is not a mandatory pre-commit step when scoped package or frontend tests provide sufficient coverage; do not run it unless the breadth or risk of the change makes repository-wide Go validation necessary, or the user explicitly requests it. Frontend-only changes should not trigger unrelated batch or backend test suites.
+
 ## Commit & Pull Request Guidelines
 
 Recent commits use concise, imperative summaries, often in Korean, describing one logical change; merge commits retain the PR number. Keep commits focused and avoid unrelated generated changes. Pull requests should explain the problem and solution, link relevant issues, list verification commands, and include screenshots for visible UI changes. Regenerate and commit Swagger files after API annotation changes (`make swagger`), and keep `configs/config.yaml.example` synchronized with defaults (`make config-drift`).

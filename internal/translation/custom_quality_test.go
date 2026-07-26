@@ -280,6 +280,19 @@ func TestBuildLLMTranslationPrompts_CoversLatestMissTranslationCases(t *testing.
 	}
 }
 
+func TestBuildLLMTranslationPromptsAddsPetitePerformerConstraint(t *testing.T) {
+	_, userPrompt, err := buildLLMTranslationPromptsWithMarkers(
+		"ja",
+		"ko",
+		[]string{"小柄マンコ貫かれ、小柄ボディに濃厚ぶっかけ！"},
+		[]string{"<<<title>>>"},
+	)
+
+	require.NoError(t, err)
+	assert.Contains(t, userPrompt, "HIGHEST PRIORITY exact phrase: 小柄マンコ貫かれ→아담한 그녀의 보지가 꿰뚫리고")
+	assert.Contains(t, userPrompt, "금지: 작은 보지/아담한 보지가")
+}
+
 func TestBuildLLMQualityReviewPromptsAddsSourceLocalDirectionConstraint(t *testing.T) {
 	_, userPrompt, err := buildLLMQualityReviewPromptsWithMarkers("ko", []qualityReviewItem{{
 		Source:    "彼氏裏切りトラウマレ×プ",
@@ -357,6 +370,34 @@ func TestKoreanJAVPromptCoversNewMissTranslationTerms(t *testing.T) {
 		assert.Contains(t, rules, expected)
 	}
 	assert.Equal(t, 1, strings.Count(rules, "杭打ち騎乗位→말뚝박기 기승위"))
+	assert.Less(t, utf8.RuneCountInString(rules), 10000)
+}
+
+func TestKoreanJAVPromptCoversERK091FC2AndSIRO5432(t *testing.T) {
+	rules := koreanJAVPromptRules("ko")
+	for _, expected := range []string{
+		"あゆちゃん→아유짱",
+		"≠아미유짱",
+		"性癖→성벽",
+		"居酒屋に誘う→이자카야에 가자고 하다",
+		"グビグビ→벌컥벌컥",
+		"責めても、責められても→애무해도, 애무받아도",
+		"EXACT 小柄マンコ貫かれ→아담한 그녀의 보지가 꿰뚫리고",
+		"濃厚ぶっかけ→진한 정액 세례",
+		"レビュー特典→리뷰 작성 특전",
+		"オホ声→오호 신음",
+		"体重37キロの逸材→체중 37kg의 대어",
+		"EXACT 見た目とは真逆の超清楚な経験人数3人の彼女とお泊まりSeX→겉모습과 정반대로 남자 경험이 3명뿐인 초청순녀와 숙박 섹스",
+		"爆美女→초미녀≠폭녀",
+		"ツルツルパイパンの綺麗なマ●コを豪快に広げられ→매끈하고 예쁜 백보지가 과감하게 쫙 벌려지고",
+		"潮を部屋中に大噴出→방 안 가득 분수를 뿜어내다",
+		"EXACT 潮吹き処女も頂いちゃった模様→첫 분수 경험까지 빼앗은 모양",
+		"ガン突き激イキ大放出セックス→거칠게 박아 격렬하게 가버리고 마구 쏟아내는 섹스",
+		"Truncated →A stays →A",
+	} {
+		assert.Contains(t, rules, expected)
+	}
+	assert.NotContains(t, rules, "性癖→성적 취향")
 	assert.Less(t, utf8.RuneCountInString(rules), 10000)
 }
 
@@ -562,6 +603,21 @@ func TestReviewJAVTranslationsPassesOriginalAndCandidateToSecondPass(t *testing.
 	require.Len(t, provider.items, 1)
 	assert.Equal(t, "鉄マン", provider.items[0].Source)
 	assert.Equal(t, "철맨", provider.items[0].Candidate)
+}
+
+func TestReviewJAVTranslationsFallsBackFromInventedLatinFragment(t *testing.T) {
+	provider := &qualityReviewMockProvider{response: "자신의 성벽을 말해주는 솔ert하고 야한 여자아이"}
+	service := New(Config{Enabled: true, Provider: "openai-compatible", TargetLanguage: "ko"}, provider)
+	candidate := "자신의 성벽을 말해주는 솔직하고 야한 여자아이"
+
+	result, err := service.ReviewJAVTranslations(context.Background(), []QualityReviewField{{
+		FieldName: "quality_review_description",
+		Source:    "自分の性癖を話してくれる正直でエロい女の子",
+		Candidate: candidate,
+	}})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{candidate}, result)
 }
 
 func TestReviewJAVTranslationsCleansPromotionalSourceBeforeSecondPass(t *testing.T) {

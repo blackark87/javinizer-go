@@ -85,6 +85,7 @@ var descriptorKeywords = []string{
 	"女子大生", "大学", "年生", "専門学生", "職業", // student / occupation
 	"OL", "ＯＬ", "素人", // office lady / amateur
 	"美女", "美人", "美少女", "高飛車", "プライド", "清楚系", // appearance / personality blurbs
+	"体重", "キロ", "kg", "ｋｇ", "逸材", // weight-based promotional blurbs
 	"パイパン", // explicit anatomy blurbs cannot be performer names
 }
 

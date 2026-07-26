@@ -281,7 +281,10 @@ func (s *Service) BuildTranslationPlan(scraped *models.Movie, targetLang, source
 			firstName := actressHangulFirstNames[i]
 			if firstName != "" && len(compact) > 1 {
 				honorificPattern := strings.Join([]string{"ちゃん", "たん", "くん", "さん", "様", "氏", "君"}, "|")
-				for start := 1; start < len(compact); start++ {
+				// Do not protect a one-character suffix. It is too ambiguous to
+				// identify a repeated given name and can consume an unrelated
+				// nickname (逢沢みゆ must not turn あゆちゃん into あ⟦N⟧ちゃん).
+				for start := 1; start < len(compact)-1; start++ {
 					suffix := string(compact[start:])
 					base := flexibleJapaneseNamePattern(suffix)
 					if base == nil {
@@ -835,6 +838,9 @@ func (s *Service) ReviewJAVTranslations(ctx context.Context, fields []QualityRev
 	}
 	for i := range reviewed {
 		reviewed[i] = sanitizeQualityReviewTextWithCandidate(reviewed[i], protected[i].candidate)
+		if introducesUnexpectedLatinFragment(reviewed[i], protected[i].source, protected[i].candidate) {
+			reviewed[i] = protected[i].candidate
+		}
 		if isInvalidQualityReviewText(reviewed[i]) {
 			return nil, fmt.Errorf("quality reviewer returned invalid output for %s", markers[i])
 		}
@@ -938,6 +944,21 @@ func isInvalidQualityReviewText(value string) bool {
 		"review and, where necessary",
 	} {
 		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func introducesUnexpectedLatinFragment(reviewed string, inputs ...string) bool {
+	allowed := make(map[string]struct{})
+	for _, input := range inputs {
+		for _, word := range latinNaturalWordRE.FindAllString(input, -1) {
+			allowed[strings.ToLower(word)] = struct{}{}
+		}
+	}
+	for _, word := range latinNaturalWordRE.FindAllString(reviewed, -1) {
+		if _, ok := allowed[strings.ToLower(word)]; !ok {
 			return true
 		}
 	}

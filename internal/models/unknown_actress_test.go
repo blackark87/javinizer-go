@@ -27,6 +27,7 @@ func TestIsDescriptiveNonName(t *testing.T) {
 		{"married woman", "", "", "人妻", true},
 		{"appearance and personality blurb", "", "", "高飛車でプライドの高い美しい美女", true},
 		{"appearance and anatomy blurb", "", "", "黒髪清楚系スジパイパン", true},
+		{"weight-based promotional blurb", "", "", "体重37キロの逸材", true},
 		{"real name愛梨沙 stays a name", "", "", "愛梨沙", false},
 		{"real kana name あいり stays a name", "", "", "あいり", false},
 		{"20 runes is within limit", "", "", "あいうえおかきくけこさしすせそたちつてと", false}, // exactly 20 runes, not > 20

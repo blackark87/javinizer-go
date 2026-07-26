@@ -158,3 +158,21 @@ func TestBuildTranslationPlanProtectsRepeatedGivenNameWithHonorific(t *testing.T
 	assert.Contains(t, title.FallbackText, "사츠키 나오")
 	assert.NotContains(t, title.FallbackText, "나나짱")
 }
+
+func TestBuildTranslationPlanDoesNotProtectSingleCharacterActressSuffixInNickname(t *testing.T) {
+	service := New(Config{Fields: fieldsConfig{Title: true}})
+	movie := &models.Movie{
+		Title: "あゆちゃん",
+		Actresses: []models.Actress{{
+			JapaneseName: "逢沢みゆ",
+			Reading:      "あいざわみゆ",
+			LastName:     "아이자와",
+			FirstName:    "미유",
+		}},
+	}
+
+	plan := service.BuildTranslationPlan(movie, "ko", "ja", "test")
+	require.Len(t, plan.Fields, 1)
+	assert.Equal(t, "あゆちゃん", plan.Fields[0].Text)
+	assert.Empty(t, plan.Fields[0].Placeholders)
+}

@@ -388,14 +388,16 @@ type verifiedActressProfileResolver interface {
 }
 
 type verifiedActressAliasGroupResolver interface {
-	ResolveVerifiedAliasGroup(canonical models.Actress, aliases []models.Actress) error
+	ResolveVerifiedAliasGroup(canonical models.Actress, aliases []models.Actress) ([]uint, error)
 }
 
-func reconcileVerifiedAliasGroups(results []*models.ScraperResult, repo database.ActressRepositoryInterface) error {
+func reconcileVerifiedAliasGroups(results []*models.ScraperResult, repo database.ActressRepositoryInterface) ([]uint, error) {
 	resolver, ok := repo.(verifiedActressAliasGroupResolver)
 	if !ok {
-		return nil
+		return nil, nil
 	}
+	resolvedIDs := make([]uint, 0)
+	seenIDs := make(map[uint]struct{})
 	for _, result := range results {
 		if result == nil {
 			continue
@@ -417,12 +419,23 @@ func reconcileVerifiedAliasGroups(results []*models.ScraperResult, repo database
 					Reading: alias.Reading,
 				})
 			}
-			if err := resolver.ResolveVerifiedAliasGroup(canonical, aliases); err != nil {
-				return fmt.Errorf("reconcile actress alias group %q: %w", canonical.JapaneseName, err)
+			aliasIDs, err := resolver.ResolveVerifiedAliasGroup(canonical, aliases)
+			if err != nil {
+				return nil, fmt.Errorf("reconcile actress alias group %q: %w", canonical.JapaneseName, err)
+			}
+			for _, id := range aliasIDs {
+				if id == 0 {
+					continue
+				}
+				if _, exists := seenIDs[id]; exists {
+					continue
+				}
+				seenIDs[id] = struct{}{}
+				resolvedIDs = append(resolvedIDs, id)
 			}
 		}
 	}
-	return nil
+	return resolvedIDs, nil
 }
 
 func hasScraperSource(results []*models.ScraperResult, source string) bool {

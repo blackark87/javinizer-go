@@ -129,16 +129,18 @@ func TestResolveVerifiedProfilePreservesConflictingManualAliasMapping(t *testing
 func TestResolveVerifiedAliasGroupKeepsDistinctDMMRecordsAndLinksChoices(t *testing.T) {
 	_, actressRepo, _ := newVerifiedActressTestRepos(t)
 
-	err := actressRepo.ResolveVerifiedAliasGroup(
+	aliasIDs, err := actressRepo.ResolveVerifiedAliasGroup(
 		models.Actress{DMMID: 1083266, JapaneseName: "星まりあ", FirstName: "마리아", LastName: "호시", ThumbURL: "hoshi.jpg"},
 		[]models.Actress{{DMMID: 1061509, JapaneseName: "天音まひな", FirstName: "마히나", LastName: "아마네", ThumbURL: "amane.jpg"}},
 	)
 	require.NoError(t, err)
+	require.Len(t, aliasIDs, 1)
 
 	canonical, err := actressRepo.FindByDMMID(context.Background(), 1083266)
 	require.NoError(t, err)
 	alias, err := actressRepo.FindByDMMID(context.Background(), 1061509)
 	require.NoError(t, err)
+	assert.Equal(t, []uint{alias.ID}, aliasIDs)
 	assert.NotEqual(t, canonical.ID, alias.ID, "different activity-name DMM IDs must never be merged")
 
 	group, err := NewActressAliasRepository(actressRepo.GetDB()).GetAliasGroup(context.Background(), "天音まひな")
@@ -150,6 +152,34 @@ func TestResolveVerifiedAliasGroupKeepsDistinctDMMRecordsAndLinksChoices(t *test
 	assert.True(t, group.Members[1].Available)
 	assert.Equal(t, alias.ID, group.Members[1].Actress.ID)
 	assert.Equal(t, "마히나", group.Members[1].Actress.FirstName)
+}
+
+func TestMovieUpsertRebuildsTranslatedCastFromStoredActressTranslations(t *testing.T) {
+	_, _, movieRepo := newVerifiedActressTestRepos(t)
+	movie := &models.Movie{
+		ContentID: "ntk747",
+		ID:        "NTK-747",
+		Actresses: []models.Actress{{
+			DMMID: 747, JapaneseName: "由良かな", LastName: "Yura", FirstName: "Kana",
+		}},
+		Translations: []models.MovieTranslation{{
+			Language: "ko", Title: "번역 제목", Actresses: []string{"유라나카"},
+		}},
+	}
+
+	saved, err := movieRepo.UpsertWithTranslations(context.Background(), movie, nil, []models.ActressTranslationData{{
+		ActressIndex: 0, Language: "ko", LastName: "유라", FirstName: "카나",
+		JapaneseName: "由良かな", DisplayName: "유라 카나", SourceName: "translation:test",
+	}})
+	require.NoError(t, err)
+	require.Len(t, saved.Translations, 1)
+	assert.Equal(t, []string{"유라 카나"}, saved.Translations[0].Actresses)
+
+	saved.Translations[0].Actresses = []string{"유라나카"}
+	updated, err := movieRepo.UpsertWithTranslations(context.Background(), saved, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, updated.Translations, 1)
+	assert.Equal(t, []string{"유라 카나"}, updated.Translations[0].Actresses)
 }
 
 func TestResolveVerifiedIdentityRepairsMalformedCompositeNameFromCleanDMMProfile(t *testing.T) {

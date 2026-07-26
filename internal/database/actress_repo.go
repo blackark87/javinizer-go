@@ -3,6 +3,9 @@ package database
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
+	"unicode"
 
 	"github.com/javinizer/javinizer-go/internal/models"
 	"gorm.io/gorm"
@@ -237,6 +240,123 @@ func (r *ActressRepository) ListMissingMetadataIDs() ([]uint, error) {
 		ids = append(ids, actress.ID)
 	}
 	return ids, nil
+}
+
+// ListMissingMetadataOrTranslationIDs returns stable actress IDs that need
+// either identity/profile enrichment or at least one configured translation.
+// A Korean mononym is valid: completeness is determined from DisplayName, not
+// from whether both first_name and last_name are populated.
+func (r *ActressRepository) ListMissingMetadataOrTranslationIDs(targetLanguages []string) ([]uint, error) {
+	metadataIDs, err := r.ListMissingMetadataIDs()
+	if err != nil {
+		return nil, err
+	}
+	translationIDs, err := r.ListMissingTranslationIDs(nil, targetLanguages)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[uint]struct{}, len(metadataIDs)+len(translationIDs))
+	ids := make([]uint, 0, len(metadataIDs)+len(translationIDs))
+	for _, group := range [][]uint{metadataIDs, translationIDs} {
+		for _, id := range group {
+			if _, exists := seen[id]; exists {
+				continue
+			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids, nil
+}
+
+// ListMissingTranslationIDs filters selected actress IDs (or all actresses
+// when ids is empty) to records missing a usable translation in any target
+// language.
+func (r *ActressRepository) ListMissingTranslationIDs(ids []uint, targetLanguages []string) ([]uint, error) {
+	languages := normalizedTargetLanguages(targetLanguages)
+	if len(languages) == 0 {
+		return nil, nil
+	}
+
+	var actresses []models.Actress
+	query := r.GetDB().WithContext(context.Background()).Order("id ASC")
+	if len(ids) > 0 {
+		query = query.Where("id IN ?", ids)
+	}
+	if err := query.Find(&actresses).Error; err != nil {
+		return nil, wrapDBErr("find", "actresses for missing translations", err)
+	}
+	if len(actresses) == 0 {
+		return nil, nil
+	}
+
+	actressIDs := make([]uint, 0, len(actresses))
+	for _, actress := range actresses {
+		actressIDs = append(actressIDs, actress.ID)
+	}
+	var translations []models.ActressTranslation
+	if err := r.GetDB().WithContext(context.Background()).
+		Where("actress_id IN ? AND language IN ?", actressIDs, languages).
+		Find(&translations).Error; err != nil {
+		return nil, wrapDBErr("find", "actress translations", err)
+	}
+
+	usable := make(map[uint]map[string]bool, len(actresses))
+	for _, item := range translations {
+		language := strings.ToLower(strings.TrimSpace(item.Language))
+		if !actressTranslationDisplayUsable(language, item.DisplayName) {
+			continue
+		}
+		if usable[item.ActressID] == nil {
+			usable[item.ActressID] = make(map[string]bool)
+		}
+		usable[item.ActressID][language] = true
+	}
+
+	missing := make([]uint, 0)
+	for _, actress := range actresses {
+		for _, language := range languages {
+			if !usable[actress.ID][language] {
+				missing = append(missing, actress.ID)
+				break
+			}
+		}
+	}
+	return missing, nil
+}
+
+func normalizedTargetLanguages(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	languages := make([]string, 0, len(values))
+	for _, value := range values {
+		language := strings.ToLower(strings.TrimSpace(value))
+		if language == "" {
+			continue
+		}
+		if _, exists := seen[language]; exists {
+			continue
+		}
+		seen[language] = struct{}{}
+		languages = append(languages, language)
+	}
+	return languages
+}
+
+func actressTranslationDisplayUsable(language, displayName string) bool {
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		return false
+	}
+	if language != "ko" && !strings.HasPrefix(language, "ko-") && !strings.HasPrefix(language, "ko_") {
+		return true
+	}
+	for _, r := range displayName {
+		if unicode.Is(unicode.Hangul, r) {
+			return true
+		}
+	}
+	return false
 }
 
 // ListMissingMetadata returns actresses without a verified DMM ID or thumbnail.

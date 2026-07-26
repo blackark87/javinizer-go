@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -26,17 +27,18 @@ import (
 // paths (newBatchJob, createJob, reconstructBatchJob) each build a BatchJobDeps
 // and pass it to the shared initializer setDepsFromConfig.
 type BatchJobDeps struct {
-	WF              workflow.WorkflowInterface                     // Workflow seam for Scrape/Apply calls
-	Matcher         matcher.MatcherInterface                       // JAV ID extraction from filenames
-	PosterGen       poster.PosterGenerator                         // Poster generation for scraped movies
-	BatchCfg        BatchJobConfig                                 // Narrow config fields (replaces *config.Config)
-	BatchFileOpRepo database.BatchFileOperationRepositoryInterface // Batch file operations repository
-	MovieRepo       database.MovieRepositoryInterface              // Movie persistence for batch editing
-	ActressRepo     database.ActressRepositoryInterface            // Actress persistence for explicit review-page edits
-	HistoryRepo     database.HistoryRepositoryInterface            // History repository
-	Emitter         eventlog.EventEmitter                          // Event emission for audit trail
-	PersistFn       func()                                         // Callback to persist job state to database
-	Logger          logging.Logger                                 // Structured logger seam; defaults to GlobalLogger() when nil
+	WF               workflow.WorkflowInterface                     // Workflow seam for Scrape/Apply calls
+	Matcher          matcher.MatcherInterface                       // JAV ID extraction from filenames
+	PosterGen        poster.PosterGenerator                         // Poster generation for scraped movies
+	BatchCfg         BatchJobConfig                                 // Narrow config fields (replaces *config.Config)
+	BatchFileOpRepo  database.BatchFileOperationRepositoryInterface // Batch file operations repository
+	MovieRepo        database.MovieRepositoryInterface              // Movie persistence for batch editing
+	ActressRepo      database.ActressRepositoryInterface            // Actress persistence for explicit review-page edits
+	HistoryRepo      database.HistoryRepositoryInterface            // History repository
+	Emitter          eventlog.EventEmitter                          // Event emission for audit trail
+	QueueActressSync func(context.Context, []uint) error            // queues newly verified alias translations after movie persistence
+	PersistFn        func()                                         // Callback to persist job state to database
+	Logger           logging.Logger                                 // Structured logger seam; defaults to GlobalLogger() when nil
 }
 
 // NewBatchJobDeps constructs a BatchJobDeps with the three core dependencies
@@ -76,7 +78,7 @@ type JobConfig struct {
 	Destination           string                      // Target directory for organized files (persisted on job for UI retrieval)
 	OperationModeOverride operationmode.OperationMode // Resolved operation mode (set at API boundary)
 	Update                *bool                       // Update mode: nil = don't change, true/false = set explicitly
-	BatchJobDeps                                      // Embedded deps — all 9 infrastructure fields promoted
+	BatchJobDeps                                      // Embedded infrastructure dependencies
 }
 
 // setDepsFromConfig is owned by jobController. Per DEEP-1: dependency wiring

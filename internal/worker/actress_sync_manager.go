@@ -170,7 +170,7 @@ func (m *ActressSyncManager) CreateJob(ctx context.Context, req ActressSyncCreat
 	ids := uniqueActressIDs(req.ActressIDs)
 	if req.Missing {
 		var err error
-		ids, err = m.deps.ActressRepo.ListMissingMetadataIDs()
+		ids, err = m.deps.ActressRepo.ListMissingMetadataOrTranslationIDs(m.translationTargetLanguages())
 		if err != nil {
 			return nil, err
 		}
@@ -250,6 +250,43 @@ func (m *ActressSyncManager) CreateJob(ctx context.Context, req ActressSyncCreat
 	m.Start()
 	m.signal()
 	return job, nil
+}
+
+// QueueMissingTranslations creates a background sync job only for selected
+// actresses that still lack a usable configured-language translation. It is
+// used by batch scraping after verified activity-name aliases have been safely
+// persisted.
+func (m *ActressSyncManager) QueueMissingTranslations(ctx context.Context, actressIDs []uint) error {
+	if m == nil || m.deps.ActressRepo == nil {
+		return fmt.Errorf("actress sync manager is unavailable")
+	}
+	ids, err := m.deps.ActressRepo.ListMissingTranslationIDs(uniqueActressIDs(actressIDs), m.translationTargetLanguages())
+	if err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	_, err = m.CreateJob(ctx, ActressSyncCreateRequest{
+		Scope:      "automatic-alias-translation",
+		ActressIDs: ids,
+	})
+	return err
+}
+
+func (m *ActressSyncManager) translationTargetLanguages() []string {
+	if m == nil || m.deps.GetConfig == nil {
+		return nil
+	}
+	cfg := m.deps.GetConfig()
+	if cfg == nil || !cfg.Metadata.Translation.Enabled || !cfg.Metadata.Translation.Fields.Actresses {
+		return nil
+	}
+	targets := append([]string(nil), cfg.Metadata.Translation.TargetLanguages...)
+	if len(targets) == 0 {
+		targets = []string{cfg.Metadata.Translation.TargetLanguage}
+	}
+	return targets
 }
 
 func (m *ActressSyncManager) deduplicateTask(task models.ActressSyncTask) models.ActressSyncTask {
@@ -382,6 +419,14 @@ func (m *ActressSyncManager) processActress(ctx context.Context, task *models.Ac
 	}
 	preserveExistingProfile := existing.DMMID > 0 && hasUsableActressIdentityProfile(*existing)
 	cfg := m.deps.GetConfig()
+	missingTranslationIDs, err := m.deps.ActressRepo.ListMissingTranslationIDs(
+		[]uint{existing.ID},
+		m.translationTargetLanguages(),
+	)
+	if err != nil {
+		return err
+	}
+	needsConfiguredTranslation := len(missingTranslationIDs) > 0
 	needsKoreanTranslation := needsKoreanActressTranslation(cfg.Metadata.Translation, *existing)
 	m.setStage(task, "resolving")
 	result, err := SyncActressMetadata(ctx, *task.ActressID, m.deps.ActressRepo, m.deps.GetRegistry(), cfg.Scrapers.Priority, m.deps.MovieRepo)
@@ -402,7 +447,25 @@ func (m *ActressSyncManager) processActress(ctx context.Context, task *models.Ac
 	}
 	canonical := result.Actress
 
-	if !preserveExistingProfile || containsAnyField(result.UpdatedFields, "japanese_name", "reading") || needsKoreanTranslation {
+	if needsConfiguredTranslation && containsHangul(translatedActressPrimaryName(canonical)) {
+		stored, storeErr := m.storeExistingKoreanActressTranslation(ctx, canonical)
+		if storeErr != nil {
+			return storeErr
+		}
+		if stored {
+			task.UpdatedFields = append(task.UpdatedFields, "actress_translations")
+			stillMissing, missingErr := m.deps.ActressRepo.ListMissingTranslationIDs(
+				[]uint{canonical.ID},
+				m.translationTargetLanguages(),
+			)
+			if missingErr != nil {
+				return missingErr
+			}
+			needsConfiguredTranslation = len(stillMissing) > 0
+		}
+	}
+
+	if !preserveExistingProfile || containsAnyField(result.UpdatedFields, "japanese_name", "reading") || needsKoreanTranslation || needsConfiguredTranslation {
 		m.setStage(task, "romanizing")
 		if translation.ApplyDMMHepburnName(&canonical) {
 			if err := m.deps.ActressRepo.Update(ctx, &canonical); err != nil {
@@ -452,6 +515,41 @@ func (m *ActressSyncManager) processActress(ctx context.Context, task *models.Ac
 		task.Status, task.Outcome = models.ActressSyncTaskSkipped, string(ActressSyncSkipped)
 	}
 	return nil
+}
+
+func (m *ActressSyncManager) storeExistingKoreanActressTranslation(ctx context.Context, actress models.Actress) (bool, error) {
+	if m == nil || m.deps.DB == nil || actress.ID == 0 {
+		return false, nil
+	}
+	displayName := strings.TrimSpace(actress.FullName())
+	if !containsHangul(displayName) {
+		return false, nil
+	}
+	stored := false
+	repo := database.NewActressTranslationRepository(m.deps.DB)
+	for _, language := range m.translationTargetLanguages() {
+		normalized := strings.ToLower(strings.TrimSpace(language))
+		if normalized != "ko" && !strings.HasPrefix(normalized, "ko-") && !strings.HasPrefix(normalized, "ko_") {
+			continue
+		}
+		existing, err := repo.FindByActressAndLanguage(ctx, actress.ID, normalized)
+		if err == nil && strings.TrimSpace(existing.DisplayName) != "" {
+			continue
+		}
+		if err != nil && !database.IsNotFound(err) {
+			return stored, err
+		}
+		if err := repo.Upsert(ctx, &models.ActressTranslation{
+			ActressID: actress.ID, Language: normalized,
+			FirstName: actress.FirstName, LastName: actress.LastName,
+			JapaneseName: actress.JapaneseName, DisplayName: displayName,
+			SourceName: "stored-profile",
+		}); err != nil {
+			return stored, err
+		}
+		stored = true
+	}
+	return stored, nil
 }
 
 func (m *ActressSyncManager) processUnknownMovie(ctx context.Context, task *models.ActressSyncTask) error {
@@ -923,8 +1021,22 @@ func hasUsableActressIdentityProfile(actress models.Actress) bool {
 // completeness. DMM romanized first/last names are valid identity metadata,
 // but they are not a completed Korean display name.
 func needsKoreanActressTranslation(cfg config.TranslationConfig, actress models.Actress) bool {
-	target := strings.ToLower(strings.TrimSpace(cfg.TargetLanguage))
-	if !cfg.Enabled || !cfg.Fields.Actresses || (target != "ko" && !strings.HasPrefix(target, "ko-") && !strings.HasPrefix(target, "ko_")) {
+	if !cfg.Enabled || !cfg.Fields.Actresses {
+		return false
+	}
+	targets := append([]string(nil), cfg.TargetLanguages...)
+	if len(targets) == 0 {
+		targets = []string{cfg.TargetLanguage}
+	}
+	hasKoreanTarget := false
+	for _, target := range targets {
+		target = strings.ToLower(strings.TrimSpace(target))
+		if target == "ko" || strings.HasPrefix(target, "ko-") || strings.HasPrefix(target, "ko_") {
+			hasKoreanTarget = true
+			break
+		}
+	}
+	if !hasKoreanTarget {
 		return false
 	}
 	primary := translatedActressPrimaryName(actress)

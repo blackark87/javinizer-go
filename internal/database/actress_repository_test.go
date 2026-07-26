@@ -490,6 +490,39 @@ func TestActressRepository_ListMissingMetadataIDs(t *testing.T) {
 	assert.Equal(t, []uint{actresses[1].ID, actresses[2].ID, actresses[3].ID}, ids)
 }
 
+func TestActressRepository_ListMissingTranslationsAcceptsKoreanMononym(t *testing.T) {
+	cfg := &Config{Type: "sqlite", DSN: filepath.Join(t.TempDir(), "missing-translation.db"), LogLevel: "error"}
+	db, err := New(cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, db.RunMigrationsOnStartup(context.Background()))
+	repo := NewActressRepository(db)
+	translationRepo := NewActressTranslationRepository(db)
+
+	actresses := []*models.Actress{
+		{DMMID: 10, JapaneseName: "つぼみ", ThumbURL: "https://example.com/10.jpg"},
+		{DMMID: 20, JapaneseName: "渡辺まお", ThumbURL: "https://example.com/20.jpg"},
+		{DMMID: 30, JapaneseName: "琴石ゆめる", ThumbURL: "https://example.com/30.jpg"},
+	}
+	for _, actress := range actresses {
+		require.NoError(t, repo.Create(context.Background(), actress))
+	}
+	require.NoError(t, translationRepo.Upsert(context.Background(), &models.ActressTranslation{
+		ActressID: actresses[0].ID, Language: "ko", FirstName: "츠보미", DisplayName: "츠보미",
+	}))
+	require.NoError(t, translationRepo.Upsert(context.Background(), &models.ActressTranslation{
+		ActressID: actresses[1].ID, Language: "ko", DisplayName: "渡辺まお",
+	}))
+
+	ids, err := repo.ListMissingTranslationIDs(nil, []string{"ko"})
+	require.NoError(t, err)
+	assert.Equal(t, []uint{actresses[1].ID, actresses[2].ID}, ids)
+
+	selected, err := repo.ListMissingTranslationIDs([]uint{actresses[0].ID, actresses[2].ID}, []string{"ko"})
+	require.NoError(t, err)
+	assert.Equal(t, []uint{actresses[2].ID}, selected)
+}
+
 // TestActressRepository_Search tests search operations
 func TestActressRepository_Search(t *testing.T) {
 	cfg := &Config{Type: "sqlite", DSN: ":memory:", LogLevel: "error"}

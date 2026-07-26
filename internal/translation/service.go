@@ -159,13 +159,14 @@ type TranslationPlan struct {
 // TranslationField describes a single field to translate, identified by name
 // and index. The result is applied via ApplyPlan rather than closures.
 type TranslationField struct {
-	FieldName    string
-	Index        int // -1 for scalar fields; >=0 for array elements (genres, actresses)
-	Text         string
-	Preset       *string           // deterministic result; skips the external provider
-	AllowEmpty   bool              // an intentionally cleaned empty result must not restore Text
-	Placeholders map[string]string // protected actress-name token → final Hangul
-	FallbackText string            // used when a protected token is dropped
+	FieldName             string
+	Index                 int // -1 for scalar fields; >=0 for array elements (genres, actresses)
+	Text                  string
+	Preset                *string           // deterministic result; skips the external provider
+	AllowEmpty            bool              // an intentionally cleaned empty result must not restore Text
+	Placeholders          map[string]string // protected actress-name token → final Hangul
+	ImmutablePlaceholders map[string]string // protected metadata token → exact source text
+	FallbackText          string            // used when a protected actress token is dropped
 }
 
 // TranslationResultMap maps each field key (FieldName or FieldName[idx]) to
@@ -342,10 +343,17 @@ func (s *Service) BuildTranslationPlan(scraped *models.Movie, targetLang, source
 		}
 		return direct, protected, placeholders
 	}
+	protectField := func(value string) (direct, protected string, namePlaceholders, immutablePlaceholders map[string]string) {
+		direct, protected, namePlaceholders = protectNames(value)
+		if targetLang != "ja" {
+			protected, immutablePlaceholders = protectImmutableMetadataTokens(protected)
+		}
+		return direct, protected, namePlaceholders, immutablePlaceholders
+	}
 
 	if fields.Title {
 		cleaned := prepareTitleForTranslation(scraped.Title, targetLang)
-		direct, protected, placeholders := protectNames(cleaned)
+		direct, protected, placeholders, immutablePlaceholders := protectField(cleaned)
 		titleField := "title"
 		if romanized := romanizedByJapaneseName[strings.TrimSpace(cleaned)]; romanized != "" {
 			titleField = "title_as_name"
@@ -355,9 +363,12 @@ func (s *Service) BuildTranslationPlan(scraped *models.Movie, targetLang, source
 		}
 		if targetLang == "ko" && len(placeholders) > 0 && !containsTranslatableText(direct) {
 			queuePreset(titleField, cleaned, direct, -1, false)
-		} else if field := queue(titleField, protected, -1); field != nil && len(placeholders) > 0 {
+		} else if field := queue(titleField, protected, -1); field != nil {
 			field.Placeholders = placeholders
-			field.FallbackText = direct
+			field.ImmutablePlaceholders = immutablePlaceholders
+			if len(placeholders) > 0 {
+				field.FallbackText = direct
+			}
 		}
 	}
 	if fields.OriginalTitle {
@@ -368,10 +379,13 @@ func (s *Service) BuildTranslationPlan(scraped *models.Movie, targetLang, source
 		if cleaned == "" && strings.TrimSpace(scraped.Description) != "" {
 			queuePreset("description", scraped.Description, "", -1, true)
 		} else {
-			direct, protected, placeholders := protectNames(cleaned)
-			if field := queue("description", protected, -1); field != nil && len(placeholders) > 0 {
+			direct, protected, placeholders, immutablePlaceholders := protectField(cleaned)
+			if field := queue("description", protected, -1); field != nil {
 				field.Placeholders = placeholders
-				field.FallbackText = direct
+				field.ImmutablePlaceholders = immutablePlaceholders
+				if len(placeholders) > 0 {
+					field.FallbackText = direct
+				}
 			}
 		}
 	}
@@ -612,6 +626,9 @@ func (s *Service) TranslateMovie(ctx context.Context, scraped *models.Movie, set
 						translated = cleaned
 					}
 				}
+				for token, sourceText := range field.ImmutablePlaceholders {
+					translated = strings.ReplaceAll(translated, token, sourceText)
+				}
 				if len(field.Placeholders) > 0 {
 					restored, ok := restoreNamePlaceholders(translated, field.Placeholders)
 					if !ok {
@@ -663,10 +680,11 @@ type QualityReviewField struct {
 }
 
 type protectedQualityReviewText struct {
-	source       string
-	candidate    string
-	fallback     string
-	placeholders map[string]string
+	source            string
+	candidate         string
+	fallback          string
+	placeholders      map[string]string
+	placeholderCounts map[string]int
 }
 
 func protectQualityReviewActressNames(field QualityReviewField) protectedQualityReviewText {
@@ -678,10 +696,11 @@ func protectQualityReviewActressNames(field QualityReviewField) protectedQuality
 		source = prepareTitleForTranslation(source, "ko")
 	}
 	protected := protectedQualityReviewText{
-		source:       source,
-		candidate:    field.Candidate,
-		fallback:     strings.TrimSpace(field.Candidate),
-		placeholders: make(map[string]string),
+		source:            source,
+		candidate:         field.Candidate,
+		fallback:          strings.TrimSpace(field.Candidate),
+		placeholders:      make(map[string]string),
+		placeholderCounts: make(map[string]int),
 	}
 	for _, actress := range field.Actresses {
 		japanese := strings.TrimSpace(actress.JapaneseName)
@@ -698,6 +717,36 @@ func protectQualityReviewActressNames(field QualityReviewField) protectedQuality
 		protected.source = strings.ReplaceAll(protected.source, japanese, token)
 		protected.candidate = strings.ReplaceAll(protected.candidate, korean, token)
 		protected.placeholders[token] = korean
+		protected.placeholderCounts[token] = strings.Count(protected.candidate, token)
+	}
+	for _, sourceText := range immutableMetadataTokenRE.FindAllString(protected.source, -1) {
+		if sourceText == "" || !strings.Contains(protected.candidate, sourceText) {
+			continue
+		}
+		alreadyProtected := false
+		for token, value := range protected.placeholders {
+			if value != sourceText {
+				continue
+			}
+			protected.source = strings.ReplaceAll(protected.source, sourceText, token)
+			protected.candidate = strings.ReplaceAll(protected.candidate, sourceText, token)
+			protected.placeholderCounts[token] = strings.Count(protected.candidate, token)
+			alreadyProtected = true
+			break
+		}
+		if alreadyProtected {
+			continue
+		}
+		tokenIndex := 8000 + len(protected.placeholders)
+		token := fmt.Sprintf("⟦%d⟧", tokenIndex)
+		for strings.Contains(protected.source, token) || strings.Contains(protected.candidate, token) {
+			tokenIndex++
+			token = fmt.Sprintf("⟦%d⟧", tokenIndex)
+		}
+		protected.source = strings.ReplaceAll(protected.source, sourceText, token)
+		protected.candidate = strings.ReplaceAll(protected.candidate, sourceText, token)
+		protected.placeholders[token] = sourceText
+		protected.placeholderCounts[token] = strings.Count(protected.candidate, token)
 	}
 	return protected
 }
@@ -705,7 +754,7 @@ func protectQualityReviewActressNames(field QualityReviewField) protectedQuality
 func (p protectedQualityReviewText) restore(reviewed string) (string, bool) {
 	restored := strings.TrimSpace(reviewed)
 	for token, actressName := range p.placeholders {
-		if !strings.Contains(restored, token) {
+		if strings.Count(restored, token) != p.placeholderCounts[token] {
 			return p.fallback, false
 		}
 		restored = strings.ReplaceAll(restored, token, actressName)
@@ -835,6 +884,18 @@ func sanitizeQualityReviewTextWithCandidate(value, candidate string) string {
 			return tail
 		}
 	}
+	// Some Gemma templates echo the Japanese source as an unlabeled line and
+	// then place the actual Korean review on the final line. The marker parser
+	// has already isolated this field, so a clean Hangul-only final line is an
+	// unambiguous review result and can be recovered without accepting the
+	// Japanese echo above it.
+	lines := strings.Split(strings.ReplaceAll(value, "\r\n", "\n"), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if containsHangul(line) && !isInvalidQualityReviewText(line) {
+			return line
+		}
+	}
 	return value
 }
 
@@ -868,6 +929,29 @@ func isTitleTranslationField(fieldName string) bool {
 
 var latinNaturalWordRE = regexp.MustCompile(`[A-Za-z]+`)
 
+var immutableMetadataTokenRE = regexp.MustCompile(`(?i)\b(?:[A-Z0-9]*[A-Z][A-Z0-9]*-[0-9]{2,5}(?:-[A-Z0-9]+)*|case[0-9]+)\b`)
+
+func protectImmutableMetadataTokens(value string) (string, map[string]string) {
+	protected := value
+	placeholders := make(map[string]string)
+	tokenByValue := make(map[string]string)
+	for _, sourceText := range immutableMetadataTokenRE.FindAllString(value, -1) {
+		token := tokenByValue[sourceText]
+		if token == "" {
+			tokenIndex := 9000 + len(placeholders)
+			token = fmt.Sprintf("⟦%d⟧", tokenIndex)
+			for strings.Contains(value, token) {
+				tokenIndex++
+				token = fmt.Sprintf("⟦%d⟧", tokenIndex)
+			}
+			tokenByValue[sourceText] = token
+			placeholders[token] = sourceText
+		}
+		protected = strings.ReplaceAll(protected, sourceText, token)
+	}
+	return protected, placeholders
+}
+
 func translationSlotIssue(field TranslationField, targetLang, value string) string {
 	current := strings.TrimSpace(value)
 	if current == "" {
@@ -887,6 +971,12 @@ func translationSlotIssue(field TranslationField, targetLang, value string) stri
 	} {
 		if strings.Contains(lower, artifact) {
 			return "prompt template leaked into translation"
+		}
+	}
+	for token := range field.ImmutablePlaceholders {
+		expected := strings.Count(field.Text, token)
+		if actual := strings.Count(current, token); actual != expected {
+			return fmt.Sprintf("protected metadata token %s count changed: expected %d, got %d", token, expected, actual)
 		}
 	}
 

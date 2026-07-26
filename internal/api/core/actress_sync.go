@@ -1,6 +1,9 @@
 package core
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/worker"
 )
@@ -28,6 +31,14 @@ func (r *APIRuntime) EnsureActressSyncManager() *worker.ActressSyncManager {
 		GetRegistry:     r.deps.CoreDeps.GetRegistry,
 	})
 	return r.actressSyncManager
+}
+
+func (r *APIRuntime) queueMissingActressTranslations(ctx context.Context, actressIDs []uint) error {
+	manager := r.EnsureActressSyncManager()
+	if manager == nil {
+		return fmt.Errorf("actress sync manager is unavailable")
+	}
+	return manager.QueueMissingTranslations(ctx, actressIDs)
 }
 
 func (r *APIRuntime) stopActressSyncManager() {

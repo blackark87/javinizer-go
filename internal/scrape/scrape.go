@@ -130,9 +130,10 @@ type ScrapeResult struct {
 	// Internal enrichment signals — read by the workflow orchestrator and propagated
 	// to OrchestrationMeta. Downstream consumers (MovieResult, API) should read from
 	// OrchestrationMeta, not from these fields directly.
-	TranslationWarning string                         `json:"translation_warning,omitempty"` // set by applyTranslation when partial translation occurs
-	TranslationOutput  *translation.TranslationOutput `json:"-"`                             // genre/actress translation data for persistence
-	NeedsPersistence   bool                           `json:"needs_persistence,omitempty"`   // set by tryCache when cached result needs re-persistence
+	TranslationWarning    string                         `json:"translation_warning,omitempty"` // set by applyTranslation when partial translation occurs
+	TranslationOutput     *translation.TranslationOutput `json:"-"`                             // genre/actress translation data for persistence
+	PendingActressSyncIDs []uint                         `json:"-"`                             // verified aliases that need background translation
+	NeedsPersistence      bool                           `json:"needs_persistence,omitempty"`   // set by tryCache when cached result needs re-persistence
 
 	StartedAt time.Time
 	EndedAt   time.Time
@@ -245,7 +246,8 @@ func resolveScrapeInput(ctx context.Context, cmd ScrapeCmd, registry ScraperInst
 // postProcessScraped enriches the aggregated movie with actress DB data,
 // translation, and assembles the final ScrapeResult.
 func postProcessScraped(ctx context.Context, scraped *models.Movie, results []*models.ScraperResult, aggResult *aggregator.AggregateResult, cfg *Config, translator Translator, actressRepo database.ActressRepositoryInterface, cmd ScrapeCmd, startTime time.Time) (*ScrapeResult, error) {
-	if err := reconcileVerifiedAliasGroups(results, actressRepo); err != nil {
+	pendingActressSyncIDs, err := reconcileVerifiedAliasGroups(results, actressRepo)
+	if err != nil {
 		return nil, err
 	}
 	var fieldSources map[string]string
@@ -292,16 +294,17 @@ func postProcessScraped(ctx context.Context, scraped *models.Movie, results []*m
 
 	now := time.Now()
 	result := &ScrapeResult{
-		Movie:              scraped,
-		ScraperResults:     results,
-		FieldSources:       fieldSources,
-		ActressSources:     actressSources,
-		TranslationWarning: translationWarning,
-		TranslationOutput:  translationOutput,
-		Message:            cmd.ParseWarning,
-		Status:             StatusCompleted,
-		StartedAt:          startTime,
-		EndedAt:            now,
+		Movie:                 scraped,
+		ScraperResults:        results,
+		FieldSources:          fieldSources,
+		ActressSources:        actressSources,
+		TranslationWarning:    translationWarning,
+		TranslationOutput:     translationOutput,
+		PendingActressSyncIDs: pendingActressSyncIDs,
+		Message:               cmd.ParseWarning,
+		Status:                StatusCompleted,
+		StartedAt:             startTime,
+		EndedAt:               now,
 	}
 
 	return result, nil

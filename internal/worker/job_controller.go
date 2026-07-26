@@ -286,6 +286,7 @@ func (c *jobController) buildScrapeInputs(wf workflow.WorkflowInterface, batchCf
 	m := c.job.deps.Matcher
 	pg := c.job.deps.PosterGen
 	movieRepo := c.job.deps.MovieRepo
+	queueActressSync := c.job.deps.QueueActressSync
 	c.job.mu.RUnlock()
 
 	c.job.batchJobEventSource.mu.RLock()
@@ -309,6 +310,7 @@ func (c *jobController) buildScrapeInputs(wf workflow.WorkflowInterface, batchCf
 		MovieRepo:              movieRepo,
 		DeferredTranslation:    batchCfg.TranslationEnabled,
 		TranslationConcurrency: batchCfg.TranslationWorkers,
+		QueueActressSync:       queueActressSync,
 	}
 	if _, ok := wf.(workflow.DeferredTranslationWorkflow); !ok {
 		inputs.DeferredTranslation = false

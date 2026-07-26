@@ -142,6 +142,7 @@ func buildLLMTranslationPromptsWithMarkers(sourceLang, targetLang string, texts,
 
 	var userPrompt strings.Builder
 	userPrompt.WriteString("Translate each labeled section below:\n")
+	userPrompt.WriteString(koreanBatchPromptConstraints(targetLang, texts))
 	for i, text := range texts {
 		userPrompt.WriteString(markers[i])
 		userPrompt.WriteByte('\n')
@@ -159,6 +160,11 @@ func buildLLMQualityReviewPromptsWithMarkers(targetLang string, items []qualityR
 
 	var userPrompt strings.Builder
 	userPrompt.WriteString("Review and, where necessary, rewrite each candidate by comparing it with its Japanese source:\n")
+	sources := make([]string, len(items))
+	for i := range items {
+		sources[i] = items[i].Source
+	}
+	userPrompt.WriteString(koreanBatchPromptConstraints(targetLang, sources))
 	for i, item := range items {
 		userPrompt.WriteString(markers[i])
 		userPrompt.WriteString("\n[JAPANESE SOURCE]\n")
@@ -168,6 +174,24 @@ func buildLLMQualityReviewPromptsWithMarkers(targetLang string, items []qualityR
 		userPrompt.WriteByte('\n')
 	}
 	return systemPrompt, strings.TrimSpace(userPrompt.String()), nil
+}
+
+func koreanBatchPromptConstraints(targetLang string, sources []string) string {
+	lang := strings.ToLower(strings.TrimSpace(targetLang))
+	if lang != "ko" && !strings.HasPrefix(lang, "ko-") && !strings.HasPrefix(lang, "ko_") {
+		return ""
+	}
+	for _, source := range sources {
+		if strings.Contains(source, "逆レ") ||
+			strings.Contains(source, "レイプ") ||
+			strings.Contains(source, "レ×プ") ||
+			strings.Contains(source, "レ〇プ") ||
+			strings.Contains(source, "レ○プ") ||
+			strings.Contains(source, "レ●プ") {
+			return "BATCH DIRECTION CHECK: In each Japanese source, レイプ/レ×プ/レ〇プ/レ○プ/レ●プ without an immediately preceding 逆 must be 강간, never 역강간. Correct a wrong 역강간 in the candidate. Only an explicit 逆レ/逆レイプ may be 역강간.\n"
+		}
+	}
+	return ""
 }
 
 func koreanJAVPromptRules(targetLang string) string {
@@ -193,7 +217,6 @@ func koreanJAVPromptRules(targetLang string) string {
 		"sexual-trait prefix ド intensifies: ド痴女→극강의 치녀|지독한 색녀, 금지: 도치녀; ド変態→극도의 변태|지독한 변태; 結婚した妻→아내, 금지: 결혼한 아내; 性欲おさまらない→멈출 줄 모르는 성욕|주체할 수 없는 성욕.",
 		"言いなり/イイナリ→시키는 대로 하는|말이라면 뭐든 따르는|복종하는, 금지: 이이나리; ドM→극M|극도의 마조, 금지: 도M; イイナリドM→말이라면 뭐든 따르는 극M|복종하는 극M.",
 		"逆パコ→여자가 덮치는|여배우가 덮치는|여자 주도 섹스, 금지: 역파코; 痴女られる→치녀에게 농락당하다; がっつり痴女られたい→치녀에게 실컷 농락당하고 싶다, 금지: 듬뿍 치녀 취급당하고 싶다.",
-		"逆レ/逆レイプ→역강간|여자가 강제로 덮치는; 逆レ搾精→역강간 착정|여자가 강제로 덮쳐 정액을 뽑아내기. 逆パコ와 구분하며 source에 パコ가 없으면 역파코/파코를 넣지 않는다.",
 		"パコ/パコる/パコパコ→섹스/섹스하다/박아대다, 금지: 파코; イキパコ→절정 섹스|가버리는 섹스; オフパコ→비밀 만남 섹스|팬과의 섹스; 生パコ→노콘 섹스; イチャパコ→달달한 섹스; パコパコ撮影→마구 섹스하는 촬영.",
 		"ポルチオ→깊숙한 피스톤|질 깊숙이 파고드는 피스톤|질 깊은 곳을 자극하다. 금지: 강타하다/집중 공략하다/자궁경부/질 안쪽을 찌르다.",
 		"ジュボジュボ: penis sucking→자지를 질척하게 빨아대다; penis licking→자지를 침 범벅으로 핥아대다; body licking→축축하게 핥아대다; 금지: 쥬보쥬보. aggressive 1発ハメる→한 번 따먹다, 금지: 한 판 박아버리다.",
@@ -224,11 +247,15 @@ func koreanJAVPromptRules(targetLang string) string {
 		"むしゃぶりつく: translate fluently by object/action, never use food-like 게걸스럽게. ASMR compounds describe act+sound: ベチョレロ唾液チ〇ポ咀嚼→타액 범벅 펠라 소리; ヌチュグチュ粘着マン汁音→끈적한 애액이 질척이는 소리; 금지: 자지 저작/invented trailing 섹스!.",
 		"name honorifics: さん/氏→씨; 様→님; ちゃん/たん→짱; くん/君→군; みあたん→미아짱, 금지: 미아탄/미아상/미아사마. Grammatical 様 meaning 모습 is not an honorific.",
 		"半中半外半彼女→반은 질내·반은 질외·반쪽 여친;円光→조건만남;タダまん→공짜 섹스;ヌける→꼴리는|딸감;種付け→수정섹스|임신시키기;淫裸MIDARA/淫裸（ミダラ）→음란한 알몸;性獣→색마≠성녀;ナンパ→헌팅;パリピ→파티광;セフレちゃん→섹파짱;ヤラせてくれる女→대주는 여자.",
-		"Explicit/censored anatomy: ま〇こ/ま○こ/ま●こ/おま〇こ/おま○こ/おま●こ/おまんこ/まんこ/マンコ→보지; パイパンま〇こ/パイパンま○こ/パイパンま●こ/パイパンまんこ/無毛まんこ→백보지, 금지: 무모 소중이; alone パイパン→무모|백보지; ち〇ぽ/ち○ぽ/ち●ぽ/ちんこ/チンポ→자지; マン汁/本気マン汁→애액, 금지: 보짓물; ザーメン/ejaculation 精子→정액; レイプ/レ×プ/レ〇プ/レ○プ/レ●プ→강간, 금지: 레프; アナル→애널 for JAV act/genre, anatomical 肛門→항문; 初アナル→첫 애널; 初アナル解禁→첫 애널 해금, 금지: 첫 항문/첫 항문 해금; クンニ/クンニリングス→보빨, 금지: 쿤니; アクメ→절정|오르가슴, 금지: 아크메; デカチン/巨根→대물, 금지: 대물 자지/거대 자지/왕자지. Ex: パイパンま〇こから溢れ出る精子→백보지에서 흘러넘치는 정액; デカチン緩急ピストン→대물 완급 피스톤. 금지:소중이/그곳/중요 부위/여성의 신체.",
-		"JAV titles: forceful noun phrases; no explanatory ~하는/~하게 되는/~을 조절하는 clauses.",
+		"DIRECTION INVARIANT (highest priority): only explicit 逆レ/逆レイプ→역강간|여자가 강제로 덮치는;逆レ搾精→역강간 착정. Bare レイプ/レ×プ/レ〇プ/レ○プ/レ●プ always→강간, never 역강간, regardless of betrayal or perpetrator context. 逆パコ와 구분하며 source에 パコ가 없으면 역파코/파코를 넣지 않는다.",
+		"Acts: ベロチュウ→진한 혀키스|딥키스≠舐めシゴき;即尺即ハメ→바로 빨고 바로 박기(두 행위 보존);スパンキング→스팽킹≠스팽고킹;おっパブ→옵파이 펍|슴가 펍, 금지: 오파부;デリバリーヘルス/デリヘル→데리헤루. 업소 관용어 외 속어·행위는 의미 번역.",
+		"Context: cosplay レイヤー→코스플레이어;アニメ乳→만화 같은 가슴;特濃→초농후|아주 진한;手マン潮→핑거링 분수;ミニマン/コドおじ/セルフ事故는 문맥 의미로, 음차·직역 금지. 素股는 짧고 노골적인 한국어 행위명, 스마타·장황한 해설 금지. JAV는 자연스러운 선에서 더럽고 직설적으로.",
+		"Explicit/censored anatomy: ま〇こ/ま○こ/ま●こ/おま〇こ/おま○こ/おま●こ/おまんこ/まんこ/マンコ→보지; パイパンま〇こ/パイパンま○こ/パイパンま●こ/パイパンまんこ/無毛まんこ→백보지, 금지: 무모 소중이; alone パイパン→무모|백보지; ち〇ぽ/ち○ぽ/ち●ぽ/ちんこ/チンポ→자지; マン汁/本気マン汁→애액, 금지: 보짓물; ザーメン/ejaculation 精子→정액; アナル→애널 for JAV act/genre, anatomical 肛門→항문; 初アナル→첫 애널; 初アナル解禁→첫 애널 해금, 금지: 첫 항문/첫 항문 해금; クンニ/クンニリングス→보빨, 금지: 쿤니; アクメ→절정|오르가슴, 금지: 아크메; デカチン/巨根→대물, 금지: 대물 자지/거대 자지/왕자지. Ex: パイパンま〇こから溢れ出る精子→백보지에서 흘러넘치는 정액; デカチン緩急ピストン→대물 완급 피스톤. 금지:소중이/그곳/중요 부위/여성의 신체/레프.",
+		"JAV titles: forceful dirty noun phrases;no explanatory clauses/summary expansion/compound-act omission.",
 		"Source brackets: 【...】 stays 【...】, [...] stays [...]; never invent; bracketed 個撮→[개인촬영], never [POV].",
 		"Trope: ご開帳→은밀한 부위 전체 공개; 手取り足取り→하나부터 열까지 직접 가르치는; 骨抜き→쾌감에 녹초가 된; 毒牙→위험한 유혹에 걸린; 生殺し→사정시키지 않고 애태우기.",
 		"Terms: 股下→다리 길이; 美脚→각선미; 爆乳→폭유; 神乳→신의 가슴; 騎乗位→기승위; 背面騎乗位→후배위 기승위; デカ尻→큰 엉덩이; 股コキ→가랑이딸; 太ももコキ→허벅지딸; 尻コキ→엉덩이딸; フェラ→펠라. 금지: 股コキ/마타코키/허벅지 코키/가랑이 성교/허벅지 성교/엉덩이 성교.",
+		"Performer: 夕美しおん→유미 시온≠유우미 시온;keep Japanese family-given order.",
 	}
 	// Semicolons already delimit compact rules. Removing the optional following
 	// space keeps the accumulated prompt below its size guard without deleting

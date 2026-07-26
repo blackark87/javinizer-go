@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/stretchr/testify/assert"
@@ -226,6 +227,7 @@ func TestBuildLLMTranslationPrompts_CoversLatestMissTranslationCases(t *testing.
 	for _, source := range texts {
 		assert.Contains(t, userPrompt, source)
 	}
+	assert.Contains(t, userPrompt, "Correct a wrong 역강간 in the candidate")
 
 	for _, expected := range []string{
 		"HIGHEST PRIORITY exact form",
@@ -237,6 +239,14 @@ func TestBuildLLMTranslationPrompts_CoversLatestMissTranslationCases(t *testing.
 		"source에 パコ가 없으면 역파코/파코를 넣지 않는다",
 		"アナル→애널 for JAV act/genre",
 		"初アナル解禁→첫 애널 해금",
+		"only explicit 逆レ/逆レイプ→역강간",
+		"Bare レイプ/レ×プ/レ〇プ/レ○プ/レ●プ always→강간, never 역강간",
+		"即尺即ハメ→바로 빨고 바로 박기",
+		"ベロチュウ→진한 혀키스|딥키스",
+		"おっパブ→옵파이 펍|슴가 펍",
+		"금지: 오파부",
+		"スパンキング→스팽킹",
+		"夕美しおん→유미 시온",
 	} {
 		assert.Contains(t, systemPrompt, expected)
 	}
@@ -246,6 +256,17 @@ func TestBuildLLMTranslationPrompts_CoversLatestMissTranslationCases(t *testing.
 	for _, marker := range []string{"<<<title[0]>>>", "<<<title[1]>>>", "<<<title[2]>>>"} {
 		assert.Equal(t, 1, strings.Count(userPrompt, marker))
 	}
+}
+
+func TestBuildLLMQualityReviewPromptsAddsSourceLocalDirectionConstraint(t *testing.T) {
+	_, userPrompt, err := buildLLMQualityReviewPromptsWithMarkers("ko", []qualityReviewItem{{
+		Source:    "彼氏裏切りトラウマレ×プ",
+		Candidate: "남자친구 배신 트라우마 역강간",
+	}}, []string{"<<<quality_review_title>>>"})
+
+	require.NoError(t, err)
+	assert.Contains(t, userPrompt, "without an immediately preceding 逆 must be 강간, never 역강간")
+	assert.Contains(t, userPrompt, "Correct a wrong 역강간 in the candidate")
 }
 
 func TestKoreanJAVPromptTranslatesNewContextualSlangByMeaning(t *testing.T) {
@@ -314,7 +335,7 @@ func TestKoreanJAVPromptCoversNewMissTranslationTerms(t *testing.T) {
 		assert.Contains(t, rules, expected)
 	}
 	assert.Equal(t, 1, strings.Count(rules, "杭打ち騎乗位→말뚝박기 기승위"))
-	assert.Less(t, len(rules), 18000)
+	assert.Less(t, utf8.RuneCountInString(rules), 10000)
 }
 
 func TestBuildLLMTranslationPrompts_AlwaysIncludesCompressedKoreanRules(t *testing.T) {
@@ -345,7 +366,7 @@ func TestBuildLLMTranslationPrompts_AlwaysIncludesCompressedKoreanRules(t *testi
 	} {
 		assert.Contains(t, systemPrompt, expected)
 	}
-	assert.Less(t, len(systemPrompt), 20000)
+	assert.Less(t, utf8.RuneCountInString(systemPrompt), 12000)
 }
 
 func TestBuildLLMQualityReviewPromptIncludesSourceCandidateAndStrictOutput(t *testing.T) {
@@ -409,6 +430,12 @@ func TestSanitizeQualityReviewTextPrefersCandidateOverMalformedTrailingBlock(t *
 	echoed := "[JAPANESE SOURCE]\n濃交 色白美少女 ⟦7000⟧\n" +
 		"[KOREAN CANDIDATE]\n" + candidate + "\n\n濃交 하얀 피부의 미소녀 ⟦7000⟧"
 	assert.Equal(t, candidate, sanitizeQualityReviewTextWithCandidate(echoed, candidate))
+}
+
+func TestSanitizeQualityReviewTextExtractsUnlabelledFinalKoreanLine(t *testing.T) {
+	echoed := "おっパブで即尺即ハメ\n옵파이 펍에서 바로 빨고 바로 박기"
+	assert.Equal(t, "옵파이 펍에서 바로 빨고 바로 박기",
+		sanitizeQualityReviewTextWithCandidate(echoed, "기존 후보"))
 }
 
 func TestInvalidQualityReviewTextRejectsPromptEchoAndResidualJapanese(t *testing.T) {
@@ -582,6 +609,47 @@ func TestReviewJAVTranslationsRejectsDroppedActressNameToken(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "dropped a protected performer name")
+}
+
+func TestReviewJAVTranslationsProtectsImmutableMetadataTokens(t *testing.T) {
+	provider := &qualityReviewMockProvider{response: "교정된 제목 ⟦8000⟧ ⟦8001⟧"}
+	service := New(Config{Enabled: true, Provider: "openai-compatible", TargetLanguage: "ko"}, provider)
+
+	result, err := service.ReviewJAVTranslations(context.Background(), []QualityReviewField{{
+		FieldName: "quality_review_title",
+		Source:    "NTK-729 case08 原題",
+		Candidate: "NTK-729 case08 기존 제목",
+	}})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"교정된 제목 NTK-729 case08"}, result)
+	require.Len(t, provider.items, 1)
+	assert.Equal(t, "⟦8000⟧ ⟦8001⟧ 原題", provider.items[0].Source)
+	assert.Equal(t, "⟦8000⟧ ⟦8001⟧ 기존 제목", provider.items[0].Candidate)
+}
+
+func TestTranslateMovieRetriesAndRestoresImmutableMetadataTokens(t *testing.T) {
+	calls := 0
+	provider := &mockProvider{translateFunc: func(_ context.Context, _, _ string, _ []string) (*translationResult, error) {
+		calls++
+		if calls == 1 {
+			return &translationResult{Texts: []string{"번역 제목 ⟦9000⟧"}}, nil
+		}
+		return &translationResult{Texts: []string{"번역 제목 ⟦9000⟧ ⟦9000⟧"}}, nil
+	}}
+	service := New(Config{
+		Enabled: true, Provider: "mock", SourceLanguage: "ja", TargetLanguage: "ko", ApplyToPrimary: true,
+		Fields: fieldsConfig{Title: true},
+	}, provider)
+	movie := &models.Movie{Title: "NTK-729 NTK-729 原題"}
+
+	output, warning, err := service.TranslateMovie(context.Background(), movie, "")
+
+	require.NoError(t, err)
+	assert.Empty(t, warning)
+	assert.Equal(t, 2, calls)
+	assert.Equal(t, "번역 제목 NTK-729 NTK-729", movie.Title)
+	assert.Equal(t, "번역 제목 NTK-729 NTK-729", output.Movie.Title)
 }
 
 func TestTranslateMovie_RetriesNonHangulPersonSlot(t *testing.T) {

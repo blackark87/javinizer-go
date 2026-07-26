@@ -423,6 +423,7 @@ func (s *RuntimeSnapshot) BatchJobFactory() worker.BatchJobFactoryInterface {
 		posterGen,
 		workerBatchCfg,
 		r.deps.EventEmitter,
+		worker.WithActressSyncEnqueuer(r.queueMissingActressTranslations),
 	)
 }
 
@@ -573,6 +574,7 @@ func (r *APIRuntime) buildBatchJobFactory() any {
 		posterGen,
 		workerBatchCfg,
 		r.deps.EventEmitter,
+		worker.WithActressSyncEnqueuer(r.queueMissingActressTranslations),
 	)
 }
 

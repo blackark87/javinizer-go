@@ -25,6 +25,13 @@ Use Go's `testing` package, typically with `testify`; name tests `TestThing_Scen
 
 Prefer the smallest focused tests that cover the changed behavior. `make test-short` is not a mandatory pre-commit step when scoped package or frontend tests provide sufficient coverage; do not run it unless the breadth or risk of the change makes repository-wide Go validation necessary, or the user explicitly requests it. Frontend-only changes should not trigger unrelated batch or backend test suites.
 
+## Translation Prompt Validation
+
+- Whenever Korean JAV translation prompts or LLM result-processing rules are changed, add or update a focused regression test and run a local LLM test against the affected movie IDs or source text before considering the work complete.
+- Inspect the raw LLM response and the final parsed title and description. Reaching the prompt request, receiving HTTP 200, or merely completing the command is not sufficient validation.
+- Treat files and databases under `real-data/` as read-only operational data. When real records are required for an LLM test, create a SQLite backup in a temporary directory and run the reprocessing command as a dry-run against that copy; never persist test translations to the operational database.
+- Prompt-only changes require focused translation tests and affected-record LLM checks, not the full `make test-short` suite. If the configured local LLM is unavailable, report that live validation remains incomplete instead of claiming the prompt is verified.
+
 ## Commit & Pull Request Guidelines
 
 Recent commits use concise, imperative summaries, often in Korean, describing one logical change; merge commits retain the PR number. Keep commits focused and avoid unrelated generated changes. Pull requests should explain the problem and solution, link relevant issues, list verification commands, and include screenshots for visible UI changes. Regenerate and commit Swagger files after API annotation changes (`make swagger`), and keep `configs/config.yaml.example` synchronized with defaults (`make config-drift`).

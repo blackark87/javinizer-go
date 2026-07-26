@@ -31,13 +31,13 @@ type VerifiedActressResolution struct {
 // ResolveVerifiedAliasGroup persists separate DMM-backed activity-name rows
 // while linking them as one performer. It deliberately does not merge rows
 // with different positive DMM IDs.
-func (r *ActressRepository) ResolveVerifiedAliasGroup(canonical models.Actress, aliases []models.Actress) error {
+func (r *ActressRepository) ResolveVerifiedAliasGroup(canonical models.Actress, aliases []models.Actress) ([]uint, error) {
 	canonicalResolution, err := r.ResolveVerifiedProfile(0, canonical, nil, true)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if canonicalResolution == nil || canonicalResolution.Actress.ID == 0 {
-		return fmt.Errorf("resolve canonical actress alias identity")
+		return nil, fmt.Errorf("resolve canonical actress alias identity")
 	}
 	canonical = canonicalResolution.Actress
 
@@ -48,17 +48,17 @@ func (r *ActressRepository) ResolveVerifiedAliasGroup(canonical models.Actress, 
 		}
 		resolution, resolveErr := r.ResolveVerifiedProfile(0, alias, nil, true)
 		if resolveErr != nil {
-			return resolveErr
+			return nil, resolveErr
 		}
 		if resolution != nil && resolution.Actress.ID > 0 {
 			resolvedAliases = append(resolvedAliases, resolution.Actress)
 		}
 	}
 	if len(resolvedAliases) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	return retryOnLocked(func() error {
+	err = retryOnLocked(func() error {
 		return r.GetDB().Transaction(func(tx *gorm.DB) error {
 			aliasNames := make([]string, 0, len(resolvedAliases))
 			for _, alias := range resolvedAliases {
@@ -95,6 +95,14 @@ func (r *ActressRepository) ResolveVerifiedAliasGroup(canonical models.Actress, 
 			return nil
 		})
 	})
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]uint, 0, len(resolvedAliases))
+	for _, alias := range resolvedAliases {
+		ids = append(ids, alias.ID)
+	}
+	return ids, nil
 }
 
 // ResolveVerifiedIdentity reconciles a positive DMM identity with existing

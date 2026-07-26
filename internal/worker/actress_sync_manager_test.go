@@ -395,7 +395,7 @@ func TestActressSyncManagerTranslatesExistingNonKoreanNameWhileSyncingThumbnail(
 		translationCalls.Add(1)
 		response := map[string]any{
 			"choices": []map[string]any{{
-				"message": map[string]string{"content": "<<<JZ_0>>>\n미야시타 레나\n"},
+				"message": map[string]string{"content": "<<<JZ_0>>>\n미야시타 레나\n<<<JZ_DONE>>>"},
 			}},
 		}
 		require.NoError(t, json.NewEncoder(w).Encode(response))
@@ -456,7 +456,7 @@ func TestActressSyncManagerPreservesExistingKoreanNameWhileSyncingThumbnail(t *t
 		Fields: config.TranslationFieldsConfig{Actresses: true},
 		OpenAI: config.OpenAITranslationConfig{BaseURL: translationServer.URL, APIKey: "test"},
 	}
-	manager, _, actressRepo, _ := newActressSyncManagerTest(t, cfg, registry)
+	manager, db, actressRepo, _ := newActressSyncManagerTest(t, cfg, registry)
 	actress := &models.Actress{DMMID: 321, FirstName: "레나", LastName: "미야시타", JapaneseName: "宮下玲奈"}
 	require.NoError(t, actressRepo.Create(context.Background(), actress))
 
@@ -471,6 +471,9 @@ func TestActressSyncManagerPreservesExistingKoreanNameWhileSyncingThumbnail(t *t
 	require.NoError(t, err)
 	assert.Equal(t, "미야시타 레나", stored.FullName())
 	assert.Equal(t, "https://example.com/miyasita_rena.jpg", stored.ThumbURL)
+	translated, err := database.NewActressTranslationRepository(db).FindByActressAndLanguage(context.Background(), actress.ID, "ko")
+	require.NoError(t, err)
+	assert.Equal(t, "미야시타 레나", translated.DisplayName)
 }
 
 func TestActressSyncManagerTranslationFailureKeepsThumbnailUpdate(t *testing.T) {

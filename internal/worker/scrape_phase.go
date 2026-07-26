@@ -673,5 +673,10 @@ func persistScrapeOutcome(ctx context.Context, o scrapeFileOutcome, inputs scrap
 		}
 		return current, nil
 	})
+	if inputs.QueueActressSync != nil && len(o.Result.PendingActressSyncIDs) > 0 {
+		if queueErr := inputs.QueueActressSync(ctx, o.Result.PendingActressSyncIDs); queueErr != nil {
+			logging.Warnf("[scrape-phase] Failed to queue alias actress translations for %s: %v", o.MovieID, queueErr)
+		}
+	}
 	return true
 }

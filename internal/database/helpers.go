@@ -144,21 +144,6 @@ func prepareMovieForUpsert(tx *gorm.DB, movie *models.Movie, genreTranslations [
 func persistTranslations(tx *gorm.DB, db *DB, pm *preparedMovie, translations []models.MovieTranslation) error {
 	movie := pm.movie
 
-	translationRepo := newMovieTranslationRepository(db)
-	for i := range translations {
-		translations[i].MovieID = movie.ContentID
-		if err := translationRepo.UpsertTx(tx, &translations[i]); err != nil {
-			return err
-		}
-	}
-	// Translations accumulate across languages: re-scraping after switching
-	// metadata.translation.target_language upserts the new language alongside
-	// any previously-persisted ones rather than deleting them. This mirrors
-	// main's upsertMovieCore, which only upserted incoming translations and
-	// never deleted, preserving a multilingual translation history.
-
-	movie.Translations = translations
-
 	// Persist genre translations (from Movie, populated by TranslateMovie).
 	if len(pm.genreTranslations) > 0 {
 		genreTranslationRepo := newGenreTranslationRepository(db)
@@ -210,6 +195,76 @@ func persistTranslations(tx *gorm.DB, db *DB, pm *preparedMovie, translations []
 		}
 	}
 
+	// Rebuild the serialized movie-translation cast from the canonical actress
+	// IDs and their stored translation rows. This prevents a malformed LLM
+	// actress list (for example, merged surname/given-name text) from surviving
+	// after the normalized actress translation has been stored.
+	if err := rebuildMovieTranslationActressesTx(tx, movie.Actresses, translations); err != nil {
+		return err
+	}
+
+	translationRepo := newMovieTranslationRepository(db)
+	for i := range translations {
+		translations[i].MovieID = movie.ContentID
+		if err := translationRepo.UpsertTx(tx, &translations[i]); err != nil {
+			return err
+		}
+	}
+	// Translations accumulate across languages: re-scraping after switching
+	// metadata.translation.target_language upserts the new language alongside
+	// any previously-persisted ones rather than deleting them. This mirrors
+	// main's upsertMovieCore, which only upserted incoming translations and
+	// never deleted, preserving a multilingual translation history.
+	movie.Translations = translations
+	return nil
+}
+
+func rebuildMovieTranslationActressesTx(tx *gorm.DB, actresses []models.Actress, translations []models.MovieTranslation) error {
+	if len(actresses) == 0 || len(translations) == 0 {
+		return nil
+	}
+	actressIDs := make([]uint, 0, len(actresses))
+	for _, actress := range actresses {
+		if actress.ID > 0 {
+			actressIDs = append(actressIDs, actress.ID)
+		}
+	}
+	for i := range translations {
+		language := strings.ToLower(strings.TrimSpace(translations[i].Language))
+		storedByActressID := make(map[uint]string)
+		if len(actressIDs) > 0 && language != "" {
+			var stored []models.ActressTranslation
+			if err := tx.Where("actress_id IN ? AND language = ?", actressIDs, language).Find(&stored).Error; err != nil {
+				return wrapDBErr("find", fmt.Sprintf("actress translations for language %s", language), err)
+			}
+			for _, item := range stored {
+				if displayName := strings.TrimSpace(item.DisplayName); displayName != "" {
+					storedByActressID[item.ActressID] = displayName
+				}
+			}
+		}
+
+		names := make([]string, len(actresses))
+		for actressIndex := range actresses {
+			actress := &actresses[actressIndex]
+			if displayName := storedByActressID[actress.ID]; displayName != "" {
+				names[actressIndex] = displayName
+				continue
+			}
+			if actressIndex < len(translations[i].Actresses) {
+				if incoming := strings.TrimSpace(translations[i].Actresses[actressIndex]); incoming != "" {
+					names[actressIndex] = incoming
+					continue
+				}
+			}
+			if language == "ja" && strings.TrimSpace(actress.JapaneseName) != "" {
+				names[actressIndex] = strings.TrimSpace(actress.JapaneseName)
+				continue
+			}
+			names[actressIndex] = actress.FullName()
+		}
+		translations[i].Actresses = names
+	}
 	return nil
 }
 

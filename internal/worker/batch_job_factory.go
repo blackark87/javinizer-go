@@ -94,12 +94,25 @@ type BatchJobFactoryInterface interface {
 // It holds the infrastructure dependencies so callers don't need to reach into
 // the worker package for construction.
 type batchJobFactory struct {
-	jobStore  JobStoreInterface
-	wf        workflow.WorkflowInterface
-	matcher   matcher.MatcherInterface
-	posterGen poster.PosterGenerator
-	batchCfg  BatchJobConfig
-	emitter   eventlog.EventEmitter
+	jobStore         JobStoreInterface
+	wf               workflow.WorkflowInterface
+	matcher          matcher.MatcherInterface
+	posterGen        poster.PosterGenerator
+	batchCfg         BatchJobConfig
+	emitter          eventlog.EventEmitter
+	queueActressSync func(context.Context, []uint) error
+}
+
+// BatchJobFactoryOption configures optional API-only batch integrations while
+// keeping CLI/TUI construction unchanged.
+type BatchJobFactoryOption func(*batchJobFactory)
+
+// WithActressSyncEnqueuer queues translations for verified activity-name
+// aliases after the scraped movie has been persisted.
+func WithActressSyncEnqueuer(enqueue func(context.Context, []uint) error) BatchJobFactoryOption {
+	return func(factory *batchJobFactory) {
+		factory.queueActressSync = enqueue
+	}
 }
 
 // NewBatchJobFactory creates a BatchJobFactoryInterface with the given infrastructure
@@ -110,8 +123,8 @@ type batchJobFactory struct {
 // (API, TUI, CLI) should use the factory instead of constructing worker.JobConfig,
 // worker.BatchJobDeps, worker.ScrapePhaseConfig, worker.ApplyPhaseConfig, or
 // worker.RescrapeCmd directly.
-func NewBatchJobFactory(jobStore JobStoreInterface, wf workflow.WorkflowInterface, m matcher.MatcherInterface, posterGen poster.PosterGenerator, batchCfg BatchJobConfig, emitter eventlog.EventEmitter) BatchJobFactoryInterface {
-	return &batchJobFactory{
+func NewBatchJobFactory(jobStore JobStoreInterface, wf workflow.WorkflowInterface, m matcher.MatcherInterface, posterGen poster.PosterGenerator, batchCfg BatchJobConfig, emitter eventlog.EventEmitter, options ...BatchJobFactoryOption) BatchJobFactoryInterface {
+	factory := &batchJobFactory{
 		jobStore:  jobStore,
 		wf:        wf,
 		matcher:   m,
@@ -119,6 +132,10 @@ func NewBatchJobFactory(jobStore JobStoreInterface, wf workflow.WorkflowInterfac
 		batchCfg:  batchCfg,
 		emitter:   emitter,
 	}
+	for _, option := range options {
+		option(factory)
+	}
+	return factory
 }
 
 // CreateJob creates a new batch job via the JobStore and returns BatchJobInterface.
@@ -192,6 +209,7 @@ func (f *batchJobFactory) buildJobConfig(opts BatchJobOptions) *JobConfig {
 	if f.emitter != nil {
 		deps.Emitter = f.emitter
 	}
+	deps.QueueActressSync = f.queueActressSync
 	return &JobConfig{
 		ID:                    opts.ID,
 		Destination:           opts.Destination,

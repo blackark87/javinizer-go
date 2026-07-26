@@ -194,6 +194,35 @@ func TestScrapePhase_TranslationFailureMarksCachedRefreshFailed(t *testing.T) {
 	assert.Contains(t, result.Error, "untranslated Japanese remains")
 }
 
+func TestPersistScrapeOutcomeQueuesVerifiedAliasTranslationsAfterSave(t *testing.T) {
+	const file = "ALIAS-001.mp4"
+	result := makeScrapeResult("ALIAS-001")
+	result.PendingActressSyncIDs = []uint{41, 42}
+	updater := newStubUpdater()
+	updater.UpdateFileResult(file, &MovieResult{Movie: result.Movie.Clone(), Status: models.JobStatusCompleted})
+	var queued []uint
+	inputs := scrapePhaseInputs{
+		JobID:       "alias-translation-job",
+		MovieRepo:   &serializingPersistRepo{},
+		Broadcaster: &stubBroadcaster{},
+		Updater:     updater,
+		QueueActressSync: func(_ context.Context, actressIDs []uint) error {
+			queued = append([]uint(nil), actressIDs...)
+			return nil
+		},
+	}
+
+	saved := persistScrapeOutcome(context.Background(), scrapeFileOutcome{
+		FilePath: file,
+		MovieID:  "ALIAS-001",
+		Result:   result,
+	}, inputs, nil)
+
+	assert.True(t, saved)
+	assert.Equal(t, []uint{41, 42}, queued)
+	assert.True(t, updater.getResult(file).Persisted)
+}
+
 func TestScrapePhase_StagesMetadataBeforeTranslationAndCheckpointsEveryRecord(t *testing.T) {
 	const total = 4
 	wf := &stagedTranslationWorkflow{total: total, releaseTranslation: make(chan struct{}, total)}

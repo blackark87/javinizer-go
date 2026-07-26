@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"time"
 
 	"github.com/javinizer/javinizer-go/internal/database"
@@ -165,6 +166,7 @@ type scrapePhaseInputs struct {
 	// jobs. TranslationConcurrency is independent from the file worker pool.
 	DeferredTranslation    bool
 	TranslationConcurrency int
+	QueueActressSync       func(context.Context, []uint) error
 
 	Broadcaster progressBroadcaster
 	Updater     ResultUpdater

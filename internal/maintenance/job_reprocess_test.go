@@ -65,6 +65,39 @@ func TestReprocessMovieIDSelection(t *testing.T) {
 		Status: models.JobStatusCompleted, Movie: &models.Movie{ID: "OTHER"},
 	}, selected))
 	assert.True(t, shouldReprocessResult(result, nil))
+
+	persistedFailure := &worker.MovieResult{
+		Status: models.JobStatusFailed,
+		Movie:  &models.Movie{ID: "MIAA-811"},
+		OrchestrationState: models.OrchestrationState{
+			Persisted: true,
+		},
+	}
+	assert.True(t, shouldReprocessResult(persistedFailure, selected))
+	persistedFailure.Persisted = false
+	assert.False(t, shouldReprocessResult(persistedFailure, selected))
+}
+
+func TestRestoreStoredJapaneseSourceUsesPersistedJapaneseTranslation(t *testing.T) {
+	source := &models.ScraperResult{
+		Title:       "이미 번역된 제목",
+		Description: "이미 번역된 설명",
+		Translations: []models.MovieTranslation{
+			{Language: "ko", Title: "한국어 제목", Description: "한국어 설명"},
+			{
+				Language:    "ja-JP",
+				Title:       "元の日本語タイトル",
+				Description: "元の日本語説明",
+			},
+		},
+	}
+
+	restoreStoredJapaneseSource(source)
+
+	assert.Equal(t, "元の日本語タイトル", source.Title)
+	assert.Equal(t, "元の日本語説明", source.Description)
+	require.Len(t, source.Translations, 2)
+	assert.Equal(t, "한국어 제목", source.Translations[0].Title)
 }
 
 func TestReprocessCheckpointPathSeparatesSelections(t *testing.T) {

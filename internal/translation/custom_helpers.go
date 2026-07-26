@@ -182,6 +182,9 @@ func extractHonorificNameToken(name string) (string, bool) {
 
 var descriptionPromoStoreRE = regexp.MustCompile(`(?:特集\s*)?最新作やセール商品など、お得な情報満載[の의]\s*『[^』]*KMPストア[^』]*』はこちら！?`)
 var descriptionFANZABonusPrefixRE = regexp.MustCompile(`^特典・セット商品イメージ\s*特典・セット商品情報\s*【特典内容】.*?特典付き商品・セット商品について`)
+var descriptionReleaseDatePrefixRE = regexp.MustCompile(`^[\s　]*[【\[][\s　]*(?:発売日|발매일)[\s　]*[】\]][\s　]*[^,，]+[,，][\s　]*`)
+var descriptionRuntimePrefixRE = regexp.MustCompile(`^[\s　]*[【\[][\s　]*(?:収録時間|수록[\s　]*시간)[\s　]*[】\]][\s　]*[^,，]+[,，][\s　]*`)
+var descriptionContentIDPrefixRE = regexp.MustCompile(`^[\s　]*\([A-Za-z0-9][A-Za-z0-9_-]*\)[\s　]*`)
 
 var descriptionPromotionalAnchors = []string{
 	"※この作品はバイノーラル録音されております", "※ この作品はバイノーラル録音されております",
@@ -196,6 +199,12 @@ var descriptionPromotionalAnchors = []string{
 func cleanDescriptionForTranslation(description string) string {
 	description = strings.TrimSpace(description)
 	description = descriptionFANZABonusPrefixRE.ReplaceAllString(description, "")
+	beforeMetadata := description
+	description = descriptionReleaseDatePrefixRE.ReplaceAllString(description, "")
+	description = descriptionRuntimePrefixRE.ReplaceAllString(description, "")
+	if description != beforeMetadata {
+		description = descriptionContentIDPrefixRE.ReplaceAllString(description, "")
+	}
 	cutAt := len(description)
 	for _, anchor := range descriptionPromotionalAnchors {
 		if index := strings.Index(description, anchor); index >= 0 && index < cutAt {

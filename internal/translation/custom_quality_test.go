@@ -71,6 +71,23 @@ func TestKoreanJAVPromptUsesConciseIntercruralTerms(t *testing.T) {
 	assert.NotContains(t, rules, "가랑이에 끼워 비비기")
 }
 
+func TestKoreanJAVPromptCoversMIUM897AndIPX161Context(t *testing.T) {
+	rules := koreanJAVPromptRules("ko")
+
+	for _, expected := range []string{
+		"意外と推しに弱い is a common 押しに弱い variant/typo",
+		"의외로 밀어붙이면 약한",
+		"금지: 최애에게 약한",
+		"ホテイン→호텔 입성|호텔로 직행",
+		"ノリ悪めドライ系女子→반응이 시큰둥한 무심녀|흥 없는 무심녀",
+		"エレクト/チンポがエレクトする→발기하다|자지가 서다",
+		"금지: 자지를 흥분시키다",
+	} {
+		assert.Contains(t, rules, expected)
+	}
+	assert.NotContains(t, rules, "가랑이에 끼워 비비기")
+}
+
 func TestKoreanJAVPromptUsesNaturalMiluchioAndVirilityTerms(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
 	assert.Contains(t, rules, "ミルチオ→미루치오")
@@ -82,6 +99,11 @@ func TestKoreanJAVPromptUsesNaturalMiluchioAndVirilityTerms(t *testing.T) {
 
 func TestKoreanJAVPromptDoesNotTransliterateShigoki(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
+	assert.Contains(t, rules, "手コキ/ハンドジョブ/handjob→대딸")
+	assert.Contains(t, rules, "금지: 핸드잡")
+	assert.NotContains(t, rules, "→핸드잡")
+	assert.Contains(t, rules, "シゴく/シゴき→손으로 흔들다|대딸|뽑아주다")
+	assert.Contains(t, rules, "舐めシゴき→혀와 손으로 뽑아주기|핥기와 대딸")
 	assert.Contains(t, rules, "舐めシゴきフルコース→혀와 손으로 뽑아주는 풀코스")
 	assert.Contains(t, rules, "금지: 시고키/핥기 시고키")
 	assert.Contains(t, rules, "사랑의로 기계 번역하지 않는다")

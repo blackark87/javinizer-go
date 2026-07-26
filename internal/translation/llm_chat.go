@@ -134,7 +134,7 @@ func buildLLMTranslationPromptsWithMarkers(sourceLang, targetLang string, texts,
 	terminologyRules := "Translate every meaningful source segment. Use established current target-language JAV terminology and render ordinary words, idioms, sound words, and transparent compounds by meaning. Transliterate only person or brand names, opaque proper nouns, and genuine industry loanwords; leave no Japanese script in non-Japanese output except protected name punctuation. "
 	personNameRule := "Person-name rule: <<<actress[N]>>> and <<<title_as_name>>> contain one performer. Transliterate the reading in Japanese FamilyName GivenName order; romaji is authoritative. Never invent, anglicize, or substitute a different performer name; never shorten or translate it or turn kanji into emoji. Preserve the middle dot ・ inside one name, never turn it into a comma, and never split one performer. Apply this rule to a short name-like <<<title>>> too. "
 	properNounRule := "Proper-noun rule: <<<maker>>>, <<<label>>>, and <<<director>>> are names. Transliterate them phonetically and do not embellish them. "
-	cleanupRules := "Title cleanup: remove bracketed VR/release labels such as [VR], 【VR】, and 【8K VR】. Description cleanup: remove playback/device notices, VR-only notices, platform notices, sales campaigns, and store promotions; if only excluded material remains, return an empty section. "
+	cleanupRules := "Title cleanup: remove bracketed VR/release labels such as [VR], 【VR】, and 【8K VR】. Description cleanup: remove a leading release-date/runtime metadata prefix and its adjacent content ID, playback/device notices, VR-only notices, platform notices, sales campaigns, and store promotions; if only excluded material remains, return an empty section. "
 	placeholderRule := "Any Hangul already present is final and must be copied verbatim. Protected tokens of the form ⟦N⟧ must be reproduced exactly and never translated, removed, or renumbered. "
 	koreanRules := koreanJAVPromptRules(targetLang)
 
@@ -209,7 +209,7 @@ func koreanJAVPromptRules(targetLang string) string {
 		"顔騎→안면기승, 금지: 페이스시팅/얼굴 기승위; 足裏→발바닥; 足コキ→풋잡, 금지: 발코키; ムレた足裏→땀에 찬 발바닥|땀이 밴 발바닥, 금지: 눅눅한 발바닥; 足裏からつま先を味わい尽くす→발바닥부터 발끝까지 샅샅이 맛본다.",
 		"桃尻/桃Siri→애플힙; never treat as a person name or write 모모시리.",
 		"ミルチオ→미루치오 (coinage miru+フェラチオ), 금지: 밀치오; ミルチオの愛人→미루치오를 해주는 불륜 상대, 금지: 미루치오의 정부; adultery 愛人→불륜 상대, 금지: 정부/애인; female 絶倫性欲者→절륜 색녀, male→절륜남, 금지: 절륜 성욕자.",
-		"シゴく/シゴき→손으로 흔들다|핸드잡|뽑아주다; 舐めシゴき→혀와 손으로 뽑아주기|핥기와 핸드잡; 舐めシゴきフルコース→혀와 손으로 뽑아주는 풀코스. 금지: 시고키/핥기 시고키. 愛ベロ/愛舐め의 愛는 테크닉 강조이며 사랑의로 기계 번역하지 않는다.",
+		"手コキ/ハンドジョブ/handjob→대딸, 금지: 핸드잡; シゴく/シゴき→손으로 흔들다|대딸|뽑아주다; 舐めシゴき→혀와 손으로 뽑아주기|핥기와 대딸; 舐めシゴきフルコース→혀와 손으로 뽑아주는 풀코스. 금지: 시고키/핥기 시고키. 愛ベロ/愛舐め의 愛는 테크닉 강조이며 사랑의로 기계 번역하지 않는다.",
 		"エビ反り→허리가 휘는; エビ反り痙攣絶頂→허리가 휘며 경련 절정; エビ反りオーガズム→허리가 휘는 오르가슴. 금지: 허리 꺾인/새우등처럼 휜/등을 활처럼 휘는/허리를 뒤로 젖히는/에비반리/에비소리. erotic massage 特別施術→특별 코스, 금지: 특별 시술/특별 트리트먼트.",
 		"人妻→유부녀; 人妻もの→유부녀물; 금지: 인처. セフレ→섹스 파트너|섹파, 금지: 세프레; セフレ志願の女の子→섹파를 자처하는 여자|섹스 파트너를 원하는 여자; ちんちんおっきしたら→자지가 서면, 금지: n자지 커지면.",
 		"寸止め→절정 직전 멈추기|절정 직전까지 애태우기|절정을 참게 하는, 금지: 에징; リモバイ→리모트 바이브, 금지: 리모바이; 寸止めリモバイ調教→리모트 바이브로 절정 직전까지 애태우는 조교; 小鹿アクメ→다리가 후들거리는 절정|무릎이 풀리는 절정; 膝ガクガク小鹿アクメ→무릎이 후들거리는 절정, 금지: 새끼 사슴 오르가슴.",
@@ -250,6 +250,7 @@ func koreanJAVPromptRules(targetLang string) string {
 		"DIRECTION INVARIANT (highest priority): only explicit 逆レ/逆レイプ→역강간|여자가 강제로 덮치는;逆レ搾精→역강간 착정. Bare レイプ/レ×プ/レ〇プ/レ○プ/レ●プ always→강간, never 역강간, regardless of betrayal or perpetrator context. 逆パコ와 구분하며 source에 パコ가 없으면 역파코/파코를 넣지 않는다.",
 		"Acts: ベロチュウ→진한 혀키스|딥키스≠舐めシゴき;即尺即ハメ→바로 빨고 바로 박기(두 행위 보존);スパンキング→스팽킹≠스팽고킹;おっパブ→옵파이 펍|슴가 펍, 금지: 오파부;デリバリーヘルス/デリヘル→데리헤루. 업소 관용어 외 속어·행위는 의미 번역.",
 		"Context: cosplay レイヤー→코스플레이어;アニメ乳→만화 같은 가슴;特濃→초농후|아주 진한;手マン潮→핑거링 분수;ミニマン/コドおじ/セルフ事故는 문맥 의미로, 음차·직역 금지. 素股는 짧고 노골적인 한국어 행위명, 스마타·장황한 해설 금지. JAV는 자연스러운 선에서 더럽고 직설적으로.",
+		"Pickup/context: 意外と推しに弱い is a common 押しに弱い variant/typo→의외로 밀어붙이면 약한, 금지: 최애에게 약한;ホテイン→호텔 입성|호텔로 직행, 금지: 미완성 호텔로!;ノリ悪めドライ系女子→반응이 시큰둥한 무심녀|흥 없는 무심녀, 장황한 성격 해설 금지;sexual エレクト/チンポがエレクトする→발기하다|자지가 서다, 금지: 자지를 흥분시키다.",
 		"Explicit/censored anatomy: ま〇こ/ま○こ/ま●こ/おま〇こ/おま○こ/おま●こ/おまんこ/まんこ/マンコ→보지; パイパンま〇こ/パイパンま○こ/パイパンま●こ/パイパンまんこ/無毛まんこ→백보지, 금지: 무모 소중이; alone パイパン→무모|백보지; ち〇ぽ/ち○ぽ/ち●ぽ/ちんこ/チンポ→자지; マン汁/本気マン汁→애액, 금지: 보짓물; ザーメン/ejaculation 精子→정액; アナル→애널 for JAV act/genre, anatomical 肛門→항문; 初アナル→첫 애널; 初アナル解禁→첫 애널 해금, 금지: 첫 항문/첫 항문 해금; クンニ/クンニリングス→보빨, 금지: 쿤니; アクメ→절정|오르가슴, 금지: 아크메; デカチン/巨根→대물, 금지: 대물 자지/거대 자지/왕자지. Ex: パイパンま〇こから溢れ出る精子→백보지에서 흘러넘치는 정액; デカチン緩急ピストン→대물 완급 피스톤. 금지:소중이/그곳/중요 부위/여성의 신체/레프.",
 		"JAV titles: forceful dirty noun phrases;no explanatory clauses/summary expansion/compound-act omission.",
 		"Source brackets: 【...】 stays 【...】, [...] stays [...]; never invent; bracketed 個撮→[개인촬영], never [POV].",

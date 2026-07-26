@@ -437,6 +437,21 @@ func TestCleanDescriptionForTranslation(t *testing.T) {
 			expected: "彼女との甘い時間を描いた本編の説明です。",
 		},
 		{
+			name:     "release runtime and content ID prefix is removed",
+			input:    "【発売日】2023-05-12，【収録時間】80分，(300MIUM-897) 本編の説明です。",
+			expected: "本編の説明です。",
+		},
+		{
+			name:     "Korean metadata prefix is removed from a review candidate",
+			input:    "【발매일】2023-05-12, 【수록 시간】80분, (300MIUM-897) 번역할 본문입니다.",
+			expected: "번역할 본문입니다.",
+		},
+		{
+			name:     "standalone parenthesized product code is preserved",
+			input:    "(300MIUM-897) 자체가 본문인 설명입니다.",
+			expected: "(300MIUM-897) 자체가 본문인 설명입니다.",
+		},
+		{
 			name: "FANZA bonus wrapper and Blu-ray notice are removed",
 			input: "特典・セット商品イメージ 特典・セット商品情報 【特典内容】 ・生写真2枚 " +
 				"特典付き商品・セット商品について【専属第2弾！】本編の説明です。" +

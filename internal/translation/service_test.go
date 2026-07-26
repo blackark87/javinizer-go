@@ -3040,6 +3040,103 @@ translated
 		assert.Equal(t, []bool{true, false}, thinkingValues)
 	})
 
+	t.Run("truncated disabled-thinking response reaches service retry", func(t *testing.T) {
+		var thinkingValues []bool
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body map[string]interface{}
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+			thinking, ok := body["enable_thinking"].(bool)
+			require.True(t, ok)
+			thinkingValues = append(thinkingValues, thinking)
+
+			content := "<<<JZ_0>>>\n중간에서 끊긴 번역"
+			if len(thinkingValues) == 3 {
+				content = "<<<JZ_0>>>\n재시도 후 완전한 번역\n<<<JZ_DONE>>>"
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"choices": []map[string]interface{}{{
+					"message":       map[string]string{"content": content},
+					"finish_reason": "stop",
+				}},
+			})
+		}))
+		defer server.Close()
+
+		httpClient := server.Client()
+		cfg := Config{
+			Provider: "openai-compatible",
+			OpenAICompatible: openAICompatibleConfig{
+				BaseURL:        server.URL,
+				Model:          "test-model.gguf",
+				EnableThinking: true,
+				BackendType:    "llama.cpp",
+			},
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
+
+		result, err := s.translateTexts(context.Background(), "ja", "ko", []string{"テスト"})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"재시도 후 완전한 번역"}, result)
+		assert.Equal(t, []bool{true, false, true}, thinkingValues)
+	})
+
+	t.Run("model output format error retries once without thinking", func(t *testing.T) {
+		var thinkingValues []bool
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var body map[string]interface{}
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+			thinking, ok := body["enable_thinking"].(bool)
+			require.True(t, ok)
+			thinkingValues = append(thinkingValues, thinking)
+
+			if thinking {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":"The model produced output that does not match the expected Content-only format"}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"choices": []map[string]interface{}{{
+					"message": map[string]string{
+						"content": "<<<JZ_0>>>\n형식 오류 복구 번역\n<<<JZ_DONE>>>",
+					},
+					"finish_reason": "stop",
+				}},
+			})
+		}))
+		defer server.Close()
+
+		httpClient := server.Client()
+		cfg := Config{
+			Provider: "openai-compatible",
+			OpenAICompatible: openAICompatibleConfig{
+				BaseURL:        server.URL,
+				Model:          "test-model.gguf",
+				EnableThinking: true,
+				BackendType:    "llama.cpp",
+			},
+		}
+		s := New(cfg,
+			NewOpenAIProvider(cfg, httpClient),
+			NewOpenAICompatibleProvider(cfg, httpClient),
+			NewDeepLProvider(cfg, httpClient),
+			NewGoogleProvider(cfg, httpClient),
+			NewAnthropicProvider(cfg, httpClient),
+		)
+
+		result, err := s.translateTexts(context.Background(), "ja", "ko", []string{"テスト"})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"형식 오류 복구 번역"}, result)
+		assert.Equal(t, []bool{true, false}, thinkingValues)
+	})
+
 	t.Run("auto fallback tries another backend control", func(t *testing.T) {
 		requestKinds := make([]string, 0, 2)
 		thinkingEnabled := true

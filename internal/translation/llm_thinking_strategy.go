@@ -163,8 +163,8 @@ func isRetryableThinkingStrategyError(err error) bool {
 	var te *translationError
 	if errors.As(err, &te) && te.Kind == TranslationErrorHTTPStatus {
 		// A malformed model reasoning stream is stochastic output, not an
-		// unsupported thinking-control field. Retrying the same preferred
-		// strategy is useful; changing control formats is not.
+		// unsupported thinking-control field. The provider retries the same
+		// strategy with thinking disabled; changing control formats is not useful.
 		if isModelOutputFormatError(te) {
 			return false
 		}

@@ -130,8 +130,9 @@ func (p *OpenAICompatibleProvider) Translate(ctx context.Context, sourceLang, ta
 	thinkingEnabled := p.cfg.OpenAICompatible.EnableThinking
 	strategies := buildOpenAICompatibleThinkingStrategies(baseURL, model, p.cfg.OpenAICompatible)
 
+	var lastResult *translationResult
 	var lastErr error
-	truncationFallbackAttempted := false
+	thinkingDisabledFallbackAttempted := false
 	for _, strategy := range strategies {
 		request := applyOpenAICompatibleThinkingStrategy(baseRequest, strategy, thinkingEnabled, p.cfg.OpenAICompatible.ThinkingMode)
 		requestCtx, requestCancel := llmRequestContext(ctx, p.cfg.TimeoutSeconds)
@@ -152,14 +153,20 @@ func (p *OpenAICompatibleProvider) Translate(ctx context.Context, sourceLang, ta
 			return result, nil
 		}
 
+		lastResult = result
 		lastErr = err
 		if thinkingEnabled &&
 			strategy != openAICompatibleThinkingStrategyNone &&
-			!truncationFallbackAttempted &&
-			isTruncatedTranslationError(err) {
-			truncationFallbackAttempted = true
+			!thinkingDisabledFallbackAttempted &&
+			(isTruncatedTranslationError(err) || isModelOutputFormatError(err)) {
+			thinkingDisabledFallbackAttempted = true
+			reason := "output was truncated"
+			if isModelOutputFormatError(err) {
+				reason = "model output did not match the server format"
+			}
 			logging.Debugf(
-				"Translation (openai-compatible): output was truncated with thinking enabled; retrying once with thinking disabled",
+				"Translation (openai-compatible): %s with thinking enabled; retrying once with thinking disabled",
+				reason,
 			)
 			disabledRequest := applyOpenAICompatibleThinkingStrategy(
 				baseRequest,
@@ -184,19 +191,20 @@ func (p *OpenAICompatibleProvider) Translate(ctx context.Context, sourceLang, ta
 			if disabledErr == nil {
 				return result, nil
 			}
+			lastResult = result
 			lastErr = disabledErr
 			if !isRetryableThinkingStrategyError(disabledErr) {
-				return nil, disabledErr
+				return lastResult, disabledErr
 			}
 		}
 		if strategy == openAICompatibleThinkingStrategyNone || !isRetryableThinkingStrategyError(err) {
-			return nil, lastErr
+			return lastResult, lastErr
 		}
 
 		logging.Debugf("Translation (openai-compatible): thinking strategy %q failed (%v), trying fallback", strategy, err)
 	}
 
-	return nil, lastErr
+	return lastResult, lastErr
 }
 
 func effectiveMaxOutputTokens(configured int) int {

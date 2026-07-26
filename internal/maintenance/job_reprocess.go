@@ -39,9 +39,11 @@ type JobReprocessOptions struct {
 	TitleOnly        bool
 }
 
-// ReprocessStoredJob retranslates and remaps a completed, not-yet-organized
-// job exclusively from its persisted source envelope. It never calls a metadata
-// scraper. Network access is limited to the configured translation provider.
+// ReprocessStoredJob retranslates and remaps eligible results from a
+// not-yet-organized job exclusively from its persisted source envelope.
+// Completed results and failed results already persisted to the DB are eligible.
+// It never calls a metadata scraper. Network access is limited to the configured
+// translation provider.
 func ReprocessStoredJob(ctx context.Context, db *database.DB, cfg *config.Config, jobID string, apply bool) (*JobReprocessReport, error) {
 	return ReprocessStoredJobWithOptions(ctx, db, cfg, jobID, JobReprocessOptions{Apply: apply})
 }
@@ -120,6 +122,10 @@ func ReprocessStoredJobWithOptions(ctx context.Context, db *database.DB, cfg *co
 		}
 		refreshMovieTranslation(result.Movie, cfg.Metadata.Translation, titleSource, descriptionSource)
 		refreshDisplayTitleWithoutMedia(result.Movie, oldTitle)
+		result.Status = models.JobStatusCompleted
+		result.Error = ""
+		endedAt := time.Now().UTC()
+		result.EndedAt = &endedAt
 		result.Revision++
 	}
 
@@ -433,10 +439,12 @@ func retranslateSelectedFields(ctx context.Context, tc config.TranslationConfig,
 			return 0, fmt.Errorf("%s: persisted provenance is missing", result.FileMatchInfo.MovieID)
 		}
 		titleSource := findStoredSource(prov.ScraperResults, prov.FieldSources["title"])
+		restoreStoredJapaneseSource(titleSource)
 		if titleSource == nil || strings.TrimSpace(titleSource.Title) == "" {
 			return 0, fmt.Errorf("%s: selected title source %q is unavailable", result.FileMatchInfo.MovieID, prov.FieldSources["title"])
 		}
 		descriptionSource := findStoredSource(prov.ScraperResults, prov.FieldSources["description"])
+		restoreStoredJapaneseSource(descriptionSource)
 		if titleOnly {
 			descriptionSource = nil
 		}
@@ -577,7 +585,11 @@ func normalizeReprocessMovieIDs(movieIDs []string) map[string]struct{} {
 }
 
 func shouldReprocessResult(result *worker.MovieResult, selectedMovieIDs map[string]struct{}) bool {
-	if result == nil || result.Movie == nil || result.Status != models.JobStatusCompleted {
+	if result == nil || result.Movie == nil {
+		return false
+	}
+	if result.Status != models.JobStatusCompleted &&
+		!(result.Status == models.JobStatusFailed && result.Persisted) {
 		return false
 	}
 	if len(selectedMovieIDs) == 0 {
@@ -589,6 +601,25 @@ func shouldReprocessResult(result *worker.MovieResult, selectedMovieIDs map[stri
 		}
 	}
 	return false
+}
+
+func restoreStoredJapaneseSource(source *models.ScraperResult) {
+	if source == nil {
+		return
+	}
+	for _, record := range source.Translations {
+		language := normalizeLanguage(record.Language)
+		if language != "ja" && !strings.HasPrefix(language, "ja-") && !strings.HasPrefix(language, "ja_") {
+			continue
+		}
+		if title := strings.TrimSpace(record.Title); title != "" {
+			source.Title = title
+		}
+		if description := strings.TrimSpace(record.Description); description != "" {
+			source.Description = description
+		}
+		return
+	}
 }
 
 func countSelectedReprocessResults(parsed *worker.ParsedJobResults, selectedMovieIDs map[string]struct{}) int {

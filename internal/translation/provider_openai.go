@@ -63,7 +63,9 @@ func (p *OpenAIProvider) Translate(ctx context.Context, sourceLang, targetLang s
 		markers:         markers,
 		maxOutputTokens: 4096,
 	}
-	return executeLLMChatTranslation(ctx, p.httpClient, adapter, "openai", baseURL, model, systemPrompt, userPrompt, len(texts))
+	requestCtx, cancel := llmRequestContext(ctx, p.cfg.TimeoutSeconds)
+	defer cancel()
+	return executeLLMChatTranslation(requestCtx, p.httpClient, adapter, "openai", baseURL, model, systemPrompt, userPrompt, len(texts))
 }
 
 // OpenAICompatibleProvider translates text via an OpenAI-compatible chat API
@@ -132,7 +134,8 @@ func (p *OpenAICompatibleProvider) Translate(ctx context.Context, sourceLang, ta
 	truncationFallbackAttempted := false
 	for _, strategy := range strategies {
 		request := applyOpenAICompatibleThinkingStrategy(baseRequest, strategy, thinkingEnabled, p.cfg.OpenAICompatible.ThinkingMode)
-		result, err := executeOpenAIChatTranslation(ctx, p.httpClient, openAIChatCallOptions{
+		requestCtx, requestCancel := llmRequestContext(ctx, p.cfg.TimeoutSeconds)
+		result, err := executeOpenAIChatTranslation(requestCtx, p.httpClient, openAIChatCallOptions{
 			provider:  "openai-compatible",
 			baseURL:   baseURL,
 			endpoint:  "/chat/completions",
@@ -144,6 +147,7 @@ func (p *OpenAICompatibleProvider) Translate(ctx context.Context, sourceLang, ta
 			logInput:  true,
 			logTiming: true,
 		})
+		requestCancel()
 		if err == nil {
 			return result, nil
 		}
@@ -163,7 +167,8 @@ func (p *OpenAICompatibleProvider) Translate(ctx context.Context, sourceLang, ta
 				false,
 				p.cfg.OpenAICompatible.ThinkingMode,
 			)
-			result, disabledErr := executeOpenAIChatTranslation(ctx, p.httpClient, openAIChatCallOptions{
+			fallbackCtx, fallbackCancel := llmRequestContext(ctx, p.cfg.TimeoutSeconds)
+			result, disabledErr := executeOpenAIChatTranslation(fallbackCtx, p.httpClient, openAIChatCallOptions{
 				provider:  "openai-compatible",
 				baseURL:   baseURL,
 				endpoint:  "/chat/completions",
@@ -175,6 +180,7 @@ func (p *OpenAICompatibleProvider) Translate(ctx context.Context, sourceLang, ta
 				logInput:  true,
 				logTiming: true,
 			})
+			fallbackCancel()
 			if disabledErr == nil {
 				return result, nil
 			}

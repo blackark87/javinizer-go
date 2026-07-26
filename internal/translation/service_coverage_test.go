@@ -3,9 +3,13 @@ package translation
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/stretchr/testify/assert"
@@ -338,6 +342,59 @@ func TestDecodeOpenAIChatTranslation_RejectsMissingCompletionMarker(t *testing.T
 	assert.Contains(t, err.Error(), "missing completion marker <<<JZ_DONE>>>")
 	assert.Contains(t, err.Error(), "received_chars=")
 	assert.Contains(t, err.Error(), "max_output_tokens=2048")
+}
+
+func TestOpenAICompatibleProvider_Translate_UsesFreshTimeoutForThinkingFallback(t *testing.T) {
+	var remainingBudgets []time.Duration
+	callCount := 0
+	client := &mockHTTPClient{
+		doFunc: func(req *http.Request) (*http.Response, error) {
+			deadline, ok := req.Context().Deadline()
+			require.True(t, ok, "each LLM request must have its own deadline")
+			remainingBudgets = append(remainingBudgets, time.Until(deadline))
+			callCount++
+
+			content := "<<<JZ_0>>>\n종료 표식이 없는 첫 응답"
+			if callCount == 1 {
+				time.Sleep(150 * time.Millisecond)
+			} else {
+				content = "<<<JZ_0>>>\n완전한 번역\n<<<JZ_DONE>>>"
+			}
+			body := fmt.Sprintf(`{
+				"choices": [{
+					"message": {"content": %q},
+					"finish_reason": "stop"
+				}]
+			}`, content)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Header:     make(http.Header),
+			}, nil
+		},
+	}
+	cfg := Config{
+		TimeoutSeconds: 1,
+		OpenAICompatible: openAICompatibleConfig{
+			BaseURL:        "http://localhost",
+			Model:          "test-model",
+			EnableThinking: true,
+			BackendType:    "llama.cpp",
+		},
+	}
+
+	result, err := NewOpenAICompatibleProvider(cfg, client).Translate(
+		context.Background(),
+		"ja",
+		"ko",
+		[]string{"テスト"},
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"완전한 번역"}, result.Texts)
+	require.Len(t, remainingBudgets, 2)
+	assert.Greater(t, remainingBudgets[0], 900*time.Millisecond)
+	assert.Greater(t, remainingBudgets[1], 900*time.Millisecond, "fallback must receive a fresh timeout budget")
 }
 
 func TestOpenAICompatibleProvider_Translate_MissingModel(t *testing.T) {

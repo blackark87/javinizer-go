@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/models"
@@ -47,13 +46,11 @@ func ReviewField(
 	} else {
 		freshMovie.Description = source
 	}
-	freshCtx, freshCancel := callContext(ctx, tc.TimeoutSeconds)
 	freshOutput, _, err := service.TranslateMovie(
-		freshCtx,
+		ctx,
 		freshMovie,
 		freshConfig.SettingsHash(),
 	)
-	freshCancel()
 	if err != nil {
 		return Result{}, fmt.Errorf("fresh translation failed: %w", err)
 	}
@@ -62,14 +59,12 @@ func ReviewField(
 		return Result{}, fmt.Errorf("fresh translator returned an empty result")
 	}
 
-	reviewCtx, reviewCancel := callContext(ctx, tc.TimeoutSeconds)
-	reviewed, err := service.ReviewJAVTranslations(reviewCtx, []translation.QualityReviewField{{
+	reviewed, err := service.ReviewJAVTranslations(ctx, []translation.QualityReviewField{{
 		FieldName: "quality_review_" + field,
 		Source:    source,
 		Candidate: freshCandidate,
 		Actresses: actresses,
 	}})
-	reviewCancel()
 	if err != nil {
 		return Result{}, fmt.Errorf("translation review failed: %w", err)
 	}
@@ -94,13 +89,6 @@ func fieldConfig(tc config.TranslationConfig, field string) config.TranslationCo
 		tc.TargetLanguages = []string{tc.TargetLanguage}
 	}
 	return tc
-}
-
-func callContext(parent context.Context, timeoutSeconds int) (context.Context, context.CancelFunc) {
-	if timeoutSeconds <= 0 {
-		timeoutSeconds = 60
-	}
-	return context.WithTimeout(parent, time.Duration(timeoutSeconds)*time.Second)
 }
 
 func translatedField(output *translation.TranslationOutput, field string) string {

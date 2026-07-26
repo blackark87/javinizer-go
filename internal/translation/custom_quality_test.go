@@ -61,6 +61,15 @@ func TestKoreanJAVPromptTreatsMomoSiriAsBodyDescription(t *testing.T) {
 	assert.Contains(t, rules, "never treat as a person name")
 }
 
+func TestKoreanJAVPromptUsesConciseIntercruralTerms(t *testing.T) {
+	rules := koreanJAVPromptRules("ko")
+	assert.Contains(t, rules, "股コキ→가랑이딸")
+	assert.Contains(t, rules, "太ももコキ→허벅지딸")
+	assert.Contains(t, rules, "尻コキ→엉덩이딸")
+	assert.Contains(t, rules, "금지: 股コキ/마타코키/허벅지 코키/가랑이 성교/허벅지 성교/엉덩이 성교")
+	assert.NotContains(t, rules, "가랑이에 끼워 비비기")
+}
+
 func TestKoreanJAVPromptUsesNaturalMiluchioAndVirilityTerms(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
 	assert.Contains(t, rules, "ミルチオ→미루치오")

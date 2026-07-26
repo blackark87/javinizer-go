@@ -66,6 +66,23 @@ type qualityReviewItem struct {
 
 const llmCompletionMarker = "<<<JZ_DONE>>>"
 
+const defaultLLMRequestTimeout = 120 * time.Second
+
+// llmRequestContext gives each outbound LLM request its own timeout budget.
+// The parent context still propagates caller cancellation, but time spent by a
+// previous request, retry, or thinking-strategy fallback is never deducted from
+// the next request's configured timeout.
+func llmRequestContext(parent context.Context, timeoutSeconds int) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	timeout := time.Duration(timeoutSeconds) * time.Second
+	if timeout <= 0 {
+		timeout = defaultLLMRequestTimeout
+	}
+	return context.WithTimeout(parent, timeout)
+}
+
 func withQualityReview(ctx context.Context, items []qualityReviewItem) context.Context {
 	return context.WithValue(ctx, qualityReviewContextKey{}, append([]qualityReviewItem(nil), items...))
 }
@@ -211,9 +228,12 @@ func koreanJAVPromptRules(targetLang string) string {
 		"JAV titles: forceful noun phrases; no explanatory ~하는/~하게 되는/~을 조절하는 clauses.",
 		"Source brackets: 【...】 stays 【...】, [...] stays [...]; never invent; bracketed 個撮→[개인촬영], never [POV].",
 		"Trope: ご開帳→은밀한 부위 전체 공개; 手取り足取り→하나부터 열까지 직접 가르치는; 骨抜き→쾌감에 녹초가 된; 毒牙→위험한 유혹에 걸린; 生殺し→사정시키지 않고 애태우기.",
-		"Terms: 股下→다리 길이; 美脚→각선미; 爆乳→폭유; 神乳→신의 가슴; 騎乗位→기승위; 背面騎乗位→후배위 기승위; デカ尻→큰 엉덩이; 尻コキ→엉덩이 성교; フェラ→펠라.",
+		"Terms: 股下→다리 길이; 美脚→각선미; 爆乳→폭유; 神乳→신의 가슴; 騎乗位→기승위; 背面騎乗位→후배위 기승위; デカ尻→큰 엉덩이; 股コキ→가랑이딸; 太ももコキ→허벅지딸; 尻コキ→엉덩이딸; フェラ→펠라. 금지: 股コキ/마타코키/허벅지 코키/가랑이 성교/허벅지 성교/엉덩이 성교.",
 	}
-	return strings.Join(rules, " ") + " "
+	// Semicolons already delimit compact rules. Removing the optional following
+	// space keeps the accumulated prompt below its size guard without deleting
+	// any previously established translation behavior.
+	return strings.ReplaceAll(strings.Join(rules, " "), "; ", ";") + " "
 }
 
 // translationCompactOutputMarker returns the compact output marker for the given index.

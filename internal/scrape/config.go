@@ -92,7 +92,6 @@ func NewTranslatorFromApp(cfg *config.TranslationConfig) Translator {
 		cfg.SourceLanguage,
 		cfg.TargetLanguage,
 		cfg.SettingsHash(),
-		cfg.TimeoutSeconds,
 		cfg.OverwriteExistingTarget,
 		cfg.ApplyToPrimary,
 		ts,

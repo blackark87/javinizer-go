@@ -82,7 +82,9 @@ func (p *BedrockProvider) Translate(ctx context.Context, sourceLang, targetLang 
 	endpoint := baseURL + "/model/" + url.PathEscape(model) + "/invoke"
 	logging.Debugf("Translation (bedrock): POST %s model=%s texts=%d", endpoint, model, len(texts))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	requestCtx, cancel := llmRequestContext(ctx, p.cfg.TimeoutSeconds)
+	defer cancel()
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

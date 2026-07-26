@@ -48,19 +48,17 @@ type translationService struct {
 	sourceLanguage    string
 	targetLanguage    string
 	settingsHash      string
-	timeoutSeconds    int
 	overwriteExisting bool
 	applyToPrimary    bool
 }
 
-func newTranslationService(provider string, sourceLanguage string, targetLanguage string, settingsHash string, timeoutSeconds int, overwriteExisting bool, applyToPrimary bool, svc *translation.Service) *translationService {
+func newTranslationService(provider string, sourceLanguage string, targetLanguage string, settingsHash string, overwriteExisting bool, applyToPrimary bool, svc *translation.Service) *translationService {
 	return &translationService{
 		service:           svc,
 		provider:          provider,
 		sourceLanguage:    sourceLanguage,
 		targetLanguage:    targetLanguage,
 		settingsHash:      settingsHash,
-		timeoutSeconds:    timeoutSeconds,
 		overwriteExisting: overwriteExisting,
 		applyToPrimary:    applyToPrimary,
 	}
@@ -68,11 +66,9 @@ func newTranslationService(provider string, sourceLanguage string, targetLanguag
 
 // translateWithContext performs the translation using the provided context.
 // This is the context-accepting variant used by the Translator interface.
-// The configured Metadata.Translation.TimeoutSeconds (populated from
-// METADATA_TRANSLATION_TIMEOUT_SECONDS) bounds the whole translation as a
-// context deadline, mirroring main's ApplyConfiguredTranslation which wrapped
-// TranslateMovie in context.WithTimeout. A value <= 0 defaults to 120s; the
-// caller's ctx is always respected as the parent.
+// Each provider request applies Metadata.Translation.TimeoutSeconds
+// independently. The caller's context is preserved for cancellation without
+// sharing one request's timeout budget across retries or review calls.
 func (ts *translationService) translateWithContext(ctx context.Context, scraped *models.Movie, forceOverwrite bool) (string, *translation.TranslationOutput, error) {
 	if scraped == nil {
 		return "", nil, nil
@@ -84,14 +80,7 @@ func (ts *translationService) translateWithContext(ctx context.Context, scraped 
 		translationInput = translationRefreshSourceMovie(scraped, ts.sourceLanguage)
 	}
 
-	timeout := ts.timeoutSeconds
-	if timeout <= 0 {
-		timeout = 120
-	}
-	transCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-	defer cancel()
-
-	output, warning, err := ts.service.TranslateMovie(transCtx, translationInput, ts.settingsHash)
+	output, warning, err := ts.service.TranslateMovie(ctx, translationInput, ts.settingsHash)
 	if err != nil {
 		id := scraped.ID
 		if id == "" {
@@ -209,13 +198,7 @@ func copyTranslatedPrimary(dst, src *models.Movie, output *translation.Translati
 }
 
 func (ts *translationService) translateTitlesWithContext(ctx context.Context, titles []string) ([]string, error) {
-	timeout := ts.timeoutSeconds
-	if timeout <= 0 {
-		timeout = 120
-	}
-	transCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-	defer cancel()
-	return ts.service.TranslateTitles(transCtx, titles)
+	return ts.service.TranslateTitles(ctx, titles)
 }
 
 // newTranslationHTTPClient creates the shared HTTP client for translation providers.

@@ -56,7 +56,9 @@ func (p *AnthropicProvider) Translate(ctx context.Context, sourceLang, targetLan
 	}
 
 	adapter := &anthropicChatAdapter{apiKey: apiKey, markers: markers}
-	return executeLLMChatTranslation(ctx, p.httpClient, adapter, "anthropic", baseURL, model, systemPrompt, userPrompt, len(texts))
+	requestCtx, cancel := llmRequestContext(ctx, p.cfg.TimeoutSeconds)
+	defer cancel()
+	return executeLLMChatTranslation(requestCtx, p.httpClient, adapter, "anthropic", baseURL, model, systemPrompt, userPrompt, len(texts))
 }
 
 // anthropicChatAdapter implements LLMChatAdapter for the Anthropic Messages API.

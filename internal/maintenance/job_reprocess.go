@@ -498,7 +498,7 @@ func retranslateSelectedFields(ctx context.Context, tc config.TranslationConfig,
 		go func(service *translation.Service, workerConfig config.TranslationConfig) {
 			defer wg.Done()
 			for current := range work {
-				if err := translateAndReviewGroup(ctx, tc, current, service, workerConfig); err != nil {
+				if err := translateAndReviewGroup(ctx, current, service, workerConfig); err != nil {
 					logging.Warnf("Stored job reprocess: deferring failed group %s for model fallback: %v", current[0].movieID, err)
 					failedMu.Lock()
 					failed = append(failed, current)
@@ -533,7 +533,7 @@ func retranslateSelectedFields(ctx context.Context, tc config.TranslationConfig,
 			go func(service *translation.Service, workerConfig config.TranslationConfig) {
 				defer retryWG.Done()
 				for current := range retryWork {
-					if err := translateAndReviewGroup(ctx, tc, current, service, workerConfig); err != nil {
+					if err := translateAndReviewGroup(ctx, current, service, workerConfig); err != nil {
 						logging.Warnf("Stored job reprocess: fallback round %d failed for %s with model %s: %v", round+1, current[0].movieID, workerConfig.OpenAICompatible.Model, err)
 						retryFailedMu.Lock()
 						retryFailed = append(retryFailed, current)
@@ -601,16 +601,14 @@ func countSelectedReprocessResults(parsed *worker.ParsedJobResults, selectedMovi
 	return count
 }
 
-func translateAndReviewGroup(ctx context.Context, tc config.TranslationConfig, current []reprocessTranslationItem, service *translation.Service, workerConfig config.TranslationConfig) error {
+func translateAndReviewGroup(ctx context.Context, current []reprocessTranslationItem, service *translation.Service, workerConfig config.TranslationConfig) error {
 	representative := current[0]
 	description := ""
 	if representative.descriptionSource != nil {
 		description = representative.descriptionSource.Description
 	}
 	movie := &models.Movie{Title: representative.titleSource.Title, Description: description, Actresses: representative.actresses}
-	callCtx, callCancel := reprocessCallContext(ctx, tc)
-	output, _, err := service.TranslateMovie(callCtx, movie, workerConfig.SettingsHash())
-	callCancel()
+	output, _, err := service.TranslateMovie(ctx, movie, workerConfig.SettingsHash())
 	if err == nil && output != nil && output.Movie != nil {
 		protectedTitle := protectReviewActressNames(movie.Title, output.Movie.Title, representative.actresses)
 		reviewFields := []translation.QualityReviewField{{FieldName: "quality_review_title", Source: protectedTitle.source, Candidate: protectedTitle.candidate}}
@@ -620,9 +618,7 @@ func translateAndReviewGroup(ctx context.Context, tc config.TranslationConfig, c
 			reviewFields = append(reviewFields, translation.QualityReviewField{FieldName: "quality_review_description", Source: protectedDescription.source, Candidate: protectedDescription.candidate})
 		}
 		var reviewed []string
-		reviewCtx, reviewCancel := reprocessCallContext(ctx, tc)
-		reviewed, err = service.ReviewJAVTranslations(reviewCtx, reviewFields)
-		reviewCancel()
+		reviewed, err = service.ReviewJAVTranslations(ctx, reviewFields)
 		if err == nil && len(reviewed) == len(reviewFields) {
 			var restored bool
 			output.Movie.Title, restored = protectedTitle.restore(reviewed[0])
@@ -700,17 +696,6 @@ func (p protectedReviewText) restore(reviewed string) (string, bool) {
 		restored = strings.ReplaceAll(restored, token, actressName)
 	}
 	return restored, true
-}
-
-func reprocessCallContext(ctx context.Context, tc config.TranslationConfig) (context.Context, context.CancelFunc) {
-	if tc.TimeoutSeconds <= 0 {
-		return context.WithCancel(ctx)
-	}
-	timeout := time.Duration(tc.TimeoutSeconds) * time.Second
-	if timeout < 5*time.Minute {
-		timeout = 5 * time.Minute
-	}
-	return context.WithTimeout(ctx, timeout)
 }
 
 func translationModelConfigs(tc config.TranslationConfig, additionalModels []string) []config.TranslationConfig {

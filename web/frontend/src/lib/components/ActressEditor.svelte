@@ -7,7 +7,7 @@
 	import { portalToBody } from '$lib/actions/portal';
 	import { apiClient } from '$lib/api/client';
 	import type { Movie, Actress, ActressAliasGroup } from '$lib/api/types';
-	import { formatActressName } from '$lib/utils/actress';
+	import { formatActressName, normalizeEditedActresses } from '$lib/utils/actress';
 	import { previewImageUrl } from '$lib/utils/image';
 	import { createConfigQuery } from '$lib/query/queries';
 	import Button from './ui/Button.svelte';
@@ -256,11 +256,10 @@
 			return;
 		}
 
-		if (editingIndex !== null) {
-			actresses = actresses.map((a, i) => i === editingIndex ? editingActress : a);
-		} else {
-			actresses = [...actresses, editingActress];
-		}
+		const nextActresses = editingIndex !== null
+			? actresses.map((a, i) => i === editingIndex ? editingActress : a)
+			: [...actresses, editingActress];
+		actresses = normalizeEditedActresses(nextActresses);
 
 		showEditModal = false;
 		aliasGroup = null;
@@ -269,7 +268,7 @@
 
 	async function removeActress(index: number) {
 		if (await confirmDialog('Remove Actress', 'Remove this actress?', { variant: 'danger', confirmLabel: 'Remove' })) {
-			actresses = actresses.filter((_, i) => i !== index);
+			actresses = normalizeEditedActresses(actresses.filter((_, i) => i !== index));
 			notifyParent();
 		}
 	}

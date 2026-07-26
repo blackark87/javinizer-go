@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatActressName } from './actress';
+import { formatActressName, isUnknownActress, normalizeEditedActresses } from './actress';
 import type { ActressName } from './actress';
 
 function makeActress(over: Partial<ActressName>): ActressName {
@@ -123,5 +123,44 @@ describe('formatActressName', () => {
 				japaneseNames: true
 			})
 		).toBe('青山 sarah');
+	});
+});
+
+describe('normalizeEditedActresses', () => {
+	const unknown = {
+		id: 2425,
+		first_name: 'Unknown',
+		last_name: '',
+		japanese_name: 'Unknown'
+	};
+	const known = {
+		id: 1,
+		first_name: '유이',
+		last_name: '미하마',
+		japanese_name: '三浜唯'
+	};
+
+	it('removes Unknown when a known actress is added', () => {
+		expect(normalizeEditedActresses([unknown, known])).toEqual([known]);
+	});
+
+	it('adds canonical Unknown when the final known actress is removed', () => {
+		expect(normalizeEditedActresses([])).toEqual([
+			{ first_name: 'Unknown', last_name: '', japanese_name: 'Unknown' }
+		]);
+	});
+
+	it('preserves one existing Unknown record and its database identity', () => {
+		expect(normalizeEditedActresses([unknown, { ...unknown }])).toEqual([unknown]);
+	});
+
+	it('does not mistake a real Japanese name with an Unknown display field for a placeholder', () => {
+		const partiallyNamed = {
+			first_name: 'Unknown',
+			last_name: '',
+			japanese_name: '三浜唯'
+		};
+		expect(isUnknownActress(partiallyNamed)).toBe(false);
+		expect(normalizeEditedActresses([unknown, partiallyNamed])).toEqual([partiallyNamed]);
 	});
 });

@@ -179,14 +179,41 @@ func TestBuildLLMTranslationPrompts_JAC024Rule(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, expected := range []string{
-		"ギャルしべ長者→갸루시베 장자",
+		"ギャルしべ長者→갸루 소개 릴레이",
 		"소개 문맥 数珠つなぎ→줄줄이 소개|연쇄 소개",
 		"極選エロギャル3名245分→엄선한 야한 갸루 3명, 245분",
-		"금지: 갸루 시베초자/갸루시베초자",
+		"금지: 갸루시베 장자/갸루 시베초자/갸루시베초자",
 		"금지: 구슬/염주/릴레이 소개",
 	} {
 		assert.Contains(t, userPrompt, expected)
 	}
+}
+
+func TestBuildLLMTranslationPrompts_FC2CleanupRules(t *testing.T) {
+	source := "【個撮57】何度も中出しからビーカーで再注入後お掃除フェラ"
+	_, userPrompt, err := buildLLMTranslationPromptsWithMarkers(
+		"ja",
+		"ko",
+		[]string{source},
+		[]string{"<<<title>>>"},
+	)
+	require.NoError(t, err)
+
+	for _, expected := range []string{
+		"何度も中出しからビーカーで再注入後お掃除フェラ→몇 번이나 질내사정한 뒤 비커로 정액을 다시 주입하고 마무리 펠라",
+		"금지: 비커로 재주입/청소하는 펠라",
+	} {
+		assert.Contains(t, userPrompt, expected)
+	}
+
+	_, unrelatedPrompt, err := buildLLMTranslationPromptsWithMarkers(
+		"ja",
+		"ko",
+		[]string{"別の制作者 通常のフェラ"},
+		[]string{"<<<title>>>"},
+	)
+	require.NoError(t, err)
+	assert.NotContains(t, unrelatedPrompt, "お掃除フェラ")
 }
 
 func TestBuildLLMTranslationPrompts_KoreanRulesAreTargetSpecific(t *testing.T) {

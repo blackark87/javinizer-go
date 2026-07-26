@@ -55,7 +55,11 @@ func TestSearchFallsBackToPublicSearchForActress(t *testing.T) {
 			return
 		}
 		if r.URL.Path == "/fc2daily/search/FC2-PPV-4451504" {
-			fmt.Fprint(w, `<div class="fc2-box"><div class="card-body"><a href="/fc2daily/detail/FC2-PPV-4451504">作品</a><div><a>しずく</a></div></div></div>`)
+			fmt.Fprint(w, `<div class="fc2-box"><div class="card-body">
+				<a href="/fc2daily/detail/FC2-PPV-4451504">作品</a>
+				<div><a href="/fc2daily/search/進撃のごろうまる">進撃のごろうまる</a></div>
+				<div><a href="/fc2daily/actor/しずく">しずく</a></div>
+			</div></div>`)
 			return
 		}
 		http.NotFound(w, r)
@@ -67,4 +71,5 @@ func TestSearchFallsBackToPublicSearchForActress(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result.Actresses, 1)
 	assert.Equal(t, "しずく", result.Actresses[0].JapaneseName)
+	assert.NotEqual(t, "進撃のごろうまる", result.Actresses[0].JapaneseName)
 }

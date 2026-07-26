@@ -198,6 +198,8 @@ func koreanBatchPromptConstraints(targetLang string, sources []string) string {
 	hasGyarushibeChoja := false
 	hasIntroductionChain := false
 	hasGokusen := false
+	hasCleanupFellatio := false
+	hasBeakerReinjection := false
 	jac024TailRule := ""
 	for _, source := range sources {
 		if strings.Contains(source, "逆レ") ||
@@ -244,6 +246,12 @@ func koreanBatchPromptConstraints(targetLang string, sources []string) string {
 		if strings.Contains(source, "極選") {
 			hasGokusen = true
 		}
+		if strings.Contains(source, "お掃除フェラ") {
+			hasCleanupFellatio = true
+		}
+		if strings.Contains(source, "何度も中出しからビーカーで再注入後お掃除フェラ") {
+			hasBeakerReinjection = true
+		}
 		if match := jac024TailPromptPattern.FindStringSubmatch(source); len(match) == 3 {
 			jac024TailRule = fmt.Sprintf(
 				"HIGHEST PRIORITY exact tail: %s→엄선한 야한 갸루 %s명, %s분; copy the spacing and comma exactly",
@@ -287,10 +295,15 @@ func koreanBatchPromptConstraints(targetLang string, sources []string) string {
 		termChecks = append(termChecks, "スジパイパン→보지 라인이 선명한 백보지|선명한 백보지, 금지: 스지 백보지")
 	}
 	if hasGyarushibeChoja {
-		termChecks = append(termChecks, "ギャルしべ長者→갸루시베 장자, 금지: 갸루 시베초자/갸루시베초자")
+		termChecks = append(termChecks, "ギャルしべ長者→갸루 소개 릴레이 (わらしべ長者를 비튼 연쇄 소개 기획명), 금지: 갸루시베 장자/갸루 시베초자/갸루시베초자")
 	}
 	if hasIntroductionChain {
 		termChecks = append(termChecks, "소개 문맥 数珠つなぎ→줄줄이 소개|연쇄 소개, 금지: 구슬/염주/릴레이 소개")
+	}
+	if hasBeakerReinjection {
+		termChecks = append(termChecks, "HIGHEST PRIORITY exact phrase: 何度も中出しからビーカーで再注入後お掃除フェラ→몇 번이나 질내사정한 뒤 비커로 정액을 다시 주입하고 마무리 펠라; omit no object, 금지: 비커로 재주입/청소하는 펠라")
+	} else if hasCleanupFellatio {
+		termChecks = append(termChecks, "お掃除フェラ→마무리 펠라, 금지: 청소 펠라/청소하는 펠라")
 	}
 	if jac024TailRule != "" {
 		termChecks = append(termChecks, jac024TailRule)

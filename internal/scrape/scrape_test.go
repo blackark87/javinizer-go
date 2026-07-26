@@ -306,6 +306,35 @@ func TestScrape_RefreshTranslationOnlyCacheHitSkipsActressResolver(t *testing.T)
 	assert.Zero(t, resolver.callCount)
 }
 
+func TestScrape_RefreshTranslationOnlyDropsCachedFC2MakerActress(t *testing.T) {
+	f := newFixture(t)
+	_, err := f.movieRepo.Upsert(context.Background(), &models.Movie{
+		ID:         "FC2-PPV-1946424",
+		ContentID:  "FC2-PPV-1946424",
+		Title:      "cached",
+		Maker:      "進撃のごろうまる",
+		SourceName: "fc2",
+		Actresses: []models.Actress{{
+			JapaneseName: "進撃のごろうまる",
+		}},
+	})
+	require.NoError(t, err)
+
+	result, err := f.build().Scrape(context.Background(), ScrapeCmd{
+		MovieID:                "FC2-PPV-1946424",
+		RefreshTranslationOnly: true,
+		SkipTranslation:        true,
+	}, nil)
+
+	require.NoError(t, err)
+	require.True(t, result.Cached)
+	require.True(t, result.NeedsPersistence)
+	assert.Empty(t, result.Movie.Actresses)
+	require.Len(t, result.ScraperResults, 1)
+	require.Len(t, result.ScraperResults[0].Actresses, 1, "source viewer should retain the pre-repair cached value")
+	assert.Equal(t, "進撃のごろうまる", result.ScraperResults[0].Actresses[0].JapaneseName)
+}
+
 func TestScrape_ForceRefresh_BypassesCache(t *testing.T) {
 	f := newFixture(t).
 		withScraper("mock", &models.ScraperResult{ID: "TEST-001", Title: "Freshly Scraped"}, nil)

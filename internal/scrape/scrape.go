@@ -426,9 +426,8 @@ func (s *Scraper) Scrape(ctx context.Context, cmd ScrapeCmd, progress ProgressFu
 	s.enrichScrapedActressProfiles(ctx, results)
 	unverifiedMultiCastCount := allUnverifiedMultiCastCount(results)
 	resolverResult, resolverFailure := s.resolveMissingActresses(ctx, resolvedID, results)
-	forceUnknownCast := unverifiedMultiCastCount > 0 && !hasCompleteVerifiedCast(resolverResult, unverifiedMultiCastCount)
-	if forceUnknownCast {
-		logging.Warnf("[scrape] SougouWiki verified fewer than %d actresses for %s; using Unknown cast", unverifiedMultiCastCount, resolvedID)
+	if unverifiedMultiCastCount > 0 && resolverResult != nil && !hasCompleteVerifiedCast(resolverResult, unverifiedMultiCastCount) {
+		logging.Warnf("[scrape] SougouWiki verified fewer than %d actresses for %s; keeping original scraper cast", unverifiedMultiCastCount, resolvedID)
 		resolverResult = nil
 	}
 	if resolverResult != nil {
@@ -463,16 +462,6 @@ func (s *Scraper) Scrape(ctx context.Context, cmd ScrapeCmd, progress ProgressFu
 	if err != nil {
 		return nil, err
 	}
-	if forceUnknownCast {
-		setUnknownActressCast(scraped)
-		if aggResult != nil {
-			if aggResult.FieldSources == nil {
-				aggResult.FieldSources = make(map[string]string)
-			}
-			aggResult.FieldSources["actresses"] = "empty"
-		}
-	}
-
 	if scraped.ContentID == "" && resolvedID != "" && resolvedID != cmd.MovieID {
 		scraped.ContentID = resolvedID
 		logging.Debugf("[scrape] Using resolved ContentID %q as fallback (aggregator produced empty ContentID)", resolvedID)

@@ -198,7 +198,7 @@ func (s *scraper) searchActresses(ctx context.Context, id string) []models.Actre
 		if canonicalID(href) != id {
 			return true
 		}
-		card.Find(".card-body > div a").Each(func(_ int, a *goquery.Selection) {
+		card.Find(`a[href*="/fc2daily/actor/"]`).Each(func(_ int, a *goquery.Selection) {
 			if name := strings.TrimSpace(a.Text()); name != "" {
 				actresses = append(actresses, models.ActressInfo{JapaneseName: name})
 			}

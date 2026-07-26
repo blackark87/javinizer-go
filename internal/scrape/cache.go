@@ -40,10 +40,13 @@ func (s *Scraper) tryCache(ctx context.Context, cmd ScrapeCmd, actressRepo datab
 	// Movie may be normalized or replaced by SougouWiki below, but provenance
 	// should still show what was originally stored.
 	cachedSourceResult := ScraperResultFromCachedMovie(cached)
-	actressesChanged := false
+	actressesChanged := removeCachedFC2MakerActresses(cached)
 	var resolverResult *models.ScraperResult
 	if !cmd.RefreshTranslationOnly {
-		actressesChanged, resolverResult = s.repairCachedActresses(ctx, cached, cachedSourceResult, actressRepo)
+		repairSourceResult := ScraperResultFromCachedMovie(cached)
+		repaired, resolved := s.repairCachedActresses(ctx, cached, repairSourceResult, actressRepo)
+		actressesChanged = actressesChanged || repaired
+		resolverResult = resolved
 	}
 
 	needsPersistence := actressesChanged
@@ -156,25 +159,16 @@ func (s *Scraper) repairCachedActresses(
 	}
 	resolved, failure := s.resolveMissingActresses(ctx, queryID, []*models.ScraperResult{cachedSourceResult})
 	if failure != nil {
-		if unverifiedMultiCastCount > 0 {
-			setUnknownActressCast(cached)
-			return true, nil
-		}
 		logging.Warnf("[scrape] Cached actress verification failed (movie=%s resolver=%s): %v; cleaned cached cast was preserved",
 			queryID, failure.Scraper, failure.Cause)
 		return changed, nil
 	}
 	if resolved == nil {
-		if unverifiedMultiCastCount > 0 {
-			setUnknownActressCast(cached)
-			return true, nil
-		}
 		return changed, nil
 	}
 	if unverifiedMultiCastCount > 0 && !hasCompleteVerifiedCast(resolved, unverifiedMultiCastCount) {
-		logging.Warnf("[scrape] Cached SougouWiki result verified fewer than %d actresses for %s; using Unknown cast", unverifiedMultiCastCount, queryID)
-		setUnknownActressCast(cached)
-		return true, nil
+		logging.Warnf("[scrape] Cached SougouWiki result verified fewer than %d actresses for %s; keeping cleaned cached cast", unverifiedMultiCastCount, queryID)
+		return changed, nil
 	}
 
 	verified := actressModelsFromInfo(resolved.Actresses)
@@ -281,6 +275,39 @@ func normalizeCachedActresses(movie *models.Movie) bool {
 
 	movie.Actresses = cleaned
 	return !reflect.DeepEqual(before, cleaned)
+}
+
+// removeCachedFC2MakerActresses repairs rows created by the former Paipancon
+// public-search fallback, which treated every card link as an actress link and
+// could therefore persist the FC2 seller handle as an unverified performer.
+// A verified DMM identity is never removed.
+func removeCachedFC2MakerActresses(movie *models.Movie) bool {
+	if movie == nil || len(movie.Actresses) == 0 || strings.TrimSpace(movie.Maker) == "" {
+		return false
+	}
+	isFC2 := strings.EqualFold(strings.TrimSpace(movie.SourceName), "fc2") ||
+		strings.HasPrefix(strings.ToUpper(strings.TrimSpace(movie.ID)), "FC2-PPV-") ||
+		strings.HasPrefix(strings.ToUpper(strings.TrimSpace(movie.ContentID)), "FC2-PPV-")
+	if !isFC2 {
+		return false
+	}
+	makerKey := models.NormalizeActressNameKey(movie.Maker)
+	if makerKey == "" {
+		return false
+	}
+
+	filtered := make([]models.Actress, 0, len(movie.Actresses))
+	for _, actress := range movie.Actresses {
+		if actress.DMMID <= 0 && cachedActressNameKey(actress) == makerKey {
+			continue
+		}
+		filtered = append(filtered, actress)
+	}
+	if len(filtered) == len(movie.Actresses) {
+		return false
+	}
+	movie.Actresses = filtered
+	return true
 }
 
 func cachedActressNameKey(actress models.Actress) string {

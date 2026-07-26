@@ -292,12 +292,13 @@ func TestScrapeReplacesMixedVerifiedAndUnverifiedCastWithResolverCast(t *testing
 	assert.NotContains(t, []string{result.Movie.Actresses[0].JapaneseName, result.Movie.Actresses[1].JapaneseName}, "남아 있으면 안 되는 이름")
 }
 
-func TestScrapeAllUnverifiedMultiCastRequiresCompleteSougouWikiCast(t *testing.T) {
+func TestScrapeAllUnverifiedMultiCastFallsBackToOriginalNames(t *testing.T) {
 	for _, test := range []struct {
 		name        string
 		resolved    []models.ActressInfo
 		resolverErr error
-		wantUnknown bool
+		wantDMMIDs  []int
+		wantNames   []string
 	}{
 		{
 			name: "complete verified cast",
@@ -305,16 +306,20 @@ func TestScrapeAllUnverifiedMultiCastRequiresCompleteSougouWikiCast(t *testing.T
 				{DMMID: 101, JapaneseName: "正式一"},
 				{DMMID: 102, JapaneseName: "正式二"},
 			},
+			wantDMMIDs: []int{101, 102},
+			wantNames:  []string{"正式一", "正式二"},
 		},
 		{
-			name:        "partial verified cast",
-			resolved:    []models.ActressInfo{{DMMID: 101, JapaneseName: "正式一"}},
-			wantUnknown: true,
+			name:       "partial verified cast",
+			resolved:   []models.ActressInfo{{DMMID: 101, JapaneseName: "正式一"}},
+			wantDMMIDs: []int{0, 0},
+			wantNames:  []string{"仮名一", "仮名二"},
 		},
 		{
 			name:        "resolver failure",
 			resolverErr: errors.New("wiki unavailable"),
-			wantUnknown: true,
+			wantDMMIDs:  []int{0, 0},
+			wantNames:   []string{"仮名一", "仮名二"},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -336,24 +341,20 @@ func TestScrapeAllUnverifiedMultiCastRequiresCompleteSougouWikiCast(t *testing.T
 			require.NoError(t, err)
 			require.NotNil(t, result.Movie)
 			assert.Equal(t, 1, resolver.calls)
-			if test.wantUnknown {
-				require.Len(t, result.Movie.Actresses, 1)
-				assert.True(t, models.IsUnknownActressFields(
-					result.Movie.Actresses[0].LastName,
-					result.Movie.Actresses[0].FirstName,
-					result.Movie.Actresses[0].JapaneseName,
-				))
-				assert.Equal(t, "empty", result.FieldSources["actresses"])
-				assert.Nil(t, result.ActressSources)
-				return
-			}
 			require.Len(t, result.Movie.Actresses, 2)
-			assert.Equal(t, []int{101, 102}, []int{result.Movie.Actresses[0].DMMID, result.Movie.Actresses[1].DMMID})
+			gotDMMIDs := make([]int, len(result.Movie.Actresses))
+			gotNames := make([]string, len(result.Movie.Actresses))
+			for i, actress := range result.Movie.Actresses {
+				gotDMMIDs[i] = actress.DMMID
+				gotNames[i] = actress.JapaneseName
+			}
+			assert.Equal(t, test.wantDMMIDs, gotDMMIDs)
+			assert.Equal(t, test.wantNames, gotNames)
 		})
 	}
 }
 
-func TestCachedAllUnverifiedMultiCastBecomesUnknownOnPartialResolution(t *testing.T) {
+func TestCachedAllUnverifiedMultiCastKeepsNamesOnPartialResolution(t *testing.T) {
 	fixture := newFixture(t)
 	_, err := fixture.movieRepo.Upsert(context.Background(), &models.Movie{
 		ID: "MULTI-002", Title: "cached", SourceName: "regular",
@@ -370,11 +371,10 @@ func TestCachedAllUnverifiedMultiCastBecomesUnknownOnPartialResolution(t *testin
 
 	require.NoError(t, err)
 	require.True(t, result.Cached)
-	require.True(t, result.NeedsPersistence)
-	require.Len(t, result.Movie.Actresses, 1)
-	assert.Equal(t, models.UnknownActressName, result.Movie.Actresses[0].JapaneseName)
-	assert.Equal(t, "empty", result.FieldSources["actresses"])
-	assert.Nil(t, result.ActressSources)
+	require.False(t, result.NeedsPersistence)
+	require.Len(t, result.Movie.Actresses, 2)
+	assert.Equal(t, "仮名一", result.Movie.Actresses[0].JapaneseName)
+	assert.Equal(t, "仮名二", result.Movie.Actresses[1].JapaneseName)
 }
 
 func TestResolveMissingActressesUsesDedicatedResolverWhenDisabled(t *testing.T) {

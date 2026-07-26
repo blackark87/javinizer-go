@@ -842,7 +842,7 @@ func TestTemplateEngine_GroupActress(t *testing.T) {
 	}
 }
 
-func TestTemplateEngine_GroupActressUsesExplicitTitleCountWhenCastIsIncomplete(t *testing.T) {
+func TestTemplateEngine_GroupActressUsesActualCastCount(t *testing.T) {
 	engine := NewEngine()
 	const originalTitle = "ギャルしべ長者から極選エロギャル3名245分"
 
@@ -850,9 +850,11 @@ func TestTemplateEngine_GroupActressUsesExplicitTitleCountWhenCastIsIncomplete(t
 		name      string
 		actresses []string
 		template  string
+		want      string
 	}{
-		{name: "single incorrectly resolved actress", actresses: []string{"타카미 하루카"}, template: "<ACTORS>"},
-		{name: "no resolved actresses", actresses: nil, template: "<ACTRESS>"},
+		{name: "single registered actress", actresses: []string{"타카미 하루카"}, template: "<ACTORS>", want: "타카미 하루카"},
+		{name: "no registered actresses", actresses: nil, template: "<ACTRESS>", want: ""},
+		{name: "three registered actresses", actresses: []string{"시오리", "메이", "미오"}, template: "<ACTORS>", want: "@Group"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			got, err := engine.Execute(test.template, &Context{
@@ -861,7 +863,7 @@ func TestTemplateEngine_GroupActressUsesExplicitTitleCountWhenCastIsIncomplete(t
 				GroupActress:  true,
 			})
 			require.NoError(t, err)
-			assert.Equal(t, "@Group", got)
+			assert.Equal(t, test.want, got)
 		})
 	}
 }

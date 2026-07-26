@@ -83,6 +83,24 @@ func TestBuildLLMTranslationPrompts_KoreanJAVStudioRules(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(userPrompt, "<<<title>>>"))
 }
 
+func TestBuildLLMTranslationPrompts_PBD471OppaiMankoRule(t *testing.T) {
+	source := "逆バニー風俗、背徳不倫、見つめ合いアングルなど18作品の中から厳選！もはや性器のおっぱいマンコが気持ち良すぎる！"
+	systemPrompt, userPrompt, err := buildLLMTranslationPromptsWithMarkers("ja", "ko", []string{source}, []string{"<<<description>>>"})
+	require.NoError(t, err)
+
+	assert.Contains(t, systemPrompt, "おっぱいマンコ→보지나 다름없는 가슴")
+	assert.Contains(t, systemPrompt, "금지: 가슴 보지/가슴 보지(おっぱいマンコ)/원문 괄호 병기")
+	assert.Contains(t, userPrompt, "逆バニー風俗→역바니 코스튬 업소")
+	assert.Contains(t, userPrompt, "18作品→열여덟 작품")
+	assert.Contains(t, userPrompt, "보지나 다름없는 가슴")
+	assert.Contains(t, userPrompt, "never append the Japanese original in parentheses")
+
+	_, genericUserPrompt, err := buildLLMTranslationPromptsWithMarkers("ja", "ko", []string{"おっぱいマンコが気持ちいい"}, []string{"<<<description>>>"})
+	require.NoError(t, err)
+	assert.Contains(t, genericUserPrompt, "おっぱいマンコ→보지나 다름없는 가슴")
+	assert.NotContains(t, genericUserPrompt, "おっぱいマンコ→가슴 보지")
+}
+
 func TestBuildLLMTranslationPrompts_KoreanRulesAreTargetSpecific(t *testing.T) {
 	systemPrompt, _, err := buildLLMTranslationPromptsWithMarkers("ja", "en", []string{"テスト"}, []string{"<<<title>>>"})
 	require.NoError(t, err)

@@ -181,6 +181,12 @@ func koreanBatchPromptConstraints(targetLang string, sources []string) string {
 	if lang != "ko" && !strings.HasPrefix(lang, "ko-") && !strings.HasPrefix(lang, "ko_") {
 		return ""
 	}
+	var constraints strings.Builder
+	hasDirectionCheck := false
+	hasOppaiManko := false
+	hasOppaiMankoPhrase := false
+	hasReverseBunnyBusiness := false
+	hasEighteenWorks := false
 	for _, source := range sources {
 		if strings.Contains(source, "逆レ") ||
 			strings.Contains(source, "レイプ") ||
@@ -188,10 +194,43 @@ func koreanBatchPromptConstraints(targetLang string, sources []string) string {
 			strings.Contains(source, "レ〇プ") ||
 			strings.Contains(source, "レ○プ") ||
 			strings.Contains(source, "レ●プ") {
-			return "BATCH DIRECTION CHECK: In each Japanese source, レイプ/レ×プ/レ〇プ/レ○プ/レ●プ without an immediately preceding 逆 must be 강간, never 역강간. Correct a wrong 역강간 in the candidate. Only an explicit 逆レ/逆レイプ may be 역강간.\n"
+			hasDirectionCheck = true
+		}
+		if strings.Contains(source, "おっぱいマンコ") {
+			hasOppaiManko = true
+		}
+		if strings.Contains(source, "もはや性器のおっぱいマンコが気持ち良すぎる") {
+			hasOppaiMankoPhrase = true
+		}
+		if strings.Contains(source, "逆バニー風俗") {
+			hasReverseBunnyBusiness = true
+		}
+		if strings.Contains(source, "18作品") {
+			hasEighteenWorks = true
 		}
 	}
-	return ""
+	if hasDirectionCheck {
+		constraints.WriteString("BATCH DIRECTION CHECK: In each Japanese source, レイプ/レ×プ/レ〇プ/レ○プ/レ●プ without an immediately preceding 逆 must be 강간, never 역강간. Correct a wrong 역강간 in the candidate. Only an explicit 逆レ/逆レイプ may be 역강간.\n")
+	}
+	var termChecks []string
+	if hasReverseBunnyBusiness {
+		termChecks = append(termChecks, "逆バニー風俗→역바니 코스튬 업소")
+	}
+	if hasEighteenWorks {
+		termChecks = append(termChecks, "18作品→열여덟 작품")
+	}
+	if hasOppaiMankoPhrase {
+		termChecks = append(termChecks, "もはや性器のおっぱいマンコが気持ち良すぎる！→이젠 보지나 다름없는 가슴이 너무 기분 좋다!")
+	} else if hasOppaiManko {
+		termChecks = append(termChecks, "おっぱいマンコ→보지나 다름없는 가슴")
+	}
+	if hasOppaiManko {
+		termChecks = append(termChecks, "never append the Japanese original in parentheses or insert Latin fragments")
+	}
+	if len(termChecks) > 0 {
+		_, _ = fmt.Fprintf(&constraints, "BATCH TERM CHECK: %s.\n", strings.Join(termChecks, "; "))
+	}
+	return constraints.String()
 }
 
 func koreanJAVPromptRules(targetLang string) string {
@@ -251,7 +290,7 @@ func koreanJAVPromptRules(targetLang string) string {
 		"Acts: ベロチュウ→진한 혀키스|딥키스≠舐めシゴき;即尺即ハメ→바로 빨고 바로 박기(두 행위 보존);スパンキング→스팽킹≠스팽고킹;おっパブ→옵파이 펍|슴가 펍, 금지: 오파부;デリバリーヘルス/デリヘル→데리헤루. 업소 관용어 외 속어·행위는 의미 번역.",
 		"Context: cosplay レイヤー→코스플레이어;アニメ乳→만화 같은 가슴;特濃→초농후|아주 진한;手マン潮→핑거링 분수;ミニマン/コドおじ/セルフ事故는 문맥 의미로, 음차·직역 금지. 素股는 짧고 노골적인 한국어 행위명, 스마타·장황한 해설 금지. JAV는 자연스러운 선에서 더럽고 직설적으로.",
 		"Pickup/context: 意外と推しに弱い is a common 押しに弱い variant/typo→의외로 밀어붙이면 약한, 금지: 최애에게 약한;ホテイン→호텔 입성|호텔로 직행, 금지: 미완성 호텔로!;ノリ悪めドライ系女子→반응이 시큰둥한 무심녀|흥 없는 무심녀, 장황한 성격 해설 금지;sexual エレクト/チンポがエレクトする→발기하다|자지가 서다, 금지: 자지를 흥분시키다.",
-		"Explicit/censored anatomy: ま〇こ/ま○こ/ま●こ/おま〇こ/おま○こ/おま●こ/おまんこ/まんこ/マンコ→보지; パイパンま〇こ/パイパンま○こ/パイパンま●こ/パイパンまんこ/無毛まんこ→백보지, 금지: 무모 소중이; alone パイパン→무모|백보지; ち〇ぽ/ち○ぽ/ち●ぽ/ちんこ/チンポ→자지; マン汁/本気マン汁→애액, 금지: 보짓물; ザーメン/ejaculation 精子→정액; アナル→애널 for JAV act/genre, anatomical 肛門→항문; 初アナル→첫 애널; 初アナル解禁→첫 애널 해금, 금지: 첫 항문/첫 항문 해금; クンニ/クンニリングス→보빨, 금지: 쿤니; アクメ→절정|오르가슴, 금지: 아크메; デカチン/巨根→대물, 금지: 대물 자지/거대 자지/왕자지. Ex: パイパンま〇こから溢れ出る精子→백보지에서 흘러넘치는 정액; デカチン緩急ピストン→대물 완급 피스톤. 금지:소중이/그곳/중요 부위/여성의 신체/레프.",
+		"Explicit/censored anatomy: ま〇こ/ま○こ/ま●こ/おま〇こ/おま○こ/おま●こ/おまんこ/まんこ/マンコ→보지; おっぱいマンコ→보지나 다름없는 가슴, 금지: 가슴 보지/가슴 보지(おっぱいマンコ)/원문 괄호 병기; パイパンま〇こ/パイパンま○こ/パイパンま●こ/パイパンまんこ/無毛まんこ→백보지, 금지: 무모 소중이; alone パイパン→무모|백보지; ち〇ぽ/ち○ぽ/ち●ぽ/ちんこ/チンポ→자지; マン汁/本気マン汁→애액, 금지: 보짓물; ザーメン/ejaculation 精子→정액; アナル→애널 for JAV act/genre, anatomical 肛門→항문; 初アナル→첫 애널; 初アナル解禁→첫 애널 해금, 금지: 첫 항문/첫 항문 해금; クンニ/クンニリングス→보빨, 금지: 쿤니; アクメ→절정|오르가슴, 금지: 아크메; デカチン/巨根→대물, 금지: 대물 자지/거대 자지/왕자지. Ex: パイパンま〇こから溢れ出る精子→백보지에서 흘러넘치는 정액; デカチン緩急ピストン→대물 완급 피스톤. 금지:소중이/그곳/중요 부위/여성의 신체/레프.",
 		"JAV titles: forceful dirty noun phrases;no explanatory clauses/summary expansion/compound-act omission.",
 		"Source brackets: 【...】 stays 【...】, [...] stays [...]; never invent; bracketed 個撮→[개인촬영], never [POV].",
 		"Trope: ご開帳→은밀한 부위 전체 공개; 手取り足取り→하나부터 열까지 직접 가르치는; 骨抜き→쾌감에 녹초가 된; 毒牙→위험한 유혹에 걸린; 生殺し→사정시키지 않고 애태우기.",

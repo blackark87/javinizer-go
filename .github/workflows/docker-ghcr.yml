@@ -27,6 +27,9 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  VERSION_MAJOR: 1
+  VERSION_MINOR: 0
+  VERSION_BASE_RUN: 141
 
 jobs:
   build-and-push:
@@ -34,6 +37,18 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7.0.0
+
+      - name: Resolve build version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch=$((GITHUB_RUN_NUMBER - VERSION_BASE_RUN))
+          if (( patch < 0 )); then
+            echo "Calculated patch version must not be negative: ${patch}" >&2
+            exit 1
+          fi
+          echo "value=${VERSION_MAJOR}.${VERSION_MINOR}.${patch}" >> "${GITHUB_OUTPUT}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4.2.0
@@ -51,8 +66,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
+            type=raw,value=${{ steps.version.outputs.value }}
             type=raw,value=latest
-            type=sha,prefix=latest-
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v7.3.0
@@ -61,11 +76,69 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64
           push: true
+          provenance: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=latest-${{ github.sha }}
+            VERSION=${{ steps.version.outputs.value }}
             COMMIT=${{ github.sha }}
             BUILD_DATE=${{ github.run_id }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Delete superseded package versions
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          owner="${GITHUB_REPOSITORY_OWNER}"
+          package="${GITHUB_REPOSITORY#*/}"
+          owner_type="$(gh api "/users/${owner}" --jq '.type')"
+          case "${owner_type}" in
+            Organization)
+              package_scope="orgs"
+              ;;
+            User)
+              package_scope="users"
+              ;;
+            *)
+              echo "Unsupported package owner type: ${owner_type}" >&2
+              exit 1
+              ;;
+          esac
+
+          versions_file="$(mktemp)"
+          delete_ids_file="$(mktemp)"
+          trap 'rm -f "${versions_file}" "${delete_ids_file}"' EXIT
+
+          gh api --paginate \
+            "/${package_scope}/${owner}/packages/container/${package}/versions?per_page=100" \
+            | jq -s 'add' > "${versions_file}"
+
+          latest_count="$(
+            jq '[.[] | select(.metadata.container.tags | index("latest"))] | length' \
+              "${versions_file}"
+          )"
+          if [[ "${latest_count}" != "1" ]]; then
+            echo "Expected exactly one package version tagged latest, found ${latest_count}" >&2
+            exit 1
+          fi
+
+          keep_id="$(
+            jq -r '.[] | select(.metadata.container.tags | index("latest")) | .id' \
+              "${versions_file}"
+          )"
+          jq -r --argjson keep_id "${keep_id}" \
+            '.[] | select(.id != $keep_id) | .id' \
+            "${versions_file}" > "${delete_ids_file}"
+
+          delete_count="$(wc -l < "${delete_ids_file}")"
+          echo "Keeping package version ${keep_id}; deleting ${delete_count} superseded versions"
+          if [[ "${delete_count}" != "0" ]]; then
+            xargs -r -P 8 -I '{}' \
+              gh api --method DELETE \
+              "/${package_scope}/${owner}/packages/container/${package}/versions/{}" \
+              < "${delete_ids_file}"
+          fi

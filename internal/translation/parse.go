@@ -187,7 +187,12 @@ func parseCompactTranslationPayloadAt(payload string, markers []string) ([]strin
 
 		raw := payload[start:end]
 		if embeddedMarkerRE.MatchString(raw) {
-			return nil, fmt.Errorf("failed to parse compact translation payload: unexpected embedded output marker in slot %d", i)
+			if i != len(markers)-1 {
+				return nil, fmt.Errorf("failed to parse compact translation payload: unexpected embedded output marker in slot %d", i)
+			}
+			location := embeddedMarkerRE.FindStringIndex(raw)
+			raw = raw[:location[0]]
+			logging.Debugf("Translation: ignored trailing unrequested output sections after slot %d", i)
 		}
 		out = append(out, strings.TrimSpace(raw))
 		pos = end

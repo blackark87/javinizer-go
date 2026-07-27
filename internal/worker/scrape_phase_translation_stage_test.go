@@ -100,6 +100,16 @@ func (w *failingTranslationWorkflow) TranslateScrapeResult(_ context.Context, _ 
 	return nil, errors.New("invalid translation output for title: untranslated Japanese remains")
 }
 
+type aliasTranslationFailureWorkflow struct {
+	failingTranslationWorkflow
+}
+
+func (w *aliasTranslationFailureWorkflow) Scrape(_ context.Context, cmd scrape.ScrapeCmd, _ scrape.ProgressFunc) (*scrape.ScrapeResult, *workflow.OrchestrationMeta, error) {
+	result := makeScrapeResult(cmd.MovieID)
+	result.PendingActressSyncIDs = []uint{41, 42, 41}
+	return result, &workflow.OrchestrationMeta{}, nil
+}
+
 type countingPosterGenerator struct {
 	calls int32
 }
@@ -194,33 +204,62 @@ func TestScrapePhase_TranslationFailureMarksCachedRefreshFailed(t *testing.T) {
 	assert.Contains(t, result.Error, "untranslated Japanese remains")
 }
 
-func TestPersistScrapeOutcomeQueuesVerifiedAliasTranslationsAfterSave(t *testing.T) {
-	const file = "ALIAS-001.mp4"
-	result := makeScrapeResult("ALIAS-001")
-	result.PendingActressSyncIDs = []uint{41, 42}
-	updater := newStubUpdater()
-	updater.UpdateFileResult(file, &MovieResult{Movie: result.Movie.Clone(), Status: models.JobStatusCompleted})
+func TestQueuePendingActressTranslationsAggregatesSuccessfulMetadata(t *testing.T) {
+	first := makeScrapeResult("ALIAS-001")
+	first.PendingActressSyncIDs = []uint{41, 42}
+	second := makeScrapeResult("ALIAS-002")
+	second.PendingActressSyncIDs = []uint{42, 43, 0}
+	failed := makeScrapeResult("ALIAS-FAILED")
+	failed.PendingActressSyncIDs = []uint{99}
+
+	var calls int
 	var queued []uint
 	inputs := scrapePhaseInputs{
-		JobID:       "alias-translation-job",
-		MovieRepo:   &serializingPersistRepo{},
-		Broadcaster: &stubBroadcaster{},
-		Updater:     updater,
+		QueueActressSync: func(_ context.Context, actressIDs []uint) error {
+			calls++
+			queued = append([]uint(nil), actressIDs...)
+			return nil
+		},
+	}
+
+	queuePendingActressTranslations(context.Background(), []scrapeFileOutcome{
+		{Success: true, Result: first},
+		{Success: true, Result: second},
+		{Success: false, Result: failed},
+	}, inputs)
+
+	assert.Equal(t, 1, calls)
+	assert.Equal(t, []uint{41, 42, 43}, queued)
+}
+
+func TestScrapePhase_QueuesAliasTranslationsBeforeMovieTranslationFailure(t *testing.T) {
+	const file = "ALIAS-FAIL-001.mp4"
+	var queued []uint
+	inputs := scrapePhaseInputs{
+		JobID:                  "alias-translation-before-failure",
+		Concurrency:            concurrencyConfig{MaxWorkers: 1},
+		WF:                     &aliasTranslationFailureWorkflow{},
+		Matcher:                &stubMatcher{result: "ALIAS-FAIL-001"},
+		FileMatchInfo:          map[string]models.FileMatchInfo{file: {Path: file, MovieID: "ALIAS-FAIL-001"}},
+		DeferredTranslation:    true,
+		TranslationConcurrency: 1,
+		MovieRepo:              &serializingPersistRepo{},
+		Broadcaster:            &stubBroadcaster{},
+		Updater:                newStubUpdater(),
+		Lifecycle:              &stubLifecycle{},
 		QueueActressSync: func(_ context.Context, actressIDs []uint) error {
 			queued = append([]uint(nil), actressIDs...)
 			return nil
 		},
 	}
 
-	saved := persistScrapeOutcome(context.Background(), scrapeFileOutcome{
-		FilePath: file,
-		MovieID:  "ALIAS-001",
-		Result:   result,
-	}, inputs, nil)
+	NewScrapePhase().Run(context.Background(), inputs, []string{file}, ScrapePhaseConfig{})
 
-	assert.True(t, saved)
 	assert.Equal(t, []uint{41, 42}, queued)
-	assert.True(t, updater.getResult(file).Persisted)
+	result := inputs.Updater.(*stubUpdater).getResult(file)
+	require.NotNil(t, result)
+	assert.Equal(t, models.JobStatusFailed, result.Status)
+	assert.Contains(t, result.Error, "translation stage failed")
 }
 
 func TestScrapePhase_StagesMetadataBeforeTranslationAndCheckpointsEveryRecord(t *testing.T) {

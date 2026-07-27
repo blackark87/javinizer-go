@@ -44,11 +44,19 @@ func TestReplaceNameToken_ParticleAgreement(t *testing.T) {
 
 func TestRestoreNamePlaceholders_Particles(t *testing.T) {
 	placeholders := map[string]string{"⟦0⟧": "이토 마유키"}
-	got, ok := restoreNamePlaceholders("⟦0⟧이 등장하는 작품", placeholders)
+	got, ok := restoreNamePlaceholders("⟦0⟧이 등장하는 작품", "⟦0⟧이 등장하는 작품", placeholders)
 	assert.True(t, ok)
 	assert.Equal(t, "이토 마유키가 등장하는 작품", got)
 
 	// missing token → ok=false, text unchanged for that token
-	_, ok2 := restoreNamePlaceholders("이름 없음", placeholders)
+	_, ok2 := restoreNamePlaceholders("이름 없음", "⟦0⟧이 등장하는 작품", placeholders)
 	assert.False(t, ok2)
+
+	// One valid occurrence must not hide another damaged occurrence.
+	_, ok3 := restoreNamePlaceholders(
+		"⟦0⟧이 등장하고 ⟦0♡⟧도 등장",
+		"⟦0⟧이 등장하고 ⟦0⟧도 등장",
+		placeholders,
+	)
+	assert.False(t, ok3)
 }

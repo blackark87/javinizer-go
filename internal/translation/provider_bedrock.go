@@ -61,7 +61,7 @@ func (p *BedrockProvider) Translate(ctx context.Context, sourceLang, targetLang 
 	}
 
 	markers := translationMarkersFromContext(ctx, len(texts))
-	systemPrompt, userPrompt, err := buildLLMTranslationPromptsWithMarkers(sourceLang, targetLang, texts, markers, promptOptionsFromConfig(p.cfg))
+	systemPrompt, userPrompt, err := buildLLMTranslationPromptsWithMarkers(sourceLang, targetLang, texts, markers, promptOptionsFromContext(ctx, p.cfg))
 	if err != nil {
 		return nil, err
 	}

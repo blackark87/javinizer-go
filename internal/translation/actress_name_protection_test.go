@@ -30,7 +30,7 @@ func TestBuildTranslationPlanProtectsJapaneseActressNameWhitespaceVariants(t *te
 			assert.Equal(t, "노노우라 논", field.Placeholders["⟦0⟧"])
 			assert.Contains(t, field.FallbackText, "노노우라 논")
 
-			restored, ok := restoreNamePlaceholders(field.Text, field.Placeholders)
+			restored, ok := restoreNamePlaceholders(field.Text, field.Text, field.Placeholders)
 			require.True(t, ok)
 			assert.Equal(t, "노노우라 논が出演する作品", restored)
 		})

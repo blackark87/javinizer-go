@@ -408,6 +408,24 @@ func TestKoreanJAVPromptCoversERK091FC2AndSIRO5432(t *testing.T) {
 func TestKoreanJAVPromptCoversLatestProductionMistranslations(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
 	for _, expected := range []string{
+		"ちっぱい→빈유|작은 가슴",
+		"금지: 치っぱい/ちっぱい",
+		"にゃんこちゃん→야옹이짱|고양이짱",
+		"금지: 야옹이 ちゃん/고양이 ちゃん",
+		"交縁界隈→길거리 조건만남 판",
+		"立ちんぼ→길거리 성매매녀|길거리 성매매",
+		"금지: 길빵/헌팅",
+		"生中→노콘 질내사정",
+		"금지: 생중계",
+		"ホ別+숫자→호텔비 별도+[숫자]만 엔",
+		"相場は1.5～→시세는 1만 5천 엔부터",
+		"メン地下→지하남돌",
+		"レロレロ→레로레로",
+		"猫じゃらし→고양이 장난감",
+		"普通に責めるの上手い→애무 진짜 잘하네",
+		"シゴき上げフェラ→대딸하듯 훑어 올리는 펠라",
+		"美ボディー反り返りクンニ→허리가 휘도록 하는 보빨",
+		"デカ乳＆デカ尻のムワッ感→거유와 큰 엉덩이의 짙은 색기",
 		"げんえ./き→げんえき→현역",
 		"금지: 음란녀/경험 있음",
 		"秘蔵→미공개|비공개 소장",
@@ -429,6 +447,85 @@ func TestKoreanJAVPromptCoversLatestProductionMistranslations(t *testing.T) {
 	} {
 		assert.Contains(t, rules, expected)
 	}
+}
+
+func TestNormalizeKoreanJAVPreferredTerms(t *testing.T) {
+	assert.Equal(t,
+		"혀끝으로 레로레로 핥아대는 지하남돌",
+		normalizeKoreanJAVPreferredTerms(
+			"レロレロと舐めるメン地下",
+			"혀끝으로 레로레로 핥아대는 지하 남돌",
+		),
+	)
+	assert.Equal(t,
+		"레로레로와 지하 남돌",
+		normalizeKoreanJAVPreferredTerms("관련 없는 원문", "레로레로와 지하 남돌"),
+	)
+	assert.Equal(t,
+		"길거리 조건만남 판에서 길거리 성매매, 시세는 1만 5천 엔부터, 호텔비 별도 2만 엔",
+		normalizeKoreanJAVPreferredTerms(
+			"交縁界隈で立ちんぼ。相場は⟦9001⟧.5～、ホ別⟦9000⟧",
+			"교연계에서 길빵, 시세는 1.5엔부터, 호텔비 별도 2엔",
+		),
+	)
+	assert.Equal(t,
+		"길거리 조건만남 판을 알게 됐고, 시세는 1만 5천 엔부터이며",
+		normalizeKoreanJAVPreferredTerms(
+			"交縁界隈というものを知った。相場は⟦9001⟧.5～",
+			"길거리 조건만남 판라는 걸 알게 됐고, 시세는 1.5~이며",
+		),
+	)
+	assert.Equal(t,
+		"10대 현역 J●의 고양이 장난감, 섹스 고수, 정액",
+		normalizeKoreanJAVPreferredTerms(
+			"十代現役J●の猫じゃらし、床上手、精子",
+			"1인칭 현역 J●의 고양이 낚시놀이, 상위호환, 정량",
+		),
+	)
+}
+
+func TestTranslationSlotIssueRejectsDamagedPerformerPlaceholder(t *testing.T) {
+	field := TranslationField{
+		FieldName:    "description",
+		Text:         "⟦0⟧이 등장하고 ⟦0⟧도 등장",
+		Placeholders: map[string]string{"⟦0⟧": "미사토"},
+	}
+
+	assert.Equal(t,
+		"protected performer token ⟦0⟧ count changed: expected 2, got 1",
+		translationSlotIssue(field, "ko", "⟦0⟧이 등장하고 ⟦0♡⟧도 등장"),
+	)
+	assert.Equal(t,
+		"unexpected or malformed protected token remains",
+		translationSlotIssue(field, "ko", "⟦0⟧이 등장하고 ⟦0⟧도 등장 ⟦1♡⟧"),
+	)
+}
+
+func TestBuildLLMPrompts_CorrectionRetryExplainsRejectedSlot(t *testing.T) {
+	options := llmPromptOptions{
+		dictionaryEnabled: true,
+		dictionary:        "ちっぱい -> 빈유\nちゃん -> 짱",
+		correction: &translationCorrection{
+			Issue:     `untranslated Japanese remains: "っぱい"`,
+			Candidate: "컵 수: 치っぱい",
+		},
+	}
+	systemPrompt, userPrompt, err := buildLLMTranslationPromptsWithMarkers(
+		"ja",
+		"ko",
+		[]string{"カップ数：ちっぱい"},
+		[]string{"<<<description>>>"},
+		options,
+	)
+	require.NoError(t, err)
+
+	assert.Contains(t, systemPrompt, "CORRECTION RETRY")
+	assert.Contains(t, systemPrompt, `untranslated Japanese remains: "っぱい"`)
+	assert.Contains(t, systemPrompt, "Never emit an unrequested marker or repeat a section")
+	assert.Contains(t, userPrompt, "[VALIDATION FAILURE]")
+	assert.Contains(t, userPrompt, "[REJECTED KOREAN CANDIDATE]\n컵 수: 치っぱい")
+	assert.Contains(t, userPrompt, "[ORIGINAL SOURCE]")
+	assert.Contains(t, userPrompt, "<<<description>>>\nカップ数：ちっぱい")
 }
 
 func TestBuildLLMPrompts_DictionaryModeUsesCompactPromptAndSkipsLegacyConstraints(t *testing.T) {
@@ -543,6 +640,32 @@ func TestBuildLLMQualityReviewPromptIncludesSourceCandidateAndStrictOutput(t *te
 	assert.NotContains(t, userPrompt, "[corrected Korean]")
 	assert.Equal(t, 1, strings.Count(userPrompt, "<<<quality_review_title>>>"))
 	assert.Contains(t, systemPrompt, "桃尻/桃Siri→애플힙")
+}
+
+func TestBuildLLMQualityReviewPromptExplainsCorrectionRetry(t *testing.T) {
+	items := []qualityReviewItem{{Source: "長い説明", Candidate: "긴 설명"}}
+	options := llmPromptOptions{
+		dictionaryEnabled: true,
+		dictionary:        "長い -> 긴",
+		correction: &translationCorrection{
+			Issue: "model output was truncated before <<<JZ_DONE>>>",
+		},
+	}
+
+	systemPrompt, userPrompt, err := buildLLMQualityReviewPromptsWithMarkers(
+		"ko",
+		items,
+		[]string{"<<<quality_review_description>>>"},
+		options,
+	)
+	require.NoError(t, err)
+
+	assert.Contains(t, systemPrompt, "previous quality-review answer was rejected")
+	assert.Contains(t, systemPrompt, "model output was truncated before <<<JZ_DONE>>>")
+	assert.Contains(t, systemPrompt, "Never repeat the source, candidate, or a completed section")
+	assert.Contains(t, userPrompt, "Correct the rejected quality-review output")
+	assert.Contains(t, userPrompt, "[VALIDATION FAILURE]\nmodel output was truncated before <<<JZ_DONE>>>")
+	assert.Equal(t, 1, strings.Count(userPrompt, "<<<quality_review_description>>>"))
 }
 
 func TestSanitizeQualityReviewTextRemovesEchoedOutputLabel(t *testing.T) {
@@ -782,6 +905,20 @@ func TestReviewJAVTranslationsRejectsDroppedActressNameToken(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "dropped a protected performer name")
+}
+
+func TestReviewJAVTranslationsFallsBackWhenPreprotectedTokenIsDamaged(t *testing.T) {
+	provider := &qualityReviewMockProvider{response: "교정문 ⟦7000⟧와 ⟦700한⟧, ⟦8000⟧번째"}
+	service := New(Config{Enabled: true, Provider: "openai-compatible", TargetLanguage: "ko"}, provider)
+
+	result, err := service.ReviewJAVTranslations(context.Background(), []QualityReviewField{{
+		FieldName: "quality_review_description",
+		Source:    "原文 ⟦7000⟧と⟦7000⟧、2回目",
+		Candidate: "기존 번역 ⟦7000⟧와 ⟦7000⟧, 2번째",
+	}})
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"기존 번역 ⟦7000⟧와 ⟦7000⟧, 2번째"}, result)
 }
 
 func TestReviewJAVTranslationsProtectsImmutableMetadataTokens(t *testing.T) {

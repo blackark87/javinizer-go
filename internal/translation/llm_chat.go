@@ -60,8 +60,17 @@ type translationMarkersContextKey struct{}
 
 type qualityReviewContextKey struct{}
 
+type translationCorrectionContextKey struct{}
+
+type dictionaryPromptModeContextKey struct{}
+
 type qualityReviewItem struct {
 	Source    string
+	Candidate string
+}
+
+type translationCorrection struct {
+	Issue     string
 	Candidate string
 }
 
@@ -74,6 +83,7 @@ var jac024TailPromptPattern = regexp.MustCompile(`極選エロギャル([0-9０-
 type llmPromptOptions struct {
 	dictionaryEnabled bool
 	dictionary        string
+	correction        *translationCorrection
 }
 
 func promptOptionsFromConfig(cfg Config) llmPromptOptions {
@@ -81,6 +91,17 @@ func promptOptionsFromConfig(cfg Config) llmPromptOptions {
 		dictionaryEnabled: cfg.DictionaryEnabled,
 		dictionary:        cfg.Dictionary,
 	}
+}
+
+func promptOptionsFromContext(ctx context.Context, cfg Config) llmPromptOptions {
+	options := promptOptionsFromConfig(cfg)
+	if dictionaryEnabled, ok := dictionaryPromptModeFromContext(ctx); ok {
+		options.dictionaryEnabled = dictionaryEnabled
+	}
+	if correction, ok := translationCorrectionFromContext(ctx); ok {
+		options.correction = &correction
+	}
+	return options
 }
 
 // llmRequestContext gives each outbound LLM request its own timeout budget.
@@ -100,6 +121,39 @@ func llmRequestContext(parent context.Context, timeoutSeconds int) (context.Cont
 
 func withQualityReview(ctx context.Context, items []qualityReviewItem) context.Context {
 	return context.WithValue(ctx, qualityReviewContextKey{}, append([]qualityReviewItem(nil), items...))
+}
+
+func withTranslationCorrection(ctx context.Context, issue, candidate string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, translationCorrectionContextKey{}, translationCorrection{
+		Issue:     strings.TrimSpace(issue),
+		Candidate: strings.TrimSpace(candidate),
+	})
+}
+
+func translationCorrectionFromContext(ctx context.Context) (translationCorrection, bool) {
+	if ctx == nil {
+		return translationCorrection{}, false
+	}
+	correction, ok := ctx.Value(translationCorrectionContextKey{}).(translationCorrection)
+	return correction, ok && correction.Issue != ""
+}
+
+func withDictionaryPromptMode(ctx context.Context, enabled bool) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, dictionaryPromptModeContextKey{}, enabled)
+}
+
+func dictionaryPromptModeFromContext(ctx context.Context) (bool, bool) {
+	if ctx == nil {
+		return false, false
+	}
+	enabled, ok := ctx.Value(dictionaryPromptModeContextKey{}).(bool)
+	return enabled, ok
 }
 
 func qualityReviewFromContext(ctx context.Context, count int) ([]qualityReviewItem, bool) {
@@ -154,10 +208,31 @@ func buildLLMTranslationPromptsWithMarkers(sourceLang, targetLang string, texts,
 	promptOptions := resolveLLMPromptOptions(options)
 	koreanRules := koreanJAVPromptRules(targetLang, promptOptions)
 
-	systemPrompt := fmt.Sprintf("You translate Japanese adult video (JAV) metadata and AV-studio metadata for actual studio use. Write concise contemporary titles and complete natural descriptions; avoid corny, dated, literary, moralizing, euphemistic, or invented wording. %s%s%s%s%s%sReturn marker+one-line translation for each, then exact final line %s; no JSON or commentary. Source: %s. Target: %s.", terminologyRules, koreanRules, personNameRule, properNounRule, cleanupRules, placeholderRule, llmCompletionMarker, sourceLang, targetLang)
+	correctionRule := ""
+	if promptOptions.correction != nil {
+		correctionRule = fmt.Sprintf(
+			"CORRECTION RETRY: The previous answer was rejected because %s. Correct only that failure while preserving every valid translated detail. Return exactly the requested marker set once, in the requested order, followed by %s. Never emit an unrequested marker or repeat a section. ",
+			promptOptions.correction.Issue,
+			llmCompletionMarker,
+		)
+	}
+	systemPrompt := fmt.Sprintf("You translate Japanese adult video (JAV) metadata and AV-studio metadata for actual studio use. Write concise contemporary titles and complete natural descriptions; avoid corny, dated, literary, moralizing, euphemistic, or invented wording. %s%s%s%s%s%s%sReturn marker+one-line translation for each, then exact final line %s; no JSON or commentary. Source: %s. Target: %s.", terminologyRules, koreanRules, personNameRule, properNounRule, cleanupRules, placeholderRule, correctionRule, llmCompletionMarker, sourceLang, targetLang)
 
 	var userPrompt strings.Builder
-	userPrompt.WriteString("Translate each labeled section below:\n")
+	if promptOptions.correction == nil {
+		userPrompt.WriteString("Translate each labeled section below:\n")
+	} else {
+		userPrompt.WriteString("Correct the rejected translation using the original source below.\n")
+		userPrompt.WriteString("[VALIDATION FAILURE]\n")
+		userPrompt.WriteString(promptOptions.correction.Issue)
+		userPrompt.WriteByte('\n')
+		if promptOptions.correction.Candidate != "" {
+			userPrompt.WriteString("[REJECTED KOREAN CANDIDATE]\n")
+			userPrompt.WriteString(promptOptions.correction.Candidate)
+			userPrompt.WriteByte('\n')
+		}
+		userPrompt.WriteString("[ORIGINAL SOURCE]\n")
+	}
 	if !promptOptions.dictionaryEnabled {
 		userPrompt.WriteString(koreanBatchPromptConstraints(targetLang, texts))
 	}
@@ -175,10 +250,25 @@ func buildLLMQualityReviewPromptsWithMarkers(targetLang string, items []qualityR
 		return "", "", fmt.Errorf("quality review prompt requires one marker per item (%d markers for %d items)", len(markers), len(items))
 	}
 	promptOptions := resolveLLMPromptOptions(options)
-	systemPrompt := "You are the mandatory second-pass quality reviewer for Japanese AV metadata translated into Korean. Compare source and candidate, then silently fix mistranslation, calques, untranslated or transliterated slang, omissions, inventions, broken text, awkward grammar, and outdated terminology. Preserve explicitness, tone, protected tokens, and performer identity. Do not restore omitted release tags, playback/device notices, or sales/store promotions. Return the complete corrected Korean text, not an assessment. " + koreanJAVPromptRules(targetLang, promptOptions) + "Copy every <<<quality_review_...>>> marker with its complete corrected Korean text, then exact final line " + llmCompletionMarker + ". Never echo source/candidate labels or add commentary."
+	correctionRule := ""
+	if promptOptions.correction != nil {
+		correctionRule = fmt.Sprintf(
+			"CORRECTION RETRY: The previous quality-review answer was rejected because %s. Correct only that failure. Return each requested marker exactly once, in order, followed by %s. Never repeat the source, candidate, or a completed section. ",
+			promptOptions.correction.Issue,
+			llmCompletionMarker,
+		)
+	}
+	systemPrompt := "You are the mandatory second-pass quality reviewer for Japanese AV metadata translated into Korean. Compare source and candidate, then silently fix mistranslation, calques, untranslated or transliterated slang, omissions, inventions, broken text, awkward grammar, and outdated terminology. Preserve explicitness, tone, protected tokens, and performer identity. Do not restore omitted release tags, playback/device notices, or sales/store promotions. Return the complete corrected Korean text, not an assessment. " + koreanJAVPromptRules(targetLang, promptOptions) + correctionRule + "Copy every <<<quality_review_...>>> marker with its complete corrected Korean text, then exact final line " + llmCompletionMarker + ". Never echo source/candidate labels or add commentary."
 
 	var userPrompt strings.Builder
-	userPrompt.WriteString("Review and, where necessary, rewrite each candidate by comparing it with its Japanese source:\n")
+	if promptOptions.correction == nil {
+		userPrompt.WriteString("Review and, where necessary, rewrite each candidate by comparing it with its Japanese source:\n")
+	} else {
+		userPrompt.WriteString("Correct the rejected quality-review output using the same source and candidate below.\n")
+		userPrompt.WriteString("[VALIDATION FAILURE]\n")
+		userPrompt.WriteString(promptOptions.correction.Issue)
+		userPrompt.WriteByte('\n')
+	}
 	sources := make([]string, len(items))
 	for i := range items {
 		sources[i] = items[i].Source

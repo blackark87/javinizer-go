@@ -116,6 +116,14 @@ func (p *scrapePhase) Run(ctx context.Context, inputs scrapePhaseInputs, files [
 		return
 	}
 
+	// Alias groups are resolved while scraping metadata, but their translations
+	// are intentionally handled by the actress-sync worker. Queue the distinct
+	// alias identities once after every successful metadata checkpoint has been
+	// persisted. Keeping this at the metadata barrier means a later movie-title
+	// or description translation failure cannot strand newly discovered past
+	// activity names without their own translation job.
+	queuePendingActressTranslations(ctx, outcomes, inputs)
+
 	// Every metadata result is already durable. Translation starts only after
 	// the metadata barrier and checkpoints each completed record independently.
 	if inputs.DeferredTranslation {
@@ -564,6 +572,35 @@ func trackScrapeResults(outcomes []scrapeFileOutcome) {
 	// Future: aggregate counters, emit summary events, etc.
 }
 
+func queuePendingActressTranslations(ctx context.Context, outcomes []scrapeFileOutcome, inputs scrapePhaseInputs) {
+	if inputs.QueueActressSync == nil {
+		return
+	}
+	seen := make(map[uint]struct{})
+	ids := make([]uint, 0)
+	for _, outcome := range outcomes {
+		if !outcome.Success || outcome.Result == nil {
+			continue
+		}
+		for _, id := range outcome.Result.PendingActressSyncIDs {
+			if id == 0 {
+				continue
+			}
+			if _, exists := seen[id]; exists {
+				continue
+			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	if err := inputs.QueueActressSync(ctx, ids); err != nil {
+		logging.Warnf("[scrape-phase] Failed to queue %d alias actress translations: %v", len(ids), err)
+	}
+}
+
 // persistScrapeOutcomePool fans persist work for a batch of scrape outcomes out
 // across a small dedicated goroutine pool. The pool is sized independently of
 // eg.SetLimit(MaxWorkers) (the scrape worker limit) and runs AFTER the scrape
@@ -673,10 +710,5 @@ func persistScrapeOutcome(ctx context.Context, o scrapeFileOutcome, inputs scrap
 		}
 		return current, nil
 	})
-	if inputs.QueueActressSync != nil && len(o.Result.PendingActressSyncIDs) > 0 {
-		if queueErr := inputs.QueueActressSync(ctx, o.Result.PendingActressSyncIDs); queueErr != nil {
-			logging.Warnf("[scrape-phase] Failed to queue alias actress translations for %s: %v", o.MovieID, queueErr)
-		}
-	}
 	return true
 }

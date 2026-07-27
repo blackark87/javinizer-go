@@ -200,3 +200,16 @@ func TestProtectReviewActressNamesRejectsReviewerThatDropsToken(t *testing.T) {
 	assert.False(t, ok)
 	assert.Equal(t, "제목 마루이 모에카", restored)
 }
+
+func TestProtectReviewActressNamesRejectsPartiallyDamagedRepeatedToken(t *testing.T) {
+	actresses := []models.Actress{{JapaneseName: "円井萌華", LastName: "마루이", FirstName: "모에카"}}
+	protected := protectReviewActressNames(
+		"円井萌華와 円井萌華",
+		"마루이 모에카와 마루이 모에카",
+		actresses,
+	)
+
+	restored, ok := protected.restore("⟦7000⟧와 ⟦700한⟧")
+	assert.False(t, ok)
+	assert.Equal(t, "마루이 모에카와 마루이 모에카", restored)
+}

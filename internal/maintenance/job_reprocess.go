@@ -654,12 +654,12 @@ func translateAndReviewGroup(ctx context.Context, current []reprocessTranslation
 			var restored bool
 			output.Movie.Title, restored = protectedTitle.restore(reviewed[0])
 			if !restored {
-				err = fmt.Errorf("quality reviewer dropped a protected performer name from title")
+				logging.Warnf("Stored job reprocess: discarded title review that damaged a protected performer token for %s", representative.movieID)
 			}
 			if len(reviewFields) > 1 {
 				output.Movie.Description, restored = protectedDescription.restore(reviewed[1])
-				if !restored && err == nil {
-					err = fmt.Errorf("quality reviewer dropped a protected performer name from description")
+				if !restored {
+					logging.Warnf("Stored job reprocess: discarded description review that damaged a protected performer token for %s", representative.movieID)
 				}
 			}
 		} else if err == nil {
@@ -720,11 +720,16 @@ func protectReviewActressNames(source, candidate string, actresses []models.Actr
 
 func (p protectedReviewText) restore(reviewed string) (string, bool) {
 	restored := strings.TrimSpace(reviewed)
+	withoutExpectedTokens := restored
 	for token, actressName := range p.placeholders {
-		if !strings.Contains(restored, token) {
+		if strings.Count(restored, token) != strings.Count(p.candidate, token) {
 			return p.fallback, false
 		}
+		withoutExpectedTokens = strings.ReplaceAll(withoutExpectedTokens, token, "")
 		restored = strings.ReplaceAll(restored, token, actressName)
+	}
+	if strings.Contains(withoutExpectedTokens, "⟦") || strings.Contains(withoutExpectedTokens, "⟧") {
+		return p.fallback, false
 	}
 	return restored, true
 }

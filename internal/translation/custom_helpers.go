@@ -276,6 +276,63 @@ func normalizeKoreanTitleSeparators(value string) string {
 	return strings.TrimSpace(value)
 }
 
+func normalizeKoreanJAVPreferredTerms(source, value string) string {
+	if strings.Contains(source, "レロレロ") {
+		value = strings.NewReplacer(
+			"페로페로", "레로레로",
+			"레로 레로", "레로레로",
+			"레로레코", "레로레로",
+		).Replace(value)
+	}
+	if strings.Contains(source, "メン地下") {
+		value = strings.NewReplacer(
+			"지하 남돌", "지하남돌",
+			"지하 남성 아이돌", "지하남돌",
+		).Replace(value)
+	}
+	if strings.Contains(source, "交縁界隈") {
+		value = strings.NewReplacer(
+			"교연계", "길거리 조건만남 판",
+			"교엔 계통", "길거리 조건만남 판",
+			"코이엔 계통", "길거리 조건만남 판",
+			"길거리 조건만남 판라는 걸", "길거리 조건만남 판을",
+		).Replace(value)
+	}
+	if strings.Contains(source, "立ちんぼ") {
+		value = strings.ReplaceAll(value, "길빵", "길거리 성매매")
+	}
+	if strings.Contains(source, "猫じゃらし") {
+		value = strings.NewReplacer(
+			"고양이 낚시놀이", "고양이 장난감",
+			"고양이 낚싯대", "고양이 장난감",
+		).Replace(value)
+	}
+	if strings.Contains(source, "床上手") {
+		value = strings.NewReplacer(
+			"잠자리 고수", "섹스 고수",
+			"상위호환", "섹스 고수",
+		).Replace(value)
+	}
+	if strings.Contains(source, "精子") {
+		value = strings.ReplaceAll(value, "정량", "정액")
+	}
+	if strings.Contains(source, "十代現役J") {
+		value = strings.ReplaceAll(value, "1인칭 현역 J", "10대 현역 J")
+	}
+	if strings.Contains(source, "相場は") && strings.Contains(source, ".5") {
+		value = strings.NewReplacer(
+			"시세는 1.5엔부터", "시세는 1만 5천 엔부터",
+			"시세는 1.5부터", "시세는 1만 5천 엔부터",
+			"시세는 1.5~", "시세는 1만 5천 엔부터",
+			"시세는 1.5～", "시세는 1만 5천 엔부터",
+		).Replace(value)
+	}
+	if strings.Contains(source, "ホ別") {
+		value = strings.ReplaceAll(value, "호텔비 별도 2엔", "호텔비 별도 2만 엔")
+	}
+	return value
+}
+
 func stripVRMarkers(title string) string {
 	cleaned := vrMarkerRE.ReplaceAllString(title, "")
 	return strings.TrimSpace(asciiSpaceRunRE.ReplaceAllString(cleaned, " "))
@@ -358,16 +415,17 @@ func countResidualJapanese(value string) int {
 	return count
 }
 
-func restoreNamePlaceholders(text string, placeholders map[string]string) (string, bool) {
-	ok := true
+func restoreNamePlaceholders(text, source string, placeholders map[string]string) (string, bool) {
 	for token, hangul := range placeholders {
-		if !strings.Contains(text, token) {
-			ok = false
-			continue
+		if strings.Count(text, token) != strings.Count(source, token) {
+			return text, false
 		}
 		text = replaceNameToken(text, token, hangul)
 	}
-	return text, ok
+	if strings.Contains(text, "⟦") || strings.Contains(text, "⟧") {
+		return text, false
+	}
+	return text, true
 }
 
 func replaceNameToken(text, token, hangul string) string {

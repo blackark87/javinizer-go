@@ -822,9 +822,18 @@ Return output in the same labeled format:
 		assert.Equal(t, []string{"번역된 제목", "번역된 설명"}, got)
 	})
 
-	t.Run("rejects embedded marker contamination", func(t *testing.T) {
-		_, err := parseLLMTranslationPayload(
+	t.Run("ignores unrequested sections after final requested slot", func(t *testing.T) {
+		got, err := parseLLMTranslationPayload(
 			"<<<title>>>\n번역된 제목\n<<<description>>>\n번역된 설명\n<<<unexpected>>>\n오염",
+			[]string{"<<<title>>>", "<<<description>>>"},
+		)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"번역된 제목", "번역된 설명"}, got)
+	})
+
+	t.Run("rejects an unrequested section between requested slots", func(t *testing.T) {
+		_, err := parseLLMTranslationPayload(
+			"<<<title>>>\n번역된 제목\n<<<unexpected>>>\n오염\n<<<description>>>\n번역된 설명",
 			[]string{"<<<title>>>", "<<<description>>>"},
 		)
 		require.Error(t, err)

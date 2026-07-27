@@ -296,10 +296,16 @@ func TestTranslateWithProvider_UnsupportedProvider(t *testing.T) {
 // --- mockProvider for testing ---
 
 type mockProvider struct {
+	name          string
 	translateFunc func(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error)
 }
 
-func (m *mockProvider) Name() string { return "mock" }
+func (m *mockProvider) Name() string {
+	if m.name != "" {
+		return m.name
+	}
+	return "mock"
+}
 
 func (m *mockProvider) Translate(ctx context.Context, sourceLang, targetLang string, texts []string) (*translationResult, error) {
 	if m.translateFunc != nil {
@@ -335,6 +341,154 @@ func TestTranslateMovie_EmptyTranslationFails(t *testing.T) {
 	assert.Contains(t, warning, "invalid model output")
 	assert.Contains(t, err.Error(), "empty translation after retry")
 	assert.Equal(t, "テスト", movie.Title)
+}
+
+func TestTranslateMovie_LowQualityRetryReceivesValidationFailure(t *testing.T) {
+	calls := 0
+	provider := &mockProvider{
+		translateFunc: func(ctx context.Context, _, _ string, _ []string) (*translationResult, error) {
+			calls++
+			if calls == 1 {
+				return &translationResult{Texts: []string{"컵 수: 치っぱい"}}, nil
+			}
+			correction, ok := translationCorrectionFromContext(ctx)
+			require.True(t, ok)
+			assert.Contains(t, correction.Issue, `untranslated Japanese remains: "っぱい"`)
+			assert.Equal(t, "컵 수: 치っぱい", correction.Candidate)
+			return &translationResult{Texts: []string{"컵 수: 빈유"}}, nil
+		},
+	}
+
+	svc := New(Config{
+		Enabled:        true,
+		Provider:       "mock",
+		SourceLanguage: "ja",
+		TargetLanguage: "ko",
+		Fields: fieldsConfig{
+			Description: true,
+		},
+	}, provider)
+
+	movie := &models.Movie{Description: "カップ数：ちっぱい"}
+	out, _, err := svc.TranslateMovie(context.Background(), movie, "hash123")
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	require.NotNil(t, out.Movie)
+	assert.Equal(t, "컵 수: 빈유", out.Movie.Description)
+	assert.Equal(t, 2, calls)
+}
+
+func TestTranslateMovie_DictionaryLowQualityRetryFallsBackToFullPrompt(t *testing.T) {
+	calls := 0
+	provider := &mockProvider{
+		name: "openai-compatible",
+		translateFunc: func(ctx context.Context, _, _ string, _ []string) (*translationResult, error) {
+			calls++
+			switch calls {
+			case 1:
+				return &translationResult{Texts: []string{"円光"}}, nil
+			case 2:
+				correction, ok := translationCorrectionFromContext(ctx)
+				require.True(t, ok)
+				assert.Contains(t, correction.Issue, `untranslated Japanese remains: "円光"`)
+				_, overridden := dictionaryPromptModeFromContext(ctx)
+				assert.False(t, overridden)
+				return &translationResult{Texts: []string{"交縁"}}, nil
+			default:
+				dictionaryEnabled, overridden := dictionaryPromptModeFromContext(ctx)
+				require.True(t, overridden)
+				assert.False(t, dictionaryEnabled)
+				correction, ok := translationCorrectionFromContext(ctx)
+				require.True(t, ok)
+				assert.Contains(t, correction.Issue, `untranslated Japanese remains: "交縁"`)
+				return &translationResult{Texts: []string{"조건만남"}}, nil
+			}
+		},
+	}
+
+	svc := New(Config{
+		Enabled:           true,
+		Provider:          "openai-compatible",
+		SourceLanguage:    "ja",
+		TargetLanguage:    "ko",
+		DictionaryEnabled: true,
+		Fields: fieldsConfig{
+			Description: true,
+		},
+	}, provider)
+	svc.acquireProviderCall = nil
+	svc.releaseProviderCall = nil
+
+	movie := &models.Movie{Description: "円光"}
+	out, _, err := svc.TranslateMovie(context.Background(), movie, "hash123")
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	require.NotNil(t, out.Movie)
+	assert.Equal(t, "조건만남", out.Movie.Description)
+	assert.Equal(t, 3, calls)
+}
+
+func TestTranslateWithProvider_ParseRetryReceivesProtocolFailure(t *testing.T) {
+	calls := 0
+	provider := &mockProvider{
+		translateFunc: func(ctx context.Context, _, _ string, _ []string) (*translationResult, error) {
+			calls++
+			if calls == 1 {
+				return &translationResult{RawLLM: "<<<title>>>\n번역\n<<<description>>>\n불필요"}, &translationError{
+					Kind:    TranslationErrorParse,
+					Message: "unexpected embedded output marker in slot 0",
+				}
+			}
+			correction, ok := translationCorrectionFromContext(ctx)
+			require.True(t, ok)
+			assert.Contains(t, correction.Issue, "unexpected embedded output marker")
+			assert.Empty(t, correction.Candidate, "marker-bearing malformed output must not be echoed back")
+			return &translationResult{Texts: []string{"정상 제목"}}, nil
+		},
+	}
+	svc := New(Config{Provider: "mock"}, provider)
+	svc.acquireProviderCall = nil
+	svc.releaseProviderCall = nil
+
+	translated, err := svc.translateWithProvider(context.Background(), provider, "ja", "ko", []string{"作品名"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"정상 제목"}, translated)
+	assert.Equal(t, 2, calls)
+}
+
+func TestTranslateWithProvider_DictionaryFailureFallsBackToFullPrompt(t *testing.T) {
+	calls := 0
+	provider := &mockProvider{
+		name: "openai-compatible",
+		translateFunc: func(ctx context.Context, _, _ string, _ []string) (*translationResult, error) {
+			calls++
+			if calls <= maxTranslationRetries {
+				dictionaryEnabled, overridden := dictionaryPromptModeFromContext(ctx)
+				assert.False(t, overridden)
+				assert.False(t, dictionaryEnabled)
+				return &translationResult{RawLLM: "broken output"}, &translationError{
+					Kind:    TranslationErrorParse,
+					Message: "protected metadata token count changed",
+				}
+			}
+
+			dictionaryEnabled, overridden := dictionaryPromptModeFromContext(ctx)
+			require.True(t, overridden)
+			assert.False(t, dictionaryEnabled)
+			correction, ok := translationCorrectionFromContext(ctx)
+			require.True(t, ok)
+			assert.Contains(t, correction.Issue, "compact dictionary prompt failed")
+			return &translationResult{Texts: []string{"정상 번역"}}, nil
+		},
+	}
+	svc := New(Config{Provider: "openai-compatible", DictionaryEnabled: true}, provider)
+	svc.acquireProviderCall = nil
+	svc.releaseProviderCall = nil
+
+	translated, err := svc.translateWithProvider(context.Background(), provider, "ja", "ko", []string{"原文"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"정상 번역"}, translated)
+	assert.Equal(t, maxTranslationRetries+1, calls)
 }
 
 // --- TranslateMovie count mismatch ---

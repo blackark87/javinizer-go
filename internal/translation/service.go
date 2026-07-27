@@ -633,11 +633,14 @@ func (s *Service) TranslateMovie(ctx context.Context, scraped *models.Movie, set
 					translated = strings.ReplaceAll(translated, token, sourceText)
 				}
 				if len(field.Placeholders) > 0 {
-					restored, ok := restoreNamePlaceholders(translated, field.Placeholders)
+					restored, ok := restoreNamePlaceholders(translated, field.Text, field.Placeholders)
 					if !ok {
 						restored = field.FallbackText
 					}
 					translated = restored
+				}
+				if normalizeLanguage(targetLang) == "ko" {
+					translated = normalizeKoreanJAVPreferredTerms(field.Text, translated)
 				}
 				results[fieldKey(field)] = translated
 			}
@@ -688,6 +691,7 @@ type protectedQualityReviewText struct {
 	fallback          string
 	placeholders      map[string]string
 	placeholderCounts map[string]int
+	preexistingTokens map[string]int
 	titleNumbers      []string
 	numericMismatch   bool
 }
@@ -706,6 +710,10 @@ func protectQualityReviewActressNames(field QualityReviewField) protectedQuality
 		fallback:          strings.TrimSpace(field.Candidate),
 		placeholders:      make(map[string]string),
 		placeholderCounts: make(map[string]int),
+		preexistingTokens: make(map[string]int),
+	}
+	for _, token := range protectedPlaceholderTokenRE.FindAllString(protected.candidate, -1) {
+		protected.preexistingTokens[token] = strings.Count(protected.candidate, token)
 	}
 	protectAllNumbers := strings.Contains(field.FieldName, "title")
 	if protectAllNumbers {
@@ -767,6 +775,22 @@ func protectQualityReviewActressNames(field QualityReviewField) protectedQuality
 
 func (p protectedQualityReviewText) restore(reviewed string) (string, bool) {
 	restored := strings.TrimSpace(reviewed)
+	withoutExpectedTokens := restored
+	expectedTokens := make(map[string]struct{})
+	for _, token := range protectedPlaceholderTokenRE.FindAllString(p.candidate, -1) {
+		expectedTokens[token] = struct{}{}
+	}
+	for token := range expectedTokens {
+		if strings.Count(restored, token) != strings.Count(p.candidate, token) {
+			return p.fallback, false
+		}
+		withoutExpectedTokens = strings.ReplaceAll(withoutExpectedTokens, token, "")
+	}
+	if anyProtectedPlaceholderRE.MatchString(withoutExpectedTokens) ||
+		strings.Contains(withoutExpectedTokens, "⟦") ||
+		strings.Contains(withoutExpectedTokens, "⟧") {
+		return p.fallback, false
+	}
 	for token, actressName := range p.placeholders {
 		if strings.Count(restored, token) != p.placeholderCounts[token] {
 			return p.fallback, false
@@ -846,12 +870,19 @@ func (s *Service) ReviewJAVTranslations(ctx context.Context, fields []QualityRev
 		}
 		restored, ok := protected[i].restore(reviewed[i])
 		if !ok {
+			if len(protected[i].preexistingTokens) > 0 {
+				// Some callers pre-protect names before invoking the shared
+				// reviewer. Discard a review that damages one of those outer
+				// tokens and keep the safe first-pass candidate.
+				reviewed[i] = protected[i].fallback
+				continue
+			}
 			return nil, fmt.Errorf("quality reviewer dropped a protected performer name for %s", markers[i])
 		}
 		if !protected[i].titleNumbersMatch(restored) {
 			return nil, fmt.Errorf("quality reviewer changed numeric metadata for %s", markers[i])
 		}
-		reviewed[i] = restored
+		reviewed[i] = normalizeKoreanJAVPreferredTerms(protected[i].source, restored)
 		if strings.Contains(markers[i], "title") {
 			reviewed[i] = normalizeKoreanTitleSeparators(reviewed[i])
 		}
@@ -973,6 +1004,7 @@ var latinNaturalWordRE = regexp.MustCompile(`[A-Za-z]+`)
 
 var immutableMetadataTokenRE = regexp.MustCompile(`(?i)\b(?:[A-Z0-9]*[A-Z][A-Z0-9]*-[0-9]{2,5}(?:-[A-Z0-9]+)*|case[0-9]+)\b`)
 var protectedPlaceholderTokenRE = regexp.MustCompile(`⟦[0-9]+⟧`)
+var anyProtectedPlaceholderRE = regexp.MustCompile(`⟦[^⟧\r\n]*⟧`)
 var immutableNumericValueRE = regexp.MustCompile(`[0-9０-９]+`)
 var immutableMetadataNumericUnitRE = regexp.MustCompile(`(?i)([0-9０-９]+)[[:space:]]*(?:分|名|歳|才|本|発|回|時間|枚|作品?|年|月|日|cm|％|%)`)
 
@@ -1128,6 +1160,22 @@ func translationSlotIssue(field TranslationField, targetLang, value string) stri
 			return fmt.Sprintf("protected metadata token %s count changed: expected %d, got %d", token, expected, actual)
 		}
 	}
+	withoutExpectedTokens := current
+	for token := range field.Placeholders {
+		expected := strings.Count(field.Text, token)
+		if actual := strings.Count(current, token); actual != expected {
+			return fmt.Sprintf("protected performer token %s count changed: expected %d, got %d", token, expected, actual)
+		}
+		withoutExpectedTokens = strings.ReplaceAll(withoutExpectedTokens, token, "")
+	}
+	for token := range field.ImmutablePlaceholders {
+		withoutExpectedTokens = strings.ReplaceAll(withoutExpectedTokens, token, "")
+	}
+	if anyProtectedPlaceholderRE.MatchString(withoutExpectedTokens) ||
+		strings.Contains(withoutExpectedTokens, "⟦") ||
+		strings.Contains(withoutExpectedTokens, "⟧") {
+		return "unexpected or malformed protected token remains"
+	}
 
 	fieldName := fieldKey(field)
 	if normalizeLanguage(targetLang) == "ko" && isPersonNameField(fieldName) && !containsHangul(current) {
@@ -1198,7 +1246,8 @@ func (s *Service) retryLowQualitySlots(ctx context.Context, sourceLang, targetLa
 			continue
 		}
 
-		retried, err := s.translateTexts(ctx, sourceLang, targetLang, []string{field.Text}, []string{fieldKey(field)})
+		retryCtx := withTranslationCorrection(ctx, issue, current)
+		retried, err := s.translateTexts(retryCtx, sourceLang, targetLang, []string{field.Text}, []string{fieldKey(field)})
 		if err != nil {
 			return nil, warnings, fmt.Errorf("%w; retry failed: %v", invalidTranslationSlotError(field, issue), err)
 		}
@@ -1207,11 +1256,36 @@ func (s *Service) retryLowQualitySlots(ctx context.Context, sourceLang, targetLa
 		}
 		retryValue := strings.TrimSpace(retried[0])
 		if retryIssue := translationSlotIssue(field, targetLang, retryValue); retryIssue != "" {
+			if s.dictionaryPromptMode(ctx) && supportsJAVPromptStyleFallback(s.cfg.Provider) {
+				fallbackCtx := withDictionaryPromptMode(ctx, false)
+				fallbackCtx = withTranslationCorrection(fallbackCtx, retryIssue, retryValue)
+				fallback, fallbackErr := s.translateTexts(fallbackCtx, sourceLang, targetLang, []string{field.Text}, []string{fieldKey(field)})
+				if fallbackErr == nil && len(fallback) == 1 {
+					fallbackValue := strings.TrimSpace(fallback[0])
+					if fallbackIssue := translationSlotIssue(field, targetLang, fallbackValue); fallbackIssue == "" {
+						result[i] = fallbackValue
+						continue
+					}
+				}
+			}
 			return nil, warnings, invalidTranslationSlotError(field, retryIssue+" after retry")
 		}
 		result[i] = retryValue
 	}
 	return result, warnings, nil
+}
+
+func (s *Service) dictionaryPromptMode(ctx context.Context) bool {
+	enabled := s.cfg.DictionaryEnabled
+	if overridden, ok := dictionaryPromptModeFromContext(ctx); ok {
+		enabled = overridden
+	}
+	return enabled
+}
+
+func supportsJAVPromptStyleFallback(provider string) bool {
+	provider = normalizeProvider(provider)
+	return provider == "openai" || provider == "openai-compatible"
 }
 
 // TargetLanguages returns normalized targets in configured order, removing blanks and duplicates.
@@ -1442,12 +1516,23 @@ func (s *Service) translateWithProvider(ctx context.Context, provider Translator
 	expectedCount := len(texts)
 
 	for attempt := 1; attempt <= maxTranslationRetries; attempt++ {
+		attemptCtx := ctx
+		if attempt > 1 && lastErr != nil {
+			// A format retry needs the reason the previous response was rejected.
+			// Do not feed marker-bearing raw output back to the model: malformed
+			// extra sections are precisely what this retry is intended to remove.
+			rejected := ""
+			if lastResult != nil && !strings.Contains(lastResult.RawLLM, "<<<") {
+				rejected = truncateCorrectionCandidate(lastResult.RawLLM)
+			}
+			attemptCtx = withTranslationCorrection(ctx, lastErr.Error(), rejected)
+		}
 		if s.acquireProviderCall != nil {
 			if err := s.acquireProviderCall(ctx); err != nil {
 				return nil, err
 			}
 		}
-		result, err := provider.Translate(ctx, sourceLang, targetLang, texts)
+		result, err := provider.Translate(attemptCtx, sourceLang, targetLang, texts)
 		if s.releaseProviderCall != nil {
 			s.releaseProviderCall()
 		}
@@ -1492,6 +1577,42 @@ func (s *Service) translateWithProvider(ctx context.Context, provider Translator
 		}
 	}
 
+	if s.dictionaryPromptMode(ctx) &&
+		supportsJAVPromptStyleFallback(provider.Name()) &&
+		isRetryableError(lastErr, lastResult) {
+		logging.Debugf("Translation: compact dictionary prompt failed after %d attempts (%v); retrying once with the full JAV prompt", maxTranslationRetries, lastErr)
+		fallbackCtx := withDictionaryPromptMode(ctx, false)
+		correctionIssue := "compact dictionary prompt produced an invalid response"
+		if lastErr != nil {
+			correctionIssue = "compact dictionary prompt failed: " + lastErr.Error()
+		}
+		fallbackCtx = withTranslationCorrection(fallbackCtx, correctionIssue, "")
+		if s.acquireProviderCall != nil {
+			if err := s.acquireProviderCall(ctx); err != nil {
+				return nil, err
+			}
+		}
+		result, err := provider.Translate(fallbackCtx, sourceLang, targetLang, texts)
+		if s.releaseProviderCall != nil {
+			s.releaseProviderCall()
+		}
+		if err == nil {
+			if result == nil {
+				err = &translationError{Kind: TranslationErrorProvider, Message: "translation provider returned no result"}
+			} else if len(result.Texts) != expectedCount {
+				err = &translationError{
+					Kind:    TranslationErrorCountMismatch,
+					Message: fmt.Sprintf("translation provider returned %d items for %d inputs", len(result.Texts), expectedCount),
+				}
+			}
+		}
+		if err == nil && result != nil {
+			return result.Texts, nil
+		}
+		lastResult = result
+		lastErr = err
+	}
+
 	if lastResult != nil && lastResult.RawLLM != "" {
 		logging.Debugf("Translation: all %d attempts failed. Last LLM output (length=%d):\n%s", maxTranslationRetries, len(lastResult.RawLLM), lastResult.RawLLM)
 	}
@@ -1503,6 +1624,16 @@ func (s *Service) translateWithProvider(ctx context.Context, provider Translator
 		Kind:    TranslationErrorProvider,
 		Message: fmt.Sprintf("translation failed after %d attempts", maxTranslationRetries),
 	}
+}
+
+func truncateCorrectionCandidate(value string) string {
+	const maxRunes = 6000
+	value = strings.TrimSpace(value)
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
+	}
+	return string(runes[:maxRunes])
 }
 
 func isRetryableError(err error, result *translationResult) bool {

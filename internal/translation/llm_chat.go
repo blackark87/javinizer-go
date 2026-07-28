@@ -258,7 +258,7 @@ func buildLLMQualityReviewPromptsWithMarkers(targetLang string, items []qualityR
 			llmCompletionMarker,
 		)
 	}
-	systemPrompt := "You are the mandatory second-pass quality reviewer for Japanese AV metadata translated into Korean. Compare source and candidate, then silently fix mistranslation, calques, untranslated or transliterated slang, omissions, inventions, broken text, awkward grammar, and outdated terminology. Preserve explicitness, tone, protected tokens, and performer identity. Do not restore omitted release tags, playback/device notices, or sales/store promotions. Return the complete corrected Korean text, not an assessment. " + koreanJAVPromptRules(targetLang, promptOptions) + correctionRule + "Copy every <<<quality_review_...>>> marker with its complete corrected Korean text, then exact final line " + llmCompletionMarker + ". Never echo source/candidate labels or add commentary."
+	systemPrompt := "You are the mandatory second-pass quality reviewer for Japanese AV metadata translated into Korean. Judge every source/candidate pair afresh; never carry forward a prior approval, exclusion, ignore decision, or recommendation. The Korean candidate is the baseline. If it is already acceptable within normal contemporary Korean variation, return it unchanged. Otherwise make only the smallest local edits needed to fix material mistranslation, calques, untranslated or transliterated slang, omissions, inventions, broken text, awkward grammar, or outdated terminology. Never rewrite an unaffected phrase merely to prefer a synonym, different word order, or different style. A review must not introduce a typo, damage a correct Korean spelling, or make the result less fluent than the candidate. Preserve explicitness, tone, protected tokens, punctuation, bracket placement, and performer identity. Do not restore omitted release tags, playback/device notices, or sales/store promotions. Return the complete corrected Korean text, not an assessment. " + koreanJAVPromptRules(targetLang, promptOptions) + correctionRule + "Copy every <<<quality_review_...>>> marker with its complete corrected Korean text, then exact final line " + llmCompletionMarker + ". Never echo source/candidate labels or add commentary."
 
 	var userPrompt strings.Builder
 	if promptOptions.correction == nil {
@@ -447,6 +447,7 @@ func koreanBatchPromptConstraints(targetLang string, sources []string) string {
 	} else if hasKnuckleHandjob {
 		termChecks = append(termChecks, "ナックル手コキ→손가락 대딸, 금지: 너클 대딸/손가락 마디를 이용한 대딸")
 	}
+	termChecks = append(termChecks, koreanTranslationReviewTermChecks(sources)...)
 	if jac024TailRule != "" {
 		termChecks = append(termChecks, jac024TailRule)
 	} else if hasGokusen {
@@ -456,6 +457,105 @@ func koreanBatchPromptConstraints(targetLang string, sources []string) string {
 		_, _ = fmt.Fprintf(&constraints, "BATCH TERM CHECK: %s.\n", strings.Join(termChecks, "; "))
 	}
 	return constraints.String()
+}
+
+type koreanSourceTermRule struct {
+	trigger string
+	rule    string
+}
+
+var koreanTranslationReviewSourceTermRules = []koreanSourceTermRule{
+	{trigger: "尾行押し込み", rule: "범죄 문맥 尾行押し込み→미행·주거침입, 금지: 미행 후 몰아붙이기"},
+	{trigger: "ヤリサー", rule: "ヤリサー→섹스 동아리|섹스 서클, 금지: 야리사/테니스 동아리"},
+	{trigger: "おっぱいちゃん", rule: "성인 여성 おっぱいちゃん→거유녀|가슴이 큰 여자, 금지: 가슴짱"},
+	{trigger: "ストゼロガンギマリ", rule: "ストゼロガンギマリ→스트롱 제로에 완전히 취한, 금지: 약기운"},
+	{trigger: "マジ軟派、初撮。", rule: "series phrase マジ軟派、初撮。→진짜 헌팅, 첫 촬영., 금지: 진짜 난파"},
+	{trigger: "連れ込みSEX隠し撮り", rule: "連れ込みSEX隠し撮り→데려와 섹스 몰카, 금지: 몰래 찍은 데려와서 하는 섹스"},
+	{trigger: "夜の蝶", rule: "JAV nightlife 夜の蝶→캬바걸|캬바클럽 호스티스, 금지: 밤의 나비"},
+	{trigger: "ヤリモク", rule: "ヤリモク→섹스만 노리는, 금지: 야리모쿠"},
+	{trigger: "キレイ系", rule: "キレイ系→미인형, 금지: 청순한"},
+	{trigger: "隠れた", rule: "隠れた→숨은|숨겨진, 금지: 숨겨된"},
+	{trigger: "1年ぶり", rule: "1年ぶり→1년 만의, preserve the 年 unit; 금지: 1 오랜만"},
+	{trigger: "クラスの女子が1人で", rule: "クラスの女子が1人で→반 여학생이 혼자, 금지: 반 여자애들이 1명이나"},
+	{trigger: "ガチイキ", rule: "ガチイキ→진짜 절정, 금지: 가치이키"},
+	{trigger: "白ムチ", rule: "白ムチ→하얗고 통통한, 금지: 백색 매끈"},
+	{trigger: "絶品", rule: "絶品→최고의, 금지: 절품"},
+	{trigger: "カメコ", rule: "cosplay カメコ→코스프레 촬영자, 금지: 카메코"},
+	{trigger: "嫌われた底辺カメコ", rule: "嫌われた底辺カメコ→기피당하는 밑바닥 코스프레 촬영자"},
+	{trigger: "18歳のパイパンボディ", rule: "18歳のパイパンボディ→18세의 백보지, 금지: 백보지 몸매"},
+	{trigger: "妊娠アクメ堕ち2本立SP", rule: "妊娠アクメ堕ち2本立SP→임신 절정에 빠지는 섹스 2회 SP, 금지: 2편 구성/2본방"},
+	{trigger: "肛門イキ", rule: "肛門イキ→애널 절정, 금지: 항문으로 가다"},
+	{trigger: "2穴中出し集団痴●バス", rule: "2穴中出し集団痴●バス→2홀 질내사정 집단 치한 버스, 금지: 2두 구멍/치녀 버스"},
+	{trigger: "痴●師", rule: "痴●師→치한, 금지: 치녀"},
+	{trigger: "嫌がる女を辱め力ずくの鬼畜姦", rule: "嫌がる女を辱め力ずくの鬼畜姦→싫어하는 여자들을 짓밟고 강제로 범하는 귀축 강간, 금지: 욕보이며/유린하는 힘으로 몰아붙이는"},
+	{trigger: "囁き淫語", rule: "囁き淫語→속삭이는 음란어, 금지: 속삭이는 음어"},
+	{trigger: "極妻", rule: "極妻→야쿠자 아내, 금지: 극강의 아내/극처녀 아내"},
+	{trigger: "アへ顔", rule: "アへ顔→아헤가오, never omit it"},
+	{trigger: "ネットでAV応募→AV体験撮影", rule: "ネットでAV応募→AV体験撮影→인터넷으로 AV 지원→AV 체험 촬영, preserve both stages and the arrow"},
+	{trigger: "3P経験", rule: "3P経験→3P 경험, never drop P"},
+	{trigger: "4パコ2日", rule: "4パコ2日→2일간 섹스 4회, 금지: 4파코2일/4섹스2일"},
+	{trigger: "酔狂M", rule: "酔狂M→술에 미친 극M, 금지: 취향 저격 극M"},
+	{trigger: "飲酒でガチギマ", rule: "飲酒でガチギマ→술에 완전히 취한, 금지: 술기운에 약기운"},
+	{trigger: "脳髄からアクメ心酔崩壊", rule: "脳髄からアクメ心酔崩壊→골수까지 절정에 취해 붕괴, 금지: 뇌세포까지 절정"},
+	{trigger: "激シコ", rule: "激シコ→딸감|꼴리는, never omit it"},
+	{trigger: "タマころがし", rule: "タマころがし→불알 굴리기, 금지: 타마코로가시"},
+	{trigger: "タマ舐め", rule: "タマ舐め→불알 핥기, 금지: 타마나메"},
+	{trigger: "脳汁", rule: "sexual 脳汁→쾌감, 금지: 뇌수"},
+	{trigger: "3発射", rule: "3発射→3회 사정, 금지: 3발사"},
+	{trigger: "ダーツナンパ", rule: "ダーツナンパ→다트 헌팅, 금지: 다츠 난파/다트 난파"},
+	{trigger: "喉奥イマラ", rule: "喉奥イマラ→목구멍 깊숙이 이라마치오, 금지: 목구멍 깊숙이 빨아대다"},
+	{trigger: "ハッスルSEX", rule: "ハッスルSEX→화끈한 섹스, 금지: 하슬 섹스"},
+	{trigger: "猛ピス", rule: "猛ピス→거친 피스톤|피스톤 맹공, 금지: 피스턴"},
+	{trigger: "際立たせる", rule: "際立たせる→돋보이게 하다, 금지: 돋라게"},
+	{trigger: "七変化", rule: "七変化→일곱 번 변신, never omit the count"},
+	{trigger: "発禁", rule: "発禁→발매 금지, 금지: 발금/금지만 단독 사용"},
+	{trigger: "全身性感帯クリトリス", rule: "全身性感帯クリトリス→온몸이 성감대, 금지: 전신이 성감대 클리토리스"},
+	{trigger: "そこもっとしてして", rule: "そこもっとしてして→거기 더 해줘, 금지: 더 해정해줘"},
+	{trigger: "無理無理", rule: "無理無理→무리야, 무리야, 금지: 무리 무인"},
+	{trigger: "ジュルジュル", rule: "penis-sucking ジュルジュル→쥬릅쥬릅|질척하게; 쥬릅쥬릅 자지를 빨아대다는 허용"},
+	{trigger: "生チン", rule: "noun 生チン→자지, 금지: 생자지; do not change 生ハメ→노콘"},
+	{trigger: "生ちん", rule: "noun 生ちん→자지, 금지: 생자지; do not change 生ハメ→노콘"},
+	{trigger: "生チ○ポ", rule: "noun 生チ○ポ→자지, 금지: 생자지; do not change 生ハメ→노콘"},
+	{trigger: "イラマ", rule: "イラマ/イラマチオ→이라마치오, 금지: 이라마/딥스로트"},
+	{trigger: "パコ撮り", rule: "パコ撮り→섹스 촬영, 금지: 파코촬/파코촬영"},
+	{trigger: "ハメ撮り", rule: "ハメ撮り→POV 섹스|셀프 섹스 촬영, 금지: 일반 셀프카메라"},
+	{trigger: "ハメ撮り映像流出", rule: "ハメ撮り映像流出→셀프 섹스 촬영 영상 유출, 금지: 영상 유무"},
+	{trigger: "素股", rule: "素股→가랑이딸, 금지: 스마타"},
+	{trigger: "激クンニ", rule: "激クンニ→격렬한 보빨, 금지: 격렬한 쿤니"},
+	{trigger: "デカチン", rule: "デカチン→대물, 금지: 대물 자지"},
+	{trigger: "第21弾", rule: "第21弾→제21탄, 금지: 제2릿탄"},
+	{trigger: "なっち", rule: "performer nickname なっち→낫치, 금지: 나치"},
+	{trigger: "みぃたん", rule: "performer nickname みぃたん→미이짱, 금지: 미아짱"},
+	{trigger: "百合川さら", rule: "performer 百合川さら reading ゆりかわさら→유리카와 사라"},
+	{trigger: "久留木玲", rule: "performer 久留木玲 reading くるきれい→쿠루키 레이"},
+	{trigger: "三尾めぐ", rule: "performer 三尾めぐ reading みおめぐ→미오 메구"},
+	{trigger: "桜美ゆきな", rule: "performer 桜美ゆきな reading さくらみゆきな→사쿠라미 유키나"},
+	{trigger: "ピュアで物静かなボブJ●", rule: "actress-field descriptive phrase ピュアで物静かなボブJ●→Unknown; it is not a performer name"},
+}
+
+func koreanTranslationReviewTermChecks(sources []string) []string {
+	checks := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, source := range sources {
+		for _, entry := range koreanTranslationReviewSourceTermRules {
+			if !strings.Contains(source, entry.trigger) {
+				continue
+			}
+			if _, ok := seen[entry.rule]; ok {
+				continue
+			}
+			seen[entry.rule] = struct{}{}
+			checks = append(checks, entry.rule)
+		}
+		if strings.HasSuffix(strings.TrimSpace(source), "なお") {
+			const trailingNaoRule = "source-final なお is performer name 나오, never connective 게다가"
+			if _, ok := seen[trailingNaoRule]; !ok {
+				seen[trailingNaoRule] = struct{}{}
+				checks = append(checks, trailingNaoRule)
+			}
+		}
+	}
+	return checks
 }
 
 func resolveLLMPromptOptions(options []llmPromptOptions) llmPromptOptions {

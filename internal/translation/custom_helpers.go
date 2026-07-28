@@ -277,6 +277,22 @@ func normalizeKoreanTitleSeparators(value string) string {
 }
 
 func normalizeKoreanJAVPreferredTerms(source, value string) string {
+	switch strings.TrimSpace(source) {
+	case "なっち":
+		return "낫치"
+	case "みぃたん":
+		return "미이짱"
+	case "百合川さら":
+		return "유리카와 사라"
+	case "久留木玲":
+		return "쿠루키 레이"
+	case "三尾めぐ":
+		return "미오 메구"
+	case "桜美ゆきな":
+		return "사쿠라미 유키나"
+	case "ピュアで物静かなボブJ●":
+		return "Unknown"
+	}
 	if strings.Contains(source, "レロレロ") {
 		value = strings.NewReplacer(
 			"페로페로", "레로레로",
@@ -329,6 +345,121 @@ func normalizeKoreanJAVPreferredTerms(source, value string) string {
 	}
 	if strings.Contains(source, "ホ別") {
 		value = strings.ReplaceAll(value, "호텔비 별도 2엔", "호텔비 별도 2만 엔")
+	}
+	if strings.Contains(source, "パコ撮り") {
+		value = strings.NewReplacer(
+			"파코촬", "섹스 촬영",
+			"파코 촬영", "섹스 촬영",
+			"파코촬영", "섹스 촬영",
+		).Replace(value)
+	}
+	if strings.Contains(source, "ハメ撮り") {
+		value = strings.ReplaceAll(value, "셀프카메라", "셀프 섹스 촬영")
+	}
+	if strings.Contains(source, "ヤリモク") {
+		value = strings.NewReplacer(
+			"야리모쿠", "섹스만 노리는",
+			"야리모크", "섹스만 노리는",
+		).Replace(value)
+	}
+	if strings.Contains(source, "言いなり") {
+		value = strings.ReplaceAll(value, "말이라면 뭐든 따르는 복종하는", "말이라면 뭐든 따르는")
+	}
+	if strings.Contains(source, "隠れた") {
+		value = strings.ReplaceAll(value, "숨겨된", "숨은")
+	}
+	if strings.Contains(source, "絶品") {
+		value = strings.ReplaceAll(value, "절품", "최고의")
+	}
+	if strings.Contains(source, "ハメ撮り映像流出") {
+		value = strings.ReplaceAll(value, "셀프 섹스 촬영 영상 유무", "셀프 섹스 촬영 영상 유출")
+	}
+	if strings.Contains(source, "嫌われた底辺カメコ") {
+		value = strings.ReplaceAll(value, "미움받는 밑바닥 카메코", "기피당하는 밑바닥 코스프레 촬영자")
+	}
+	if strings.Contains(source, "18歳のパイパンボディ") {
+		value = strings.ReplaceAll(value, "18세의 백보지 몸매", "18세의 백보지")
+	}
+	if strings.Contains(source, "素股") {
+		value = strings.ReplaceAll(value, "스마타", "가랑이딸")
+	}
+	if strings.Contains(source, "イラマ") {
+		value = strings.NewReplacer(
+			"딥스로트", "이라마치오",
+			"이라마로", "이라마치오로",
+			"이라마를", "이라마치오를",
+			"이라마가", "이라마치오가",
+			"이라마·", "이라마치오·",
+			"이라마 ", "이라마치오 ",
+		).Replace(value)
+	}
+	if strings.Contains(source, "ズボズボ") {
+		value = strings.NewReplacer(
+			"자지 즈보즈보", "자지로 깊숙이 쑤셔박기",
+			"즈보즈보", "깊숙이 쑤셔박기",
+		).Replace(value)
+	}
+	if strings.Contains(source, "生チン") || strings.Contains(source, "生ちん") || strings.Contains(source, "生チ○ポ") {
+		value = strings.ReplaceAll(value, "생자지", "자지")
+	}
+	if strings.Contains(source, "激クンニ") {
+		value = strings.ReplaceAll(value, "격렬한 쿤니", "격렬한 보빨")
+	}
+	if strings.Contains(source, "デカチン") {
+		value = strings.ReplaceAll(value, "대물 자지", "대물")
+	}
+	if strings.Contains(source, "2穴") {
+		value = strings.ReplaceAll(value, "2두 구멍", "2홀")
+	}
+	if strings.Contains(source, "痴●師") {
+		value = strings.ReplaceAll(value, "치녀", "치한")
+	}
+	if strings.Contains(source, "第21弾") {
+		value = strings.ReplaceAll(value, "제2릿탄", "제21탄")
+	}
+	if strings.Contains(source, "1年ぶり") {
+		value = strings.NewReplacer(
+			"1 오랜만의", "1년 만의",
+			"1 오랜만", "1년 만",
+		).Replace(value)
+	}
+	if strings.Contains(source, "そこもっとしてして") {
+		value = strings.ReplaceAll(value, "더 해정해줘", "더 해줘")
+	}
+	if strings.Contains(source, "無理無理") {
+		value = strings.ReplaceAll(value, "무리 무인", "무리야, 무리야")
+	}
+	if strings.Contains(source, "ランジェリー") {
+		value = strings.ReplaceAll(value, "란지리", "란제리")
+	}
+	if strings.Contains(source, "際立たせる") {
+		value = strings.ReplaceAll(value, "돋라게", "돋보이게")
+	}
+	if strings.Contains(source, "猛ピス") || strings.Contains(source, "ピストン") {
+		value = strings.ReplaceAll(value, "피스턴", "피스톤")
+	}
+	if strings.Contains(source, "ダーツナンパ") {
+		value = strings.NewReplacer(
+			"다츠 난파", "다트 헌팅",
+			"다트 난파", "다트 헌팅",
+			"다츠 헌팅", "다트 헌팅",
+		).Replace(value)
+	}
+	if strings.Contains(source, "極妻") {
+		value = strings.NewReplacer(
+			"극처녀 아내", "야쿠자 아내",
+			"극강의 아내", "야쿠자 아내",
+		).Replace(value)
+	}
+	if strings.Contains(source, "発禁") {
+		value = strings.ReplaceAll(value, "발금 ", "발매 금지 ")
+		switch {
+		case strings.HasPrefix(value, "금지 "):
+			value = "발매 금지 " + strings.TrimPrefix(value, "금지 ")
+		}
+	}
+	if strings.HasSuffix(strings.TrimSpace(source), "なお") && strings.HasSuffix(strings.TrimSpace(value), "게다가") {
+		value = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(value), "게다가")) + " 나오"
 	}
 	return value
 }

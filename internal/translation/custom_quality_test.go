@@ -68,7 +68,7 @@ func TestKoreanJAVPromptUsesConciseIntercruralTerms(t *testing.T) {
 	assert.Contains(t, rules, "太ももコキ→허벅지딸")
 	assert.Contains(t, rules, "尻コキ→엉덩이딸")
 	assert.Contains(t, rules, "금지: 股コキ/마타코키/허벅지 코키/가랑이 성교/허벅지 성교/엉덩이 성교")
-	assert.NotContains(t, rules, "가랑이에 끼워 비비기")
+	assert.Contains(t, rules, "금지:스마타/가랑이에 끼워 비비기/장황한 설명")
 }
 
 func TestKoreanJAVPromptCoversMIUM897AndIPX161Context(t *testing.T) {
@@ -85,7 +85,7 @@ func TestKoreanJAVPromptCoversMIUM897AndIPX161Context(t *testing.T) {
 	} {
 		assert.Contains(t, rules, expected)
 	}
-	assert.NotContains(t, rules, "가랑이에 끼워 비비기")
+	assert.Contains(t, rules, "금지:스마타/가랑이에 끼워 비비기/장황한 설명")
 }
 
 func TestKoreanJAVPromptUsesNaturalMiluchioAndVirilityTerms(t *testing.T) {
@@ -372,7 +372,7 @@ func TestKoreanJAVPromptCoversNewMissTranslationTerms(t *testing.T) {
 		assert.Contains(t, rules, expected)
 	}
 	assert.Equal(t, 1, strings.Count(rules, "杭打ち騎乗位→말뚝박기 기승위"))
-	assert.Less(t, utf8.RuneCountInString(rules), 10000)
+	assert.Less(t, utf8.RuneCountInString(rules), 12000)
 }
 
 func TestKoreanJAVPromptCoversERK091FC2AndSIRO5432(t *testing.T) {
@@ -404,7 +404,7 @@ func TestKoreanJAVPromptCoversERK091FC2AndSIRO5432(t *testing.T) {
 	assert.NotContains(t, rules, "→첫 분수 경험까지 빼앗은 모양")
 	assert.NotContains(t, rules, "→첫 분수까지 따먹은 듯")
 	assert.NotContains(t, rules, "거칠게 박아 격렬하게 가버리고 마구 쏟아내는 섹스")
-	assert.Less(t, utf8.RuneCountInString(rules), 10000)
+	assert.Less(t, utf8.RuneCountInString(rules), 12000)
 }
 
 func TestKoreanJAVPromptCoversLatestProductionMistranslations(t *testing.T) {
@@ -484,6 +484,76 @@ func TestNormalizeKoreanJAVPreferredTerms(t *testing.T) {
 			"1인칭 현역 J●의 고양이 낚시놀이, 상위호환, 정량",
 		),
 	)
+}
+
+func TestNormalizeKoreanJAVPreferredTermsRepairsRetranslationReviewRegressions(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+		value  string
+		want   string
+	}{
+		{
+			name:   "keeps accepted Korean sucking sound",
+			source: "ジュルジュルとチ〇ポをしゃぶる",
+			value:  "쥬릅쥬릅 자지를 빨아댑니다",
+			want:   "쥬릅쥬릅 자지를 빨아댑니다",
+		},
+		{
+			name:   "repairs review-created Korean typos",
+			source: "そこもっとしてして―。無理無理。ランジェリーで極上スタイルを際立たせる。小柄ボディに猛ピス",
+			value:  "거기 더 해정해줘. 무리 무인. 란지리로 몸매를 돋라게 한다. 아담한 몸매에 거친 피스턴",
+			want:   "거기 더 해줘. 무리야, 무리야. 란제리로 몸매를 돋보이게 한다. 아담한 몸매에 거친 피스톤",
+		},
+		{
+			name:   "fixes partial words and role direction",
+			source: "商業版第21弾。2穴中出し集団痴●バスで痴●師たちが責める",
+			value:  "상업판 제2릿탄. 2두 구멍 질내사정 집단 치녀 버스에서 치녀들이 괴롭힌다",
+			want:   "상업판 제21탄. 2홀 질내사정 집단 치한 버스에서 치한들이 괴롭힌다",
+		},
+		{
+			name:   "preserves acceptable title and fixes only material terms",
+			source: "清楚な見た目でイラマチオ大好き変態JDを制服のまま生ちんズボズボ",
+			value:  "청순한 외모로 딥스로트 좋아하는 변태 여대생을 교복 입은 채로 생자지 즈보즈보",
+			want:   "청순한 외모로 이라마치오 좋아하는 변태 여대생을 교복 입은 채로 자지로 깊숙이 쑤셔박기",
+		},
+		{
+			name:   "repairs remaining accepted title recommendations",
+			source: "ヤリモク。言いなり。隠れた本性。絶品ボディ。嫌われた底辺カメコ6人。18歳のパイパンボディ。ハメ撮り映像流出",
+			value:  "야리모쿠. 말이라면 뭐든 따르는 복종하는. 숨겨된 본성. 절품 몸매. 미움받는 밑바닥 카메코 6명. 18세의 백보지 몸매. 셀프카메라 영상 유무",
+			want:   "섹스만 노리는. 말이라면 뭐든 따르는. 숨은 본성. 최고의 몸매. 기피당하는 밑바닥 코스프레 촬영자 6명. 18세의 백보지. 셀프 섹스 촬영 영상 유출",
+		},
+		{
+			name:   "normalizes series and release terms",
+			source: "ダーツナンパ。発禁 05。パコ撮りNo.50",
+			value:  "다츠 난파. 발금 05. 파코촬 No.50",
+			want:   "다트 헌팅. 발매 금지 05. 섹스 촬영 No.50",
+		},
+		{
+			name:   "restores trailing performer name",
+			source: "AV出演決定！ なお",
+			value:  "AV 출연 결정! 게다가",
+			want:   "AV 출연 결정! 나오",
+		},
+		{
+			name:   "uses verified performer readings",
+			source: "桜美ゆきな",
+			value:  "사쿠라 미유키나",
+			want:   "사쿠라미 유키나",
+		},
+		{
+			name:   "rejects descriptive actress text as a name",
+			source: "ピュアで物静かなボブJ●",
+			value:  "풋풋하고 조용한 단발 J●",
+			want:   "Unknown",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, normalizeKoreanJAVPreferredTerms(tt.source, tt.value))
+		})
+	}
 }
 
 func TestTranslationSlotIssueRejectsDamagedPerformerPlaceholder(t *testing.T) {
@@ -623,7 +693,7 @@ func TestBuildLLMTranslationPrompts_AlwaysIncludesCompressedKoreanRules(t *testi
 	} {
 		assert.Contains(t, systemPrompt, expected)
 	}
-	assert.Less(t, utf8.RuneCountInString(systemPrompt), 12000)
+	assert.Less(t, utf8.RuneCountInString(systemPrompt), 12500)
 }
 
 func TestBuildLLMQualityReviewPromptIncludesSourceCandidateAndStrictOutput(t *testing.T) {
@@ -631,6 +701,11 @@ func TestBuildLLMQualityReviewPromptIncludesSourceCandidateAndStrictOutput(t *te
 	systemPrompt, userPrompt, err := buildLLMQualityReviewPromptsWithMarkers("ko", items, []string{"<<<quality_review_title>>>"})
 	require.NoError(t, err)
 	assert.Contains(t, systemPrompt, "mandatory second-pass quality reviewer")
+	assert.Contains(t, systemPrompt, "Judge every source/candidate pair afresh")
+	assert.Contains(t, systemPrompt, "The Korean candidate is the baseline")
+	assert.Contains(t, systemPrompt, "make only the smallest local edits")
+	assert.Contains(t, systemPrompt, "must not introduce a typo")
+	assert.Contains(t, systemPrompt, "never carry forward a prior approval, exclusion, ignore decision, or recommendation")
 	assert.Contains(t, systemPrompt, "鉄マン")
 	assert.Contains(t, systemPrompt, "Copy every <<<quality_review_...>>> marker")
 	assert.Contains(t, systemPrompt, llmCompletionMarker)
@@ -642,6 +717,41 @@ func TestBuildLLMQualityReviewPromptIncludesSourceCandidateAndStrictOutput(t *te
 	assert.NotContains(t, userPrompt, "[corrected Korean]")
 	assert.Equal(t, 1, strings.Count(userPrompt, "<<<quality_review_title>>>"))
 	assert.Contains(t, systemPrompt, "桃尻/桃Siri→애플힙")
+}
+
+func TestBuildLLMQualityReviewPromptIncludesAcceptedRetranslationFeedback(t *testing.T) {
+	source := "尾行押し込み ヤリサー ストゼロガンギマリ 妊娠アクメ堕ち2本立SP " +
+		"2穴中出し集団痴●バス 痴●師 嫌がる女を辱め力ずくの鬼畜姦 " +
+		"ジュルジュル 生ちんズボズボ ダーツナンパ 猛ピス 発禁 " +
+		"ピュアで物静かなボブJ● ヤリモク 隠れた 絶品 ハメ撮り映像流出"
+	_, userPrompt, err := buildLLMQualityReviewPromptsWithMarkers(
+		"ko",
+		[]qualityReviewItem{{Source: source, Candidate: "검토 후보"}},
+		[]string{"<<<quality_review_title>>>"},
+	)
+	require.NoError(t, err)
+
+	for _, expected := range []string{
+		"尾行押し込み→미행·주거침입",
+		"ヤリサー→섹스 동아리|섹스 서클",
+		"ストゼロガンギマリ→스트롱 제로에 완전히 취한",
+		"妊娠アクメ堕ち2本立SP→임신 절정에 빠지는 섹스 2회 SP",
+		"2穴中出し集団痴●バス→2홀 질내사정 집단 치한 버스",
+		"痴●師→치한, 금지: 치녀",
+		"싫어하는 여자들을 짓밟고 강제로 범하는 귀축 강간",
+		"쥬릅쥬릅 자지를 빨아대다는 허용",
+		"noun 生ちん→자지",
+		"ダーツナンパ→다트 헌팅",
+		"猛ピス→거친 피스톤|피스톤 맹공",
+		"発禁→발매 금지",
+		"ピュアで物静かなボブJ●→Unknown",
+		"ヤリモク→섹스만 노리는",
+		"隠れた→숨은|숨겨진",
+		"絶品→최고의",
+		"ハメ撮り映像流出→셀프 섹스 촬영 영상 유출",
+	} {
+		assert.Contains(t, userPrompt, expected)
+	}
 }
 
 func TestBuildLLMQualityReviewPromptExplainsCorrectionRetry(t *testing.T) {

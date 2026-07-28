@@ -1,6 +1,7 @@
 package batch
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -23,6 +24,9 @@ import (
 func TestRetranslateBatchJob_GroupsMultipartAndResolvesTranslationFailure(t *testing.T) {
 	var requestMu sync.Mutex
 	var requestBodies []string
+	requestStarted := make(chan struct{})
+	releaseRequest := make(chan struct{})
+	var blockFirstRequest sync.Once
 	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
@@ -30,6 +34,10 @@ func TestRetranslateBatchJob_GroupsMultipartAndResolvesTranslationFailure(t *tes
 		requestMu.Lock()
 		requestBodies = append(requestBodies, requestBody)
 		requestMu.Unlock()
+		blockFirstRequest.Do(func() {
+			close(requestStarted)
+			<-releaseRequest
+		})
 		w.Header().Set("Content-Type", "application/json")
 		if strings.Contains(requestBody, "mandatory second-pass quality reviewer") {
 			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"<<<quality_review_title>>>\n교정 제목\n<<<quality_review_description>>>\n교정 설명\n<<<JZ_DONE>>>"}}]}`))
@@ -93,18 +101,56 @@ func TestRetranslateBatchJob_GroupsMultipartAndResolvesTranslationFailure(t *tes
 
 	router := gin.New()
 	router.POST("/batch/:id/retranslate", retranslateBatchJob(testkit.GetTestRuntime(deps)))
-	req := httptest.NewRequest(http.MethodPost, "/batch/"+job.GetID()+"/retranslate", nil)
+	router.DELETE("/batch/:id", deleteBatchJob(testkit.GetTestRuntime(deps)))
+	requestCtx, cancelRequest := context.WithCancel(context.Background())
+	req := httptest.NewRequest(http.MethodPost, "/batch/"+job.GetID()+"/retranslate", nil).WithContext(requestCtx)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Equal(t, http.StatusAccepted, w.Code, w.Body.String())
 	var response contracts.BatchRetranslateResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
 	assert.Equal(t, 1, response.Total)
-	assert.Equal(t, 1, response.Succeeded)
+	assert.Equal(t, contracts.BatchRetranslateStatusRunning, response.Status)
+	assert.Zero(t, response.Processed)
+	assert.Zero(t, response.Succeeded)
 	assert.Zero(t, response.Failed)
 
+	select {
+	case <-requestStarted:
+	case <-time.After(time.Second):
+		t.Fatal("background retranslation did not reach the LLM")
+	}
+	runningResponse := buildBatchJobResponse(job.GetStatus())
+	require.NotNil(t, runningResponse.Retranslation)
+	assert.Equal(t, contracts.BatchRetranslateStatusRunning, runningResponse.Retranslation.Status)
+
+	duplicateRequest := httptest.NewRequest(http.MethodPost, "/batch/"+job.GetID()+"/retranslate", nil)
+	duplicateResponse := httptest.NewRecorder()
+	router.ServeHTTP(duplicateResponse, duplicateRequest)
+	assert.Equal(t, http.StatusConflict, duplicateResponse.Code)
+	assert.Contains(t, duplicateResponse.Body.String(), "already running")
+
+	deleteRequest := httptest.NewRequest(http.MethodDelete, "/batch/"+job.GetID(), nil)
+	deleteResponse := httptest.NewRecorder()
+	router.ServeHTTP(deleteResponse, deleteRequest)
+	assert.Equal(t, http.StatusConflict, deleteResponse.Code)
+	assert.Contains(t, deleteResponse.Body.String(), "retranslation is running")
+
+	// Cancelling the HTTP request after its 202 response must not cancel the
+	// server-owned background operation.
+	cancelRequest()
+	close(releaseRequest)
+	require.Eventually(t, func() bool {
+		current := batchRetranslationSnapshot(job.GetID())
+		return current != nil && current.Status == contracts.BatchRetranslateStatusCompleted
+	}, 2*time.Second, 10*time.Millisecond)
+
+	response = *batchRetranslationSnapshot(job.GetID())
+	assert.Equal(t, 1, response.Processed)
+	assert.Equal(t, 1, response.Succeeded)
+	assert.Zero(t, response.Failed)
 	status := job.GetStatus()
 	assert.Equal(t, 2, status.Completed)
 	assert.Zero(t, status.Failed)

@@ -32,6 +32,7 @@
 	import {
 		canRetranslateBatchJob,
 		countTranslationFailures,
+		isBatchRetranslationRunning,
 	} from '$lib/utils/translation-failure';
 
 	const queryClient = useQueryClient();
@@ -50,7 +51,7 @@
 	let olderThanDays = $state(30);
 	let isCleaningHistory = $state(false);
 	let isCleaningEvents = $state(false);
-	let retranslatingJobId = $state('');
+	let startingRetranslationJobId = $state('');
 
 	// Reactive per-job poster error state — reset when the job list changes
 	// so a refreshed (same-URL) poster re-fetches instead of staying hidden
@@ -196,27 +197,21 @@
 	}
 
 	async function retranslateJob(jobId: string) {
-		if (retranslatingJobId) return;
-		retranslatingJobId = jobId;
+		if (startingRetranslationJobId) return;
+		startingRetranslationJobId = jobId;
 		try {
 			const result = await apiClient.retranslateBatchJob(jobId);
-			if (result.failed === 0) {
-				toastStore.success(
-					`Re-translated ${result.succeeded} movie${result.succeeded !== 1 ? 's' : ''}`,
-				);
-			} else {
-				toastStore.warning(
-					`Re-translated ${result.succeeded} of ${result.total} movies. ${result.failed} failed.`,
-				);
-			}
+			toastStore.success(
+				`Re-translation started for ${result.total} movie${result.total !== 1 ? 's' : ''}`,
+			);
 			void queryClient.invalidateQueries({ queryKey: ['batch-jobs'] });
-			void queryClient.invalidateQueries({ queryKey: ['batch-job', jobId] });
+			void queryClient.invalidateQueries({ queryKey: ['job', jobId] });
 		} catch (e) {
 			toastStore.error(
 				`Re-translation failed: ${e instanceof Error ? e.message : 'Unknown error'}`,
 			);
 		} finally {
-			retranslatingJobId = '';
+			startingRetranslationJobId = '';
 		}
 	}
 
@@ -409,6 +404,7 @@
 						{@const poster = getFirstPoster(job)}
 						{@const translationFailed = countTranslationFailures(job)}
 						{@const otherFailed = Math.max(0, job.failed - translationFailed)}
+						{@const isRetranslating = isBatchRetranslationRunning(job)}
 						<div
 							in:fly={{ y: 10, duration: 200, delay: Math.min(index * 30, 150) }}
 							class="group"
@@ -456,6 +452,21 @@
 											{#if otherFailed > 0}
 												<span class="text-red-500">{otherFailed} failed</span>
 											{/if}
+											{#if job.retranslation}
+												{#if isRetranslating}
+													<span class="text-primary">
+														Re-translating {job.retranslation.processed}/{job.retranslation.total}
+													</span>
+												{:else if job.retranslation.status === 'completed'}
+													<span class={job.retranslation.failed > 0 ? 'text-amber-600' : 'text-green-600'}>
+														Re-translated {job.retranslation.succeeded}/{job.retranslation.total}
+													</span>
+												{:else}
+													<span class="text-red-500">
+														Re-translation {job.retranslation.status}
+													</span>
+												{/if}
+											{/if}
 											<span>{formatDate(job.started_at)}</span>
 										</div>
 
@@ -486,7 +497,7 @@
 													variant="default"
 													size="sm"
 													onclick={() => goto(`/review/${job.id}`)}
-													disabled={retranslatingJobId === job.id}
+													disabled={startingRetranslationJobId === job.id || isRetranslating}
 												>
 													Review & Organize
 												</Button>
@@ -496,11 +507,15 @@
 													variant="outline"
 													size="sm"
 													onclick={() => retranslateJob(job.id)}
-													disabled={retranslatingJobId !== ''}
+													disabled={startingRetranslationJobId !== '' || isRetranslating}
 													title="Re-translate identified movies from retained source metadata"
 												>
-													<Languages class="h-4 w-4 mr-1 {retranslatingJobId === job.id ? 'animate-pulse' : ''}" />
-													{retranslatingJobId === job.id ? 'Re-translating...' : 'Re-translate'}
+													<Languages class="h-4 w-4 mr-1 {startingRetranslationJobId === job.id || isRetranslating ? 'animate-pulse' : ''}" />
+													{startingRetranslationJobId === job.id
+														? 'Starting...'
+														: isRetranslating
+															? `Re-translating ${job.retranslation?.processed ?? 0}/${job.retranslation?.total ?? 0}`
+															: 'Re-translate'}
 												</Button>
 											{/if}
 											{#if job.failed > 0}
@@ -509,7 +524,7 @@
 													{job.completed > 0 ? 'Review Failed' : 'View Failed'}
 												</Button>
 											{/if}
-											<Button variant="ghost" size="sm" onclick={() => dismissJobMutation.mutate(job.id)} disabled={dismissJobMutation.isPending} title="Dismiss">
+											<Button variant="ghost" size="sm" onclick={() => dismissJobMutation.mutate(job.id)} disabled={dismissJobMutation.isPending || isRetranslating} title="Dismiss">
 												<Trash2 class="h-4 w-4 text-muted-foreground" />
 											</Button>
 										{:else if job.status.toLowerCase() === 'organized'}

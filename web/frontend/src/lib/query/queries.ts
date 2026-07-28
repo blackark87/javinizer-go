@@ -2,6 +2,7 @@ import { createQuery } from '@tanstack/svelte-query';
 import { apiClient } from '$lib/api/client';
 import { listTokens } from '$lib/api/tokens';
 import { isTerminalStatus } from '$lib/utils/job-progress';
+import { isBatchRetranslationRunning } from '$lib/utils/translation-failure';
 
 export function createConfigQuery() {
 	return createQuery(() => ({
@@ -29,7 +30,11 @@ export function createBatchJobsQuery() {
 		// hasRunningJobs; this is its query-level replacement, so the list no
 		// longer freezes mid-run when started from elsewhere.
 		refetchInterval: (query) =>
-			query.state.data?.jobs?.some((j) => !isTerminalStatus(j.status)) ? 5_000 : false,
+			query.state.data?.jobs?.some(
+				(j) => !isTerminalStatus(j.status) || isBatchRetranslationRunning(j),
+			)
+				? 5_000
+				: false,
 	}));
 }
 

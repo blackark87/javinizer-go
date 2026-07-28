@@ -202,6 +202,10 @@ func deleteBatchJob(rt *core.APIRuntime) gin.HandlerFunc {
 		deps := rt.Deps()
 		jobID := c.Param("id")
 
+		if isBatchRetranslationRunning(jobID) {
+			c.JSON(http.StatusConflict, contracts.ErrorResponse{Error: "cannot delete job while retranslation is running"})
+			return
+		}
 		if err := deps.GetJobStore().DeleteJob(jobID); err != nil {
 			if strings.Contains(err.Error(), "not found") {
 				c.JSON(http.StatusNotFound, contracts.ErrorResponse{Error: err.Error()})
@@ -215,6 +219,7 @@ func deleteBatchJob(rt *core.APIRuntime) gin.HandlerFunc {
 			return
 		}
 
+		removeBatchRetranslation(jobID)
 		c.JSON(http.StatusOK, gin.H{"message": "Job deleted successfully"})
 	}
 }

@@ -130,6 +130,7 @@ func buildBatchJobResponse(job *worker.BatchJobStatus, actressRepos ...database.
 		OperationModeOverride: base.OperationModeOverride,
 		Update:                base.Update,
 		PersistError:          base.PersistError,
+		Retranslation:         batchRetranslationSnapshot(base.ID),
 	}
 }
 
@@ -162,5 +163,6 @@ func buildBatchJobSlimResponse(job *worker.BatchJobStatus) *contracts.BatchJobRe
 		OperationModeOverride: base.OperationModeOverride,
 		Update:                base.Update,
 		PersistError:          base.PersistError,
+		Retranslation:         batchRetranslationSnapshot(base.ID),
 	}
 }

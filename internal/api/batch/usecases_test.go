@@ -76,6 +76,34 @@ func TestListJobsUseCase_HappyPath(t *testing.T) {
 	assert.Equal(t, int64(0), out.Jobs[1].RevertedCount)
 }
 
+func TestListJobsUseCase_IncludesRetranslationProgress(t *testing.T) {
+	jobRepo := mocks.NewMockJobRepositoryInterface(t)
+	opRepo := mocks.NewMockBatchFileOperationRepositoryInterface(t)
+	deps := newTestAPIDeps(t, jobRepo, opRepo)
+
+	jobRepo.On("List", mock.Anything).Return(
+		[]models.Job{sampleJob("job-with-retranslation", time.Now().UTC())},
+		nil,
+	)
+	opRepo.On("CountByBatchJobIDs", mock.Anything, []string{"job-with-retranslation"}).
+		Return(map[string]int64{}, nil)
+	opRepo.On("CountRevertedByBatchJobIDs", mock.Anything, []string{"job-with-retranslation"}).
+		Return(map[string]int64{}, nil)
+
+	operation, started := batchRetranslations.start("job-with-retranslation", 3)
+	require.True(t, started)
+	t.Cleanup(func() { removeBatchRetranslation("job-with-retranslation") })
+	operation.record("IPX-535", nil)
+
+	out, err := ListJobsUseCase(context.Background(), deps, ListJobsInput{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, out.Jobs, 1)
+	require.NotNil(t, out.Jobs[0].Retranslation)
+	assert.Equal(t, contracts.BatchRetranslateStatusRunning, out.Jobs[0].Retranslation.Status)
+	assert.Equal(t, 1, out.Jobs[0].Retranslation.Processed)
+	assert.Equal(t, 3, out.Jobs[0].Retranslation.Total)
+}
+
 func TestListJobsUseCase_EmptyJobList(t *testing.T) {
 	jobRepo := mocks.NewMockJobRepositoryInterface(t)
 	opRepo := mocks.NewMockBatchFileOperationRepositoryInterface(t)

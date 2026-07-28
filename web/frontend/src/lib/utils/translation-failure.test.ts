@@ -3,6 +3,7 @@ import type { FileResult } from '$lib/api/types';
 import {
 	canRetranslateBatchJob,
 	countTranslationFailures,
+	isBatchRetranslationRunning,
 	isTranslationFailure,
 } from './translation-failure';
 
@@ -95,6 +96,38 @@ describe('canRetranslateBatchJob', () => {
 						status: 'completed',
 						error: undefined,
 					}),
+				},
+			}),
+		).toBe(false);
+	});
+});
+
+describe('isBatchRetranslationRunning', () => {
+	it('recognizes the background retranslation state', () => {
+		expect(
+			isBatchRetranslationRunning({
+				retranslation: {
+					job_id: 'job-1',
+					status: 'running',
+					total: 3,
+					processed: 1,
+					succeeded: 1,
+					failed: 0,
+				},
+			}),
+		).toBe(true);
+	});
+
+	it('stops polling after retranslation completes', () => {
+		expect(
+			isBatchRetranslationRunning({
+				retranslation: {
+					job_id: 'job-1',
+					status: 'completed',
+					total: 3,
+					processed: 3,
+					succeeded: 3,
+					failed: 0,
 				},
 			}),
 		).toBe(false);

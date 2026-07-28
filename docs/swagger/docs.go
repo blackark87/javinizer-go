@@ -1898,7 +1898,7 @@ const docTemplate = `{
         },
         "/api/v1/batch/{id}/retranslate": {
             "post": {
-                "description": "Retranslates retained title and description sources with the configured LLM and second-pass JAV reviewer. Recoverable translation failures are marked completed. Available before organization.",
+                "description": "Starts a background retranslation of retained title and description sources with the configured LLM and second-pass JAV reviewer. Recoverable translation failures are marked completed. Progress is exposed on the batch job response. Available before organization.",
                 "produces": [
                     "application/json"
                 ],
@@ -1916,8 +1916,8 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "202": {
+                        "description": "Accepted",
                         "schema": {
                             "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchRetranslateResponse"
                         }
@@ -1936,6 +1936,12 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
                         }
@@ -5051,6 +5057,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchFileResult"
                     }
                 },
+                "retranslation": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchRetranslateResponse"
+                },
                 "reverted_count": {
                     "type": "integer"
                 },
@@ -5152,6 +5161,12 @@ const docTemplate = `{
                 "job_id": {
                     "type": "string"
                 },
+                "processed": {
+                    "type": "integer"
+                },
+                "status": {
+                    "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchRetranslateStatus"
+                },
                 "succeeded": {
                     "type": "integer"
                 },
@@ -5159,6 +5174,21 @@ const docTemplate = `{
                     "type": "integer"
                 }
             }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.BatchRetranslateStatus": {
+            "type": "string",
+            "enum": [
+                "running",
+                "completed",
+                "cancelled",
+                "failed"
+            ],
+            "x-enum-varnames": [
+                "BatchRetranslateStatusRunning",
+                "BatchRetranslateStatusCompleted",
+                "BatchRetranslateStatusCancelled",
+                "BatchRetranslateStatusFailed"
+            ]
         },
         "github_com_javinizer_javinizer-go_internal_api_contracts.BatchScrapeRequest": {
             "type": "object",

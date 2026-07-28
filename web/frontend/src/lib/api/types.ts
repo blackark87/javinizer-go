@@ -193,7 +193,9 @@ export interface BatchRetranslateError {
 
 export interface BatchRetranslateResponse {
 	job_id: string;
+	status: 'running' | 'completed' | 'cancelled' | 'failed';
 	total: number;
+	processed: number;
 	succeeded: number;
 	failed: number;
 	errors?: BatchRetranslateError[];
@@ -334,6 +336,7 @@ export interface BatchJobResponse {
 	operation_mode_override?: string;
 	update: boolean;
 	persist_error?: string;
+	retranslation?: BatchRetranslateResponse;
 }
 
 export interface ProgressMessage {

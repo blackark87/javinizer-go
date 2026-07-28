@@ -81,6 +81,7 @@ type BatchJobResponse struct {
 	OperationModeOverride operationmode.OperationMode `json:"operation_mode_override,omitempty"`
 	Update                bool                        `json:"update"`
 	PersistError          string                      `json:"persist_error,omitempty"`
+	Retranslation         *BatchRetranslateResponse   `json:"retranslation,omitempty"`
 }
 
 // BatchJobResponseSlim is a lightweight batch job status response without movie Data.
@@ -100,6 +101,7 @@ type BatchJobResponseSlim struct {
 	OperationModeOverride operationmode.OperationMode     `json:"operation_mode_override,omitempty"`
 	Update                bool                            `json:"update"`
 	PersistError          string                          `json:"persist_error,omitempty"`
+	Retranslation         *BatchRetranslateResponse       `json:"retranslation,omitempty"`
 }
 
 // BatchJobListResponse represents a paginated list of batch jobs.

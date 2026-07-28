@@ -28,3 +28,9 @@ export function canRetranslateBatchJob(
 		(job.completed > 0 || countTranslationFailures(job) > 0)
 	);
 }
+
+export function isBatchRetranslationRunning(
+	job: Pick<BatchJobResponse, 'retranslation'>,
+): boolean {
+	return job.retranslation?.status === 'running';
+}

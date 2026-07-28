@@ -275,6 +275,8 @@ definitions:
         additionalProperties:
           $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchFileResult'
         type: object
+      retranslation:
+        $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchRetranslateResponse'
       reverted_count:
         type: integer
       started_at:
@@ -346,11 +348,27 @@ definitions:
         type: integer
       job_id:
         type: string
+      processed:
+        type: integer
+      status:
+        $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchRetranslateStatus'
       succeeded:
         type: integer
       total:
         type: integer
     type: object
+  github_com_javinizer_javinizer-go_internal_api_contracts.BatchRetranslateStatus:
+    enum:
+    - running
+    - completed
+    - cancelled
+    - failed
+    type: string
+    x-enum-varnames:
+    - BatchRetranslateStatusRunning
+    - BatchRetranslateStatusCompleted
+    - BatchRetranslateStatusCancelled
+    - BatchRetranslateStatusFailed
   github_com_javinizer_javinizer-go_internal_api_contracts.BatchScrapeRequest:
     properties:
       array_strategy:
@@ -4790,9 +4808,10 @@ paths:
       - web
   /api/v1/batch/{id}/retranslate:
     post:
-      description: Retranslates retained title and description sources with the configured
-        LLM and second-pass JAV reviewer. Recoverable translation failures are marked
-        completed. Available before organization.
+      description: Starts a background retranslation of retained title and description
+        sources with the configured LLM and second-pass JAV reviewer. Recoverable
+        translation failures are marked completed. Progress is exposed on the batch
+        job response. Available before organization.
       parameters:
       - description: Job ID
         in: path
@@ -4802,8 +4821,8 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "202":
+          description: Accepted
           schema:
             $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchRetranslateResponse'
         "400":
@@ -4816,6 +4835,10 @@ paths:
             $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse'
         "409":
           description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse'
+        "503":
+          description: Service Unavailable
           schema:
             $ref: '#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse'
       summary: Retranslate all identified movies in a completed batch job

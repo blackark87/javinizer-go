@@ -48,7 +48,11 @@ type metadataResponse struct {
 	Title            string               `json:"title"`
 	Description      string               `json:"description"`
 	ReleaseDate      *string              `json:"release_date"`
+	Director         string               `json:"director"`
+	Maker            string               `json:"maker"`
+	Label            string               `json:"label"`
 	Actresses        []models.ActressInfo `json:"actresses"`
+	Genres           []string             `json:"genres"`
 	PosterURL        string               `json:"poster_url"`
 	CoverURL         string               `json:"cover_url"`
 	ScreenshotURLs   []string             `json:"screenshot_urls"`
@@ -202,7 +206,11 @@ func (s *scraper) mapResponse(requestedCode string, payload metadataResponse) (*
 		OriginalTitle:    title,
 		Description:      strings.TrimSpace(payload.Description),
 		ReleaseDate:      releaseDate,
+		Director:         strings.TrimSpace(payload.Director),
+		Maker:            strings.TrimSpace(payload.Maker),
+		Label:            strings.TrimSpace(payload.Label),
 		Actresses:        payload.Actresses,
+		Genres:           payload.Genres,
 		PosterURL:        posterURL,
 		CoverURL:         coverURL,
 		ShouldCropPoster: payload.ShouldCropPoster,

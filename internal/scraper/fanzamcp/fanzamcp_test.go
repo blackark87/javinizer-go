@@ -31,6 +31,10 @@ func TestSearch_MapsMetadataAndMedia(t *testing.T) {
 			"original_title":"ignored provider original title",
 			"description":"API description",
 			"release_date":"2026-07-07",
+			"actresses":[
+				{"dmm_id":123456,"first_name":"","last_name":"","japanese_name":"宮下玲奈","reading":"","thumb_url":""},
+				{"dmm_id":789012,"first_name":"","last_name":"","japanese_name":"森日向子","reading":"","thumb_url":""}
+			],
 			"poster_url":%q,
 			"cover_url":%q,
 			"screenshot_urls":[%q,%q],
@@ -69,6 +73,11 @@ func TestSearch_MapsMetadataAndMedia(t *testing.T) {
 	assert.Equal(t, "API description", result.Description)
 	require.NotNil(t, result.ReleaseDate)
 	assert.Equal(t, "2026-07-07", result.ReleaseDate.Format("2006-01-02"))
+	require.Len(t, result.Actresses, 2)
+	assert.Equal(t, 123456, result.Actresses[0].DMMID)
+	assert.Equal(t, "宮下玲奈", result.Actresses[0].JapaneseName)
+	assert.Equal(t, 789012, result.Actresses[1].DMMID)
+	assert.Equal(t, "森日向子", result.Actresses[1].JapaneseName)
 	assert.Equal(t, server.URL+"/api/v1/media/ABC-001/poster", result.PosterURL)
 	assert.Equal(t, server.URL+"/api/v1/media/ABC-001/cover", result.CoverURL)
 	assert.Equal(t, []string{
@@ -92,6 +101,9 @@ func TestSearch_MapsMetadataAndMedia(t *testing.T) {
 	assert.Equal(t, "abc00001", movie.ContentID)
 	assert.Equal(t, "API title", movie.Title)
 	assert.Equal(t, "API description", movie.Description)
+	require.Len(t, movie.Actresses, 2)
+	assert.Equal(t, 123456, movie.Actresses[0].DMMID)
+	assert.Equal(t, "宮下玲奈", movie.Actresses[0].JapaneseName)
 	assert.Equal(t, server.URL+"/api/v1/media/ABC-001/poster", movie.Poster.PosterURL)
 }
 
@@ -107,6 +119,7 @@ func TestSearch_AllowsEmptyOptionalFields(t *testing.T) {
 			"title":"VR title",
 			"description":"",
 			"release_date":null,
+			"actresses":[],
 			"poster_url":%q,
 			"cover_url":"",
 			"screenshot_urls":[],
@@ -122,6 +135,7 @@ func TestSearch_AllowsEmptyOptionalFields(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, result.Description)
 	assert.Nil(t, result.ReleaseDate)
+	assert.Empty(t, result.Actresses)
 	assert.Empty(t, result.CoverURL)
 	assert.Empty(t, result.ScreenshotURL)
 	assert.Empty(t, result.TrailerURL)

@@ -40,19 +40,20 @@ type scraper struct {
 }
 
 type metadataResponse struct {
-	Source           string   `json:"source"`
-	SourceURL        string   `json:"source_url"`
-	Language         string   `json:"language"`
-	ID               string   `json:"id"`
-	ContentID        string   `json:"content_id"`
-	Title            string   `json:"title"`
-	Description      string   `json:"description"`
-	ReleaseDate      *string  `json:"release_date"`
-	PosterURL        string   `json:"poster_url"`
-	CoverURL         string   `json:"cover_url"`
-	ScreenshotURLs   []string `json:"screenshot_urls"`
-	TrailerURL       string   `json:"trailer_url"`
-	ShouldCropPoster bool     `json:"should_crop_poster"`
+	Source           string               `json:"source"`
+	SourceURL        string               `json:"source_url"`
+	Language         string               `json:"language"`
+	ID               string               `json:"id"`
+	ContentID        string               `json:"content_id"`
+	Title            string               `json:"title"`
+	Description      string               `json:"description"`
+	ReleaseDate      *string              `json:"release_date"`
+	Actresses        []models.ActressInfo `json:"actresses"`
+	PosterURL        string               `json:"poster_url"`
+	CoverURL         string               `json:"cover_url"`
+	ScreenshotURLs   []string             `json:"screenshot_urls"`
+	TrailerURL       string               `json:"trailer_url"`
+	ShouldCropPoster bool                 `json:"should_crop_poster"`
 }
 
 func newScraper(settings *models.ScraperSettings) *scraper {
@@ -201,6 +202,7 @@ func (s *scraper) mapResponse(requestedCode string, payload metadataResponse) (*
 		OriginalTitle:    title,
 		Description:      strings.TrimSpace(payload.Description),
 		ReleaseDate:      releaseDate,
+		Actresses:        payload.Actresses,
 		PosterURL:        posterURL,
 		CoverURL:         coverURL,
 		ShouldCropPoster: payload.ShouldCropPoster,

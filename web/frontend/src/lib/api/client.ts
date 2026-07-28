@@ -178,6 +178,9 @@ class APIClient {
 	) {
 		return this.jobs.reviewBatchMovieTranslation(jobId, resultId, request);
 	}
+	async retranslateBatchJob(jobId: string) {
+		return this.jobs.retranslateBatchJob(jobId);
+	}
 	async excludeBatchMovie(jobId: string, resultId: string) {
 		return this.jobs.excludeBatchMovie(jobId, resultId);
 	}

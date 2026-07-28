@@ -1896,6 +1896,53 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/batch/{id}/retranslate": {
+            "post": {
+                "description": "Retranslates retained title and description sources with the configured LLM and second-pass JAV reviewer. Recoverable translation failures are marked completed. Available before organization.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "web"
+                ],
+                "summary": "Retranslate all identified movies in a completed batch job",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Job ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchRetranslateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/batch/{id}/update": {
             "post": {
                 "description": "Generate NFOs and download media files in place without moving video files",
@@ -5079,6 +5126,40 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.BatchRetranslateError": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "movie_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_javinizer_javinizer-go_internal_api_contracts.BatchRetranslateResponse": {
+            "type": "object",
+            "properties": {
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.BatchRetranslateError"
+                    }
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "job_id": {
+                    "type": "string"
+                },
+                "succeeded": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "github_com_javinizer_javinizer-go_internal_api_contracts.BatchScrapeRequest": {
             "type": "object",
             "required": [
@@ -6718,6 +6799,9 @@ const docTemplate = `{
                 },
                 "movie": {
                     "$ref": "#/definitions/github_com_javinizer_javinizer-go_internal_api_contracts.MovieView"
+                },
+                "recovered": {
+                    "type": "boolean"
                 }
             }
         },

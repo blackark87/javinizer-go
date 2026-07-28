@@ -44,6 +44,7 @@ import {
 import equal from 'fast-deep-equal';
 import { calculateCompleteness, type CompletenessTier } from '$lib/utils/completeness';
 import { nextOrganizeProgress } from '$lib/utils/job-progress';
+import { isTranslationFailure } from '$lib/utils/translation-failure';
 import { createReviewMutations } from './review-mutations.svelte';
 
 interface MovieGroup {
@@ -193,7 +194,7 @@ export function createReviewState(pageStore: Page) {
 					const allResults = (
 						Object.values((job as BatchJobResponse).results) as FileResult[]
 					).filter((r) => {
-						if (r.status !== 'completed' || !r.movie) {
+						if ((r.status !== 'completed' && !isTranslationFailure(r)) || !r.movie) {
 							return false;
 						}
 						if (excluded[r.file_path]) {
@@ -204,7 +205,7 @@ export function createReviewState(pageStore: Page) {
 
 					const grouped = new Map<string, FileResult[]>();
 					for (const result of allResults) {
-						const movieId = result.movie_id;
+						const movieId = result.movie_id || result.movie?.id || result.result_id;
 						if (!grouped.has(movieId)) {
 							grouped.set(movieId, []);
 						}
@@ -214,7 +215,7 @@ export function createReviewState(pageStore: Page) {
 					return Array.from(grouped.entries()).map(([movieId, results]) => ({
 						movieId,
 						results,
-						primaryResult: results[0],
+						primaryResult: results.find(isTranslationFailure) ?? results[0],
 					}));
 				})()
 			: [],

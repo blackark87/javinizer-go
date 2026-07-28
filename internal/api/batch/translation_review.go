@@ -9,6 +9,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/api/contracts"
 	"github.com/javinizer/javinizer-go/internal/api/core"
 	"github.com/javinizer/javinizer-go/internal/api/translationreview"
+	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/worker"
 )
@@ -54,6 +55,10 @@ func reviewBatchMovieTranslation(rt *core.APIRuntime) gin.HandlerFunc {
 			c.JSON(http.StatusConflict, contracts.ErrorResponse{Error: "translation review is only available before organization"})
 			return
 		}
+		if isBatchRetranslationRunning(jobID) {
+			c.JSON(http.StatusConflict, contracts.ErrorResponse{Error: "job retranslation is already running"})
+			return
+		}
 
 		result, filePath, found := job.GetFileResultByResultID(resultID)
 		if !found || result == nil || result.Movie == nil {
@@ -69,6 +74,11 @@ func reviewBatchMovieTranslation(rt *core.APIRuntime) gin.HandlerFunc {
 		}
 		if provider != "openai" && provider != "openai-compatible" {
 			c.JSON(http.StatusBadRequest, contracts.ErrorResponse{Error: fmt.Sprintf("translation review requires an OpenAI chat provider, got %s", provider)})
+			return
+		}
+
+		if worker.IsTranslationFailure(result) {
+			reviewTranslationFailure(c, rt, jobID, resultID, filePath, job, result, tc)
 			return
 		}
 
@@ -113,6 +123,96 @@ func reviewBatchMovieTranslation(rt *core.APIRuntime) gin.HandlerFunc {
 		rt.Deps().GetJobStore().PersistJobByID(jobID)
 		c.JSON(http.StatusOK, contracts.TranslationReviewResponse{Movie: contracts.MovieViewFromModel(updated.Movie), Changed: true})
 	}
+}
+
+func reviewTranslationFailure(
+	c *gin.Context,
+	rt *core.APIRuntime,
+	jobID string,
+	resultID string,
+	filePath string,
+	job worker.BatchJobInterface,
+	result *worker.MovieResult,
+	tc config.TranslationConfig,
+) {
+	titleSource := retainedJapaneseField(job.GetProvenance(filePath), result.Movie, "title")
+	descriptionSource := retainedJapaneseField(job.GetProvenance(filePath), result.Movie, "description")
+	if strings.TrimSpace(descriptionSource) == "" {
+		descriptionSource = result.Movie.Description
+	}
+	reviewed, err := translationreview.ReviewMovie(
+		c.Request.Context(),
+		tc,
+		titleSource,
+		descriptionSource,
+		result.Movie.Actresses,
+	)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, contracts.ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	changed := strings.TrimSpace(result.Movie.Title) != strings.TrimSpace(reviewed.Title.Value)
+	targets := job.GetMovieResultsForMovieID(result.FileMatchInfo.MovieID)
+	if len(targets) == 0 {
+		targets = []*worker.MovieResult{result}
+	}
+	var updated *worker.MovieResult
+	for _, target := range targets {
+		if target == nil || target.Movie == nil {
+			continue
+		}
+		if target.Status != models.JobStatusCompleted && !worker.IsTranslationFailure(target) {
+			continue
+		}
+		targetUpdated, applyErr := job.ApplyTranslationReview(
+			c.Request.Context(),
+			target.ResultID,
+			"title",
+			reviewed.Title.Value,
+			reviewed.Title.TargetLanguage,
+		)
+		if applyErr != nil {
+			c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: applyErr.Error()})
+			return
+		}
+		if reviewed.Description != nil {
+			if strings.TrimSpace(result.Movie.Description) != strings.TrimSpace(reviewed.Description.Value) {
+				changed = true
+			}
+			targetUpdated, applyErr = job.ApplyTranslationReview(
+				c.Request.Context(),
+				target.ResultID,
+				"description",
+				reviewed.Description.Value,
+				reviewed.Description.TargetLanguage,
+			)
+			if applyErr != nil {
+				c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: applyErr.Error()})
+				return
+			}
+		}
+		if worker.IsTranslationFailure(target) {
+			targetUpdated, applyErr = job.ResolveTranslationFailure(target.ResultID)
+			if applyErr != nil {
+				c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: applyErr.Error()})
+				return
+			}
+		}
+		if target.ResultID == resultID {
+			updated = targetUpdated
+		}
+	}
+	if updated == nil {
+		c.JSON(http.StatusInternalServerError, contracts.ErrorResponse{Error: "reviewed result was not updated"})
+		return
+	}
+	rt.Deps().GetJobStore().PersistJobByID(jobID)
+	c.JSON(http.StatusOK, contracts.TranslationReviewResponse{
+		Movie:     contracts.MovieViewFromModel(updated.Movie),
+		Changed:   changed,
+		Recovered: true,
+	})
 }
 
 func reviewedFieldValue(movie *models.Movie, field string) string {

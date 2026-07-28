@@ -183,6 +183,20 @@ export interface TranslationReviewRequest {
 export interface TranslationReviewResponse {
 	movie: Movie;
 	changed: boolean;
+	recovered?: boolean;
+}
+
+export interface BatchRetranslateError {
+	movie_id: string;
+	error: string;
+}
+
+export interface BatchRetranslateResponse {
+	job_id: string;
+	total: number;
+	succeeded: number;
+	failed: number;
+	errors?: BatchRetranslateError[];
 }
 
 export interface BatchRescrapeRequest {

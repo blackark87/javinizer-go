@@ -21,7 +21,7 @@
 	import RescrapeModal from './components/RescrapeModal.svelte';
 	import BulkRescrapeProgress from './components/BulkRescrapeProgress.svelte';
 	import SourceViewerModal from './components/SourceViewerModal.svelte';
-	import type { ScraperOutcome, ScraperResult } from '$lib/api/types';
+	import type { FileResult, ScraperOutcome, ScraperResult } from '$lib/api/types';
 	import SourceFilesCard from './components/SourceFilesCard.svelte';
 	import UnidentifiedFilesCard from './components/UnidentifiedFilesCard.svelte';
 	import { createReviewState } from './stores/review-state.svelte';
@@ -104,6 +104,19 @@
 		} finally {
 			retranslatingField = null;
 		}
+	}
+
+	function handleEditFailedMetadata(result: FileResult) {
+		const index = s.movieGroups.findIndex((group) =>
+			group.results.some(
+				(candidate) =>
+					candidate.result_id === result.result_id ||
+					candidate.file_path === result.file_path,
+			),
+		);
+		if (index < 0) return;
+		s.currentMovieIndex = index;
+		activeTab = 'movies';
 	}
 </script>
 
@@ -398,6 +411,7 @@
 						<UnidentifiedFilesCard
 							failedResults={s.failedResults}
 							onSearchManually={s.openRescrapeModalForFailed}
+							onEditMetadata={handleEditFailedMetadata}
 						/>
 						<div class="text-center">
 							<Button onclick={() => goto('/browse')}>

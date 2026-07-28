@@ -286,4 +286,7 @@ func (s *stubControlledJob) ApplyFieldOverride(context.Context, string, string, 
 func (s *stubControlledJob) ApplyTranslationReview(context.Context, string, string, string, string) (*worker.MovieResult, error) {
 	return nil, nil
 }
+func (s *stubControlledJob) ResolveTranslationFailure(string) (*worker.MovieResult, error) {
+	return nil, nil
+}
 func (s *stubControlledJob) GetProvenance(string) *worker.ProvenanceData { return nil }

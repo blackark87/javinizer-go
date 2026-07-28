@@ -198,6 +198,10 @@ type JobEditor interface {
 	// ApplyTranslationReview stores a user-requested second-pass correction for
 	// title or description and refreshes derived display-title metadata.
 	ApplyTranslationReview(ctx context.Context, resultID, fieldKey, value, targetLanguage string) (*MovieResult, error)
+
+	// ResolveTranslationFailure marks a recoverable translation-stage failure
+	// completed after its retained metadata has been translated successfully.
+	ResolveTranslationFailure(resultID string) (*MovieResult, error)
 }
 
 // PhaseController provides phase execution and dependency-wiring operations
@@ -586,6 +590,32 @@ func (je *jobEditorImpl) ApplyTranslationReview(ctx context.Context, resultID, f
 	}
 	if err := je.UpdateMovie(ctx, filePath, movie); err != nil {
 		return nil, fmt.Errorf("persist translation review: %w", err)
+	}
+	updated, _, _ := je.tracker.GetFileResultByResultID(resultID)
+	return updated, nil
+}
+
+func (je *jobEditorImpl) ResolveTranslationFailure(resultID string) (*MovieResult, error) {
+	mu, _ := je.overrideMu.LoadOrStore(resultID, &sync.Mutex{})
+	mu.(*sync.Mutex).Lock()
+	defer mu.(*sync.Mutex).Unlock()
+
+	_, filePath, found := je.tracker.GetFileResultByResultID(resultID)
+	if !found {
+		return nil, fmt.Errorf("result %s not found", resultID)
+	}
+	if err := je.updater.AtomicUpdateFileResult(filePath, func(current *MovieResult) (*MovieResult, error) {
+		if !IsTranslationFailure(current) {
+			return nil, fmt.Errorf("result %s is not a recoverable translation failure", resultID)
+		}
+		current.Status = models.JobStatusCompleted
+		current.Error = ""
+		current.TranslationWarning = nil
+		ended := time.Now()
+		current.EndedAt = &ended
+		return current, nil
+	}); err != nil {
+		return nil, err
 	}
 	updated, _, _ := je.tracker.GetFileResultByResultID(resultID)
 	return updated, nil

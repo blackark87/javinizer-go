@@ -17,6 +17,7 @@
 		FolderOpen,
 		Trash2,
 		Eye,
+		Languages,
 		Undo2,
 		Timer
 	} from 'lucide-svelte';
@@ -28,6 +29,10 @@
 	import { toastStore } from '$lib/stores/toast';
 	import { createBatchJobsQuery, createConfigQuery } from '$lib/query/queries';
 	import type { BatchJobResponse, FileResult } from '$lib/api/types';
+	import {
+		canRetranslateBatchJob,
+		countTranslationFailures,
+	} from '$lib/utils/translation-failure';
 
 	const queryClient = useQueryClient();
 
@@ -45,6 +50,7 @@
 	let olderThanDays = $state(30);
 	let isCleaningHistory = $state(false);
 	let isCleaningEvents = $state(false);
+	let retranslatingJobId = $state('');
 
 	// Reactive per-job poster error state — reset when the job list changes
 	// so a refreshed (same-URL) poster re-fetches instead of staying hidden
@@ -186,6 +192,31 @@
 			toastStore.error(`Failed to clean events: ${e instanceof Error ? e.message : 'Unknown error'}`);
 		} finally {
 			isCleaningEvents = false;
+		}
+	}
+
+	async function retranslateJob(jobId: string) {
+		if (retranslatingJobId) return;
+		retranslatingJobId = jobId;
+		try {
+			const result = await apiClient.retranslateBatchJob(jobId);
+			if (result.failed === 0) {
+				toastStore.success(
+					`Re-translated ${result.succeeded} movie${result.succeeded !== 1 ? 's' : ''}`,
+				);
+			} else {
+				toastStore.warning(
+					`Re-translated ${result.succeeded} of ${result.total} movies. ${result.failed} failed.`,
+				);
+			}
+			void queryClient.invalidateQueries({ queryKey: ['batch-jobs'] });
+			void queryClient.invalidateQueries({ queryKey: ['batch-job', jobId] });
+		} catch (e) {
+			toastStore.error(
+				`Re-translation failed: ${e instanceof Error ? e.message : 'Unknown error'}`,
+			);
+		} finally {
+			retranslatingJobId = '';
 		}
 	}
 
@@ -376,6 +407,8 @@
 					{#each paginatedJobs as job, index (job.id)}
 						{@const statusConfig = getStatusConfig(job.status)}
 						{@const poster = getFirstPoster(job)}
+						{@const translationFailed = countTranslationFailures(job)}
+						{@const otherFailed = Math.max(0, job.failed - translationFailed)}
 						<div
 							in:fly={{ y: 10, duration: 200, delay: Math.min(index * 30, 150) }}
 							class="group"
@@ -417,8 +450,11 @@
 											{#if job.completed > 0}
 												<span class="text-green-600">{job.completed} done</span>
 											{/if}
-											{#if job.failed > 0}
-												<span class="text-red-500">{job.failed} failed</span>
+											{#if translationFailed > 0}
+												<span class="text-amber-600">{translationFailed} translation failed</span>
+											{/if}
+											{#if otherFailed > 0}
+												<span class="text-red-500">{otherFailed} failed</span>
 											{/if}
 											<span>{formatDate(job.started_at)}</span>
 										</div>
@@ -445,9 +481,26 @@
 												View
 											</Button>
 										{:else if job.status.toLowerCase() === 'completed'}
-											{#if job.completed > 0}
-												<Button variant="default" size="sm" onclick={() => goto(`/review/${job.id}`)}>
+											{#if canRetranslateBatchJob(job)}
+												<Button
+													variant="default"
+													size="sm"
+													onclick={() => goto(`/review/${job.id}`)}
+													disabled={retranslatingJobId === job.id}
+												>
 													Review & Organize
+												</Button>
+											{/if}
+											{#if canRetranslateBatchJob(job)}
+												<Button
+													variant="outline"
+													size="sm"
+													onclick={() => retranslateJob(job.id)}
+													disabled={retranslatingJobId !== ''}
+													title="Re-translate identified movies from retained source metadata"
+												>
+													<Languages class="h-4 w-4 mr-1 {retranslatingJobId === job.id ? 'animate-pulse' : ''}" />
+													{retranslatingJobId === job.id ? 'Re-translating...' : 'Re-translate'}
 												</Button>
 											{/if}
 											{#if job.failed > 0}

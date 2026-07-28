@@ -33,6 +33,7 @@ import type {
 	FieldOverrideResponse,
 	TranslationReviewRequest,
 	TranslationReviewResponse,
+	BatchRetranslateResponse,
 } from '../types';
 import { BaseClient } from './common';
 
@@ -129,6 +130,12 @@ export class JobClient extends BaseClient {
 				body: JSON.stringify(request),
 			},
 		);
+	}
+
+	async retranslateBatchJob(jobId: string): Promise<BatchRetranslateResponse> {
+		return this.request<BatchRetranslateResponse>(`/api/v1/batch/${jobId}/retranslate`, {
+			method: 'POST',
+		});
 	}
 
 	async excludeBatchMovie(jobId: string, resultId: string): Promise<{ message: string }> {

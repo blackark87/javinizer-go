@@ -94,6 +94,10 @@ func organizeJob(rt *core.APIRuntime) gin.HandlerFunc {
 		if err != nil {
 			return
 		}
+		if isBatchRetranslationRunning(job.GetID()) {
+			c.JSON(http.StatusConflict, contracts.ErrorResponse{Error: "job retranslation is running"})
+			return
+		}
 
 		factory := snap.BatchJobFactory()
 		if factory == nil {

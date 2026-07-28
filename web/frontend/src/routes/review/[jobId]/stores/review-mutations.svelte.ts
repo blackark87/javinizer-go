@@ -426,7 +426,12 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 				for (const [filePath, result] of Object.entries(updatedJob.results)) {
 					const current = result as FileResult;
 					if (current.result_id !== resultId) continue;
-					updatedJob.results[filePath] = { ...current, movie: data.movie };
+					updatedJob.results[filePath] = {
+						...current,
+						movie: data.movie,
+						status: data.recovered ? 'completed' : current.status,
+						error: data.recovered ? undefined : current.error,
+					};
 				}
 				deps.skipJobSync();
 				deps.setJob(updatedJob);
@@ -435,11 +440,18 @@ export function createReviewMutations(deps: ReviewMutationsDeps) {
 				for (const [filePath, movie] of editedMovies) {
 					if (currentJob.results?.[filePath]?.result_id !== resultId) continue;
 					const merged = { ...movie };
-					overlayFieldOverride(merged, field, data.movie);
+					if (data.recovered) {
+						overlayFieldOverride(merged, 'title', data.movie);
+						overlayFieldOverride(merged, 'description', data.movie);
+					} else {
+						overlayFieldOverride(merged, field, data.movie);
+					}
 					editedMovies.set(filePath, merged);
 				}
 			}
-			if (data.changed) {
+			if (data.recovered) {
+				deps.toastSuccess('Translation failure recovered');
+			} else if (data.changed) {
 				deps.toastSuccess(`${field === 'title' ? 'Title' : 'Description'} retranslated`);
 			} else {
 				deps.toastSuccess(`${field === 'title' ? 'Title' : 'Description'}: no changes`);

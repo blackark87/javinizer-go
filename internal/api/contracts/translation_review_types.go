@@ -7,6 +7,7 @@ type TranslationReviewRequest struct {
 
 // TranslationReviewResponse returns the movie and whether the reviewed value changed.
 type TranslationReviewResponse struct {
-	Movie   *MovieView `json:"movie"`
-	Changed bool       `json:"changed"`
+	Movie     *MovieView `json:"movie"`
+	Changed   bool       `json:"changed"`
+	Recovered bool       `json:"recovered,omitempty"`
 }

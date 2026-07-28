@@ -1,5 +1,11 @@
 # Repository Guidelines
 
+## Communication Tone
+
+- 사용자와 친구처럼 말하거나 반말을 사용하지 않는다. `"응"`, `"기억해"` 같은 지나치게 친근한 표현을 피한다.
+- 모든 사용자 응답은 정중한 한국어 존댓말로 작성하고, 친절하고 차분하며 배려 있는 전문가적 어조를 유지한다.
+- 오류나 불확실성을 설명할 때에는 간결하게 인정하고, 확인된 근거와 다음 조치를 명확하게 제시한다.
+
 ## Project Structure & Module Organization
 
 The Go application lives in `cmd/javinizer/`, with supporting commands in `cmd/coveragecheck/`. Core packages are grouped by responsibility under `internal/` (for example, `api`, `database`, `scraper`, and `worker`). Keep package tests beside implementation files as `*_test.go`; shared fixtures belong in `testdata/` or a package-level `testdata/` directory. The SvelteKit frontend is in `web/frontend/src/`, with Vitest tests near source and Playwright scenarios in `web/frontend/tests/e2e/`. Generated Swagger output is under `docs/swagger/`; configuration examples are in `configs/`.

@@ -9,13 +9,14 @@ func boolPtr(b bool) *bool { return &b }
 func NewTestScraperConfigResolverInterface() models.ScraperConfigResolverInterface {
 	return &staticTestConfigResolver{
 		registered: map[string]bool{
-			"r18dev": true, "dmm": true, "libredmm": true, "mgstage": true,
+			"r18dev": true, "fanzamcp": true, "dmm": true, "libredmm": true, "mgstage": true,
 			"javlibrary": true, "javdb": true, "javbus": true, "jav321": true,
 			"tokyohot": true, "aventertainment": true, "dlgetchu": true,
 			"caribbeancom": true, "fc2": true, "javstash": true,
 		},
 		defaults: map[string]models.ScraperSettings{
 			"r18dev":          {Enabled: true, Language: "en", UserAgent: DefaultUserAgent, RespectRetryAfter: boolPtr(true)},
+			"fanzamcp":        {Enabled: false, BaseURL: "http://fanza-mcp:8000", Timeout: 30},
 			"dmm":             {Enabled: false},
 			"libredmm":        {Enabled: false, RateLimit: 1000, BaseURL: "https://www.libredmm.com"},
 			"mgstage":         {Enabled: false, RateLimit: 1000},
@@ -31,7 +32,7 @@ func NewTestScraperConfigResolverInterface() models.ScraperConfigResolverInterfa
 			"javstash":        {Enabled: false, Language: "en", RateLimit: 1000, BaseURL: "https://javstash.org/graphql"},
 		},
 		priorities: map[string]int{
-			"r18dev": 100, "libredmm": 95, "dmm": 90, "javlibrary": 80,
+			"r18dev": 100, "fanzamcp": 98, "libredmm": 95, "dmm": 90, "javlibrary": 80,
 			"javdb": 75, "javbus": 70, "jav321": 65, "mgstage": 55,
 			"tokyohot": 50, "aventertainment": 45, "caribbeancom": 40,
 			"dlgetchu": 40, "fc2": 35, "javstash": 10,

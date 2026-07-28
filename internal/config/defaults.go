@@ -95,7 +95,7 @@ Aにシュートを決める -> 성적 JAV 문맥: A에게 한 발 쏘다. A가 
 // getFirstScraperPriorityStatic() and DefaultConfig to set rating_source to
 // "dmm" despite the example documenting "r18dev".
 var defaultScraperPriority = []string{
-	"r18dev", "libredmm", "dmm", "javlibrary",
+	"r18dev", "fanzamcp", "libredmm", "dmm", "javlibrary",
 	"javdb", "javbus", "jav321", "mgstage", "tokyohot", "aventertainment",
 	"caribbeancom", "dlgetchu", "fc2", "paipancon", "123av", "javstash",
 }

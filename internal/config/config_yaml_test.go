@@ -10,6 +10,7 @@ import (
 	_ "github.com/javinizer/javinizer-go/internal/scraper/caribbeancom"
 	_ "github.com/javinizer/javinizer-go/internal/scraper/dlgetchu"
 	_ "github.com/javinizer/javinizer-go/internal/scraper/dmm"
+	_ "github.com/javinizer/javinizer-go/internal/scraper/fanzamcp"
 	_ "github.com/javinizer/javinizer-go/internal/scraper/fc2"
 	_ "github.com/javinizer/javinizer-go/internal/scraper/jav321"
 	_ "github.com/javinizer/javinizer-go/internal/scraper/javbus"
@@ -35,7 +36,7 @@ func TestConfigYAMLLoadAndRoundTrip(t *testing.T) {
 		t.Error("Scrapers.Priority should not be empty")
 	}
 
-	expectedScrapers := []string{"r18dev", "sougouwiki", "dmm", "mgstage", "javlibrary", "javdb", "javbus", "jav321", "tokyohot", "aventertainment", "dlgetchu", "libredmm", "caribbeancom", "fc2", "paipancon", "123av", "javstash"}
+	expectedScrapers := []string{"r18dev", "fanzamcp", "sougouwiki", "dmm", "mgstage", "javlibrary", "javdb", "javbus", "jav321", "tokyohot", "aventertainment", "dlgetchu", "libredmm", "caribbeancom", "fc2", "paipancon", "123av", "javstash"}
 	for _, scraper := range expectedScrapers {
 		if _, ok := cfg.Scrapers.Overrides[scraper]; !ok {
 			t.Errorf("Scraper %q not found in Overrides", scraper)
@@ -63,6 +64,15 @@ func TestConfigYAMLLoadAndRoundTrip(t *testing.T) {
 		if _, ok := reloaded.Scrapers.Overrides[scraper]; !ok {
 			t.Errorf("Scraper %q not found in Overrides after round-trip", scraper)
 		}
+	}
+
+	fanzaMCP := reloaded.Scrapers.Overrides["fanzamcp"]
+	if fanzaMCP == nil {
+		t.Fatal("fanzamcp config is nil after round-trip")
+	}
+	if fanzaMCP.Enabled || fanzaMCP.BaseURL != "http://fanza-mcp:8000" ||
+		fanzaMCP.RateLimit != 0 || fanzaMCP.Timeout != 30 {
+		t.Errorf("unexpected fanzamcp config after round-trip: %#v", fanzaMCP)
 	}
 }
 

@@ -1,6 +1,7 @@
 // Package scraper serves as the container directory for individual source scraper plugin
-// implementations — one sub-package per website (r18dev, dmm, javbus, javlibrary, javdb,
-// mgstage, fc2, jav321, javstash, aventertainment, caribbeancom, dlgetchu, libredmm, tokyohot).
+// implementations — one sub-package per provider (r18dev, fanzamcp, dmm, javbus, javlibrary,
+// javdb, mgstage, fc2, jav321, javstash, aventertainment, caribbeancom, dlgetchu, libredmm,
+// tokyohot).
 // Each sub-package implements the models.Scraper interface and self-registers into the
 // scraperutil.ScraperRegistry via init() using the scraperutil module pattern.
 //

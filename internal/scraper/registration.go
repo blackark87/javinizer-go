@@ -5,6 +5,7 @@ import (
 	"github.com/javinizer/javinizer-go/internal/scraper/caribbeancom"
 	"github.com/javinizer/javinizer-go/internal/scraper/dlgetchu"
 	"github.com/javinizer/javinizer-go/internal/scraper/dmm"
+	"github.com/javinizer/javinizer-go/internal/scraper/fanzamcp"
 	"github.com/javinizer/javinizer-go/internal/scraper/fc2"
 	"github.com/javinizer/javinizer-go/internal/scraper/jav321"
 	"github.com/javinizer/javinizer-go/internal/scraper/javbus"
@@ -24,6 +25,7 @@ import (
 // RegisterAll registers every built-in scraper with the given registrar.
 func RegisterAll(reg scraperutil.ScraperRegistrar) {
 	r18dev.Register(reg)
+	fanzamcp.Register(reg)
 	dmm.Register(reg)
 	javlibrary.Register(reg)
 	javdb.Register(reg)

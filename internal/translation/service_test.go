@@ -168,6 +168,36 @@ func TestBuildLLMTranslationPrompts_FC2PPV1891491Rule(t *testing.T) {
 	assert.NotContains(t, unrelatedPrompt, "スジパイパン")
 }
 
+func TestBuildLLMTranslationPrompts_FC2PPV3118661ProperNouns(t *testing.T) {
+	source := "【神回】まさにガーシーの世界!!西麻布の会員制ラウンジ"
+	_, userPrompt, err := buildLLMTranslationPromptsWithMarkers(
+		"ja",
+		"ko",
+		[]string{source},
+		[]string{"<<<title>>>"},
+	)
+	require.NoError(t, err)
+
+	assert.Contains(t, userPrompt, "ガーシー→가십")
+	assert.Contains(t, userPrompt, "금지: 가시/Garsy/GaaSyy/원문에 없는 라틴 별칭 병기")
+	assert.Contains(t, userPrompt, "西麻布→니시아자부")
+	assert.Contains(t, userPrompt, "금지: 니시아부/니시아부파")
+}
+
+func TestBuildLLMTranslationPrompts_STCV153KnuckleHandjob(t *testing.T) {
+	source := "見逃し三振してまうほどの最かわマ●ン女子が登場！！《ナックル手コキ》でカリ集中責め→3本のバット連続ヌキ"
+	_, userPrompt, err := buildLLMTranslationPromptsWithMarkers(
+		"ja",
+		"ko",
+		[]string{source},
+		[]string{"<<<title>>>"},
+	)
+	require.NoError(t, err)
+
+	assert.Contains(t, userPrompt, "《ナックル手コキ》でカリ集中責め→《손가락 대딸》로 귀두 테두리 집중 공략")
+	assert.Contains(t, userPrompt, "금지: 너클 대딸/손가락 마디를 이용한 대딸/클리 집중 공략")
+}
+
 func TestBuildLLMTranslationPrompts_JAC024Rule(t *testing.T) {
 	source := "ギャルしべ長者【中出しギャル×数珠つなぎ紹介】13 極選エロギャル3名245分"
 	_, userPrompt, err := buildLLMTranslationPromptsWithMarkers(

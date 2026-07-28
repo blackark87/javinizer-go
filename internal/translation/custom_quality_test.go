@@ -100,6 +100,8 @@ func TestKoreanJAVPromptUsesNaturalMiluchioAndVirilityTerms(t *testing.T) {
 func TestKoreanJAVPromptDoesNotTransliterateShigoki(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
 	assert.Contains(t, rules, "手コキ/ハンドジョブ/handjob→대딸")
+	assert.Contains(t, rules, "ナックル手コキ→손가락 대딸")
+	assert.Contains(t, rules, "금지: 너클 대딸/손가락 마디를 이용한 대딸")
 	assert.Contains(t, rules, "금지: 핸드잡")
 	assert.NotContains(t, rules, "→핸드잡")
 	assert.Contains(t, rules, "シゴく/シゴき→손으로 흔들다|대딸|뽑아주다")

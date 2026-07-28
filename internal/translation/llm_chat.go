@@ -309,6 +309,10 @@ func koreanBatchPromptConstraints(targetLang string, sources []string) string {
 	hasCleanupFellatio := false
 	hasBeakerReinjection := false
 	hasPetiteMankoPierced := false
+	hasGaasyy := false
+	hasNishiAzabu := false
+	hasKnuckleHandjob := false
+	hasKnuckleHandjobKariAttack := false
 	jac024TailRule := ""
 	for _, source := range sources {
 		if strings.Contains(source, "逆レ") ||
@@ -363,6 +367,18 @@ func koreanBatchPromptConstraints(targetLang string, sources []string) string {
 		}
 		if strings.Contains(source, "小柄マンコ貫かれ") {
 			hasPetiteMankoPierced = true
+		}
+		if strings.Contains(source, "ガーシー") {
+			hasGaasyy = true
+		}
+		if strings.Contains(source, "西麻布") {
+			hasNishiAzabu = true
+		}
+		if strings.Contains(source, "ナックル手コキ") {
+			hasKnuckleHandjob = true
+		}
+		if strings.Contains(source, "《ナックル手コキ》でカリ集中責め") {
+			hasKnuckleHandjobKariAttack = true
 		}
 		if match := jac024TailPromptPattern.FindStringSubmatch(source); len(match) == 3 {
 			jac024TailRule = fmt.Sprintf(
@@ -419,6 +435,17 @@ func koreanBatchPromptConstraints(targetLang string, sources []string) string {
 	}
 	if hasPetiteMankoPierced {
 		termChecks = append(termChecks, "HIGHEST PRIORITY exact phrase: 小柄マンコ貫かれ→아담한 그녀의 보지가 꿰뚫리고; copy verbatim, 금지: 작은 보지/아담한 보지가")
+	}
+	if hasGaasyy {
+		termChecks = append(termChecks, "ガーシー→가십, 금지: 가시/Garsy/GaaSyy/원문에 없는 라틴 별칭 병기")
+	}
+	if hasNishiAzabu {
+		termChecks = append(termChecks, "西麻布→니시아자부, 금지: 니시아부/니시아부파")
+	}
+	if hasKnuckleHandjobKariAttack {
+		termChecks = append(termChecks, "HIGHEST PRIORITY exact phrase: 《ナックル手コキ》でカリ集中責め→《손가락 대딸》로 귀두 테두리 집중 공략; copy verbatim, 금지: 너클 대딸/손가락 마디를 이용한 대딸/클리 집중 공략")
+	} else if hasKnuckleHandjob {
+		termChecks = append(termChecks, "ナックル手コキ→손가락 대딸, 금지: 너클 대딸/손가락 마디를 이용한 대딸")
 	}
 	if jac024TailRule != "" {
 		termChecks = append(termChecks, jac024TailRule)

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/javinizer/javinizer-go/internal/aggregator"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -58,7 +59,7 @@ func TestSearch_MapsMetadataAndMedia(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.Equal(t, "fanza-mcp", result.Source)
+	assert.Equal(t, "fanzamcp", result.Source)
 	assert.Equal(t, "https://www.dmm.co.jp/digital/videoa/-/detail/=/cid=abc00001/", result.SourceURL)
 	assert.Equal(t, "ja", result.Language)
 	assert.Equal(t, "ABC-001", result.ID)
@@ -76,6 +77,22 @@ func TestSearch_MapsMetadataAndMedia(t *testing.T) {
 	}, result.ScreenshotURL)
 	assert.Equal(t, server.URL+"/api/v1/media/ABC-001/trailer", result.TrailerURL)
 	assert.False(t, result.ShouldCropPoster)
+
+	agg := aggregator.New(&aggregator.Config{
+		ScrapersPriority: []string{scraperName},
+		Metadata:         &aggregator.MetadataConfig{},
+	}, nil, nil, nil)
+	movie, _, err := agg.AggregateWithPriority(
+		[]*models.ScraperResult{result},
+		[]string{scraperName},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, movie)
+	assert.Equal(t, "ABC-001", movie.ID)
+	assert.Equal(t, "abc00001", movie.ContentID)
+	assert.Equal(t, "API title", movie.Title)
+	assert.Equal(t, "API description", movie.Description)
+	assert.Equal(t, server.URL+"/api/v1/media/ABC-001/poster", movie.Poster.PosterURL)
 }
 
 func TestSearch_AllowsEmptyOptionalFields(t *testing.T) {
@@ -121,6 +138,15 @@ func TestSearch_ClassifiesHTTPAndPayloadFailures(t *testing.T) {
 		{name: "not found", status: http.StatusNotFound, body: `{"error":"missing"}`, wantKind: models.ScraperErrorKindNotFound},
 		{name: "server error", status: http.StatusBadGateway, body: `{"error":"upstream"}`, wantKind: models.ScraperErrorKindUnavailable},
 		{name: "invalid JSON", status: http.StatusOK, body: `{"source":`, wantContain: "parse FANZA MCP metadata response"},
+		{
+			name:   "unexpected source",
+			status: http.StatusOK,
+			body: `{
+				"source":"other","id":"ABC-001","title":"title",
+				"poster_url":"POSTER_URL"
+			}`,
+			wantContain: "unexpected source",
+		},
 		{
 			name:   "invalid date",
 			status: http.StatusOK,

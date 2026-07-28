@@ -18,6 +18,7 @@ import (
 
 const (
 	scraperName           = "fanzamcp"
+	apiSourceName         = "fanza-mcp"
 	displayName           = "FANZA MCP"
 	defaultBaseURL        = "http://fanza-mcp:8000"
 	defaultTimeoutSeconds = 30
@@ -138,8 +139,12 @@ func (s *scraper) mapResponse(requestedCode string, payload metadataResponse) (*
 	if !ok || responseCode != requestedCode {
 		return nil, fmt.Errorf("FANZA MCP returned mismatched product code %q for %s", payload.ID, requestedCode)
 	}
-	if strings.TrimSpace(payload.Source) == "" {
+	source := strings.TrimSpace(payload.Source)
+	if source == "" {
 		return nil, fmt.Errorf("FANZA MCP response is missing source")
+	}
+	if source != apiSourceName {
+		return nil, fmt.Errorf("FANZA MCP returned unexpected source %q", payload.Source)
 	}
 	if strings.TrimSpace(payload.Title) == "" {
 		return nil, fmt.Errorf("FANZA MCP response is missing title")
@@ -184,7 +189,10 @@ func (s *scraper) mapResponse(requestedCode string, payload metadataResponse) (*
 
 	title := strings.TrimSpace(payload.Title)
 	return &models.ScraperResult{
-		Source:           strings.TrimSpace(payload.Source),
+		// The API contract uses "fanza-mcp", while scraper priorities and
+		// configuration use "fanzamcp". Normalize at the adapter boundary so
+		// the aggregator can match this result to the selected scraper.
+		Source:           scraperName,
 		SourceURL:        strings.TrimSpace(payload.SourceURL),
 		Language:         strings.TrimSpace(payload.Language),
 		ID:               strings.TrimSpace(payload.ID),

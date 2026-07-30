@@ -380,7 +380,7 @@ func TestKoreanJAVPromptCoversERK091FC2AndSIRO5432(t *testing.T) {
 	for _, expected := range []string{
 		"あゆちゃん→아유짱",
 		"≠아미유짱",
-		"性癖→성벽",
+		"性癖→성적 취향|성적 취향별",
 		"居酒屋に誘う→이자카야에 가자고 하다",
 		"グビグビ→벌컥벌컥",
 		"責めても、責められても→애무해도, 애무받아도",
@@ -400,11 +400,71 @@ func TestKoreanJAVPromptCoversERK091FC2AndSIRO5432(t *testing.T) {
 		assert.Contains(t, rules, expected)
 	}
 	assert.NotContains(t, rules, "オホ声→오호 신음")
-	assert.NotContains(t, rules, "性癖→성적 취향")
+	assert.NotContains(t, rules, "性癖→성벽")
 	assert.NotContains(t, rules, "→첫 분수 경험까지 빼앗은 모양")
 	assert.NotContains(t, rules, "→첫 분수까지 따먹은 듯")
 	assert.NotContains(t, rules, "거칠게 박아 격렬하게 가버리고 마구 쏟아내는 섹스")
 	assert.Less(t, utf8.RuneCountInString(rules), 12000)
+}
+
+func TestKoreanJAVPromptCoversFinalTranslationReviewFeedback(t *testing.T) {
+	rules := koreanJAVPromptRules("ko")
+	for _, expected := range []string{
+		"即尺→바로 펠라로 빼주기|바로 빨기",
+		"never add insertion",
+		"Translate through the final source character",
+		"never stop at a series/episode number",
+		"Preserve numbers,counters,units,suffixes",
+		"Never corrupt correct Korean",
+		"性癖→성적 취향|성적 취향별",
+	} {
+		assert.Contains(t, rules, expected)
+	}
+	assert.NotContains(t, rules, "性癖→성벽")
+}
+
+func TestBuildLLMPrompts_AddsFinalTranslationReviewSourceRules(t *testing.T) {
+	sources := []string{
+		"鬼エグストロングファッキン",
+		"【モ無】パジャマdeおじゃま 即尺フェラ抜き 18禁",
+		"性癖射精ダービー カウントダウンパーティー 時の静寂",
+		"都月るいさ 森沢かな 美甘りか 有賀みなほ 新村あかり",
+		"ずぽずぽ 勃起チ○ポをいきなりアナルに突っ込まれ 串刺しJ○痴● まいさん エチエチSEX計3発射 超エロい 盗撮 メンエス嬢 競泳水着 美翔女",
+	}
+	_, userPrompt, err := buildLLMTranslationPromptsWithMarkers(
+		"ja",
+		"ko",
+		sources,
+		[]string{"<<<title[0]>>>", "<<<title[1]>>>", "<<<title[2]>>>", "<<<actress[0]>>>", "<<<description[0]>>>"},
+	)
+	require.NoError(t, err)
+
+	for _, expected := range []string{
+		"鬼エグストロングファッキン→극강의 스트롱 퍽킹",
+		"パジャマdeおじゃま→파자마 입고 실례할게요",
+		"即尺フェラ抜き→바로 펠라로 빼주기",
+		"18禁→18금",
+		"性癖射精ダービー→성적 취향별 사정 더비",
+		"カウントダウンパーティー→카운트다운 파티",
+		"時の静寂→시간의 정지",
+		"都月るいさ reading とつきるいさ→토츠키 루이사",
+		"森沢かな reading もりさわかな→모리사와 카나",
+		"美甘りか reading みあまりか→미아마 리카",
+		"有賀みなほ reading ありがみなほ→아리가 미나호",
+		"新村あかり reading にいむらあかり→니이무라 아카리",
+		"sexual ずぽずぽ→푹푹 박다",
+		"침입자가 발기한 자지를 갑자기 애널에 쑤셔 넣자",
+		"串刺しJ○痴●→꼬치처럼 꿰뚫리는 여고생 치한",
+		"まいさん→마이 씨",
+		"エチエチSEX計3発射→야한 섹스, 총 3회 사정",
+		"超エロい→엄청 야한",
+		"盗撮→몰래 촬영|몰카",
+		"メンエス嬢→남성 전용 에스테틱 관리사",
+		"競泳水着→경기용 수영복",
+		"美翔女→미소녀",
+	} {
+		assert.Contains(t, userPrompt, expected)
+	}
 }
 
 func TestKoreanJAVPromptCoversLatestProductionMistranslations(t *testing.T) {

@@ -72,14 +72,16 @@ type stepCompletion struct {
 // partial Steps AND a non-nil error — callers should check result != nil even
 // when err != nil. FailedStep identifies which step failed programmatically.
 type ApplyResult struct {
-	OrganizeResult *organizer.OrganizeResult
-	Movie          *models.Movie
-	DownloadPaths  []string
-	NFOPath        string
-	FoundNFOPath   string
-	Merged         bool
-	OperationID    string         // From RevertLog.Begin, for correlating with the revert record
-	Steps          stepCompletion // Per-step completion tracking
+	OrganizeResult       *organizer.OrganizeResult
+	Movie                *models.Movie
+	DownloadPaths        []string
+	ReusedMetadataMoves  []models.FileMove
+	ReusedMetadataCopies []string
+	NFOPath              string
+	FoundNFOPath         string
+	Merged               bool
+	OperationID          string         // From RevertLog.Begin, for correlating with the revert record
+	Steps                stepCompletion // Per-step completion tracking
 
 	// FailedStep is the step that caused the error (e.g. "organize", "download",
 	// "nfo_generation"). Empty on success. callers can identify

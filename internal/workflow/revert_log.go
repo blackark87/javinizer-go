@@ -235,6 +235,28 @@ func buildGeneratedFilesJSON(logger logging.Logger, nfoPath string, subtitleMove
 	return string(data)
 }
 
+func buildApplyGeneratedFilesJSON(logger logging.Logger, result *ApplyResult, subtitleMoves []models.SubtitleMove) string {
+	if result == nil {
+		return ""
+	}
+
+	allMoves := make([]models.SubtitleMove, 0, len(subtitleMoves)+len(result.ReusedMetadataMoves))
+	allMoves = append(allMoves, subtitleMoves...)
+	for _, move := range result.ReusedMetadataMoves {
+		allMoves = append(allMoves, models.SubtitleMove{
+			OriginalPath: move.OriginalPath,
+			NewPath:      move.NewPath,
+			Moved:        true,
+		})
+	}
+
+	deletePaths := make([]string, 0, len(result.DownloadPaths)+len(result.ReusedMetadataCopies))
+	deletePaths = append(deletePaths, result.DownloadPaths...)
+	deletePaths = append(deletePaths, result.ReusedMetadataCopies...)
+
+	return buildGeneratedFilesJSON(logger, result.NFOPath, allMoves, deletePaths)
+}
+
 func updatePostOrganize(op *models.BatchFileOperation, newPath string, inPlaceRenamed bool, originalDirPath string, generatedFilesJSON string) {
 	op.NewPath = newPath
 	op.InPlaceRenamed = inPlaceRenamed
@@ -388,7 +410,7 @@ func (l *dbRevertLog) Complete(ctx context.Context, opID OperationID, result *Ap
 		}
 	}
 
-	generatedFilesJSON := buildGeneratedFilesJSON(resolveLogger(l.logger), result.NFOPath, subtitles, result.DownloadPaths)
+	generatedFilesJSON := buildApplyGeneratedFilesJSON(resolveLogger(l.logger), result, subtitles)
 
 	if result.FoundNFOPath != "" {
 		preRecord.NFOPath = result.FoundNFOPath
@@ -453,7 +475,7 @@ func (l *dbRevertLog) CompleteFailed(ctx context.Context, opID OperationID, resu
 			sourceDir = result.OrganizeResult.OldDirectoryPath
 		}
 	}
-	generatedFilesJSON := buildGeneratedFilesJSON(resolveLogger(l.logger), result.NFOPath, subtitles, result.DownloadPaths)
+	generatedFilesJSON := buildApplyGeneratedFilesJSON(resolveLogger(l.logger), result, subtitles)
 	if result.FoundNFOPath != "" {
 		preRecord.NFOPath = result.FoundNFOPath
 	}

@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/downloader"
@@ -150,15 +151,17 @@ func (o *applyOrchImpl) Execute(ctx context.Context, cmd ApplyCmd, progress scra
 		o.completeRevertLogWithState(ctx, opID, state)
 		return onStepFailResult{
 			result: &ApplyResult{
-				OrganizeResult: state.organizeResult,
-				Movie:          state.movie,
-				DownloadPaths:  state.downloadPaths,
-				NFOPath:        state.nfoPath,
-				FoundNFOPath:   state.foundNFOPath,
-				Merged:         state.merged,
-				OperationID:    opID,
-				Steps:          stepsSoFar,
-				FailedStep:     stepName,
+				OrganizeResult:       state.organizeResult,
+				Movie:                state.movie,
+				DownloadPaths:        state.downloadPaths,
+				ReusedMetadataMoves:  state.reusedMetadataMoves,
+				ReusedMetadataCopies: state.reusedMetadataCopies,
+				NFOPath:              state.nfoPath,
+				FoundNFOPath:         state.foundNFOPath,
+				Merged:               state.merged,
+				OperationID:          opID,
+				Steps:                stepsSoFar,
+				FailedStep:           stepName,
 			},
 			err: fmt.Errorf("%s failed: %w", failMsg, stepErr),
 		}
@@ -233,14 +236,16 @@ func (o *applyOrchImpl) Execute(ctx context.Context, cmd ApplyCmd, progress scra
 	// Step 6: Complete revert log AFTER all filesystem mutations succeed.
 	if o.revertLog != nil && opID != "" {
 		applyResult := &ApplyResult{
-			OrganizeResult: state.organizeResult,
-			Movie:          state.movie,
-			DownloadPaths:  state.downloadPaths,
-			NFOPath:        state.nfoPath,
-			FoundNFOPath:   state.foundNFOPath,
-			Merged:         state.merged,
-			OperationID:    opID,
-			Steps:          steps,
+			OrganizeResult:       state.organizeResult,
+			Movie:                state.movie,
+			DownloadPaths:        state.downloadPaths,
+			ReusedMetadataMoves:  state.reusedMetadataMoves,
+			ReusedMetadataCopies: state.reusedMetadataCopies,
+			NFOPath:              state.nfoPath,
+			FoundNFOPath:         state.foundNFOPath,
+			Merged:               state.merged,
+			OperationID:          opID,
+			Steps:                steps,
 		}
 		if completeErr := o.revertLog.Complete(ctx, opID, applyResult); completeErr != nil {
 			resolveLogger(o.logger).Warnf("[workflow] RevertLog.Complete failed for %s: %v (apply still succeeded)", cmd.Movie.ID, completeErr)
@@ -251,14 +256,16 @@ func (o *applyOrchImpl) Execute(ctx context.Context, cmd ApplyCmd, progress scra
 		progress(scrape.ProgressStepApply, 1.0, "Completed")
 	}
 	return &ApplyResult{
-		OrganizeResult: state.organizeResult,
-		Movie:          state.movie,
-		DownloadPaths:  state.downloadPaths,
-		NFOPath:        state.nfoPath,
-		FoundNFOPath:   state.foundNFOPath,
-		Merged:         state.merged,
-		OperationID:    opID,
-		Steps:          steps,
+		OrganizeResult:       state.organizeResult,
+		Movie:                state.movie,
+		DownloadPaths:        state.downloadPaths,
+		ReusedMetadataMoves:  state.reusedMetadataMoves,
+		ReusedMetadataCopies: state.reusedMetadataCopies,
+		NFOPath:              state.nfoPath,
+		FoundNFOPath:         state.foundNFOPath,
+		Merged:               state.merged,
+		OperationID:          opID,
+		Steps:                steps,
 	}, nil
 }
 
@@ -328,6 +335,8 @@ func (o *applyOrchImpl) stepDisplayTitle(ctx context.Context, cmd ApplyCmd, stat
 
 // stepDownload downloads cover, poster, trailer, and extrafanart media.
 func (o *applyOrchImpl) stepDownload(ctx context.Context, cmd ApplyCmd, state *applyPipelineState, steps *stepCompletion) error {
+	o.reuseExistingMetadata(ctx, cmd, state)
+
 	downloadEnabled := cmd.Download && !cmd.DryRun
 	if !downloadEnabled || o.downloader == nil {
 		return nil
@@ -368,6 +377,62 @@ func (o *applyOrchImpl) stepDownload(ctx context.Context, cmd ApplyCmd, state *a
 	state.downloadPaths = outcome.DownloadedPaths
 	steps.Downloaded = true
 	return nil
+}
+
+func (o *applyOrchImpl) reuseExistingMetadata(ctx context.Context, cmd ApplyCmd, state *applyPipelineState) {
+	if cmd.DryRun || o.downloader == nil || state.organizeResult == nil ||
+		!state.organizeResult.ShouldGenerateMetadata || state.finalDir == "" {
+		return
+	}
+
+	reuser, ok := o.downloader.(downloader.ExistingMetadataReuser)
+	if !ok {
+		return
+	}
+
+	sourceDir := filepath.Dir(cmd.Match.Path)
+	if filepath.Clean(sourceDir) == filepath.Clean(state.finalDir) {
+		return
+	}
+
+	var multipart *downloader.MultipartInfo
+	if cmd.Match.IsMultiPart {
+		multipart = &downloader.MultipartInfo{
+			IsMultiPart: true,
+			PartNumber:  cmd.Match.PartNumber,
+			PartSuffix:  cmd.Match.PartSuffix,
+		}
+	}
+
+	results := reuser.ReuseExistingMetadata(ctx, downloader.ReuseExistingMetadataCmd{
+		Movie:      state.movie,
+		SourceDir:  sourceDir,
+		TargetDir:  state.finalDir,
+		SourcePath: cmd.Match.Path,
+		Multipart:  multipart,
+		MoveFiles:  cmd.Organize.MoveFiles,
+	})
+	for _, result := range results {
+		if result.Error != nil {
+			resolveLogger(o.logger).Warnf(
+				"[workflow] Failed to reuse %s metadata for %s from %s: %v",
+				result.Type,
+				state.movie.ID,
+				result.OriginalPath,
+				result.Error,
+			)
+			continue
+		}
+		if result.Moved {
+			state.reusedMetadataMoves = append(state.reusedMetadataMoves, models.FileMove{
+				OriginalPath: result.OriginalPath,
+				NewPath:      result.NewPath,
+			})
+		}
+		if result.Copied {
+			state.reusedMetadataCopies = append(state.reusedMetadataCopies, result.NewPath)
+		}
+	}
 }
 
 func resolveApplyVideoPath(sourcePath string, organizeResult *organizer.OrganizeResult) string {
@@ -424,14 +489,16 @@ func (o *applyOrchImpl) stepNFO(ctx context.Context, cmd ApplyCmd, state *applyP
 // applyPipelineState holds mutable state shared across the apply pipeline steps.
 // Steps mutate this via closure — eliminating the need for per-step return value plumbing.
 type applyPipelineState struct {
-	movie          *models.Movie
-	targetDir      string
-	finalDir       string
-	organizeResult *organizer.OrganizeResult
-	merged         bool
-	foundNFOPath   string
-	downloadPaths  []string
-	nfoPath        string
+	movie                *models.Movie
+	targetDir            string
+	finalDir             string
+	organizeResult       *organizer.OrganizeResult
+	merged               bool
+	foundNFOPath         string
+	downloadPaths        []string
+	reusedMetadataMoves  []models.FileMove
+	reusedMetadataCopies []string
+	nfoPath              string
 }
 
 // completeRevertLogWithState marks an in-progress revert operation as failed,
@@ -443,14 +510,16 @@ type applyPipelineState struct {
 func (o *applyOrchImpl) completeRevertLogWithState(ctx context.Context, opID OperationID, state *applyPipelineState) {
 	if o.revertLog != nil && opID != "" {
 		partial := &ApplyResult{
-			OrganizeResult: state.organizeResult,
-			Movie:          state.movie,
-			DownloadPaths:  state.downloadPaths,
-			NFOPath:        state.nfoPath,
-			FoundNFOPath:   state.foundNFOPath,
-			Merged:         state.merged,
-			OperationID:    opID,
-			Steps:          stepCompletion{},
+			OrganizeResult:       state.organizeResult,
+			Movie:                state.movie,
+			DownloadPaths:        state.downloadPaths,
+			ReusedMetadataMoves:  state.reusedMetadataMoves,
+			ReusedMetadataCopies: state.reusedMetadataCopies,
+			NFOPath:              state.nfoPath,
+			FoundNFOPath:         state.foundNFOPath,
+			Merged:               state.merged,
+			OperationID:          opID,
+			Steps:                stepCompletion{},
 		}
 		if completeErr := o.revertLog.CompleteFailed(ctx, opID, partial); completeErr != nil {
 			resolveLogger(o.logger).Warnf("[workflow] RevertLog.CompleteFailed error for %s: %v", opID, completeErr)

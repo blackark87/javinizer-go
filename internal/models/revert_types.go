@@ -6,7 +6,7 @@ package models
 // persistence contract — one source of truth.
 type GeneratedFilesJSON struct {
 	Delete   []string   `json:"delete,omitempty"`    // Files to delete on revert (NFO, images, screenshots)
-	MoveBack []FileMove `json:"move_back,omitempty"` // Files to move back on revert (subtitles)
+	MoveBack []FileMove `json:"move_back,omitempty"` // Files to move back on revert (subtitles and reused metadata)
 }
 
 // FileMove represents a file that was moved during organize and should be moved back on revert.

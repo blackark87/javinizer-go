@@ -201,10 +201,11 @@ type applyPhaseInputs struct {
 // performs atomic read-modify-write on the results map under a lock.
 // The ResultMap interface abstracts this so RescrapePhase doesn't need *BatchJob.
 type rescrapePhaseInputs struct {
-	JobID       models.JobID
-	Concurrency concurrencyConfig
-	WF          workflow.WorkflowInterface
-	PosterGen   poster.PosterGenerator
+	JobID            models.JobID
+	Concurrency      concurrencyConfig
+	WF               workflow.WorkflowInterface
+	PosterGen        poster.PosterGenerator
+	QueueActressSync func(context.Context, []uint) error
 
 	// For ScrapeSingle — no job state access needed
 	// For CompleteRescrape — needs result map access + metadata

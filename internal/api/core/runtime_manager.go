@@ -423,7 +423,7 @@ func (s *RuntimeSnapshot) BatchJobFactory() worker.BatchJobFactoryInterface {
 		posterGen,
 		workerBatchCfg,
 		r.deps.EventEmitter,
-		worker.WithActressSyncEnqueuer(r.queueMissingActressTranslations),
+		worker.WithActressSyncEnqueuer(r.QueueMissingActressTranslations),
 	)
 }
 
@@ -565,7 +565,7 @@ func (r *APIRuntime) buildBatchJobFactory() any {
 	// batchCfg) that were not available at JobStore construction time. This
 	// ensures jobs loaded from DB on startup can run apply/rescrape with the
 	// correct BatchCfg (e.g. NFOEnabled) and PosterGen after restart.
-	r.deps.JobStore.SetReconstructionDeps(matcher, posterGen, workerBatchCfg, r.queueMissingActressTranslations)
+	r.deps.JobStore.SetReconstructionDeps(matcher, posterGen, workerBatchCfg, r.QueueMissingActressTranslations)
 
 	return worker.NewBatchJobFactory(
 		r.deps.JobStore,
@@ -574,7 +574,7 @@ func (r *APIRuntime) buildBatchJobFactory() any {
 		posterGen,
 		workerBatchCfg,
 		r.deps.EventEmitter,
-		worker.WithActressSyncEnqueuer(r.queueMissingActressTranslations),
+		worker.WithActressSyncEnqueuer(r.QueueMissingActressTranslations),
 	)
 }
 

@@ -271,6 +271,9 @@ func (c *jobController) setDepsFromConfig(cfg *JobConfig) {
 	if cfg.PosterGen != nil {
 		c.job.deps.PosterGen = cfg.PosterGen
 	}
+	if cfg.QueueActressSync != nil {
+		c.job.deps.QueueActressSync = cfg.QueueActressSync
+	}
 	if cfg.Logger != nil {
 		c.job.deps.Logger = cfg.Logger
 	}
@@ -357,21 +360,23 @@ func (c *jobController) buildRescrapeInputs(wf workflow.WorkflowInterface, batch
 	pg := c.job.deps.PosterGen
 	pfn := c.job.deps.PersistFn
 	tempDir := c.job.cfg.tempDir
+	queueActressSync := c.job.deps.QueueActressSync
 	c.job.mu.RUnlock()
 
 	return rescrapePhaseInputs{
-		JobID:       c.job.ID,
-		Concurrency: newConcurrencyConfig(batchCfg.MaxWorkers, batchCfg.WorkerTimeout, defaultMaxWorkers, defaultWorkerTimeout),
-		WF:          wf,
-		PosterGen:   pg,
-		ResultMap:   c.job.resultIndex,
-		Lifecycle:   c.job.lifecycle,
-		persister:   persistFunc(pfn),
-		Lookup:      c.job.resultIndex,
-		Finder:      c.job.resultIndex,
-		Fs:          c.job.fs,
-		TempDir:     tempDir,
-		FsCaseCache: c.job.fsCaseCache,
+		JobID:            c.job.ID,
+		Concurrency:      newConcurrencyConfig(batchCfg.MaxWorkers, batchCfg.WorkerTimeout, defaultMaxWorkers, defaultWorkerTimeout),
+		WF:               wf,
+		PosterGen:        pg,
+		QueueActressSync: queueActressSync,
+		ResultMap:        c.job.resultIndex,
+		Lifecycle:        c.job.lifecycle,
+		persister:        persistFunc(pfn),
+		Lookup:           c.job.resultIndex,
+		Finder:           c.job.resultIndex,
+		Fs:               c.job.fs,
+		TempDir:          tempDir,
+		FsCaseCache:      c.job.fsCaseCache,
 	}
 }
 

@@ -33,7 +33,9 @@ func (r *APIRuntime) EnsureActressSyncManager() *worker.ActressSyncManager {
 	return r.actressSyncManager
 }
 
-func (r *APIRuntime) queueMissingActressTranslations(ctx context.Context, actressIDs []uint) error {
+// QueueMissingActressTranslations enqueues selected verified actress identities
+// that still lack a configured-language translation.
+func (r *APIRuntime) QueueMissingActressTranslations(ctx context.Context, actressIDs []uint) error {
 	manager := r.EnsureActressSyncManager()
 	if manager == nil {
 		return fmt.Errorf("actress sync manager is unavailable")

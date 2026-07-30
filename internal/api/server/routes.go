@@ -151,6 +151,7 @@ func registerAPIV1Routes(router *gin.Engine, rt *core.APIRuntime) {
 		movie.WithWorkflow(rt.GetWorkflow),
 		movie.WithAllowedDirs(secCfg.AllowedDirectories),
 		movie.WithPosterGen(posterGenForMovie),
+		movie.WithActressSyncEnqueuer(rt.QueueMissingActressTranslations),
 		movie.WithTranslationConfig(func() config.TranslationConfig {
 			return rt.Snapshot().APIConfig().TranslationConfig
 		}),

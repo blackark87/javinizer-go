@@ -27,6 +27,7 @@ type MovieDeps struct {
 	PosterGen           poster.PosterGenerator
 	AllowedDirs         []string
 	TranslationConfigFn TranslationConfigFunc
+	QueueActressSync    func(context.Context, []uint) error
 }
 
 // NewMovieDeps creates a MovieDeps from the given repository and options.
@@ -63,6 +64,12 @@ func WithActressRepository(repo database.ActressRepositoryInterface) MovieDepsOp
 
 func WithTranslationConfig(fn TranslationConfigFunc) MovieDepsOption {
 	return func(d *MovieDeps) { d.TranslationConfigFn = fn }
+}
+
+// WithActressSyncEnqueuer queues translations for DMM-backed current and past
+// activity names discovered by direct scrape and rescrape requests.
+func WithActressSyncEnqueuer(enqueue func(context.Context, []uint) error) MovieDepsOption {
+	return func(d *MovieDeps) { d.QueueActressSync = enqueue }
 }
 
 // getWorkflow returns a workflow instance or nil if unavailable.

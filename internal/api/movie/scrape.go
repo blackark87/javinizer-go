@@ -54,6 +54,7 @@ func scrapeMovie(deps MovieDeps) gin.HandlerFunc {
 			RawInput:         req.ID,
 			ForceRefresh:     req.Force,
 			SelectedScrapers: req.SelectedScrapers,
+			QueueActressSync: deps.QueueActressSync,
 		}
 
 		// Execute scrape via the canonical Workflow seam (ADR-0001)

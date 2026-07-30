@@ -401,10 +401,12 @@ func TestBuildApplyInputs(t *testing.T) {
 
 func TestBuildRescrapeInputs(t *testing.T) {
 	wf := &stubWorkflow{scrapeResult: makeScrapeResult("TEST-001")}
+	queueActressSync := func(context.Context, []uint) error { return nil }
 	job := newBatchJob([]string{"file1.mp4"}, &JobConfig{
 		BatchJobDeps: BatchJobDeps{
-			WF:       wf,
-			BatchCfg: BatchJobConfig{MaxWorkers: 1},
+			WF:               wf,
+			BatchCfg:         BatchJobConfig{MaxWorkers: 1},
+			QueueActressSync: queueActressSync,
 		},
 	})
 
@@ -414,6 +416,8 @@ func TestBuildRescrapeInputs(t *testing.T) {
 	assert.Equal(t, wf, inputs.WF)
 	assert.Equal(t, job.resultIndex, inputs.ResultMap)
 	assert.Equal(t, job.lifecycle, inputs.Lifecycle)
+	require.NotNil(t, inputs.QueueActressSync)
+	require.NoError(t, inputs.QueueActressSync(context.Background(), []uint{41}))
 }
 
 func TestBuildScrapeInputs_DefaultsApplied(t *testing.T) {

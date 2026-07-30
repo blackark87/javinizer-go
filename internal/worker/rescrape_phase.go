@@ -208,6 +208,7 @@ func (p *rescrapePhase) Rescrape(ctx context.Context, inputs rescrapePhaseInputs
 		RawInput:         rawInput,
 		ForceRefresh:     cmd.Force,
 		SelectedScrapers: selectedScrapers,
+		QueueActressSync: inputs.QueueActressSync,
 	}
 
 	// File lookup

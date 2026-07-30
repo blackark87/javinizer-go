@@ -45,6 +45,7 @@ func rescrapeMovie(deps MovieDeps) gin.HandlerFunc {
 			MovieID:          movieID,
 			ForceRefresh:     req.Force,
 			SelectedScrapers: req.SelectedScrapers,
+			QueueActressSync: deps.QueueActressSync,
 		}
 
 		// Execute rescrape via the canonical Workflow seam (ADR-0001)

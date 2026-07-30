@@ -18,16 +18,22 @@ import (
 type stubRescrapeWorkflow struct {
 	scrapeResult *scrape.ScrapeResult
 	scrapeErr    error
+	queueIDs     []uint
 	mu           sync.Mutex
 	scrapeCalled int
 	lastCmd      scrape.ScrapeCmd
 }
 
-func (s *stubRescrapeWorkflow) Scrape(_ context.Context, cmd scrape.ScrapeCmd, _ scrape.ProgressFunc) (*scrape.ScrapeResult, *workflow.OrchestrationMeta, error) {
+func (s *stubRescrapeWorkflow) Scrape(ctx context.Context, cmd scrape.ScrapeCmd, _ scrape.ProgressFunc) (*scrape.ScrapeResult, *workflow.OrchestrationMeta, error) {
 	s.mu.Lock()
 	s.scrapeCalled++
 	s.lastCmd = cmd
 	s.mu.Unlock()
+	if len(s.queueIDs) > 0 && cmd.QueueActressSync != nil {
+		if err := cmd.QueueActressSync(ctx, s.queueIDs); err != nil {
+			return nil, nil, err
+		}
+	}
 	return s.scrapeResult, nil, s.scrapeErr
 }
 
@@ -236,6 +242,38 @@ func TestRescrapePhase_Rescrape_FailedStatusPropagatesVerboseError(t *testing.T)
 		"rescrape failure must surface the scrape package's verbose per-scraper message")
 	assert.Contains(t, result.Error, "fc2")
 	assert.Contains(t, result.Error, "not found on FC2")
+}
+
+func TestRescrapePhase_RescrapeQueuesVerifiedActivityNames(t *testing.T) {
+	wf := &stubRescrapeWorkflow{
+		scrapeResult: &scrape.ScrapeResult{
+			Movie:  &models.Movie{ID: "ALIAS-001"},
+			Status: scrape.StatusCompleted,
+		},
+		queueIDs: []uint{41, 42},
+	}
+	rt := NewResultTracker(1, []string{"alias.mp4"})
+	var queued []uint
+	inputs := rescrapePhaseInputs{
+		WF:        wf,
+		ResultMap: rt,
+		Finder:    rt,
+		JobID:     models.NewJobID(),
+		QueueActressSync: func(_ context.Context, ids []uint) error {
+			queued = append([]uint(nil), ids...)
+			return nil
+		},
+	}
+
+	result, err := NewRescrapePhase().Rescrape(context.Background(), inputs, RescrapeCmd{
+		MovieID:  "ALIAS-001",
+		FilePath: "alias.mp4",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, models.RescrapeStatusSuccess, result.Status)
+	assert.Equal(t, []uint{41, 42}, queued)
 }
 
 func TestRescrapePhase_Rescrape_BackfillsNameAndExtensionOnMapMiss(t *testing.T) {

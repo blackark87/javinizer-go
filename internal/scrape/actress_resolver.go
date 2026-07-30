@@ -454,11 +454,11 @@ func reconcileVerifiedAliasGroups(results []*models.ScraperResult, repo database
 					Reading: alias.Reading,
 				})
 			}
-			aliasIDs, err := resolver.ResolveVerifiedAliasGroup(canonical, aliases)
+			groupIDs, err := resolver.ResolveVerifiedAliasGroup(canonical, aliases)
 			if err != nil {
 				return nil, fmt.Errorf("reconcile actress alias group %q: %w", canonical.JapaneseName, err)
 			}
-			for _, id := range aliasIDs {
+			for _, id := range groupIDs {
 				if id == 0 {
 					continue
 				}

@@ -4,14 +4,30 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/javinizer/javinizer-go/internal/config"
 	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/scraperutil"
+	"github.com/javinizer/javinizer-go/internal/translation"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type hardFailingActressQueueTranslator struct{}
+
+func (*hardFailingActressQueueTranslator) Translate(_ context.Context, _ *models.Movie) (string, bool, *translation.TranslationOutput) {
+	return "", true, nil
+}
+
+func (*hardFailingActressQueueTranslator) TranslateWithOptionsResult(
+	_ context.Context,
+	_ *models.Movie,
+	_ TranslationOptions,
+) (string, bool, *translation.TranslationOutput, error) {
+	return "", true, nil, errors.New("movie translation failed")
+}
 
 func TestReconcileVerifiedActressesSkipsUnverifiedCastEntries(t *testing.T) {
 	fixture := newFixture(t)
@@ -26,6 +42,48 @@ func TestReconcileVerifiedActressesSkipsUnverifiedCastEntries(t *testing.T) {
 	assert.Equal(t, 7001, movie.Actresses[0].DMMID)
 	assert.Equal(t, "미검증 배우", movie.Actresses[1].JapaneseName)
 	assert.Zero(t, movie.Actresses[1].DMMID)
+}
+
+func TestPostProcessScrapedQueuesEveryVerifiedActivityNameBeforeTranslationFailure(t *testing.T) {
+	fixture := newFixture(t)
+	actressRepo := database.NewActressRepository(fixture.db)
+	results := []*models.ScraperResult{{
+		Source: actressResolverScraperName,
+		Actresses: []models.ActressInfo{{
+			DMMID:        1083266,
+			JapaneseName: "星まりあ",
+			AliasIdentities: []models.ActressIdentity{{
+				DMMID:        1061509,
+				JapaneseName: "天音まひな",
+			}},
+		}},
+	}}
+	var queued []uint
+
+	result, err := postProcessScraped(
+		context.Background(),
+		&models.Movie{ID: "TEST-001"},
+		results,
+		nil,
+		&Config{TranslationEnabled: true},
+		&hardFailingActressQueueTranslator{},
+		actressRepo,
+		ScrapeCmd{QueueActressSync: func(_ context.Context, ids []uint) error {
+			queued = append([]uint(nil), ids...)
+			return nil
+		}},
+		time.Now(),
+	)
+
+	require.ErrorContains(t, err, "movie translation failed")
+	assert.Nil(t, result)
+	require.Len(t, queued, 2, "current and past activity names must both be queued")
+
+	canonical, err := actressRepo.FindByDMMID(context.Background(), 1083266)
+	require.NoError(t, err)
+	alias, err := actressRepo.FindByDMMID(context.Background(), 1061509)
+	require.NoError(t, err)
+	assert.Equal(t, []uint{canonical.ID, alias.ID}, queued)
 }
 
 type actressResolverScraper struct {

@@ -30,7 +30,9 @@ type VerifiedActressResolution struct {
 
 // ResolveVerifiedAliasGroup persists separate DMM-backed activity-name rows
 // while linking them as one performer. It deliberately does not merge rows
-// with different positive DMM IDs.
+// with different positive DMM IDs. The returned IDs include both the canonical
+// identity and every resolved past activity name so callers can enqueue every
+// missing translation.
 func (r *ActressRepository) ResolveVerifiedAliasGroup(canonical models.Actress, aliases []models.Actress) ([]uint, error) {
 	canonicalResolution, err := r.ResolveVerifiedProfile(0, canonical, nil, true)
 	if err != nil {
@@ -40,6 +42,7 @@ func (r *ActressRepository) ResolveVerifiedAliasGroup(canonical models.Actress, 
 		return nil, fmt.Errorf("resolve canonical actress alias identity")
 	}
 	canonical = canonicalResolution.Actress
+	resolvedIDs := []uint{canonical.ID}
 
 	resolvedAliases := make([]models.Actress, 0, len(aliases))
 	for _, alias := range aliases {
@@ -55,7 +58,7 @@ func (r *ActressRepository) ResolveVerifiedAliasGroup(canonical models.Actress, 
 		}
 	}
 	if len(resolvedAliases) == 0 {
-		return nil, nil
+		return resolvedIDs, nil
 	}
 
 	err = retryOnLocked(func() error {
@@ -98,11 +101,10 @@ func (r *ActressRepository) ResolveVerifiedAliasGroup(canonical models.Actress, 
 	if err != nil {
 		return nil, err
 	}
-	ids := make([]uint, 0, len(resolvedAliases))
 	for _, alias := range resolvedAliases {
-		ids = append(ids, alias.ID)
+		resolvedIDs = append(resolvedIDs, alias.ID)
 	}
-	return ids, nil
+	return resolvedIDs, nil
 }
 
 // ResolveVerifiedIdentity reconciles a positive DMM identity with existing

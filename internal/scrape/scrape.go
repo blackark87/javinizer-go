@@ -104,6 +104,13 @@ type ScrapeCmd struct {
 	// batch worker uses this to checkpoint raw metadata before its bounded LLM
 	// stage. Single-scrape and rescrape callers leave it false.
 	SkipTranslation bool
+
+	// QueueActressSync enqueues newly persisted DMM-backed activity-name
+	// identities for background translation. Direct scrape and rescrape paths
+	// set this callback because they perform translation inline; invoking it
+	// immediately after alias reconciliation prevents a later movie-translation
+	// failure from stranding the actress records.
+	QueueActressSync func(context.Context, []uint) error
 }
 
 // ScrapeResult holds the output of a scrape operation: the aggregated movie, per-scraper results, field sources, and timing.
@@ -249,6 +256,11 @@ func postProcessScraped(ctx context.Context, scraped *models.Movie, results []*m
 	pendingActressSyncIDs, err := reconcileVerifiedAliasGroups(results, actressRepo)
 	if err != nil {
 		return nil, err
+	}
+	if len(pendingActressSyncIDs) > 0 && cmd.QueueActressSync != nil {
+		if queueErr := cmd.QueueActressSync(ctx, pendingActressSyncIDs); queueErr != nil {
+			logging.Warnf("[scrape] Failed to queue %d verified actress translations: %v", len(pendingActressSyncIDs), queueErr)
+		}
 	}
 	var fieldSources map[string]string
 	var resolvedPriorities map[string][]string

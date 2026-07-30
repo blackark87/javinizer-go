@@ -129,18 +129,18 @@ func TestResolveVerifiedProfilePreservesConflictingManualAliasMapping(t *testing
 func TestResolveVerifiedAliasGroupKeepsDistinctDMMRecordsAndLinksChoices(t *testing.T) {
 	_, actressRepo, _ := newVerifiedActressTestRepos(t)
 
-	aliasIDs, err := actressRepo.ResolveVerifiedAliasGroup(
+	resolvedIDs, err := actressRepo.ResolveVerifiedAliasGroup(
 		models.Actress{DMMID: 1083266, JapaneseName: "星まりあ", FirstName: "마리아", LastName: "호시", ThumbURL: "hoshi.jpg"},
 		[]models.Actress{{DMMID: 1061509, JapaneseName: "天音まひな", FirstName: "마히나", LastName: "아마네", ThumbURL: "amane.jpg"}},
 	)
 	require.NoError(t, err)
-	require.Len(t, aliasIDs, 1)
+	require.Len(t, resolvedIDs, 2)
 
 	canonical, err := actressRepo.FindByDMMID(context.Background(), 1083266)
 	require.NoError(t, err)
 	alias, err := actressRepo.FindByDMMID(context.Background(), 1061509)
 	require.NoError(t, err)
-	assert.Equal(t, []uint{alias.ID}, aliasIDs)
+	assert.Equal(t, []uint{canonical.ID, alias.ID}, resolvedIDs)
 	assert.NotEqual(t, canonical.ID, alias.ID, "different activity-name DMM IDs must never be merged")
 
 	group, err := NewActressAliasRepository(actressRepo.GetDB()).GetAliasGroup(context.Background(), "天音まひな")

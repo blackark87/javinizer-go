@@ -92,6 +92,10 @@ func TestDefaultConfigMatchesExample(t *testing.T) {
 		assert.Equal(t, exampleCfg.Metadata.ActressDatabase.ConvertAlias, defaultCfg.Metadata.ActressDatabase.ConvertAlias, "metadata.actress_database.convert_alias mismatch")
 	})
 
+	t.Run("MetadataConfig_TranslationDictionary", func(t *testing.T) {
+		assert.Equal(t, exampleCfg.Metadata.Translation.Dictionary, defaultCfg.Metadata.Translation.Dictionary, "metadata.translation.dictionary mismatch")
+	})
+
 	t.Run("DatabaseConfig", func(t *testing.T) {
 		assert.Equal(t, exampleCfg.Database.Type, defaultCfg.Database.Type, "database.type mismatch")
 		assert.Equal(t, exampleCfg.Database.LogLevel, defaultCfg.Database.LogLevel, "database.log_level mismatch")

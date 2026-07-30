@@ -753,7 +753,7 @@ func TestBuildLLMTranslationPrompts_AlwaysIncludesCompressedKoreanRules(t *testi
 	} {
 		assert.Contains(t, systemPrompt, expected)
 	}
-	assert.Less(t, utf8.RuneCountInString(systemPrompt), 12500)
+	assert.Less(t, utf8.RuneCountInString(systemPrompt), 15000)
 }
 
 func TestBuildLLMQualityReviewPromptIncludesSourceCandidateAndStrictOutput(t *testing.T) {

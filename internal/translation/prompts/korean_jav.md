@@ -1,4 +1,5 @@
 HIGHEST PRIORITY exact form: ガチ恋営業chu→진심인 척하는 영업 츄. Latin suffix chu is a kiss sound, not Japanese 中 or Korean 중; the final syllable must be 츄. 금지: 영업 중/가치코이/가치코이 영업 중/chu omission.
+Notation: A≠B is a compressed "금지: B" rule; never translate A as B.
 数珠つなぎ→릴레이|연속; たすきリレー/バトンリレー→바통 터치|릴레이; 芋づる式→연쇄|연속; ハシゴ酒→술집 투어|술집 순례; 朝までハシゴ酒→밤새 술집 투어, 금지: 아침까지 하시고주.
 パパ活/Sugar Dating→스폰|조건; 一本釣り→독점 스카우트|길거리 캐스팅; 箱入り/箱入り娘→아가씨|순진녀; 逆指名→여배우의 선택|역지명; 垢抜け→비주얼 업그레이드|세련된; 初々しい→풋풋한|앳된; 玄人/玄人肌→프로|능숙한.
 中出し/Creampie→질내사정; 顔射/Facial→안면사정; ぶっかけ/Bukkake→정액 세례|붓카케; 個撮→개인촬영; ハメ撮り→POV 섹스|셀프 섹스 촬영, 금지: 일반 셀프카메라; 汁男優→사정 전문 남배우.
@@ -18,7 +19,7 @@ sexual-trait prefix ド intensifies: ド痴女→극강의 치녀|지독한 색�
 ジュボジュボ: penis sucking→자지를 질척하게 빨아대다; penis licking→자지를 침 범벅으로 핥아대다; body licking→축축하게 핥아대다; 금지: 쥬보쥬보. aggressive 1発ハメる→한 번 따먹다, 금지: 한 판 박아버리다.
 Japanese sexual sounds must describe action/result with natural Korean action or sound(단 レロレロ→레로레로; penis-sucking ジュルジュル→쥬릅쥬릅|질척하게): ドピュドピュ→연속 사정|정액을 연달아 뿜다; じゅぽじゅぽ/じゅっぽんじゅっぽん/グポグポ/ジュルル→질척하게 빨아대다|입 깊숙이 삼켜 빨아대다; ズボズボ→깊숙이 박히는 피스톤; チュパチュパ/ペロちゅぱ→진하게 빨아대다|핥고 빨아대다. 금지: 도퓨도퓨/쥬폰쥬폰/쥬퓻쥬퓻/쥬포쥬포/쥬르르/즈보즈보/츄파츄파/페로츄파/츄릅츄릅.
 numeral+穴 counts sexual orifices: compressed title→홀, prose→구멍, 금지: 혈/untranslated 穴; 3穴→3홀|세 구멍; 2穴セフレ→2홀 섹파|두 구멍을 내주는 섹파. semen-context ごっくん→정액 삼키기|정액을 삼키다, 금지: 고쿤; ノドマンコ→목구멍; ケツマンコ→후장, 금지: 목구멍 보지/똥보지.
-ストゼロ is Strong Zero→스트롱 제로, 금지: 스트로제로/스트로 제로; 潮吹き→분수|애액 분출|애액을 뿜다, 금지: 스포팅/음차; 限界ストゼロ潮吹きFUCK→스트롱 제로를 마시며 한계까지 분수를 뿜는 섹스.
+ストゼロ is Strong Zero→스트롱 제로, 금지: 스트로제로/스트로 제로; 潮吹き→분수|애액 분출|애액을 뿜다, 금지: 시오후키/스포팅/음차; 限界ストゼロ潮吹きFUCK→스트롱 제로를 마시며 한계까지 분수를 뿜는 섹스.
 イクイク→연속 절정|계속 가버리는; プリプリ尻→탱탱한 엉덩이; デレデレ→푹 빠진|애정 가득한; エロエロ→음란한; sexual チンしゃぶ→펠라|자지를 핥고 빨다, 금지: 자지 샤브샤브.
 sexual おしゃぶり→펠라|자지 빨기, not pacifier unless scene explicitly shows one; 吸引おしゃぶり→빨아들이는 펠라|강하게 빨아대는 펠라, 금지: 흡입 오샤부리.
 鉄マン→강철 보지, 금지: 철맨; マジかよ！？→실화냐?!|말도 안 돼?!; 秘技教本→비법 교본, 금지: 비기 교본.

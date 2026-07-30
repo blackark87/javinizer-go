@@ -2,7 +2,7 @@ package config
 
 import "github.com/javinizer/javinizer-go/internal/models"
 
-const defaultKoreanJAVDictionary = `JAV 문체 -> 성기·성행위·사정 표현은 원문의 노골성을 유지해 보지, 자지, 보빨, 대딸, 박다, 싸다처럼 직설적으로 번역. 소중이, 그곳, 중요 부위 같은 완곡어로 순화하지 않음
+const fallbackKoreanJAVDictionary = `JAV 문체 -> 성기·성행위·사정 표현은 원문의 노골성을 유지해 보지, 자지, 보빨, 대딸, 박다, 싸다처럼 직설적으로 번역. 소중이, 그곳, 중요 부위 같은 완곡어로 순화하지 않음
 문맥 원칙 -> 비성적 일반어를 억지로 음란하게 만들지 않되, 성적 중의어는 JAV 문맥을 우선
 中出し -> 질내사정(제목·장르) / 안에 싸다(거친 대사·서술)
 手コキ / ハンドジョブ / handjob -> 대딸
@@ -151,6 +151,8 @@ Aにシュートを決める -> 성적 JAV 문맥: A에게 한 발 쏘다. A가 
 利き手 -> 주로 쓰는 손 (좌우를 임의로 정하지 않음)
 確変 -> 문맥에 맞게 돌변, 급격한 변화, 야함의 폭주로 의미 번역
 げんえ./き -> げんえき -> 현역`
+
+var defaultKoreanJAVDictionary = koreanJAVDictionaryFromEmbedded(fallbackKoreanJAVDictionary)
 
 // defaultScraperPriority mirrors the priority order documented in
 // configs/config.yaml.example so DefaultConfig(nil, nil) and the embedded

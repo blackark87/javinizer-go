@@ -10,11 +10,14 @@ import (
 func TestKoreanJAVPromptReinforcesHighFrequencyProductionTerms(t *testing.T) {
 	rules := koreanJAVPromptRules("ko")
 	for _, expected := range []string{
+		"Notation: A≠B is a compressed \"금지: B\" rule",
 		"極上→최고|최상급≠극상",
 		"エロい→야한≠에로한",
 		"compounds エロフラグ→에로 플래그,エロテク→에로 테크닉",
 		"生ハメ→노콘",
 		"潮吹き→분수|애액 분출|애액을 뿜다",
+		"금지: 시오후키/스포팅/음차",
+		"夕美しおん→유미 시온≠유우미 시온",
 	} {
 		assert.Contains(t, rules, expected)
 	}

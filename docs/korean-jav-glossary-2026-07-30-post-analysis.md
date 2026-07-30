@@ -1,4 +1,4 @@
-# Korean JAV 번역 용어집
+# Korean JAV 번역 용어집 - 프롬프트 분석 반영본
 
 이 문서는 2026-07-30 프롬프트 분석 피드백 반영 후 설정의 `translation.dictionary`를 그대로 옮긴 읽기용 스냅샷입니다.
 

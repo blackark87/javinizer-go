@@ -46,11 +46,15 @@ type metadataResponse struct {
 	ID               string               `json:"id"`
 	ContentID        string               `json:"content_id"`
 	Title            string               `json:"title"`
+	OriginalTitle    string               `json:"original_title"`
 	Description      string               `json:"description"`
 	ReleaseDate      *string              `json:"release_date"`
+	Runtime          int                  `json:"runtime"`
 	Director         string               `json:"director"`
 	Maker            string               `json:"maker"`
 	Label            string               `json:"label"`
+	Series           string               `json:"series"`
+	Rating           *models.Rating       `json:"rating"`
 	Actresses        []models.ActressInfo `json:"actresses"`
 	Genres           []string             `json:"genres"`
 	PosterURL        string               `json:"poster_url"`
@@ -193,6 +197,10 @@ func (s *scraper) mapResponse(requestedCode string, payload metadataResponse) (*
 	}
 
 	title := strings.TrimSpace(payload.Title)
+	originalTitle := strings.TrimSpace(payload.OriginalTitle)
+	if originalTitle == "" {
+		originalTitle = title
+	}
 	return &models.ScraperResult{
 		// The API contract uses "fanza-mcp", while scraper priorities and
 		// configuration use "fanzamcp". Normalize at the adapter boundary so
@@ -203,12 +211,15 @@ func (s *scraper) mapResponse(requestedCode string, payload metadataResponse) (*
 		ID:               strings.TrimSpace(payload.ID),
 		ContentID:        strings.TrimSpace(payload.ContentID),
 		Title:            title,
-		OriginalTitle:    title,
+		OriginalTitle:    originalTitle,
 		Description:      strings.TrimSpace(payload.Description),
 		ReleaseDate:      releaseDate,
+		Runtime:          payload.Runtime,
 		Director:         strings.TrimSpace(payload.Director),
 		Maker:            strings.TrimSpace(payload.Maker),
 		Label:            strings.TrimSpace(payload.Label),
+		Series:           strings.TrimSpace(payload.Series),
+		Rating:           payload.Rating,
 		Actresses:        payload.Actresses,
 		Genres:           payload.Genres,
 		PosterURL:        posterURL,

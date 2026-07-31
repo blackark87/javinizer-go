@@ -18,6 +18,7 @@ type Config struct {
 	ScrapeActress           bool
 	EarlyStop               bool
 	EarlyStopMinResults     int
+	EarlyStopFields         []string
 	RequiredFields          []string
 	UserAgent               string
 	Referer                 string
@@ -135,7 +136,8 @@ func (a *translationAdapter) TranslateWithOptionsResult(ctx context.Context, mov
 // ConfigFromAppConfig extracts Scrape-relevant fields from the application config.
 //
 // Config-bridge reads: cfg.Scrapers.Priority, cfg.Scrapers.EarlyStop,
-// cfg.Scrapers.EarlyStopMinResults, cfg.Metadata.RequiredFields, cfg.Metadata.Translation.Enabled,
+// cfg.Scrapers.EarlyStopMinResults, cfg.Scrapers.EarlyStopFields, cfg.Metadata.RequiredFields,
+// cfg.Metadata.Translation.Enabled,
 // cfg.Metadata.Translation.TargetLanguage, cfg.Metadata.Translation.SettingsHash(),
 // cfg.Metadata.ActressDatabase.Enabled, cfg.Scrapers.ScrapeActress,
 // cfg.Scrapers.UserAgent, cfg.Scrapers.Referer, cfg.System.TempDir
@@ -151,6 +153,7 @@ func ConfigFromAppConfig(cfg *config.Config) *Config {
 		ScrapeActress:         cfg.Scrapers.ScrapeActress,
 		EarlyStop:             cfg.Scrapers.EarlyStop,
 		EarlyStopMinResults:   cfg.Scrapers.EarlyStopMinResults,
+		EarlyStopFields:       append([]string(nil), cfg.Scrapers.EarlyStopFields...),
 		RequiredFields:        append([]string(nil), cfg.Metadata.RequiredFields...),
 		UserAgent:             cfg.Scrapers.UserAgent,
 		Referer:               cfg.Scrapers.Referer,

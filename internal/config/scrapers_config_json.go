@@ -61,6 +61,10 @@ func (s *ScrapersConfig) UnmarshalJSON(data []byte) error {
 			if err := json.Unmarshal(rawVal, &s.EarlyStopMinResults); err != nil {
 				return fmt.Errorf("early_stop_min_results must be an integer: %w", err)
 			}
+		case "early_stop_fields":
+			if err := json.Unmarshal(rawVal, &s.EarlyStopFields); err != nil {
+				return fmt.Errorf("early_stop_fields must be an array of strings: %w", err)
+			}
 		case "browser":
 			if err := json.Unmarshal(rawVal, &s.Browser); err != nil {
 				return fmt.Errorf("failed to unmarshal browser: %w", err)
@@ -145,6 +149,7 @@ func (s *ScrapersConfig) MarshalJSON() ([]byte, error) {
 	m["scrape_actress"] = s.ScrapeActress
 	m["early_stop"] = s.EarlyStop
 	m["early_stop_min_results"] = s.EarlyStopMinResults
+	m["early_stop_fields"] = s.EarlyStopFields
 	m["browser"] = s.Browser
 
 	for name, settings := range s.Overrides {
@@ -170,6 +175,7 @@ func (s *ScrapersConfig) MarshalYAML() (interface{}, error) {
 	m["scrape_actress"] = s.ScrapeActress
 	m["early_stop"] = s.EarlyStop
 	m["early_stop_min_results"] = s.EarlyStopMinResults
+	m["early_stop_fields"] = s.EarlyStopFields
 	m["browser"] = s.Browser
 
 	for name, settings := range s.Overrides {

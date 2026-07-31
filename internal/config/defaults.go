@@ -225,6 +225,7 @@ func defaultScraperConfig(priorities []string, defaults map[string]*models.Scrap
 		ScrapeActress:       true, // Global scrape_actress default (opt-out behavior)
 		EarlyStop:           false,
 		EarlyStopMinResults: 2,
+		EarlyStopFields:     nil,
 		Browser: models.BrowserConfig{
 			Enabled:      false, // Opt-in
 			BinaryPath:   "",    // Auto-discovered if empty

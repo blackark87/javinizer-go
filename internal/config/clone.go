@@ -56,6 +56,7 @@ func (c *Config) Clone() *Config {
 
 	// Deep-copy Scrapers reference-type fields
 	cp.Scrapers.Priority = cloneStringSlice(c.Scrapers.Priority)
+	cp.Scrapers.EarlyStopFields = cloneStringSlice(c.Scrapers.EarlyStopFields)
 	cp.Scrapers.Proxy.Profiles = maps.Clone(c.Scrapers.Proxy.Profiles)
 	cp.Output.Download.DownloadProxy.Profiles = maps.Clone(c.Output.Download.DownloadProxy.Profiles)
 

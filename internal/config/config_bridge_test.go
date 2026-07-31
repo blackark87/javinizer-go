@@ -131,11 +131,17 @@ func TestScrapeConfigFromAppConfig_RoundTrip(t *testing.T) {
 
 	cfg.Scrapers.Priority = []string{"r18dev", "dmm"}
 	cfg.Scrapers.UserAgent = "TestAgent/1.0"
+	cfg.Scrapers.EarlyStop = true
+	cfg.Scrapers.EarlyStopMinResults = 1
+	cfg.Scrapers.EarlyStopFields = []string{"title", "description"}
 
 	got := scrape.ConfigFromAppConfig(cfg)
 	require.NotNil(t, got)
 	assert.Equal(t, []string{"r18dev", "dmm"}, got.ScrapersPriority)
 	assert.Equal(t, "TestAgent/1.0", got.UserAgent)
+	assert.True(t, got.EarlyStop)
+	assert.Equal(t, 1, got.EarlyStopMinResults)
+	assert.Equal(t, []string{"title", "description"}, got.EarlyStopFields)
 }
 
 func TestScrapeConfigFromAppConfig_NilConfig(t *testing.T) {

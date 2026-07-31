@@ -16,10 +16,13 @@ func TestConfigFromAppConfig_Scrape(t *testing.T) {
 	t.Run("extracts scrape config", func(t *testing.T) {
 		cfg := &config.Config{
 			Scrapers: config.ScrapersConfig{
-				Priority:      []string{"r18dev", "javdb"},
-				UserAgent:     "test-agent",
-				Referer:       "https://example.com",
-				ScrapeActress: true,
+				Priority:            []string{"r18dev", "javdb"},
+				UserAgent:           "test-agent",
+				Referer:             "https://example.com",
+				ScrapeActress:       true,
+				EarlyStop:           true,
+				EarlyStopMinResults: 1,
+				EarlyStopFields:     []string{"title", "poster_url"},
 			},
 			Metadata: config.MetadataConfig{
 				Translation: config.TranslationConfig{
@@ -37,6 +40,9 @@ func TestConfigFromAppConfig_Scrape(t *testing.T) {
 		assert.True(t, result.TranslationEnabled)
 		assert.Equal(t, "ja", result.TranslationTargetLang)
 		assert.True(t, result.ScrapeActress)
+		assert.True(t, result.EarlyStop)
+		assert.Equal(t, 1, result.EarlyStopMinResults)
+		assert.Equal(t, []string{"title", "poster_url"}, result.EarlyStopFields)
 	})
 
 	t.Run("translation disabled omits hash", func(t *testing.T) {

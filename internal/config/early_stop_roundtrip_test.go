@@ -13,6 +13,7 @@ func TestScrapersConfig_EarlyStopRoundTrip(t *testing.T) {
 		ScrapeActress:       true,
 		EarlyStop:           true,
 		EarlyStopMinResults: 3,
+		EarlyStopFields:     []string{"title", "description", "poster_url"},
 	}
 
 	t.Run("json", func(t *testing.T) {
@@ -27,8 +28,14 @@ func TestScrapersConfig_EarlyStopRoundTrip(t *testing.T) {
 		if !got.EarlyStop || got.EarlyStopMinResults != 3 {
 			t.Fatalf("early_stop not preserved: %+v", got)
 		}
+		if len(got.EarlyStopFields) != 3 || got.EarlyStopFields[1] != "description" {
+			t.Fatalf("early_stop_fields not preserved: %+v", got.EarlyStopFields)
+		}
 		if _, bad := got.Overrides["early_stop"]; bad {
 			t.Fatal("early_stop leaked into Overrides")
+		}
+		if _, bad := got.Overrides["early_stop_fields"]; bad {
+			t.Fatal("early_stop_fields leaked into Overrides")
 		}
 	})
 
@@ -44,8 +51,14 @@ func TestScrapersConfig_EarlyStopRoundTrip(t *testing.T) {
 		if !got.EarlyStop || got.EarlyStopMinResults != 3 {
 			t.Fatalf("early_stop not preserved (yaml): %+v", got)
 		}
+		if len(got.EarlyStopFields) != 3 || got.EarlyStopFields[1] != "description" {
+			t.Fatalf("early_stop_fields not preserved (yaml): %+v", got.EarlyStopFields)
+		}
 		if _, bad := got.Overrides["early_stop"]; bad {
 			t.Fatal("early_stop leaked into Overrides (yaml)")
+		}
+		if _, bad := got.Overrides["early_stop_fields"]; bad {
+			t.Fatal("early_stop_fields leaked into Overrides (yaml)")
 		}
 	})
 }

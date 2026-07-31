@@ -450,13 +450,16 @@ func TestClone(t *testing.T) {
 		cfg := DefaultConfig(nil, nil)
 		cfg.Matching.Extensions = []string{".mp4", ".mkv"}
 		cfg.Scrapers.Priority = []string{"dmm", "r18dev"}
+		cfg.Scrapers.EarlyStopFields = []string{"title", "poster_url"}
 
 		cloned := cfg.Clone()
 		cloned.Matching.Extensions[0] = ".tampered"
 		cloned.Scrapers.Priority[0] = "tampered"
+		cloned.Scrapers.EarlyStopFields[0] = "tampered"
 
 		assert.Equal(t, ".mp4", cfg.Matching.Extensions[0])
 		assert.Equal(t, "dmm", cfg.Scrapers.Priority[0])
+		assert.Equal(t, "title", cfg.Scrapers.EarlyStopFields[0])
 	})
 
 	t.Run("nil slice preserved", func(t *testing.T) {

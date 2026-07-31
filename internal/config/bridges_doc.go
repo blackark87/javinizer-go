@@ -140,6 +140,7 @@
 //	cfg.Performance.WorkerTimeout           → api/core
 //	cfg.Scrapers.Browser                    → scraper
 //	cfg.Scrapers.EarlyStop                  → scrape
+//	cfg.Scrapers.EarlyStopFields            → scrape
 //	cfg.Scrapers.EarlyStopMinResults        → scrape
 //	cfg.Scrapers.FlareSolverr               → api/core, scraper
 //	cfg.Scrapers.Overrides                  → scraper

@@ -44,6 +44,7 @@ type ScrapersConfig struct {
 	ScrapeActress         bool                                           `yaml:"scrape_actress" json:"scrape_actress"`                   // Global scrape_actress default (opt-out, default: true)
 	EarlyStop             bool                                           `yaml:"early_stop" json:"early_stop"`                           // Stop after enough useful priority results have been collected
 	EarlyStopMinResults   int                                            `yaml:"early_stop_min_results" json:"early_stop_min_results"`   // Successful results required before early stop (default: 2)
+	EarlyStopFields       []string                                       `yaml:"early_stop_fields" json:"early_stop_fields"`             // Optional field coverage required before stopping priority queries
 	Browser               models.BrowserConfig                           `yaml:"browser" json:"browser"`                                 // Global Browser configuration block
 	Proxy                 models.ProxyConfig                             `yaml:"proxy" json:"proxy"`                                     // Default HTTP/SOCKS5 proxy for scraper requests
 	Overrides             map[string]*models.ScraperSettings             `yaml:"-" json:"-"`                                             // Canonical per-scraper settings map
@@ -200,6 +201,16 @@ func (s *ScrapersConfig) UnmarshalYAML(node *yaml.Node) error {
 				return fmt.Errorf("early_stop_min_results must be an integer: %w", err)
 			}
 			s.EarlyStopMinResults = v
+		case "early_stop_fields":
+			if valNode.Kind == yaml.ScalarNode && valNode.Value == "" {
+				s.EarlyStopFields = nil
+				continue
+			}
+			var v []string
+			if err := valNode.Decode(&v); err != nil {
+				return fmt.Errorf("early_stop_fields must be an array of strings: %w", err)
+			}
+			s.EarlyStopFields = v
 		case "browser":
 			if err := valNode.Decode(&s.Browser); err != nil {
 				return fmt.Errorf("failed to decode browser: %w", err)

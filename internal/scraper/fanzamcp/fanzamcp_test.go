@@ -28,12 +28,15 @@ func TestSearch_MapsMetadataAndMedia(t *testing.T) {
 			"id":"ABC-001",
 			"content_id":"abc00001",
 			"title":"API title",
-			"original_title":"ignored provider original title",
+			"original_title":"API original title",
 			"description":"API description",
 			"release_date":"2026-07-07",
+			"runtime":132,
 			"director":"テスト監督",
 			"maker":"テストメーカー",
 			"label":"テストレーベル",
+			"series":"テストシリーズ",
+			"rating":{"score":8.5,"votes":42},
 			"actresses":[
 				{"dmm_id":123456,"first_name":"","last_name":"","japanese_name":"宮下玲奈","reading":"","thumb_url":""},
 				{"dmm_id":789012,"first_name":"","last_name":"","japanese_name":"森日向子","reading":"","thumb_url":""}
@@ -73,13 +76,18 @@ func TestSearch_MapsMetadataAndMedia(t *testing.T) {
 	assert.Equal(t, "ABC-001", result.ID)
 	assert.Equal(t, "abc00001", result.ContentID)
 	assert.Equal(t, "API title", result.Title)
-	assert.Equal(t, "API title", result.OriginalTitle)
+	assert.Equal(t, "API original title", result.OriginalTitle)
 	assert.Equal(t, "API description", result.Description)
 	require.NotNil(t, result.ReleaseDate)
 	assert.Equal(t, "2026-07-07", result.ReleaseDate.Format("2006-01-02"))
+	assert.Equal(t, 132, result.Runtime)
 	assert.Equal(t, "テスト監督", result.Director)
 	assert.Equal(t, "テストメーカー", result.Maker)
 	assert.Equal(t, "テストレーベル", result.Label)
+	assert.Equal(t, "テストシリーズ", result.Series)
+	require.NotNil(t, result.Rating)
+	assert.Equal(t, 8.5, result.Rating.Score)
+	assert.Equal(t, 42, result.Rating.Votes)
 	require.Len(t, result.Actresses, 2)
 	assert.Equal(t, 123456, result.Actresses[0].DMMID)
 	assert.Equal(t, "宮下玲奈", result.Actresses[0].JapaneseName)
@@ -108,10 +116,15 @@ func TestSearch_MapsMetadataAndMedia(t *testing.T) {
 	assert.Equal(t, "ABC-001", movie.ID)
 	assert.Equal(t, "abc00001", movie.ContentID)
 	assert.Equal(t, "API title", movie.Title)
+	assert.Equal(t, "API original title", movie.OriginalTitle)
 	assert.Equal(t, "API description", movie.Description)
+	assert.Equal(t, 132, movie.Runtime)
 	assert.Equal(t, "テスト監督", movie.Director)
 	assert.Equal(t, "テストメーカー", movie.Maker)
 	assert.Equal(t, "テストレーベル", movie.Label)
+	assert.Equal(t, "テストシリーズ", movie.Series)
+	assert.Equal(t, 8.5, movie.RatingScore)
+	assert.Equal(t, 42, movie.RatingVotes)
 	require.Len(t, movie.Actresses, 2)
 	assert.Equal(t, 123456, movie.Actresses[0].DMMID)
 	assert.Equal(t, "宮下玲奈", movie.Actresses[0].JapaneseName)
@@ -151,16 +164,82 @@ func TestSearch_AllowsEmptyOptionalFields(t *testing.T) {
 	result, err := s.Search(context.Background(), "mdvr428")
 
 	require.NoError(t, err)
+	assert.Equal(t, "VR title", result.OriginalTitle)
 	assert.Empty(t, result.Description)
 	assert.Nil(t, result.ReleaseDate)
+	assert.Zero(t, result.Runtime)
 	assert.Empty(t, result.Director)
 	assert.Empty(t, result.Maker)
 	assert.Empty(t, result.Label)
+	assert.Empty(t, result.Series)
+	assert.Nil(t, result.Rating)
 	assert.Empty(t, result.Actresses)
 	assert.Empty(t, result.Genres)
 	assert.Empty(t, result.CoverURL)
 	assert.Empty(t, result.ScreenshotURL)
 	assert.Empty(t, result.TrailerURL)
+}
+
+func TestAggregate_FANZAMCPPriorityFillsOnlyMissingFields(t *testing.T) {
+	releaseDate := time.Date(2026, 7, 7, 0, 0, 0, 0, time.UTC)
+	fanzaResult := &models.ScraperResult{
+		Source:        scraperName,
+		ID:            "ABC-001",
+		ContentID:     "abc00001",
+		Title:         "FANZA title",
+		OriginalTitle: "FANZA original title",
+		PosterURL:     "http://fanza-mcp:8000/api/v1/media/ABC-001/poster",
+		CoverURL:      "http://fanza-mcp:8000/api/v1/media/ABC-001/cover",
+		ScreenshotURL: []string{"http://fanza-mcp:8000/api/v1/media/ABC-001/screenshots/2"},
+		Genres:        []string{"FANZA genre"},
+	}
+	dmmResult := &models.ScraperResult{
+		Source:        "dmm",
+		ID:            "DMM-999",
+		ContentID:     "dmm00999",
+		Title:         "DMM title",
+		OriginalTitle: "DMM original title",
+		Description:   "DMM description",
+		ReleaseDate:   &releaseDate,
+		Runtime:       132,
+		Director:      "DMM director",
+		Maker:         "DMM maker",
+		Label:         "DMM label",
+		Series:        "DMM series",
+		Rating:        &models.Rating{Score: 8.5, Votes: 42},
+		PosterURL:     "https://example.com/dmm-poster.jpg",
+		CoverURL:      "https://example.com/dmm-cover.jpg",
+		ScreenshotURL: []string{"https://example.com/dmm-screenshot.jpg"},
+		TrailerURL:    "https://example.com/dmm-trailer.mp4",
+		Genres:        []string{"DMM genre"},
+	}
+
+	agg := aggregator.New(&aggregator.Config{
+		ScrapersPriority: []string{scraperName, "dmm"},
+		Metadata:         &aggregator.MetadataConfig{},
+	}, nil, nil, nil)
+	movie, _, err := agg.Aggregate([]*models.ScraperResult{fanzaResult, dmmResult})
+
+	require.NoError(t, err)
+	assert.Equal(t, "ABC-001", movie.ID)
+	assert.Equal(t, "abc00001", movie.ContentID)
+	assert.Equal(t, "FANZA title", movie.Title)
+	assert.Equal(t, "FANZA original title", movie.OriginalTitle)
+	assert.Equal(t, fanzaResult.PosterURL, movie.Poster.PosterURL)
+	assert.Equal(t, fanzaResult.CoverURL, movie.Poster.CoverURL)
+	assert.Equal(t, fanzaResult.ScreenshotURL, movie.Screenshots)
+	require.Len(t, movie.Genres, 1)
+	assert.Equal(t, "FANZA genre", movie.Genres[0].Name)
+	assert.Equal(t, "DMM description", movie.Description)
+	assert.Equal(t, releaseDate, *movie.ReleaseDate)
+	assert.Equal(t, 132, movie.Runtime)
+	assert.Equal(t, "DMM director", movie.Director)
+	assert.Equal(t, "DMM maker", movie.Maker)
+	assert.Equal(t, "DMM label", movie.Label)
+	assert.Equal(t, "DMM series", movie.Series)
+	assert.Equal(t, 8.5, movie.RatingScore)
+	assert.Equal(t, 42, movie.RatingVotes)
+	assert.Equal(t, "https://example.com/dmm-trailer.mp4", movie.TrailerURL)
 }
 
 func TestSearch_ClassifiesHTTPAndPayloadFailures(t *testing.T) {

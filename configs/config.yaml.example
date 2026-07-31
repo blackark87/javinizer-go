@@ -104,9 +104,11 @@ scrapers:
         - javstash
     # NEW: Global scrape_actress default (opt-out behavior)
     scrape_actress: true
-    # Stop querying lower-priority scrapers once enough successful results cover required_fields.
+    # Stop querying lower-priority scrapers once enough successful results cover early_stop_fields.
     early_stop: false
     early_stop_min_results: 2
+    # Optional completion criteria for priority fallback. Empty keeps legacy required_fields behavior.
+    early_stop_fields: []
 
     # NEW: Global Browser configuration
     browser:

@@ -198,6 +198,7 @@ func (s *Scraper) queryAll(ctx context.Context, movieID, resolvedMovieID string,
 func (s *Scraper) queryUntilCovered(ctx context.Context, movieID string, scrapers []models.Scraper) ([]*models.ScraperResult, []models.ScraperError) {
 	results := make([]*models.ScraperResult, 0, len(scrapers))
 	failures := make([]models.ScraperError, 0)
+	coverageFields := earlyStopCoverageFields(s.cfg)
 	for _, scraper := range scrapers {
 		if err := ctx.Err(); err != nil {
 			failures = append(failures, models.ScraperError{Scraper: "context", Cause: err})
@@ -209,11 +210,21 @@ func (s *Scraper) queryUntilCovered(ctx context.Context, movieID string, scraper
 		} else if outcome.failure != nil {
 			failures = append(failures, *outcome.failure)
 		}
-		if scrapeResultsCoverRequiredFields(results, s.cfg.RequiredFields) && len(results) >= earlyStopMinimum(s.cfg) {
+		if scrapeResultsCoverRequiredFields(results, coverageFields) && len(results) >= earlyStopMinimum(s.cfg) {
 			break
 		}
 	}
 	return results, failures
+}
+
+func earlyStopCoverageFields(cfg *Config) []string {
+	if cfg == nil {
+		return nil
+	}
+	if len(cfg.EarlyStopFields) > 0 {
+		return cfg.EarlyStopFields
+	}
+	return cfg.RequiredFields
 }
 
 func earlyStopMinimum(cfg *Config) int {
@@ -267,6 +278,8 @@ func scraperResultCoversField(r *models.ScraperResult, field string) bool {
 		return r.ReleaseDate != nil
 	case "runtime":
 		return r.Runtime > 0
+	case "rating", "rating_score", "ratingscore":
+		return r.Rating != nil && (r.Rating.Score > 0 || r.Rating.Votes > 0)
 	case "coverurl", "cover_url", "cover":
 		return r.CoverURL != ""
 	case "posterurl", "poster_url", "poster":

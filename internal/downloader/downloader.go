@@ -2,7 +2,9 @@ package downloader
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/spf13/afero"
@@ -40,6 +42,10 @@ type DownloadCmd struct {
 type DownloadOutcome struct {
 	Results         []DownloadResult
 	DownloadedPaths []string // Convenience: LocalPath of each result where Downloaded=true
+	// MediaHandled is a stricter completion signal for destructive provider
+	// cleanup. Optional screenshots/trailers that returned 404 are considered
+	// handled; failed critical artwork or other media errors are not.
+	MediaHandled bool
 }
 
 // DownloaderInterface is the single-method seam for media downloads.
@@ -193,6 +199,7 @@ func (d *Downloader) Download(ctx context.Context, cmd DownloadCmd) (*DownloadOu
 			return &DownloadOutcome{
 				Results:         results,
 				DownloadedPaths: downloadedPaths,
+				MediaHandled:    false,
 			}, err
 		}
 		return nil, err
@@ -208,5 +215,22 @@ func (d *Downloader) Download(ctx context.Context, cmd DownloadCmd) (*DownloadOu
 	return &DownloadOutcome{
 		Results:         results,
 		DownloadedPaths: downloadedPaths,
+		MediaHandled:    mediaHandledForConsume(results),
 	}, nil
+}
+
+func mediaHandledForConsume(results []DownloadResult) bool {
+	for i := range results {
+		result := &results[i]
+		if result.Error == nil || result.Type == MediaTypeActress {
+			continue
+		}
+		var httpErr *statusError
+		optionalNotFound := errors.As(result.Error, &httpErr) && httpErr.statusCode == http.StatusNotFound &&
+			(result.Type == MediaTypeExtrafanart || result.Type == MediaTypeTrailer)
+		if !optionalNotFound {
+			return false
+		}
+	}
+	return true
 }

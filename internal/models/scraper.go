@@ -40,6 +40,11 @@ type ScraperResult struct {
 	ShouldCropPoster bool               `json:"should_crop_poster"` // Whether poster needs cropping from cover
 	ScreenshotURL    []string           `json:"screenshot_urls"`
 	TrailerURL       string             `json:"trailer_url"`
+	Providers        []string           `json:"providers,omitempty"`    // Upstream providers used to build cached metadata
+	FetchedAt        float64            `json:"fetched_at,omitempty"`   // Unix timestamp reported by cache-backed providers
+	ExpiresAt        float64            `json:"expires_at,omitempty"`   // Unix timestamp when provider cache expires
+	DryRun           bool               `json:"dry_run,omitempty"`      // Whether the provider intentionally omitted media/control URLs
+	ConsumeURL       string             `json:"consume_url,omitempty"`  // Provider cleanup endpoint invoked after selected media is handled
 	Translations     []MovieTranslation `json:"translations,omitempty"` // Additional language translations (optional)
 }
 
@@ -96,6 +101,10 @@ func (r *ScraperResult) Clone() *ScraperResult {
 		copied.ScreenshotURL = make([]string, len(r.ScreenshotURL))
 		copy(copied.ScreenshotURL, r.ScreenshotURL)
 	}
+	if r.Providers != nil {
+		copied.Providers = make([]string, len(r.Providers))
+		copy(copied.Providers, r.Providers)
+	}
 	if r.Translations != nil {
 		copied.Translations = make([]MovieTranslation, len(r.Translations))
 		copy(copied.Translations, r.Translations)
@@ -104,6 +113,13 @@ func (r *ScraperResult) Clone() *ScraperResult {
 		}
 	}
 	return &copied
+}
+
+// MetadataConsumer is implemented by cache-backed scrapers that expose a
+// provider-owned cleanup endpoint. ConsumeMetadata must only be called after
+// every selected media request for the product has completed.
+type MetadataConsumer interface {
+	ConsumeMetadata(ctx context.Context, productCode, consumeURL string) error
 }
 
 // NormalizeMediaURLs applies post-scrape media URL normalization hooks.

@@ -139,6 +139,7 @@ func (o *applyOrchImpl) Execute(ctx context.Context, cmd ApplyCmd, progress scra
 		foundNFOPath:   "",
 		downloadPaths:  nil,
 		nfoPath:        "",
+		mediaHandled:   false,
 	}
 
 	// onStepFail produces the partial ApplyResult and wraps the error,
@@ -161,6 +162,7 @@ func (o *applyOrchImpl) Execute(ctx context.Context, cmd ApplyCmd, progress scra
 				Merged:               state.merged,
 				OperationID:          opID,
 				Steps:                stepsSoFar,
+				MediaHandled:         state.mediaHandled,
 				FailedStep:           stepName,
 			},
 			err: fmt.Errorf("%s failed: %w", failMsg, stepErr),
@@ -246,6 +248,7 @@ func (o *applyOrchImpl) Execute(ctx context.Context, cmd ApplyCmd, progress scra
 			Merged:               state.merged,
 			OperationID:          opID,
 			Steps:                steps,
+			MediaHandled:         state.mediaHandled,
 		}
 		if completeErr := o.revertLog.Complete(ctx, opID, applyResult); completeErr != nil {
 			resolveLogger(o.logger).Warnf("[workflow] RevertLog.Complete failed for %s: %v (apply still succeeded)", cmd.Movie.ID, completeErr)
@@ -266,6 +269,7 @@ func (o *applyOrchImpl) Execute(ctx context.Context, cmd ApplyCmd, progress scra
 		Merged:               state.merged,
 		OperationID:          opID,
 		Steps:                steps,
+		MediaHandled:         state.mediaHandled,
 	}, nil
 }
 
@@ -372,9 +376,11 @@ func (o *applyOrchImpl) stepDownload(ctx context.Context, cmd ApplyCmd, state *a
 			state.downloadPaths = outcome.DownloadedPaths
 		}
 		steps.Downloaded = false
+		state.mediaHandled = false
 		return nil
 	}
 	state.downloadPaths = outcome.DownloadedPaths
+	state.mediaHandled = outcome.MediaHandled
 	steps.Downloaded = true
 	return nil
 }
@@ -499,6 +505,7 @@ type applyPipelineState struct {
 	reusedMetadataMoves  []models.FileMove
 	reusedMetadataCopies []string
 	nfoPath              string
+	mediaHandled         bool
 }
 
 // completeRevertLogWithState marks an in-progress revert operation as failed,

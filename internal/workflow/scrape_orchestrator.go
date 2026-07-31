@@ -44,6 +44,16 @@ type scrapeOrchImpl struct {
 	logger         logging.Logger
 }
 
+func (o *scrapeOrchImpl) ConsumeMetadata(ctx context.Context, source, productCode, consumeURL string) error {
+	consumer, ok := o.scraper.(interface {
+		ConsumeMetadata(context.Context, string, string, string) error
+	})
+	if !ok {
+		return fmt.Errorf("workflow scraper does not support metadata consumption")
+	}
+	return consumer.ConsumeMetadata(ctx, source, productCode, consumeURL)
+}
+
 func (o *scrapeOrchImpl) TranslateScrapeResult(ctx context.Context, result *scrape.ScrapeResult, sourcePath string) (*OrchestrationMeta, error) {
 	if result == nil || result.Movie == nil {
 		return nil, fmt.Errorf("cannot translate an empty scrape result")

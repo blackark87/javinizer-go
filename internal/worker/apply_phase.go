@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -38,6 +40,10 @@ type applyFileOutcome struct {
 	PanicMsg  string
 	ErrorMsg  string
 	Movie     *models.Movie // updated movie after apply (nil if failed)
+	// MediaHandled is true only when the workflow completed its configured
+	// media-download step. Cache-backed metadata must not be consumed when the
+	// selected required media failed.
+	MediaHandled bool
 }
 
 // Run executes the apply phase: setup errgroup → iterate files → dispatch
@@ -141,6 +147,7 @@ func (p *applyPhase) Run(ctx context.Context, inputs applyPhaseInputs, cfg Apply
 	organized := int64(len(skippedFiles))
 	var failed int64
 	trackApplyResults(outcomes, &organized, &failed)
+	consumeAppliedMetadata(ctx, inputs, cfg, outcomes)
 
 	orgCount := atomic.LoadInt64(&organized)
 	failCount := atomic.LoadInt64(&failed)
@@ -341,6 +348,9 @@ func interpretApplyResult(
 		}
 		outcome.Movie = result.Movie
 	}
+	if result != nil {
+		outcome.MediaHandled = result.MediaHandled
+	}
 
 	inputs.Broadcaster.Send(JobEvent{
 		JobID:     inputs.JobID,
@@ -359,6 +369,96 @@ func interpretApplyResult(
 	}
 	outcome.Success = true
 	return outcome
+}
+
+type metadataConsumeTarget struct {
+	source      string
+	productCode string
+	consumeURL  string
+	ready       bool
+}
+
+// consumeAppliedMetadata acknowledges cache-backed provider data only after
+// every selected file that references the same consume URL has completed its
+// media step. The grouping is important for multipart titles: consuming after
+// the first part would delete media before later parts can download it.
+func consumeAppliedMetadata(ctx context.Context, inputs applyPhaseInputs, cfg ApplyPhaseConfig, outcomes []applyFileOutcome) {
+	if cfg.DryRun || !cfg.Download || len(inputs.Provenance) == 0 {
+		return
+	}
+	consumer, ok := inputs.WF.(workflow.MetadataConsumeWorkflow)
+	if !ok {
+		return
+	}
+
+	targets := make(map[string]*metadataConsumeTarget)
+	for _, outcome := range outcomes {
+		prov := inputs.Provenance[outcome.FilePath]
+		if prov == nil {
+			continue
+		}
+		for _, result := range prov.ScraperResults {
+			if result == nil || result.DryRun || strings.TrimSpace(result.ConsumeURL) == "" {
+				continue
+			}
+			key := strings.TrimSpace(result.ConsumeURL)
+			target := targets[key]
+			if target == nil {
+				target = &metadataConsumeTarget{
+					source:      strings.TrimSpace(result.Source),
+					productCode: strings.TrimSpace(result.ID),
+					consumeURL:  key,
+					ready:       true,
+				}
+				targets[key] = target
+			}
+			if !outcome.Success || !outcome.MediaHandled {
+				target.ready = false
+			}
+		}
+	}
+
+	keys := make([]string, 0, len(targets))
+	for key := range targets {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		target := targets[key]
+		if !target.ready {
+			logging.Warnf("Leaving %s metadata cache for %s because selected media was not fully handled", target.source, target.productCode)
+			continue
+		}
+		if err := consumer.ConsumeMetadata(ctx, target.source, target.productCode, target.consumeURL); err != nil {
+			logging.Warnf("Failed to consume %s metadata cache for %s: %v", target.source, target.productCode, err)
+			continue
+		}
+		clearConsumedMetadataURL(inputs, target.consumeURL)
+	}
+}
+
+func clearConsumedMetadataURL(inputs applyPhaseInputs, consumedURL string) {
+	for filePath, prov := range inputs.Provenance {
+		if prov == nil {
+			continue
+		}
+		changed := false
+		for _, result := range prov.ScraperResults {
+			if result != nil && result.ConsumeURL == consumedURL {
+				result.ConsumeURL = ""
+				changed = true
+			}
+		}
+		for _, outcome := range prov.SourceOutcomes {
+			if outcome != nil && outcome.Result != nil && outcome.Result.ConsumeURL == consumedURL {
+				outcome.Result.ConsumeURL = ""
+				changed = true
+			}
+		}
+		if changed {
+			inputs.Updater.SetProvenance(filePath, prov)
+		}
+	}
 }
 
 // applyFile handles the per-file apply logic: build ApplyCmd, execute workflow.Apply,

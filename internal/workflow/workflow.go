@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/javinizer/javinizer-go/internal/scrape"
 )
@@ -34,6 +35,18 @@ func (w *Workflow) TranslateScrapeResult(ctx context.Context, result *scrape.Scr
 // sequence: revert begin, organize, merge, DisplayTitle, download, NFO, revert complete.
 func (w *Workflow) Apply(ctx context.Context, cmd ApplyCmd, progress scrape.ProgressFunc) (*ApplyResult, error) {
 	return w.apply.Execute(ctx, cmd, progress)
+}
+
+// ConsumeMetadata delegates provider cache cleanup through the scrape side of
+// the composition root, where the originating scraper registry is available.
+func (w *Workflow) ConsumeMetadata(ctx context.Context, source, productCode, consumeURL string) error {
+	consumer, ok := w.scrape.(interface {
+		ConsumeMetadata(context.Context, string, string, string) error
+	})
+	if !ok {
+		return fmt.Errorf("workflow metadata consumption is not configured")
+	}
+	return consumer.ConsumeMetadata(ctx, source, productCode, consumeURL)
 }
 
 // Compare delegates to the internal compareOrchestrator which owns the compare pipeline:

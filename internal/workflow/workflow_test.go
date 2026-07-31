@@ -739,6 +739,7 @@ func TestApply_StepsTracking_FullSuccess(t *testing.T) {
 	assert.True(t, result.Steps.Merged, "Merged should be true after merge step")
 	assert.True(t, result.Steps.DisplayTitle, "DisplayTitle should be true after display title step")
 	assert.True(t, result.Steps.Downloaded, "Downloaded should be true after successful download")
+	assert.True(t, result.MediaHandled, "MediaHandled should allow provider cleanup after a successful download step")
 	assert.True(t, result.Steps.NFOGenerated, "NFOGenerated should be true after successful NFO generation")
 }
 

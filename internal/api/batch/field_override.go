@@ -60,8 +60,35 @@ func getBatchMovieSources(rt *core.APIRuntime) gin.HandlerFunc {
 		if prov != nil {
 			outcomes = prov.SourceOutcomes
 		}
-		c.JSON(http.StatusOK, contracts.SourceResultsResponse{Results: results, Outcomes: outcomes})
+		c.JSON(http.StatusOK, contracts.SourceResultsResponse{
+			Results:  scraperResultsForResponse(results),
+			Outcomes: scraperOutcomesForResponse(outcomes),
+		})
 	}
+}
+
+func scraperResultsForResponse(results []*models.ScraperResult) []*models.ScraperResult {
+	cloned := make([]*models.ScraperResult, len(results))
+	for i, result := range results {
+		cloned[i] = result.Clone()
+		if cloned[i] != nil {
+			// consume_url is an internal destructive control endpoint. It must
+			// survive job persistence for apply, but is not source-viewer data.
+			cloned[i].ConsumeURL = ""
+		}
+	}
+	return cloned
+}
+
+func scraperOutcomesForResponse(outcomes []*models.ScraperOutcome) []*models.ScraperOutcome {
+	cloned := make([]*models.ScraperOutcome, len(outcomes))
+	for i, outcome := range outcomes {
+		cloned[i] = outcome.Clone()
+		if cloned[i] != nil && cloned[i].Result != nil {
+			cloned[i].Result.ConsumeURL = ""
+		}
+	}
+	return cloned
 }
 
 // overrideBatchMovieField godoc

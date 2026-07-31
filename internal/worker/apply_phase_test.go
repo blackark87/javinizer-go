@@ -20,6 +20,8 @@ type stubApplyWorkflow struct {
 	applyResult *workflow.ApplyResult
 	applyErr    error
 	applyCalled int
+	consumeErr  error
+	consumed    []metadataConsumeTarget
 	mu          sync.Mutex
 }
 
@@ -46,10 +48,27 @@ func (s *stubApplyWorkflow) ScanAndMatch(_ context.Context, _ workflow.ScanAndMa
 	return nil, nil
 }
 
+func (s *stubApplyWorkflow) ConsumeMetadata(_ context.Context, source, productCode, consumeURL string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.consumed = append(s.consumed, metadataConsumeTarget{
+		source:      source,
+		productCode: productCode,
+		consumeURL:  consumeURL,
+	})
+	return s.consumeErr
+}
+
 func (s *stubApplyWorkflow) getApplyCalled() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.applyCalled
+}
+
+func (s *stubApplyWorkflow) getConsumed() []metadataConsumeTarget {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]metadataConsumeTarget(nil), s.consumed...)
 }
 
 // makeApplyInputs creates standard applyPhaseInputs for testing.
@@ -60,6 +79,7 @@ func makeApplyInputs(wf workflow.WorkflowInterface) applyPhaseInputs {
 		NFOEnabled:  true,
 		WF:          wf,
 		Results:     make(map[string]*MovieResult),
+		Provenance:  make(map[string]*ProvenanceData),
 		Excluded:    make(map[string]bool),
 		Destination: "/output",
 		Broadcaster: &stubBroadcaster{},
@@ -67,6 +87,121 @@ func makeApplyInputs(wf workflow.WorkflowInterface) applyPhaseInputs {
 		Lifecycle:   &stubLifecycle{},
 		persister:   nil,
 	}
+}
+
+func TestApplyPhase_ConsumesFANZAMetadataOnceAfterMultipartMedia(t *testing.T) {
+	const consumeURL = "http://fanza-mcp:8000/api/v1/metadata/MDVR-338/consume"
+	wf := &stubApplyWorkflow{
+		applyResult: &workflow.ApplyResult{
+			Movie:        &models.Movie{ID: "MDVR-338"},
+			MediaHandled: true,
+		},
+	}
+	inputs := makeApplyInputs(wf)
+	for index, filePath := range []string{"/source/MDVR-338-A.mp4", "/source/MDVR-338-B.mp4"} {
+		inputs.Results[filePath] = &MovieResult{
+			FileMatchInfo: models.FileMatchInfo{
+				Path:        filePath,
+				MovieID:     "MDVR-338",
+				IsMultiPart: true,
+				PartNumber:  index + 1,
+			},
+			Status: models.JobStatusCompleted,
+			Movie:  &models.Movie{ID: "MDVR-338"},
+		}
+		inputs.Provenance[filePath] = &ProvenanceData{
+			ScraperResults: []*models.ScraperResult{{
+				Source:     "fanzamcp",
+				ID:         "MDVR-338",
+				ConsumeURL: consumeURL,
+			}},
+			SourceOutcomes: []*models.ScraperOutcome{{
+				Source: "fanzamcp",
+				Status: "success",
+				Result: &models.ScraperResult{Source: "fanzamcp", ID: "MDVR-338", ConsumeURL: consumeURL},
+			}},
+		}
+	}
+
+	NewApplyPhase().Run(context.Background(), inputs, ApplyPhaseConfig{
+		Download:        true,
+		OrganizeOptions: workflow.OrganizeOptions{MoveFiles: true},
+		Destination:     "/output",
+	})
+
+	assert.Equal(t, []metadataConsumeTarget{{
+		source:      "fanzamcp",
+		productCode: "MDVR-338",
+		consumeURL:  consumeURL,
+	}}, wf.getConsumed())
+	for filePath, prov := range inputs.Provenance {
+		require.NotNil(t, prov, filePath)
+		require.Len(t, prov.ScraperResults, 1, filePath)
+		assert.Empty(t, prov.ScraperResults[0].ConsumeURL, filePath)
+		require.Len(t, prov.SourceOutcomes, 1, filePath)
+		assert.Empty(t, prov.SourceOutcomes[0].Result.ConsumeURL, filePath)
+	}
+}
+
+func TestApplyPhase_LeavesMetadataWhenMediaIsNotHandled(t *testing.T) {
+	const consumeURL = "http://fanza-mcp:8000/api/v1/metadata/MDVR-338/consume"
+	wf := &stubApplyWorkflow{
+		applyResult: &workflow.ApplyResult{
+			Movie:        &models.Movie{ID: "MDVR-338"},
+			MediaHandled: false,
+		},
+	}
+	inputs := makeApplyInputs(wf)
+	filePath := "/source/MDVR-338.mp4"
+	inputs.Results[filePath] = &MovieResult{
+		FileMatchInfo: models.FileMatchInfo{Path: filePath, MovieID: "MDVR-338"},
+		Status:        models.JobStatusCompleted,
+		Movie:         &models.Movie{ID: "MDVR-338"},
+	}
+	inputs.Provenance[filePath] = &ProvenanceData{ScraperResults: []*models.ScraperResult{{
+		Source:     "fanzamcp",
+		ID:         "MDVR-338",
+		ConsumeURL: consumeURL,
+	}}}
+
+	NewApplyPhase().Run(context.Background(), inputs, ApplyPhaseConfig{
+		Download:        true,
+		OrganizeOptions: workflow.OrganizeOptions{MoveFiles: true},
+		Destination:     "/output",
+	})
+
+	assert.Empty(t, wf.getConsumed())
+	assert.Equal(t, consumeURL, inputs.Provenance[filePath].ScraperResults[0].ConsumeURL)
+}
+
+func TestApplyPhase_DryRunNeverConsumesMetadata(t *testing.T) {
+	wf := &stubApplyWorkflow{
+		applyResult: &workflow.ApplyResult{
+			Movie:        &models.Movie{ID: "MDVR-338"},
+			MediaHandled: true,
+		},
+	}
+	inputs := makeApplyInputs(wf)
+	filePath := "/source/MDVR-338.mp4"
+	inputs.Results[filePath] = &MovieResult{
+		FileMatchInfo: models.FileMatchInfo{Path: filePath, MovieID: "MDVR-338"},
+		Status:        models.JobStatusCompleted,
+		Movie:         &models.Movie{ID: "MDVR-338"},
+	}
+	inputs.Provenance[filePath] = &ProvenanceData{ScraperResults: []*models.ScraperResult{{
+		Source:     "fanzamcp",
+		ID:         "MDVR-338",
+		ConsumeURL: "http://fanza-mcp:8000/api/v1/metadata/MDVR-338/consume",
+	}}}
+
+	NewApplyPhase().Run(context.Background(), inputs, ApplyPhaseConfig{
+		Download:        true,
+		DryRun:          true,
+		OrganizeOptions: workflow.OrganizeOptions{MoveFiles: true},
+		Destination:     "/output",
+	})
+
+	assert.Empty(t, wf.getConsumed())
 }
 
 func TestApplyPhase_Run_Success(t *testing.T) {

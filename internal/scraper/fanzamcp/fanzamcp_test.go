@@ -19,6 +19,7 @@ func TestSearch_MapsMetadataAndMedia(t *testing.T) {
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v1/metadata/ABC-001", r.URL.EscapedPath())
+		assert.Equal(t, "false", r.URL.Query().Get("dry_run"))
 		assert.Equal(t, "application/json", r.Header.Get("Accept"))
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprintf(w, `{
@@ -48,13 +49,17 @@ func TestSearch_MapsMetadataAndMedia(t *testing.T) {
 			"trailer_url":%q,
 			"should_crop_poster":false,
 			"providers":["fanza"],
-			"expires_at":123
+			"fetched_at":100,
+			"expires_at":123,
+			"dry_run":false,
+			"consume_url":%q
 		}`,
 			server.URL+"/api/v1/media/ABC-001/poster",
 			server.URL+"/api/v1/media/ABC-001/cover",
 			server.URL+"/api/v1/media/ABC-001/screenshots/1",
 			server.URL+"/api/v1/media/ABC-001/screenshots/2",
 			server.URL+"/api/v1/media/ABC-001/trailer",
+			server.URL+"/api/v1/metadata/ABC-001/consume",
 		)
 	}))
 	t.Cleanup(server.Close)
@@ -102,6 +107,11 @@ func TestSearch_MapsMetadataAndMedia(t *testing.T) {
 	}, result.ScreenshotURL)
 	assert.Equal(t, server.URL+"/api/v1/media/ABC-001/trailer", result.TrailerURL)
 	assert.False(t, result.ShouldCropPoster)
+	assert.Equal(t, []string{"fanza"}, result.Providers)
+	assert.Equal(t, float64(100), result.FetchedAt)
+	assert.Equal(t, float64(123), result.ExpiresAt)
+	assert.False(t, result.DryRun)
+	assert.Equal(t, server.URL+"/api/v1/metadata/ABC-001/consume", result.ConsumeURL)
 
 	agg := aggregator.New(&aggregator.Config{
 		ScrapersPriority: []string{scraperName},
@@ -144,6 +154,7 @@ func TestSearch_AllowsEmptyOptionalFields(t *testing.T) {
 			"id":"MDVR-428",
 			"content_id":"mdvr00428",
 			"title":"VR title",
+			"original_title":"VR title",
 			"description":"",
 			"release_date":null,
 			"director":"",
@@ -151,12 +162,14 @@ func TestSearch_AllowsEmptyOptionalFields(t *testing.T) {
 			"label":"",
 			"actresses":[],
 			"genres":[],
-			"poster_url":%q,
+			"poster_url":"",
 			"cover_url":"",
 			"screenshot_urls":[],
 			"trailer_url":"",
-			"should_crop_poster":false
-		}`, server.URL+"/api/v1/media/MDVR-428/poster")
+			"should_crop_poster":false,
+			"dry_run":false,
+			"consume_url":""
+		}`)
 	}))
 	t.Cleanup(server.Close)
 
@@ -175,6 +188,7 @@ func TestSearch_AllowsEmptyOptionalFields(t *testing.T) {
 	assert.Nil(t, result.Rating)
 	assert.Empty(t, result.Actresses)
 	assert.Empty(t, result.Genres)
+	assert.Empty(t, result.PosterURL)
 	assert.Empty(t, result.CoverURL)
 	assert.Empty(t, result.ScreenshotURL)
 	assert.Empty(t, result.TrailerURL)
@@ -268,6 +282,7 @@ func TestSearch_ClassifiesHTTPAndPayloadFailures(t *testing.T) {
 			body: `{
 				"source":"fanza-mcp","id":"ABC-001","title":"title",
 				"release_date":"07/07/2026",
+				"dry_run":false,
 				"poster_url":"POSTER_URL"
 			}`,
 			wantContain: "release_date",
@@ -286,9 +301,37 @@ func TestSearch_ClassifiesHTTPAndPayloadFailures(t *testing.T) {
 			status: http.StatusOK,
 			body: `{
 				"source":"fanza-mcp","id":"ABC-001","title":"title",
+				"dry_run":false,
 				"poster_url":"http://example.com/api/v1/media/ABC-001/poster"
 			}`,
 			wantContain: "does not match metadata service",
+		},
+		{
+			name:   "missing content ID",
+			status: http.StatusOK,
+			body: `{
+				"source":"fanza-mcp","language":"ja","id":"ABC-001",
+				"title":"title","original_title":"title","dry_run":false
+			}`,
+			wantContain: "content_id",
+		},
+		{
+			name:   "unexpected language",
+			status: http.StatusOK,
+			body: `{
+				"source":"fanza-mcp","language":"en","id":"ABC-001","content_id":"abc00001",
+				"title":"title","original_title":"title","dry_run":false
+			}`,
+			wantContain: "unexpected language",
+		},
+		{
+			name:   "missing original title",
+			status: http.StatusOK,
+			body: `{
+				"source":"fanza-mcp","language":"ja","id":"ABC-001","content_id":"abc00001",
+				"title":"title","dry_run":false
+			}`,
+			wantContain: "original_title",
 		},
 	}
 
@@ -319,6 +362,88 @@ func TestSearch_ClassifiesHTTPAndPayloadFailures(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSearch_RejectsDryRunResponseForNormalLookup(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"source":"fanza-mcp",
+			"id":"ABC-001",
+			"title":"title",
+			"dry_run":true
+		}`))
+	}))
+	t.Cleanup(server.Close)
+
+	s := newScraper(&models.ScraperSettings{Enabled: true, BaseURL: server.URL, Timeout: 1})
+	_, err := s.Search(context.Background(), "ABC-001")
+
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "dry-run metadata")
+}
+
+func TestConsumeMetadata_PostsOnceAndValidatesResponse(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/api/v1/metadata/ABC-001/consume", r.URL.Path)
+		assert.Equal(t, "application/json", r.Header.Get("Accept"))
+		assert.Equal(t, int64(0), r.ContentLength)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"status":"consumed",
+			"product_code":"ABC-001",
+			"metadata_deleted":true,
+			"media_directory_deleted":true,
+			"media_file_count":3
+		}`))
+	}))
+	t.Cleanup(server.Close)
+
+	s := newScraper(&models.ScraperSettings{Enabled: true, BaseURL: server.URL, Timeout: 1, RetryCount: 3})
+	err := s.ConsumeMetadata(context.Background(), "abc1", server.URL+"/api/v1/metadata/ABC-001/consume")
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, requests, "non-idempotent consume must not be retried")
+}
+
+func TestConsumeMetadata_ConfirmsMissingMetadataAfter404(t *testing.T) {
+	var methods []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		methods = append(methods, r.Method+" "+r.URL.RequestURI())
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(server.Close)
+
+	s := newScraper(&models.ScraperSettings{Enabled: true, BaseURL: server.URL, Timeout: 1})
+	err := s.ConsumeMetadata(context.Background(), "ABC-001", server.URL+"/api/v1/metadata/ABC-001/consume")
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		"POST /api/v1/metadata/ABC-001/consume",
+		"GET /api/v1/metadata/ABC-001?dry_run=true",
+	}, methods)
+}
+
+func TestConsumeMetadata_RejectsMismatchedEndpointAndPayload(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"status":"consumed",
+			"product_code":"ABC-002",
+			"metadata_deleted":true
+		}`))
+	}))
+	t.Cleanup(server.Close)
+	s := newScraper(&models.ScraperSettings{Enabled: true, BaseURL: server.URL, Timeout: 1})
+
+	err := s.ConsumeMetadata(context.Background(), "ABC-001", server.URL+"/api/v1/metadata/ABC-002/consume")
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "path does not match")
+
+	err = s.ConsumeMetadata(context.Background(), "ABC-001", server.URL+"/api/v1/metadata/ABC-001/consume")
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "invalid consume response")
 }
 
 func TestSearch_RespectsTimeout(t *testing.T) {

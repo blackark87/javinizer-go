@@ -82,6 +82,10 @@ type ApplyResult struct {
 	Merged               bool
 	OperationID          string         // From RevertLog.Begin, for correlating with the revert record
 	Steps                stepCompletion // Per-step completion tracking
+	// MediaHandled reports that every configured media download request reached
+	// a terminal acceptable state. Batch apply uses it to decide whether a
+	// cache-backed provider's non-idempotent consume endpoint is safe to call.
+	MediaHandled bool
 
 	// FailedStep is the step that caused the error (e.g. "organize", "download",
 	// "nfo_generation"). Empty on success. callers can identify
@@ -131,6 +135,14 @@ type WorkflowInterface interface {
 // finalize a batch scrape result after metadata collection has been checkpointed.
 type DeferredTranslationWorkflow interface {
 	TranslateScrapeResult(ctx context.Context, result *scrape.ScrapeResult, sourcePath string) (*OrchestrationMeta, error)
+}
+
+// MetadataConsumeWorkflow is the optional batch-apply capability used by
+// cache-backed metadata providers. It stays separate from WorkflowInterface so
+// existing workflow implementations and test doubles are not forced to expose
+// a provider-specific lifecycle.
+type MetadataConsumeWorkflow interface {
+	ConsumeMetadata(ctx context.Context, source, productCode, consumeURL string) error
 }
 
 // CompareCmd is the command struct that crosses the Compare seam.

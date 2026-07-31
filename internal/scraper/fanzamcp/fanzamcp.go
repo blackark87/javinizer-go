@@ -34,6 +34,7 @@ type scraper struct {
 	client         *resty.Client
 	enabled        bool
 	baseURL        string
+	mediaScheme    string
 	mediaAuthority string
 	rateLimiter    *ratelimit.Limiter
 	settings       models.ScraperSettings
@@ -62,6 +63,19 @@ type metadataResponse struct {
 	ScreenshotURLs   []string             `json:"screenshot_urls"`
 	TrailerURL       string               `json:"trailer_url"`
 	ShouldCropPoster bool                 `json:"should_crop_poster"`
+	Providers        []string             `json:"providers"`
+	FetchedAt        float64              `json:"fetched_at"`
+	ExpiresAt        float64              `json:"expires_at"`
+	DryRun           *bool                `json:"dry_run"`
+	ConsumeURL       string               `json:"consume_url"`
+}
+
+type consumeResponse struct {
+	Status                string `json:"status"`
+	ProductCode           string `json:"product_code"`
+	MetadataDeleted       bool   `json:"metadata_deleted"`
+	MediaDirectoryDeleted bool   `json:"media_directory_deleted"`
+	MediaFileCount        int    `json:"media_file_count"`
 }
 
 func newScraper(settings *models.ScraperSettings) *scraper {
@@ -78,8 +92,10 @@ func newScraper(settings *models.ScraperSettings) *scraper {
 		timeoutSeconds = defaultTimeoutSeconds
 	}
 	parsed, _ := url.Parse(baseURL)
+	scheme := ""
 	authority := ""
 	if parsed != nil {
+		scheme = strings.ToLower(parsed.Scheme)
 		authority = strings.ToLower(parsed.Host)
 	}
 
@@ -87,6 +103,7 @@ func newScraper(settings *models.ScraperSettings) *scraper {
 		client:         httpclient.NewRestyClientNoProxy(time.Duration(timeoutSeconds)*time.Second, copied.RetryCount),
 		enabled:        copied.Enabled,
 		baseURL:        baseURL,
+		mediaScheme:    scheme,
 		mediaAuthority: authority,
 		rateLimiter:    ratelimit.NewLimiter(time.Duration(copied.RateLimit) * time.Millisecond),
 		settings:       copied,
@@ -125,6 +142,7 @@ func (s *scraper) Search(ctx context.Context, id string) (*models.ScraperResult,
 	resp, err := s.client.R().
 		SetContext(ctx).
 		SetHeader("Accept", "application/json").
+		SetQueryParam("dry_run", "false").
 		Get(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("fetch FANZA MCP metadata: %w", err)
@@ -158,8 +176,14 @@ func (s *scraper) mapResponse(requestedCode string, payload metadataResponse) (*
 	if strings.TrimSpace(payload.Title) == "" {
 		return nil, fmt.Errorf("FANZA MCP response is missing title")
 	}
+	if payload.DryRun == nil {
+		return nil, fmt.Errorf("FANZA MCP response is missing dry_run")
+	}
+	if *payload.DryRun {
+		return nil, fmt.Errorf("FANZA MCP returned dry-run metadata for a normal lookup")
+	}
 
-	posterURL, err := s.validateMediaURL(requestedCode, "poster_url", payload.PosterURL, true)
+	posterURL, err := s.validateMediaURL(requestedCode, "poster_url", payload.PosterURL, false)
 	if err != nil {
 		return nil, err
 	}
@@ -195,21 +219,33 @@ func (s *scraper) mapResponse(requestedCode string, payload metadataResponse) (*
 		}
 		releaseDate = &parsed
 	}
-
-	title := strings.TrimSpace(payload.Title)
+	contentID := strings.TrimSpace(payload.ContentID)
+	if contentID == "" {
+		return nil, fmt.Errorf("FANZA MCP response is missing content_id")
+	}
+	language := strings.TrimSpace(payload.Language)
+	if language != "ja" {
+		return nil, fmt.Errorf("FANZA MCP returned unexpected language %q", payload.Language)
+	}
 	originalTitle := strings.TrimSpace(payload.OriginalTitle)
 	if originalTitle == "" {
-		originalTitle = title
+		return nil, fmt.Errorf("FANZA MCP response is missing original_title")
 	}
+	consumeURL, err := s.validateConsumeURL(requestedCode, payload.ConsumeURL)
+	if err != nil {
+		return nil, err
+	}
+
+	title := strings.TrimSpace(payload.Title)
 	return &models.ScraperResult{
 		// The API contract uses "fanza-mcp", while scraper priorities and
 		// configuration use "fanzamcp". Normalize at the adapter boundary so
 		// the aggregator can match this result to the selected scraper.
 		Source:           scraperName,
 		SourceURL:        strings.TrimSpace(payload.SourceURL),
-		Language:         strings.TrimSpace(payload.Language),
+		Language:         language,
 		ID:               strings.TrimSpace(payload.ID),
-		ContentID:        strings.TrimSpace(payload.ContentID),
+		ContentID:        contentID,
 		Title:            title,
 		OriginalTitle:    originalTitle,
 		Description:      strings.TrimSpace(payload.Description),
@@ -227,6 +263,11 @@ func (s *scraper) mapResponse(requestedCode string, payload metadataResponse) (*
 		ShouldCropPoster: payload.ShouldCropPoster,
 		ScreenshotURL:    screenshots,
 		TrailerURL:       trailerURL,
+		Providers:        append([]string(nil), payload.Providers...),
+		FetchedAt:        payload.FetchedAt,
+		ExpiresAt:        payload.ExpiresAt,
+		DryRun:           *payload.DryRun,
+		ConsumeURL:       consumeURL,
 	}, nil
 }
 
@@ -239,8 +280,8 @@ func (s *scraper) validateMediaURL(productCode, field, raw string, required bool
 		return "", nil
 	}
 	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Scheme != "http" || parsed.Host == "" {
-		return "", fmt.Errorf("FANZA MCP %s must be an absolute internal HTTP URL", field)
+	if err != nil || !strings.EqualFold(parsed.Scheme, s.mediaScheme) || parsed.Host == "" {
+		return "", fmt.Errorf("FANZA MCP %s must use the metadata service scheme and authority", field)
 	}
 	if parsed.User != nil || !strings.EqualFold(parsed.Host, s.mediaAuthority) {
 		return "", fmt.Errorf("FANZA MCP %s host %q does not match metadata service", field, parsed.Host)
@@ -250,6 +291,95 @@ func (s *scraper) validateMediaURL(productCode, field, raw string, required bool
 		return "", fmt.Errorf("FANZA MCP %s path is outside the product media endpoint", field)
 	}
 	return parsed.String(), nil
+}
+
+func (s *scraper) validateConsumeURL(productCode, raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || !strings.EqualFold(parsed.Scheme, s.mediaScheme) || parsed.Host == "" {
+		return "", fmt.Errorf("FANZA MCP consume_url must use the metadata service scheme and authority")
+	}
+	if parsed.User != nil || !strings.EqualFold(parsed.Host, s.mediaAuthority) {
+		return "", fmt.Errorf("FANZA MCP consume_url host %q does not match metadata service", parsed.Host)
+	}
+	expectedPath := "/api/v1/metadata/" + productCode + "/consume"
+	if parsed.Path != expectedPath || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("FANZA MCP consume_url path does not match the product consume endpoint")
+	}
+	return parsed.String(), nil
+}
+
+// ConsumeMetadata acknowledges that Javinizer has finished handling the
+// selected media. The request deliberately uses the underlying no-proxy HTTP
+// client and does not inherit Resty's retry count because POST consume is not
+// idempotent.
+func (s *scraper) ConsumeMetadata(ctx context.Context, productCode, consumeURL string) error {
+	code, ok := normalizeProductCode(productCode)
+	if !ok {
+		return fmt.Errorf("consume FANZA MCP metadata: invalid product code %q", productCode)
+	}
+	endpoint, err := s.validateConsumeURL(code, consumeURL)
+	if err != nil {
+		return err
+	}
+	if endpoint == "" {
+		return fmt.Errorf("consume FANZA MCP metadata: consume_url is empty")
+	}
+	if err := s.rateLimiter.Wait(ctx); err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("create FANZA MCP consume request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := s.client.GetClient().Do(req)
+	if err != nil {
+		if s.metadataAbsent(ctx, code) {
+			return nil
+		}
+		return fmt.Errorf("consume FANZA MCP metadata: %w", err)
+	}
+	defer func() { _ = httpclient.DrainAndClose(resp.Body) }()
+
+	if resp.StatusCode == http.StatusNotFound {
+		if s.metadataAbsent(ctx, code) {
+			return nil
+		}
+		return fmt.Errorf("consume FANZA MCP metadata: consume returned 404 while metadata still exists")
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return models.NewScraperStatusError(displayName, resp.StatusCode, "metadata consume request failed")
+	}
+
+	var payload consumeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return fmt.Errorf("parse FANZA MCP consume response: %w", err)
+	}
+	responseCode, ok := normalizeProductCode(payload.ProductCode)
+	if payload.Status != "consumed" || !ok || responseCode != code || !payload.MetadataDeleted {
+		return fmt.Errorf("FANZA MCP returned an invalid consume response for %s", code)
+	}
+	return nil
+}
+
+func (s *scraper) metadataAbsent(ctx context.Context, productCode string) bool {
+	endpoint := s.baseURL + "/api/v1/metadata/" + url.PathEscape(productCode)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?dry_run=true", nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := s.client.GetClient().Do(req)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = httpclient.DrainAndClose(resp.Body) }()
+	return resp.StatusCode == http.StatusNotFound
 }
 
 func (s *scraper) ResolveDownloadProxyForHost(host string) (*models.ProxyConfig, *models.ProxyConfig, bool) {
@@ -299,4 +429,5 @@ func buildStandardCode(label, digits string) (string, bool) {
 var (
 	_ models.Scraper               = (*scraper)(nil)
 	_ models.DownloadProxyResolver = (*scraper)(nil)
+	_ models.MetadataConsumer      = (*scraper)(nil)
 )

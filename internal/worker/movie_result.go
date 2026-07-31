@@ -10,8 +10,9 @@ import (
 )
 
 // ProvenanceData holds per-file provenance (field and actress source attribution)
-// separated from MovieResult. Provenance is an API-presentation concern;
-// the apply phase never reads it.
+// separated from MovieResult. Most fields are API-presentation data; batch
+// apply also reads raw scraper lifecycle fields such as ConsumeURL so a
+// cache-backed provider can be acknowledged only after media handling.
 type ProvenanceData struct {
 	FieldSources   map[string]string `json:"field_sources,omitempty"`
 	ActressSources map[string]string `json:"actress_sources,omitempty"`

@@ -1081,6 +1081,7 @@ func TestScraperResult_Clone(t *testing.T) {
 			Actresses:     []ActressInfo{{FirstName: "A"}},
 			Genres:        []string{"Drama"},
 			ScreenshotURL: []string{"s1.jpg"},
+			Providers:     []string{"fanza"},
 			Translations:  []MovieTranslation{{Language: "en", Title: "Eng"}},
 		}
 
@@ -1091,6 +1092,7 @@ func TestScraperResult_Clone(t *testing.T) {
 		clone.Actresses[0].FirstName = "B"
 		clone.Genres[0] = "Comedy"
 		clone.ScreenshotURL[0] = "s2.jpg"
+		clone.Providers[0] = "libredmm"
 		clone.Translations[0].Title = "Changed"
 		*clone.ReleaseDate = time.Time{}
 		clone.Rating.Score = 0
@@ -1098,6 +1100,7 @@ func TestScraperResult_Clone(t *testing.T) {
 		assert.Equal(t, "A", orig.Actresses[0].FirstName, "Actresses slice must be deep-copied")
 		assert.Equal(t, "Drama", orig.Genres[0], "Genres slice must be deep-copied")
 		assert.Equal(t, "s1.jpg", orig.ScreenshotURL[0], "ScreenshotURL slice must be deep-copied")
+		assert.Equal(t, "fanza", orig.Providers[0], "Providers slice must be deep-copied")
 		assert.Equal(t, "Eng", orig.Translations[0].Title, "Translations slice must be deep-copied")
 		assert.Equal(t, date, *orig.ReleaseDate, "ReleaseDate pointer must be deep-copied")
 		assert.Equal(t, 9.5, orig.Rating.Score, "Rating pointer must be deep-copied")
@@ -1111,6 +1114,7 @@ func TestScraperResult_Clone(t *testing.T) {
 		assert.Nil(t, clone.Actresses)
 		assert.Nil(t, clone.Genres)
 		assert.Nil(t, clone.ScreenshotURL)
+		assert.Nil(t, clone.Providers)
 		assert.Nil(t, clone.Translations)
 	})
 }

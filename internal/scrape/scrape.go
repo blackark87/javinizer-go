@@ -178,6 +178,24 @@ type ScraperInterface interface {
 	Scrape(ctx context.Context, cmd ScrapeCmd, progress ProgressFunc) (*ScrapeResult, error)
 }
 
+// ConsumeMetadata delegates provider-owned cache cleanup to the scraper that
+// produced the raw result. It is intentionally optional at the workflow seam;
+// ordinary web scrapers do not implement models.MetadataConsumer.
+func (s *Scraper) ConsumeMetadata(ctx context.Context, source, productCode, consumeURL string) error {
+	if s == nil || s.registry == nil {
+		return fmt.Errorf("metadata consumer registry is not configured")
+	}
+	instance, ok := s.registry.GetInstance(strings.TrimSpace(source))
+	if !ok {
+		return fmt.Errorf("metadata consumer %q is not registered", source)
+	}
+	consumer, ok := instance.(models.MetadataConsumer)
+	if !ok {
+		return fmt.Errorf("scraper %q does not support metadata consumption", source)
+	}
+	return consumer.ConsumeMetadata(ctx, productCode, consumeURL)
+}
+
 var _ ScraperInterface = (*Scraper)(nil)
 
 // New constructs a Scraper engine from its registry, aggregator, repositories, HTTP client, config, translator, and filesystem dependencies.

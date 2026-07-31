@@ -360,6 +360,7 @@ func TestApplyOrchImpl_Execute_DownloadSuccess(t *testing.T) {
 		downloader: &stubDownloader{
 			outcome: &downloader.DownloadOutcome{
 				DownloadedPaths: []string{"/dest/poster.jpg"},
+				MediaHandled:    true,
 			},
 		},
 		nfo: &applyStubNFO{},
@@ -374,6 +375,7 @@ func TestApplyOrchImpl_Execute_DownloadSuccess(t *testing.T) {
 	assert.NoError(t, err)
 	require.NotNil(t, result)
 	assert.True(t, result.Steps.Downloaded)
+	assert.True(t, result.MediaHandled)
 	assert.Contains(t, result.DownloadPaths, "/dest/poster.jpg")
 }
 

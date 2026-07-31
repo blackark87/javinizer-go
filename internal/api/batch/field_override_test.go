@@ -36,12 +36,12 @@ func setupOverrideJob(t *testing.T) (*core.APIDeps, *worker.BatchJob, string) {
 	job.ResultsWriter().SetProvenance(filePath, &worker.ProvenanceData{
 		FieldSources: map[string]string{"maker": "r18dev"},
 		SourceOutcomes: []*models.ScraperOutcome{
-			{Source: "r18dev", Status: "success", Result: &models.ScraperResult{Source: "r18dev", Maker: "R18Maker", Title: "R18Title"}},
+			{Source: "r18dev", Status: "success", Result: &models.ScraperResult{Source: "r18dev", Maker: "R18Maker", Title: "R18Title", ConsumeURL: "http://internal/outcome/consume"}},
 			{Source: "javlibrary", Status: "no_match"},
 			{Source: "dmm", Status: "failed", Error: "request failed"},
 		},
 		ScraperResults: []*models.ScraperResult{
-			{Source: "r18dev", Maker: "R18Maker", Title: "R18Title"},
+			{Source: "r18dev", Maker: "R18Maker", Title: "R18Title", ConsumeURL: "http://internal/result/consume"},
 			{
 				Source: "dmm", Maker: "DMMMaker", Title: "DMMTitle",
 				Translations: []models.MovieTranslation{{Language: "ko", Title: "DMM 번역 제목"}},
@@ -72,6 +72,11 @@ func TestGetBatchMovieSources_Success(t *testing.T) {
 	require.Len(t, resp.Outcomes, 3)
 	assert.Equal(t, "no_match", resp.Outcomes[1].Status)
 	assert.Equal(t, "request failed", resp.Outcomes[2].Error)
+	assert.NotContains(t, w.Body.String(), "consume_url", "source viewer must not expose destructive internal endpoints")
+	retained := job.ResultsWriter().GetProvenance("/path/to/IPX-535.mp4")
+	require.NotNil(t, retained)
+	assert.Equal(t, "http://internal/result/consume", retained.ScraperResults[0].ConsumeURL)
+	assert.Equal(t, "http://internal/outcome/consume", retained.SourceOutcomes[0].Result.ConsumeURL)
 }
 
 func TestGetBatchMovieSources_JobNotFound(t *testing.T) {

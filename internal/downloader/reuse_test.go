@@ -16,9 +16,10 @@ import (
 func newMetadataReuseDownloader(fs afero.Fs) *Downloader {
 	return NewDownloader(nil, fs, &Config{
 		MediaFormatConfig: organizer.MediaFormatConfig{
-			PosterFormat:  "<ID>-poster.jpg",
-			FanartFormat:  "<ID>-fanart.jpg",
-			TrailerFormat: "<ID>-trailer.mp4",
+			PosterFormat:     "<ID>-poster.jpg",
+			FanartFormat:     "<ID>-fanart.jpg",
+			TrailerFormat:    "<ID>-trailer.mp4",
+			ScreenshotFolder: "extrafanart",
 		},
 	}, nil)
 }
@@ -183,4 +184,79 @@ func TestReuseExistingMetadata_DestinationWinsWithoutOverwriting(t *testing.T) {
 	targetData, err := afero.ReadFile(fs, targetPoster)
 	require.NoError(t, err)
 	assert.Equal(t, "destination", string(targetData))
+}
+
+func TestReuseExistingMetadata_MovesExtrafanartWithoutOverwriting(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	d := newMetadataReuseDownloader(fs)
+	sourceDir := "/library/old"
+	targetDir := "/library/new/ABC-123"
+	sourceExtrafanartDir := filepath.Join(sourceDir, "extrafanart")
+	targetExtrafanartDir := filepath.Join(targetDir, "extrafanart")
+
+	sourceFanart1 := filepath.Join(sourceExtrafanartDir, "fanart1.jpg")
+	sourceFanart2 := filepath.Join(sourceExtrafanartDir, "fanart2.jpg")
+	targetFanart2 := filepath.Join(targetExtrafanartDir, "fanart2.jpg")
+	require.NoError(t, afero.WriteFile(fs, sourceFanart1, []byte("source-1"), 0644))
+	require.NoError(t, afero.WriteFile(fs, sourceFanart2, []byte("source-2"), 0644))
+	require.NoError(t, afero.WriteFile(fs, targetFanart2, []byte("destination-2"), 0644))
+	require.NoError(t, afero.WriteFile(fs, filepath.Join(sourceExtrafanartDir, "@eaDir", "thumbnail.jpg"), []byte("thumbnail"), 0644))
+
+	results := d.ReuseExistingMetadata(context.Background(), ReuseExistingMetadataCmd{
+		Movie:      &models.Movie{ID: "ABC-123"},
+		SourceDir:  sourceDir,
+		TargetDir:  targetDir,
+		SourcePath: filepath.Join(sourceDir, "ABC-123.mp4"),
+		MoveFiles:  true,
+	})
+
+	require.Len(t, results, 1)
+	assert.Equal(t, MediaTypeExtrafanart, results[0].Type)
+	assert.Equal(t, sourceFanart1, results[0].OriginalPath)
+	assert.Equal(t, filepath.Join(targetExtrafanartDir, "fanart1.jpg"), results[0].NewPath)
+	assert.True(t, results[0].Moved)
+	assert.False(t, results[0].Copied)
+	assert.NoError(t, results[0].Error)
+
+	_, err := fs.Stat(sourceFanart1)
+	assert.ErrorIs(t, err, os.ErrNotExist)
+	sourceFanart2Data, err := afero.ReadFile(fs, sourceFanart2)
+	require.NoError(t, err)
+	assert.Equal(t, "source-2", string(sourceFanart2Data))
+	targetFanart2Data, err := afero.ReadFile(fs, targetFanart2)
+	require.NoError(t, err)
+	assert.Equal(t, "destination-2", string(targetFanart2Data))
+	_, err = fs.Stat(filepath.Join(targetExtrafanartDir, "@eaDir", "thumbnail.jpg"))
+	assert.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestReuseExistingMetadata_CopiesExtrafanartAndPreservesSource(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	d := newMetadataReuseDownloader(fs)
+	sourceDir := "/library/old"
+	targetDir := "/library/new/ABC-123"
+	sourceScreenshot := filepath.Join(sourceDir, "extrafanart", "fanart1.jpg")
+	targetScreenshot := filepath.Join(targetDir, "extrafanart", "fanart1.jpg")
+	require.NoError(t, afero.WriteFile(fs, sourceScreenshot, []byte("screenshot"), 0644))
+
+	results := d.ReuseExistingMetadata(context.Background(), ReuseExistingMetadataCmd{
+		Movie:      &models.Movie{ID: "ABC-123"},
+		SourceDir:  sourceDir,
+		TargetDir:  targetDir,
+		SourcePath: filepath.Join(sourceDir, "ABC-123.mp4"),
+		MoveFiles:  false,
+	})
+
+	require.Len(t, results, 1)
+	assert.Equal(t, MediaTypeExtrafanart, results[0].Type)
+	assert.False(t, results[0].Moved)
+	assert.True(t, results[0].Copied)
+	assert.NoError(t, results[0].Error)
+
+	sourceData, err := afero.ReadFile(fs, sourceScreenshot)
+	require.NoError(t, err)
+	assert.Equal(t, "screenshot", string(sourceData))
+	targetData, err := afero.ReadFile(fs, targetScreenshot)
+	require.NoError(t, err)
+	assert.Equal(t, "screenshot", string(targetData))
 }

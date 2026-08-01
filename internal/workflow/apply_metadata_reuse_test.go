@@ -33,6 +33,13 @@ func TestApplyOrchestrator_ReusesMetadataBeforeDownload(t *testing.T) {
 	for name, content := range reusedFiles {
 		require.NoError(t, afero.WriteFile(fs, filepath.Join(sourceDir, name), []byte(content), 0644))
 	}
+	reusedExtrafanart := map[string]string{
+		"fanart1.jpg": "screenshot-1",
+		"fanart2.jpg": "screenshot-2",
+	}
+	for name, content := range reusedExtrafanart {
+		require.NoError(t, afero.WriteFile(fs, filepath.Join(sourceDir, "extrafanart", name), []byte(content), 0644))
+	}
 
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -43,9 +50,11 @@ func TestApplyOrchestrator_ReusesMetadataBeforeDownload(t *testing.T) {
 	defer server.Close()
 
 	mediaFormats := organizer.MediaFormatConfig{
-		PosterFormat:  "<ID>-poster.jpg",
-		FanartFormat:  "<ID>-fanart.jpg",
-		TrailerFormat: "<ID>-trailer.mp4",
+		PosterFormat:     "<ID>-poster.jpg",
+		FanartFormat:     "<ID>-fanart.jpg",
+		TrailerFormat:    "<ID>-trailer.mp4",
+		ScreenshotFormat: "fanart<INDEX>.jpg",
+		ScreenshotFolder: "extrafanart",
 	}
 	org := organizer.NewOrganizer(fs, &organizer.Config{
 		FolderFormat:      "<ID>",
@@ -55,10 +64,11 @@ func TestApplyOrchestrator_ReusesMetadataBeforeDownload(t *testing.T) {
 		MediaFormatConfig: mediaFormats,
 	}, nil, nil)
 	dl := downloader.NewDownloader(server.Client(), fs, &downloader.Config{
-		MediaFormatConfig: mediaFormats,
-		DownloadCover:     true,
-		DownloadPoster:    true,
-		DownloadTrailer:   true,
+		MediaFormatConfig:   mediaFormats,
+		DownloadCover:       true,
+		DownloadPoster:      true,
+		DownloadTrailer:     true,
+		DownloadExtrafanart: true,
 	}, nil)
 	orch := newApplyOrchestrator(
 		fs,
@@ -77,6 +87,10 @@ func TestApplyOrchestrator_ReusesMetadataBeforeDownload(t *testing.T) {
 		ID:         "ABC-123",
 		Title:      "Test",
 		TrailerURL: server.URL + "/trailer.mp4",
+		Screenshots: []string{
+			server.URL + "/fanart1.jpg",
+			server.URL + "/fanart2.jpg",
+		},
 		Poster: models.PosterState{
 			CoverURL:         server.URL + "/cover.jpg",
 			PosterURL:        server.URL + "/poster.jpg",
@@ -104,7 +118,7 @@ func TestApplyOrchestrator_ReusesMetadataBeforeDownload(t *testing.T) {
 	assert.Zero(t, requests.Load(), "existing metadata should prevent every network download")
 	assert.True(t, result.Steps.Downloaded)
 	assert.Empty(t, result.DownloadPaths, "reused files are tracked separately from newly downloaded files")
-	require.Len(t, result.ReusedMetadataMoves, 3)
+	require.Len(t, result.ReusedMetadataMoves, 5)
 
 	targetDir := "/library/new/ABC-123"
 	for name, content := range reusedFiles {
@@ -116,6 +130,17 @@ func TestApplyOrchestrator_ReusesMetadataBeforeDownload(t *testing.T) {
 		require.NoError(t, readErr)
 		assert.Equal(t, content, string(data))
 	}
+	for name, content := range reusedExtrafanart {
+		sourcePath := filepath.Join(sourceDir, "extrafanart", name)
+		_, statErr := fs.Stat(sourcePath)
+		assert.Error(t, statErr)
+
+		data, readErr := afero.ReadFile(fs, filepath.Join(targetDir, "extrafanart", name))
+		require.NoError(t, readErr)
+		assert.Equal(t, content, string(data))
+	}
+	_, statErr := fs.Stat(filepath.Join(sourceDir, "extrafanart"))
+	assert.Error(t, statErr, "empty source extrafanart directory should be removed in move mode")
 }
 
 func TestBuildApplyGeneratedFilesJSON_TracksReusedMetadata(t *testing.T) {

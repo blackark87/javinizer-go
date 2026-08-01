@@ -26,6 +26,8 @@ type ReuseExistingMetadataCmd struct {
 // MetadataReuseResult describes one metadata file moved or copied into the
 // organized destination. Cover images are represented by MediaTypeCover and
 // stored at the configured fanart path, matching the downloader contract.
+// Existing extrafanart files are reported individually so move/copy operations
+// remain reversible.
 type MetadataReuseResult struct {
 	Type         MediaType
 	OriginalPath string
@@ -49,9 +51,10 @@ type reusableMetadataTarget struct {
 	roles     []string
 }
 
-// ReuseExistingMetadata moves existing poster, fanart/cover, and trailer files
-// from the video's source directory into the organized destination. Copy/link
-// organization modes copy the metadata instead, preserving the source tree.
+// ReuseExistingMetadata moves existing poster, fanart/cover, trailer, and
+// extrafanart files from the video's source directory into the organized
+// destination. Copy/link organization modes copy the metadata instead,
+// preserving the source tree.
 //
 // Exact configured filenames are preferred. Legacy "*-cover.jpg" files are
 // accepted as the source for the configured fanart destination. A candidate
@@ -135,6 +138,76 @@ func (d *Downloader) ReuseExistingMetadata(ctx context.Context, cmd ReuseExistin
 			result.Error = err
 		}
 		results = append(results, result)
+	}
+
+	if ctx.Err() == nil {
+		results = append(results, d.reuseExistingExtrafanart(ctx, sourceDir, targetDir, cmd.MoveFiles)...)
+	}
+
+	return results
+}
+
+func (d *Downloader) reuseExistingExtrafanart(
+	ctx context.Context,
+	sourceDir string,
+	targetDir string,
+	moveFiles bool,
+) []MetadataReuseResult {
+	screenshotFolder := strings.TrimSpace(d.config.ScreenshotFolder)
+	if screenshotFolder == "" {
+		return nil
+	}
+
+	sourceExtrafanartDir := filepath.Join(sourceDir, screenshotFolder)
+	targetExtrafanartDir := filepath.Join(targetDir, screenshotFolder)
+	entries, err := afero.ReadDir(d.fs, sourceExtrafanartDir)
+	if err != nil {
+		return nil
+	}
+
+	results := make([]MetadataReuseResult, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			results = append(results, MetadataReuseResult{
+				Type:         MediaTypeExtrafanart,
+				OriginalPath: filepath.Join(sourceExtrafanartDir, entry.Name()),
+				NewPath:      filepath.Join(targetExtrafanartDir, entry.Name()),
+				Error:        err,
+			})
+			break
+		}
+
+		sourcePath := filepath.Join(sourceExtrafanartDir, entry.Name())
+		targetPath := filepath.Join(targetExtrafanartDir, entry.Name())
+		if _, err := d.fs.Stat(targetPath); err == nil {
+			continue
+		}
+
+		result := MetadataReuseResult{
+			Type:         MediaTypeExtrafanart,
+			OriginalPath: sourcePath,
+			NewPath:      targetPath,
+		}
+		if moveFiles {
+			err = fsutil.MoveFileFs(d.fs, sourcePath, targetPath)
+			result.Moved = err == nil
+		} else {
+			err = fsutil.CopyFileFs(d.fs, sourcePath, targetPath)
+			result.Copied = err == nil
+		}
+		if err != nil {
+			result.Error = err
+		}
+		results = append(results, result)
+	}
+	if moveFiles {
+		// Remove the old extrafanart directory only when every direct file was
+		// moved and no skipped files or nested directories remain. Revert can
+		// recreate it from the individual move records.
+		_ = d.fs.Remove(sourceExtrafanartDir)
 	}
 
 	return results

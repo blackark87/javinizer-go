@@ -286,7 +286,7 @@ describe('/browse — translation-only refresh', () => {
 });
 
 describe('/browse — cached metadata reuse', () => {
-	it('clears conflicting options and submits a cache-only request', async () => {
+	it('clears conflicting options and submits a cache-preferred request', async () => {
 		const { findByText, getByText, getByRole, getByLabelText } = renderPage();
 		await findByText('a.mp4');
 		await fireEvent.click(getByText('a.mp4'));
@@ -298,7 +298,7 @@ describe('/browse — cached metadata reuse', () => {
 		expect(forceCheckbox.checked).toBe(true);
 
 		const cacheOnlyCheckbox = getByLabelText(
-			/No scraping, translation, or movie-cache writes; cache misses fail/
+			/Use cached entries as-is; scrape and save normally when metadata is missing/
 		) as HTMLInputElement;
 		await fireEvent.click(cacheOnlyCheckbox);
 
@@ -308,13 +308,13 @@ describe('/browse — cached metadata reuse', () => {
 		expect((getByLabelText(/Choose specific scrapers/) as HTMLInputElement).disabled).toBe(true);
 		expect((getByLabelText(/Review & override IDs/) as HTMLInputElement).disabled).toBe(true);
 		expect((getByLabelText(/Re-translate cached metadata/) as HTMLInputElement).disabled).toBe(true);
-		expect(getByText('Cache only')).toBeTruthy();
+		expect(getByText('Cache first')).toBeTruthy();
 
 		const raw = sessionStorage.getItem(STORAGE_KEY_SCRAPE_STATE);
 		expect(raw).not.toBeNull();
 		expect(JSON.parse(raw as string).cacheOnly).toBe(true);
 
-		await fireEvent.click(getByRole('button', { name: 'Load cached metadata for 1 File' }));
+		await fireEvent.click(getByRole('button', { name: 'Load cached metadata or scrape 1 File' }));
 		await waitFor(() => expect(apiClient.batchScrape).toHaveBeenCalledTimes(1));
 		expect(apiClient.batchScrape).toHaveBeenCalledWith(expect.objectContaining({
 			files: ['/library/a.mp4'],

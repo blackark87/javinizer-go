@@ -74,7 +74,7 @@ type MovieResult struct {
 	Revision      uint64               `json:"revision"`
 	Status        models.JobStatus     `json:"status"`
 	Error         string               `json:"error,omitempty"`
-	CacheOnly     bool                 `json:"cache_only,omitempty"` // Loaded from the movie cache without metadata/translation persistence
+	CacheOnly     bool                 `json:"cache_only,omitempty"` // This file used a preferred cache hit without metadata/translation persistence
 	StartedAt     time.Time            `json:"started_at"`
 	EndedAt       *time.Time           `json:"ended_at,omitempty"`
 

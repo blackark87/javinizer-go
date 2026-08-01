@@ -210,7 +210,7 @@ func buildApplyCmd(
 		DryRun:              cfg.DryRun,
 		Organize:            cfg.OrganizeOptions,
 		Merge:               cfg.MergeOptions,
-		Download:            cfg.Download,
+		Download:            cfg.Download && !fileResult.CacheOnly,
 		DisplayTitleSrc:     movie,
 		DownloadExtrafanart: cfg.DownloadExtrafanart,
 		OperationMode:       cfg.OperationModeOverride,

@@ -124,6 +124,46 @@ type cacheOnlyWorkflow struct {
 	translateCalls int
 }
 
+type cacheFallbackWorkflow struct {
+	results        map[string]*scrape.ScrapeResult
+	translateCalls int
+}
+
+func (w *cacheFallbackWorkflow) Scrape(_ context.Context, cmd scrape.ScrapeCmd, _ scrape.ProgressFunc) (*scrape.ScrapeResult, *workflow.OrchestrationMeta, error) {
+	result := w.results[cmd.MovieID]
+	if result == nil {
+		return nil, nil, nil
+	}
+	clone := *result
+	if result.Movie != nil {
+		movieClone := *result.Movie
+		clone.Movie = &movieClone
+	}
+	return &clone, nil, nil
+}
+
+func (w *cacheFallbackWorkflow) TranslateScrapeResult(_ context.Context, result *scrape.ScrapeResult, _ string) (*workflow.OrchestrationMeta, error) {
+	w.translateCalls++
+	result.Movie.Title += " translated"
+	return nil, nil
+}
+
+func (w *cacheFallbackWorkflow) Apply(_ context.Context, _ workflow.ApplyCmd, _ scrape.ProgressFunc) (*workflow.ApplyResult, error) {
+	return nil, nil
+}
+
+func (w *cacheFallbackWorkflow) Preview(_ context.Context, _ workflow.PreviewCmd) (*workflow.PreviewResult, error) {
+	return nil, nil
+}
+
+func (w *cacheFallbackWorkflow) Compare(_ context.Context, _ workflow.CompareCmd) (*workflow.CompareResult, error) {
+	return nil, nil
+}
+
+func (w *cacheFallbackWorkflow) ScanAndMatch(_ context.Context, _ workflow.ScanAndMatchCmd) (*workflow.ScanAndMatchResult, error) {
+	return nil, nil
+}
+
 func (w *cacheOnlyWorkflow) Scrape(ctx context.Context, cmd scrape.ScrapeCmd, progress scrape.ProgressFunc) (*scrape.ScrapeResult, *workflow.OrchestrationMeta, error) {
 	w.lastCmd = cmd
 	return w.stubWorkflow.Scrape(ctx, cmd, progress)
@@ -281,11 +321,12 @@ func TestBuildScrapeCmd_NoManualInputAutoIDsFromMatcher(t *testing.T) {
 	assert.Equal(t, "", cmd.RawInput, "no manual input: RawInput stays empty so resolveScrapeInput is a no-op")
 }
 
-func TestBuildScrapeCmd_CacheOnlyForcesTranslationSkip(t *testing.T) {
+func TestBuildScrapeCmd_CachePreferenceHonorsBatchDeferral(t *testing.T) {
 	const file = "/videos/ABC-001.mp4"
 	inputs := scrapePhaseInputs{
 		Matcher:             &stubMatcher{result: "ABC-001"},
 		DeferredTranslation: true,
+		MovieRepo:           &countingMovieRepository{},
 	}
 
 	cmd, _ := buildScrapeCmd(file, inputs, ScrapePhaseConfig{CacheOnly: true})
@@ -293,6 +334,17 @@ func TestBuildScrapeCmd_CacheOnlyForcesTranslationSkip(t *testing.T) {
 	assert.True(t, cmd.CacheOnly)
 	assert.True(t, cmd.SkipPersist)
 	assert.True(t, cmd.SkipTranslation)
+}
+
+func TestBuildScrapeCmd_CachePreferenceDoesNotForceInlineSkips(t *testing.T) {
+	const file = "/videos/ABC-001.mp4"
+	inputs := scrapePhaseInputs{Matcher: &stubMatcher{result: "ABC-001"}}
+
+	cmd, _ := buildScrapeCmd(file, inputs, ScrapePhaseConfig{CacheOnly: true})
+
+	assert.True(t, cmd.CacheOnly)
+	assert.False(t, cmd.SkipPersist, "a standalone cache miss must be able to persist its scrape fallback")
+	assert.False(t, cmd.SkipTranslation, "a standalone cache miss must keep normal translation behavior")
 }
 
 func TestBuildScrapeCmd_ManualInputUsedAsIDBypassingMatcher(t *testing.T) {
@@ -347,6 +399,50 @@ func TestScrapePhase_Run_CacheOnlySkipsDeferredTranslationAndMoviePersistence(t 
 	assert.True(t, result.CacheOnly)
 	assert.True(t, result.Persisted, "the loaded result is already backed by the existing movie cache")
 	assert.Equal(t, "Cached title", result.Movie.Title)
+}
+
+func TestScrapePhase_Run_CachePreferenceFallsBackPerFile(t *testing.T) {
+	base := &stubWorkflow{}
+	wf := &cacheFallbackWorkflow{results: map[string]*scrape.ScrapeResult{
+		"CACHED-001": {
+			Movie:  &models.Movie{ID: "CACHED-001", Title: "Stored title"},
+			Cached: true,
+		},
+		"MISS-001": {
+			Movie: &models.Movie{ID: "MISS-001", Title: "Fresh title"},
+		},
+	}}
+	inputs := makeInputs(base)
+	inputs.WF = wf
+	inputs.DeferredTranslation = true
+	inputs.TranslationConcurrency = 1
+	repo := &countingMovieRepository{}
+	inputs.MovieRepo = repo
+	updater := inputs.Updater.(*stubUpdater)
+	files := []string{"cached.mp4", "missing.mp4"}
+
+	NewScrapePhase().Run(context.Background(), inputs, files, ScrapePhaseConfig{
+		CacheOnly: true,
+		MovieIDOverride: map[string]string{
+			"cached.mp4":  "CACHED-001",
+			"missing.mp4": "MISS-001",
+		},
+	})
+
+	assert.Equal(t, 1, wf.translateCalls, "only the scrape fallback should enter deferred translation")
+	assert.Equal(t, 2, repo.upserts, "the fallback is checkpointed before and after translation; the cache hit is never rewritten")
+
+	cached := updater.getResult("cached.mp4")
+	require.NotNil(t, cached)
+	assert.True(t, cached.CacheOnly)
+	assert.True(t, cached.Persisted)
+	assert.Equal(t, "Stored title", cached.Movie.Title)
+
+	fallback := updater.getResult("missing.mp4")
+	require.NotNil(t, fallback)
+	assert.False(t, fallback.CacheOnly)
+	assert.True(t, fallback.Persisted)
+	assert.Equal(t, "Fresh title translated", fallback.Movie.Title)
 }
 
 func TestScrapePhase_Run_BroadcasterClosed(t *testing.T) {

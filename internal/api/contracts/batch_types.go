@@ -10,7 +10,7 @@ type BatchScrapeRequest struct {
 	Files                  []string          `json:"files" binding:"required"`
 	Strict                 bool              `json:"strict" example:"false"`
 	Force                  bool              `json:"force" example:"false"`
-	CacheOnly              bool              `json:"cache_only" example:"false"`                      // Use DB-cached metadata without scraping, translation, or movie-cache persistence; cache misses fail
+	CacheOnly              bool              `json:"cache_only" example:"false"`                      // Prefer DB-cached metadata as-is; scrape, translate, and persist normally on cache misses
 	RefreshTranslationOnly bool              `json:"refresh_translation_only" example:"false"`        // Re-translate DB-cached metadata; fall back to a general scrape when cache is missing
 	Destination            string            `json:"destination,omitempty" example:"/path/to/output"` // Persisted on job for UI retrieval; required for organize mode, optional for in-place modes
 	Update                 bool              `json:"update" example:"false"`                          // Update mode: only create/update metadata files without moving video files

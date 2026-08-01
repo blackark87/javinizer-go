@@ -84,7 +84,7 @@ type ScrapeCmd struct {
 	MovieID                string
 	SourcePath             string // Local video path for media-backed template tags such as <RESOLUTION> and <VR>
 	ForceRefresh           bool
-	CacheOnly              bool // Read cached metadata as-is; never query providers or translate, and fail cache misses
+	CacheOnly              bool // Prefer cached metadata as-is; fall back to normal scraping when the cache is missing
 	RefreshTranslationOnly bool
 	SelectedScrapers       []string
 	PriorityOverride       []string
@@ -413,10 +413,6 @@ func (s *Scraper) Scrape(ctx context.Context, cmd ScrapeCmd, progress ProgressFu
 	// Persistence and poster generation are handled by the caller (typically Workflow.Scrape).
 	startTime := time.Now()
 	prog(progress, ProgressStepScrape, 0, "Starting...")
-	if cmd.CacheOnly {
-		cmd.SkipTranslation = true
-	}
-
 	// Phase 1: Resolve input
 	cmd, err := resolveScrapeInput(ctx, cmd, s.registry, s.cfg)
 	if err != nil {
@@ -438,10 +434,8 @@ func (s *Scraper) Scrape(ctx context.Context, cmd ScrapeCmd, progress ProgressFu
 		}
 	}
 	if cmd.CacheOnly {
-		// tryCache returns a failed result for cache-only misses and lookup errors.
-		// Keep this guard so a future repository implementation cannot accidentally
-		// turn a nil cache result into a provider fallback.
-		return failedResult(cmd.MovieID, fmt.Sprintf("no cached metadata for %s", cmd.MovieID), startTime), nil
+		logging.Infof("[scrape] No cached metadata for %s; falling back to configured scraper priority", cmd.MovieID)
+		prog(progress, ProgressStepScrape, 0.1, "No cached metadata; falling back to configured scrapers")
 	}
 
 	if cmd.RefreshTranslationOnly {

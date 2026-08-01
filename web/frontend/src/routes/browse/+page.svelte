@@ -532,7 +532,7 @@
 			void queryClient.invalidateQueries({ queryKey: ['batch-jobs'] });
 
 			const modeText = cacheOnly
-				? 'Loading cached metadata'
+				? 'Loading cached metadata with scrape fallback'
 				: refreshTranslationOnly
 					? 'Refreshing translations'
 				: isUpdateMode ? 'Updating metadata' : 'Batch scraping';
@@ -998,7 +998,7 @@
 						/>
 						<div class="flex-1">
 							<span class="text-sm font-medium">Use Cached Metadata</span>
-							<p class="text-xs text-muted-foreground">No scraping, translation, or movie-cache writes; cache misses fail</p>
+							<p class="text-xs text-muted-foreground">Use cached entries as-is; scrape and save normally when metadata is missing</p>
 						</div>
 					</label>
 
@@ -1115,7 +1115,7 @@
 							<span class="px-2 py-0.5 bg-primary/10 text-primary rounded">{selectedScrapers.length} scrapers</span>
 						{/if}
 						{#if cacheOnly}
-							<span class="px-2 py-0.5 bg-primary/10 text-primary rounded">Cache only</span>
+							<span class="px-2 py-0.5 bg-primary/10 text-primary rounded">Cache first</span>
 						{/if}
 						{#if refreshTranslationOnly}
 							<span class="px-2 py-0.5 bg-primary/10 text-primary rounded">Translation only</span>
@@ -1142,7 +1142,7 @@
 						{:else if scraping}
 							Starting...
 						{:else if cacheOnly}
-							Load cached metadata for {selectedFiles.length} File{selectedFiles.length !== 1 ? 's' : ''}
+							Load cached metadata or scrape {selectedFiles.length} File{selectedFiles.length !== 1 ? 's' : ''}
 						{:else if refreshTranslationOnly}
 							Refresh translations for {selectedFiles.length} File{selectedFiles.length !== 1 ? 's' : ''}
 						{:else if operationMode === 'update'}

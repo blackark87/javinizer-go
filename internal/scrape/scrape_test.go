@@ -254,26 +254,32 @@ func TestScrape_CacheOnlyHitPreservesStoredMetadataWithoutProviderCalls(t *testi
 	assert.Zero(t, resolver.callCount)
 }
 
-func TestScrape_CacheOnlyMissFailsWithoutProviderFallback(t *testing.T) {
+func TestScrape_CacheOnlyMissFallsBackToConfiguredScrapers(t *testing.T) {
 	f := newFixture(t)
 	provider := &mockScraper{
 		name:    "provider",
 		enabled: true,
-		result:  &models.ScraperResult{ID: "MISS-001", Title: "Should not be fetched", Source: "provider"},
+		result:  &models.ScraperResult{ID: "MISS-001", Title: "Fallback metadata", Source: "provider"},
 	}
 	f.registry.RegisterInstance(provider)
 	f.cfg.Scrapers.Priority = []string{"provider"}
+	var progressMessages []string
 
 	result, err := f.build().Scrape(context.Background(), ScrapeCmd{
 		MovieID:   "MISS-001",
 		CacheOnly: true,
-	}, nil)
+	}, func(_ ProgressStep, _ float64, message string) {
+		progressMessages = append(progressMessages, message)
+	})
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.Equal(t, StatusFailed, result.Status)
-	assert.Contains(t, result.Message, "no cached metadata")
-	assert.Zero(t, provider.callCount)
+	require.NotNil(t, result.Movie)
+	assert.Equal(t, StatusCompleted, result.Status)
+	assert.False(t, result.Cached)
+	assert.Equal(t, "Fallback metadata", result.Movie.Title)
+	assert.Equal(t, 1, provider.callCount)
+	assert.Contains(t, progressMessages, "No cached metadata; falling back to configured scrapers")
 }
 
 func TestScrape_CacheMiss_Scrapes(t *testing.T) {

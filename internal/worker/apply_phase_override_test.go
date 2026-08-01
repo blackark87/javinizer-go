@@ -89,3 +89,32 @@ func TestBuildApplyCmd_InPlaceModeOverride_SkipBranchStillHonored(t *testing.T) 
 	assert.Equal(t, sourceDir, applyCmd.DestPath,
 		"legacy Skip fallback must still resolve DestPath to the source dir when no override is set")
 }
+
+func TestBuildApplyCmd_CachePreferredHitDisablesDownloadPerFile(t *testing.T) {
+	wf := &stubApplyWorkflow{applyResult: &workflow.ApplyResult{Movie: &models.Movie{ID: "FWAY-088"}}}
+	inputs := makeApplyInputs(wf)
+	movie := &models.Movie{ID: "FWAY-088"}
+	cfg := ApplyPhaseConfig{Download: true}
+
+	cachedCmd, _, cachedOK := buildApplyCmd(
+		"/source/FWAY-088.mp4",
+		movie,
+		&MovieResult{Movie: movie, CacheOnly: true},
+		inputs,
+		cfg,
+		context.Background(),
+	)
+	require.True(t, cachedOK)
+	assert.False(t, cachedCmd.Download, "a preferred cache hit must not download remote media")
+
+	fallbackCmd, _, fallbackOK := buildApplyCmd(
+		"/source/MISS-001.mp4",
+		movie,
+		&MovieResult{Movie: movie, CacheOnly: false},
+		inputs,
+		cfg,
+		context.Background(),
+	)
+	require.True(t, fallbackOK)
+	assert.True(t, fallbackCmd.Download, "a scrape fallback keeps the normal download behavior")
+}

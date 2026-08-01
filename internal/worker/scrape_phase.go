@@ -49,15 +49,17 @@ type scrapeFileOutcome struct {
 	Meta            *workflow.OrchestrationMeta
 }
 
+func usesPreferredCache(outcome scrapeFileOutcome, cfg ScrapePhaseConfig) bool {
+	return cfg.CacheOnly && outcome.Result != nil && outcome.Result.Cached
+}
+
+func needsDeferredTranslation(outcome scrapeFileOutcome, inputs scrapePhaseInputs, cfg ScrapePhaseConfig) bool {
+	return outcome.Success && inputs.DeferredTranslation && !usesPreferredCache(outcome, cfg)
+}
+
 // Run executes the scrape phase: setup errgroup → iterate files → dispatch
 // scrapeFile → collect outcomes → track results → mark lifecycle.
 func (p *scrapePhase) Run(ctx context.Context, inputs scrapePhaseInputs, files []string, cfg ScrapePhaseConfig) {
-	if cfg.CacheOnly {
-		// Cache-only jobs intentionally preserve the stored metadata and translation
-		// payload exactly as-is. Disable the deferred LLM stage even when translation
-		// is enabled globally.
-		inputs.DeferredTranslation = false
-	}
 	defer func() {
 		if r := recover(); r != nil {
 			panicErr := panicutil.FormatRecover(r)
@@ -89,9 +91,9 @@ func (p *scrapePhase) Run(ctx context.Context, inputs scrapePhaseInputs, files [
 			// Mirrors main's realtime.ProgressAdapter which forwarded per-task
 			// scrape updates to the WS hub (deleted in this refactor with no
 			// replacement — restored here via the hook seam).
-			if outcome.Success && !inputs.DeferredTranslation && cfg.OnFileScraped != nil {
+			if outcome.Success && !needsDeferredTranslation(outcome, inputs, cfg) && cfg.OnFileScraped != nil {
 				cfg.OnFileScraped(filePath, fmt.Sprintf("Scraped %s successfully", outcome.MovieID))
-			} else if outcome.Success && inputs.DeferredTranslation && cfg.OnScrapeStepProgress != nil {
+			} else if needsDeferredTranslation(outcome, inputs, cfg) && cfg.OnScrapeStepProgress != nil {
 				cfg.OnScrapeStepProgress(filePath, "metadata", 0.75, fmt.Sprintf("Collected metadata for %s", outcome.MovieID))
 			} else if outcome.Failed && cfg.OnFileScrapeFailed != nil {
 				cfg.OnFileScrapeFailed(filePath, outcome.ErrorMsg)
@@ -99,7 +101,7 @@ func (p *scrapePhase) Run(ctx context.Context, inputs scrapePhaseInputs, files [
 			return outcome
 		},
 		func(outcome scrapeFileOutcome) scrapeFileOutcome {
-			if outcome.Success && inputs.MovieRepo != nil && !cfg.CacheOnly {
+			if outcome.Success && inputs.MovieRepo != nil && !usesPreferredCache(outcome, cfg) {
 				if !persistScrapeOutcome(ctx, outcome, inputs, cfg.OnFileScrapeFailed) {
 					outcome.Success = false
 					outcome.Failed = true
@@ -128,9 +130,7 @@ func (p *scrapePhase) Run(ctx context.Context, inputs scrapePhaseInputs, files [
 	// persisted. Keeping this at the metadata barrier means a later movie-title
 	// or description translation failure cannot strand newly discovered past
 	// activity names without their own translation job.
-	if !cfg.CacheOnly {
-		queuePendingActressTranslations(ctx, outcomes, inputs)
-	}
+	queuePendingActressTranslations(ctx, outcomesEligibleForPersistence(outcomes, cfg), inputs)
 
 	// Every metadata result is already durable. Translation starts only after
 	// the metadata barrier and checkpoints each completed record independently.
@@ -162,7 +162,7 @@ func runDeferredTranslationStage(ctx context.Context, outcomes []scrapeFileOutco
 	}
 
 	return boundedFanOutEach(ctx, workers, outcomes, func(taskCtx context.Context, outcome scrapeFileOutcome) scrapeFileOutcome {
-		if !outcome.Success || outcome.Result == nil || outcome.Result.Movie == nil {
+		if !outcome.Success || outcome.Result == nil || outcome.Result.Movie == nil || usesPreferredCache(outcome, cfg) {
 			return outcome
 		}
 		_ = inputs.Updater.AtomicUpdateFileResult(outcome.FilePath, func(current *MovieResult) (*MovieResult, error) {
@@ -202,6 +202,9 @@ func runDeferredTranslationStage(ctx context.Context, outcomes []scrapeFileOutco
 		finalizeDeferredTranslationOutcome(taskCtx, &outcome, inputs)
 		return outcome
 	}, func(outcome scrapeFileOutcome) scrapeFileOutcome {
+		if usesPreferredCache(outcome, cfg) {
+			return outcome
+		}
 		if outcome.Success && inputs.MovieRepo != nil {
 			if !persistScrapeOutcome(ctx, outcome, inputs, cfg.OnFileScrapeFailed) {
 				outcome.Success = false
@@ -219,6 +222,19 @@ func runDeferredTranslationStage(ctx context.Context, outcomes []scrapeFileOutco
 		}
 		return outcome
 	})
+}
+
+func outcomesEligibleForPersistence(outcomes []scrapeFileOutcome, cfg ScrapePhaseConfig) []scrapeFileOutcome {
+	if !cfg.CacheOnly {
+		return outcomes
+	}
+	eligible := make([]scrapeFileOutcome, 0, len(outcomes))
+	for _, outcome := range outcomes {
+		if !usesPreferredCache(outcome, cfg) {
+			eligible = append(eligible, outcome)
+		}
+	}
+	return eligible
 }
 
 func mergeDeferredTranslationMeta(outcome *scrapeFileOutcome, translated *workflow.OrchestrationMeta) {
@@ -341,8 +357,8 @@ func buildScrapeCmd(
 		// errgroup-gated scrape workers don't block on SQLite's single-writer
 		// lock. The Run checkpoint writer persists each outcome as it arrives.
 		// Single-scrape callers (CLI/API/rescrape) leave this false.
-		SkipPersist:     inputs.MovieRepo != nil || cfg.CacheOnly,
-		SkipTranslation: inputs.DeferredTranslation || cfg.CacheOnly,
+		SkipPersist:     inputs.MovieRepo != nil,
+		SkipTranslation: inputs.DeferredTranslation,
 	}, movieIDFromMatcher
 }
 
@@ -424,13 +440,15 @@ func interpretScrapeResult(
 
 	fileResult, prov := scrapeResultToMovieResult(fmi, result, meta, preserveMovieID)
 	fileResult.StartedAt = startTime
-	if cmd.CacheOnly {
-		// The movie already exists in the persistent cache; cache-only merely loads
-		// it into this job and must not write it back to the movie repository.
+	preferredCacheHit := cmd.CacheOnly && result.Cached
+	if preferredCacheHit {
+		// This file already exists in the persistent cache. Keep the stored
+		// metadata/translation payload as-is and do not write it back.
 		fileResult.CacheOnly = true
 		fileResult.Persisted = true
 	}
-	if inputs.DeferredTranslation {
+	deferTranslation := inputs.DeferredTranslation && !preferredCacheHit
+	if deferTranslation {
 		fileResult.Status = models.JobStatusPending
 		fileResult.EndedAt = nil
 	}
@@ -438,7 +456,7 @@ func interpretScrapeResult(
 	// Poster generation — moved from the workflow's scrape orchestrator
 	// to the worker phase so that ScrapeCmd stays a pure query and
 	// the side-effect (filesystem write) is owned by the orchestration layer.
-	if !inputs.DeferredTranslation && inputs.PosterGen != nil && fileResult.Movie != nil && !result.Cached {
+	if !deferTranslation && inputs.PosterGen != nil && fileResult.Movie != nil && !result.Cached {
 		posterErr := inputs.PosterGen.GeneratePoster(taskCtx, inputs.JobID.String(), fileResult.Movie)
 		if posterErr != nil {
 			s := posterErr.Error()
@@ -453,7 +471,7 @@ func interpretScrapeResult(
 	// rescrape path (establishScrapedBaseline) for full symmetry — without it,
 	// Original* stays empty until the first manual edit snapshots it lazily via
 	// backupPosterOriginals, which is inconsistent with the rescrape baseline.
-	if !inputs.DeferredTranslation && !cmd.CacheOnly && fileResult.Movie != nil {
+	if !deferTranslation && !preferredCacheHit && fileResult.Movie != nil {
 		establishScrapedBaseline(fileResult.Movie, fileResult.Movie)
 	}
 
@@ -465,7 +483,7 @@ func interpretScrapeResult(
 	step := StepComplete
 	progress := 1.0
 	message := fmt.Sprintf("Scraped %s successfully", result.Movie.ID)
-	if inputs.DeferredTranslation {
+	if deferTranslation {
 		step = StepScrape
 		progress = 0.75
 		message = fmt.Sprintf("Collected metadata for %s", result.Movie.ID)

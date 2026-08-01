@@ -20,9 +20,6 @@ import (
 // be redundant (posters are keyed by movie ID + format, not translation hash).
 func (s *Scraper) tryCache(ctx context.Context, cmd ScrapeCmd, actressRepo database.ActressRepositoryInterface, startTime time.Time) *ScrapeResult {
 	if s.movieRepo == nil {
-		if cmd.CacheOnly {
-			return failedResult(cmd.MovieID, "cache-only mode requires a movie repository", startTime)
-		}
 		return nil
 	}
 
@@ -30,9 +27,9 @@ func (s *Scraper) tryCache(ctx context.Context, cmd ScrapeCmd, actressRepo datab
 	if err != nil {
 		if cmd.CacheOnly {
 			if database.IsNotFound(err) {
-				return failedResult(cmd.MovieID, fmt.Sprintf("no cached metadata for %s", cmd.MovieID), startTime)
+				return nil
 			}
-			return failedResult(cmd.MovieID, fmt.Sprintf("cache-only lookup failed for %s: %v", cmd.MovieID, err), startTime)
+			return failedResult(cmd.MovieID, fmt.Sprintf("cache-preferred lookup failed for %s: %v", cmd.MovieID, err), startTime)
 		}
 		if !database.IsNotFound(err) {
 			logging.Debugf("[scrape] Cache lookup failed for %s: %v", cmd.MovieID, err)
@@ -64,7 +61,7 @@ func (s *Scraper) tryCache(ctx context.Context, cmd ScrapeCmd, actressRepo datab
 	needsPersistence := actressesChanged
 	translationWarning := ""
 	var translationOutput *translation.TranslationOutput
-	if s.cfg != nil && s.cfg.TranslationEnabled && !cmd.SkipTranslation {
+	if !cmd.CacheOnly && s.cfg != nil && s.cfg.TranslationEnabled && !cmd.SkipTranslation {
 		currentHash := s.cfg.TranslationSettingsHash
 		targetLang := s.cfg.TranslationTargetLang
 		hasValidTranslation := false

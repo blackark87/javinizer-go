@@ -5202,7 +5202,7 @@ const docTemplate = `{
                     "example": "merge"
                 },
                 "cache_only": {
-                    "description": "Use DB-cached metadata without scraping, translation, or movie-cache persistence; cache misses fail",
+                    "description": "Prefer DB-cached metadata as-is; scrape, translate, and persist normally on cache misses",
                     "type": "boolean",
                     "example": false
                 },

@@ -54,3 +54,25 @@ func TestValidateRefreshTranslationOnlyInput(t *testing.T) {
 		true,
 	))
 }
+
+func TestValidateCacheOnlyInput(t *testing.T) {
+	require.NoError(t, validateCacheOnlyInput(StartScrapeInput{}))
+	require.NoError(t, validateCacheOnlyInput(StartScrapeInput{CacheOnly: true}))
+
+	tests := []struct {
+		name  string
+		input StartScrapeInput
+	}{
+		{name: "force", input: StartScrapeInput{CacheOnly: true, Force: true}},
+		{name: "translation refresh", input: StartScrapeInput{CacheOnly: true, RefreshTranslationOnly: true}},
+		{name: "selected scrapers", input: StartScrapeInput{CacheOnly: true, SelectedScrapers: []string{"dmm"}}},
+		{name: "manual inputs", input: StartScrapeInput{CacheOnly: true, ManualInputs: map[string]string{"/media/ABC-001.mp4": "ABC-001"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateCacheOnlyInput(tt.input)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "mutually exclusive")
+		})
+	}
+}

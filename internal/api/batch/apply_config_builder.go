@@ -74,7 +74,7 @@ func resolveOrganizeApplyConfig(
 		req.Destination,
 	)
 	applyOpts.GenerateNFO = !req.SkipNFO
-	applyOpts.Download = !req.SkipDownload
+	applyOpts.Download = !req.SkipDownload && !jobUsesCacheOnly(job)
 	applyOpts.Resume = req.Resume
 	if req.Resume {
 		operations, err := deps.GetBatchFileOpRepo().FindByBatchJobID(context.Background(), job.GetID())
@@ -150,7 +150,7 @@ func resolveUpdateApplyConfig(
 		"", // no destination for update
 	)
 	applyOpts.GenerateNFO = !req.SkipNFO
-	applyOpts.Download = !req.SkipDownload
+	applyOpts.Download = !req.SkipDownload && !jobUsesCacheOnly(job)
 	sink := newOrganizeBroadcastSink(snap.RT())
 	applyOpts.OnPhaseComplete = makeOrganizeCompleteBroadcaster(job, true /* isUpdate */, sink)
 	applyOpts.OnFileProgress = makeOrganizeProgressBroadcaster(job, true /* isUpdate */, sink)
@@ -170,6 +170,31 @@ func resolveUpdateApplyConfig(
 	}
 
 	return applyOpts, nil
+}
+
+// jobUsesCacheOnly reports whether the job was created by the cache-only
+// scrape path. The marker lives on MovieResult so it survives the existing job
+// JSON persistence/reconstruction path without a jobs-table migration. A
+// cache-only job must never enable remote artwork/trailer downloads during a
+// later organize or update phase; local metadata reuse still runs before the
+// workflow's download gate.
+func jobUsesCacheOnly(job worker.BatchJobInterface) bool {
+	if job == nil {
+		return false
+	}
+	return statusUsesCacheOnly(job.GetStatus())
+}
+
+func statusUsesCacheOnly(status *worker.BatchJobStatus) bool {
+	if status == nil {
+		return false
+	}
+	for _, result := range status.Results {
+		if result != nil && result.CacheOnly {
+			return true
+		}
+	}
+	return false
 }
 
 // stampJobCounts enriches a WebSocket ProgressMessage with AUTHORITATIVE

@@ -6,6 +6,7 @@ import (
 
 	"github.com/javinizer/javinizer-go/internal/operationmode"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBatchScrapeRequest_OperationMode(t *testing.T) {
@@ -153,6 +154,21 @@ func TestBatchScrapeRequest_RefreshTranslationOnlyRoundTrip(t *testing.T) {
 	var got BatchScrapeRequest
 	assert.NoError(t, json.Unmarshal(data, &got))
 	assert.True(t, got.RefreshTranslationOnly)
+}
+
+func TestBatchScrapeRequest_CacheOnlyRoundTrip(t *testing.T) {
+	original := BatchScrapeRequest{
+		Files:     []string{"/media/ABC-001.mp4"},
+		CacheOnly: true,
+	}
+
+	data, err := json.Marshal(original)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"cache_only":true`)
+
+	var got BatchScrapeRequest
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.True(t, got.CacheOnly)
 }
 
 func TestOrganizePreviewResponse_OperationMode(t *testing.T) {

@@ -28,6 +28,7 @@ func TestMovieResultToBatchFileResultDriftGuard(t *testing.T) {
 	// BatchFileResult API response, with documented reasons.
 	intentionallyUnmappedInFull := map[string]string{
 		"Revision":      "internal versioning counter, not exposed to API consumers",
+		"CacheOnly":     "internal apply-phase safety marker, not exposed to API consumers",
 		"FileMatchInfo": "flattened into BatchFileResult top-level fields (FilePath, MovieID, IsMultiPart, PartNumber, PartSuffix)",
 		// OrchestrationState is embedded — its sub-fields are checked separately below.
 		// Most OrchestrationState fields remain internal. TranslationWarning is

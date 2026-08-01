@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/javinizer/javinizer-go/internal/database"
 	"github.com/javinizer/javinizer-go/internal/matcher"
 	"github.com/javinizer/javinizer-go/internal/models"
 	"github.com/javinizer/javinizer-go/internal/scrape"
@@ -115,6 +116,32 @@ func (s *stubMatcher) MatchFile(_ models.FileMatchInfo) *matcher.MatchResult { r
 type stubWorkflow struct {
 	scrapeResult *scrape.ScrapeResult
 	scrapeErr    error
+}
+
+type cacheOnlyWorkflow struct {
+	*stubWorkflow
+	lastCmd        scrape.ScrapeCmd
+	translateCalls int
+}
+
+func (w *cacheOnlyWorkflow) Scrape(ctx context.Context, cmd scrape.ScrapeCmd, progress scrape.ProgressFunc) (*scrape.ScrapeResult, *workflow.OrchestrationMeta, error) {
+	w.lastCmd = cmd
+	return w.stubWorkflow.Scrape(ctx, cmd, progress)
+}
+
+func (w *cacheOnlyWorkflow) TranslateScrapeResult(_ context.Context, _ *scrape.ScrapeResult, _ string) (*workflow.OrchestrationMeta, error) {
+	w.translateCalls++
+	return nil, nil
+}
+
+type countingMovieRepository struct {
+	database.MovieRepositoryInterface
+	upserts int
+}
+
+func (r *countingMovieRepository) UpsertWithTranslations(_ context.Context, movie *models.Movie, _ []models.GenreTranslationData, _ []models.ActressTranslationData) (*models.Movie, error) {
+	r.upserts++
+	return movie, nil
 }
 
 func (s *stubWorkflow) Scrape(_ context.Context, _ scrape.ScrapeCmd, _ scrape.ProgressFunc) (*scrape.ScrapeResult, *workflow.OrchestrationMeta, error) {
@@ -254,6 +281,20 @@ func TestBuildScrapeCmd_NoManualInputAutoIDsFromMatcher(t *testing.T) {
 	assert.Equal(t, "", cmd.RawInput, "no manual input: RawInput stays empty so resolveScrapeInput is a no-op")
 }
 
+func TestBuildScrapeCmd_CacheOnlyForcesTranslationSkip(t *testing.T) {
+	const file = "/videos/ABC-001.mp4"
+	inputs := scrapePhaseInputs{
+		Matcher:             &stubMatcher{result: "ABC-001"},
+		DeferredTranslation: true,
+	}
+
+	cmd, _ := buildScrapeCmd(file, inputs, ScrapePhaseConfig{CacheOnly: true})
+
+	assert.True(t, cmd.CacheOnly)
+	assert.True(t, cmd.SkipPersist)
+	assert.True(t, cmd.SkipTranslation)
+}
+
 func TestBuildScrapeCmd_ManualInputUsedAsIDBypassingMatcher(t *testing.T) {
 	const file = "/videos/MANUAL-123.mp4"
 	inputs := scrapePhaseInputs{Matcher: &stubMatcher{result: "MATCHED-001"}}
@@ -279,6 +320,33 @@ func TestScrapePhase_Run_Success(t *testing.T) {
 	require.NotNil(t, r, "Updater should have a result for file.mp4")
 	assert.Equal(t, models.JobStatusCompleted, r.Status)
 	assert.Equal(t, "TEST-001", r.FileMatchInfo.MovieID)
+}
+
+func TestScrapePhase_Run_CacheOnlySkipsDeferredTranslationAndMoviePersistence(t *testing.T) {
+	base := &stubWorkflow{scrapeResult: &scrape.ScrapeResult{
+		Movie:  &models.Movie{ID: "TEST-001", Title: "Cached title"},
+		Cached: true,
+	}}
+	wf := &cacheOnlyWorkflow{stubWorkflow: base}
+	inputs := makeInputs(base)
+	inputs.WF = wf
+	inputs.DeferredTranslation = true
+	repo := &countingMovieRepository{}
+	inputs.MovieRepo = repo
+	updater := inputs.Updater.(*stubUpdater)
+
+	NewScrapePhase().Run(context.Background(), inputs, []string{"file.mp4"}, ScrapePhaseConfig{CacheOnly: true})
+
+	assert.True(t, wf.lastCmd.CacheOnly)
+	assert.True(t, wf.lastCmd.SkipPersist)
+	assert.True(t, wf.lastCmd.SkipTranslation)
+	assert.Zero(t, wf.translateCalls)
+	assert.Zero(t, repo.upserts, "cache-only must not rewrite the movie cache")
+	result := updater.getResult("file.mp4")
+	require.NotNil(t, result)
+	assert.True(t, result.CacheOnly)
+	assert.True(t, result.Persisted, "the loaded result is already backed by the existing movie cache")
+	assert.Equal(t, "Cached title", result.Movie.Title)
 }
 
 func TestScrapePhase_Run_BroadcasterClosed(t *testing.T) {

@@ -375,6 +375,11 @@ definitions:
         description: 'For Update mode: merge, replace'
         example: merge
         type: string
+      cache_only:
+        description: Use DB-cached metadata without scraping, translation, or movie-cache
+          persistence; cache misses fail
+        example: false
+        type: boolean
       destination:
         description: Persisted on job for UI retrieval; required for organize mode,
           optional for in-place modes

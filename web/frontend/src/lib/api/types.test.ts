@@ -195,6 +195,25 @@ describe('BatchScrapeRequest.refresh_translation_only wire contract', () => {
 	});
 });
 
+describe('BatchScrapeRequest.cache_only wire contract', () => {
+	it('serializes the cache-only flag under its snake_case key', () => {
+		const req: BatchScrapeRequest = {
+			files: ['/test/a.mp4'],
+			strict: false,
+			force: false,
+			cache_only: true,
+		};
+		const wire = JSON.stringify(req);
+		expect(wire).toContain('"cache_only":true');
+		expect((JSON.parse(wire) as BatchScrapeRequest).cache_only).toBe(true);
+	});
+
+	it('omits the flag for existing callers', () => {
+		const req: BatchScrapeRequest = { files: ['/test/a.mp4'], strict: false, force: false };
+		expect(JSON.stringify(req)).not.toContain('cache_only');
+	});
+});
+
 describe('FileResult.translation_warning wire contract', () => {
 	it('retains a per-file translation warning from the batch API', () => {
 		const result: FileResult = {

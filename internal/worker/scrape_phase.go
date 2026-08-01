@@ -52,6 +52,12 @@ type scrapeFileOutcome struct {
 // Run executes the scrape phase: setup errgroup → iterate files → dispatch
 // scrapeFile → collect outcomes → track results → mark lifecycle.
 func (p *scrapePhase) Run(ctx context.Context, inputs scrapePhaseInputs, files []string, cfg ScrapePhaseConfig) {
+	if cfg.CacheOnly {
+		// Cache-only jobs intentionally preserve the stored metadata and translation
+		// payload exactly as-is. Disable the deferred LLM stage even when translation
+		// is enabled globally.
+		inputs.DeferredTranslation = false
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			panicErr := panicutil.FormatRecover(r)
@@ -93,7 +99,7 @@ func (p *scrapePhase) Run(ctx context.Context, inputs scrapePhaseInputs, files [
 			return outcome
 		},
 		func(outcome scrapeFileOutcome) scrapeFileOutcome {
-			if outcome.Success && inputs.MovieRepo != nil {
+			if outcome.Success && inputs.MovieRepo != nil && !cfg.CacheOnly {
 				if !persistScrapeOutcome(ctx, outcome, inputs, cfg.OnFileScrapeFailed) {
 					outcome.Success = false
 					outcome.Failed = true
@@ -122,7 +128,9 @@ func (p *scrapePhase) Run(ctx context.Context, inputs scrapePhaseInputs, files [
 	// persisted. Keeping this at the metadata barrier means a later movie-title
 	// or description translation failure cannot strand newly discovered past
 	// activity names without their own translation job.
-	queuePendingActressTranslations(ctx, outcomes, inputs)
+	if !cfg.CacheOnly {
+		queuePendingActressTranslations(ctx, outcomes, inputs)
+	}
 
 	// Every metadata result is already durable. Translation starts only after
 	// the metadata barrier and checkpoints each completed record independently.
@@ -325,6 +333,7 @@ func buildScrapeCmd(
 		SourcePath:             filePath,
 		RawInput:               rawInput,
 		ForceRefresh:           cfg.Force,
+		CacheOnly:              cfg.CacheOnly,
 		RefreshTranslationOnly: cfg.RefreshTranslationOnly,
 		SelectedScrapers:       scrapersToUse,
 		PriorityOverride:       cfg.PriorityOverride,
@@ -332,8 +341,8 @@ func buildScrapeCmd(
 		// errgroup-gated scrape workers don't block on SQLite's single-writer
 		// lock. The Run checkpoint writer persists each outcome as it arrives.
 		// Single-scrape callers (CLI/API/rescrape) leave this false.
-		SkipPersist:     inputs.MovieRepo != nil,
-		SkipTranslation: inputs.DeferredTranslation,
+		SkipPersist:     inputs.MovieRepo != nil || cfg.CacheOnly,
+		SkipTranslation: inputs.DeferredTranslation || cfg.CacheOnly,
 	}, movieIDFromMatcher
 }
 
@@ -415,6 +424,12 @@ func interpretScrapeResult(
 
 	fileResult, prov := scrapeResultToMovieResult(fmi, result, meta, preserveMovieID)
 	fileResult.StartedAt = startTime
+	if cmd.CacheOnly {
+		// The movie already exists in the persistent cache; cache-only merely loads
+		// it into this job and must not write it back to the movie repository.
+		fileResult.CacheOnly = true
+		fileResult.Persisted = true
+	}
 	if inputs.DeferredTranslation {
 		fileResult.Status = models.JobStatusPending
 		fileResult.EndedAt = nil
@@ -438,7 +453,7 @@ func interpretScrapeResult(
 	// rescrape path (establishScrapedBaseline) for full symmetry — without it,
 	// Original* stays empty until the first manual edit snapshots it lazily via
 	// backupPosterOriginals, which is inconsistent with the rescrape baseline.
-	if !inputs.DeferredTranslation && fileResult.Movie != nil {
+	if !inputs.DeferredTranslation && !cmd.CacheOnly && fileResult.Movie != nil {
 		establishScrapedBaseline(fileResult.Movie, fileResult.Movie)
 	}
 

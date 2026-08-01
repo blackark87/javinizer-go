@@ -22,7 +22,7 @@
 	import { clearManualInputs } from '$lib/stores/manual-inputs-session';
 	import { createConfigQuery, createScrapersQuery } from '$lib/query/queries';
 	import { isTerminalStatus } from '$lib/utils/job-progress';
-	import { Play, FolderOutput, FolderOpen, FileEdit, FileText, RotateCcw, LoaderCircle, RefreshCw, Settings, ChevronUp, ChevronDown, X, Scan } from 'lucide-svelte';
+	import { Play, FolderOutput, FolderOpen, FileEdit, FileText, RotateCcw, LoaderCircle, RefreshCw, Database, Settings, ChevronUp, ChevronDown, X, Scan } from 'lucide-svelte';
 	import type { Scraper, FileInfo, Config } from '$lib/api/types';
 	import type { OperationMode } from '$lib/api/types';
 
@@ -30,6 +30,7 @@
 	let selectedFiles: string[] = $state([]);
 	let scraping = $state(false);
 	let forceRefresh = $state(false);
+	let cacheOnly = $state(false);
 	let refreshTranslationOnly = $state(false);
 	let operationMode: BrowseMode = $state('scrape');
 	let scanning = $state(false);
@@ -105,6 +106,7 @@
 		operationModeOverride: OperationMode;
 		operationModeOverrideTouched: boolean;
 		forceRefresh: boolean;
+		cacheOnly: boolean;
 		refreshTranslationOnly: boolean;
 		showScraperSelector: boolean;
 		selectedScrapers: string[];
@@ -129,6 +131,7 @@
 			if (saved.operationModeOverride) operationModeOverride = saved.operationModeOverride;
 			if (typeof saved.operationModeOverrideTouched === 'boolean') operationModeOverrideTouched = saved.operationModeOverrideTouched;
 			if (typeof saved.forceRefresh === 'boolean') forceRefresh = saved.forceRefresh;
+			if (typeof saved.cacheOnly === 'boolean') cacheOnly = saved.cacheOnly;
 			if (typeof saved.refreshTranslationOnly === 'boolean') refreshTranslationOnly = saved.refreshTranslationOnly;
 			if (typeof saved.showScraperSelector === 'boolean') showScraperSelector = saved.showScraperSelector;
 			if (
@@ -149,6 +152,11 @@
 			if (typeof saved.manualScrapeMode === 'boolean') manualScrapeMode = saved.manualScrapeMode;
 			if (refreshTranslationOnly) {
 				forceRefresh = false;
+				cacheOnly = false;
+				showScraperSelector = false;
+				manualScrapeMode = false;
+			} else if (cacheOnly) {
+				forceRefresh = false;
 				showScraperSelector = false;
 				manualScrapeMode = false;
 			}
@@ -164,6 +172,7 @@
 			operationModeOverride,
 			operationModeOverrideTouched,
 			forceRefresh,
+			cacheOnly,
 			refreshTranslationOnly,
 			showScraperSelector,
 			selectedScrapers,
@@ -428,23 +437,43 @@
 
 	function setForceRefresh(enabled: boolean) {
 		forceRefresh = enabled;
-		if (enabled) refreshTranslationOnly = false;
+		if (enabled) {
+			cacheOnly = false;
+			refreshTranslationOnly = false;
+		}
 	}
 
 	function setScraperSelectionMode(enabled: boolean) {
 		showScraperSelector = enabled;
-		if (enabled) refreshTranslationOnly = false;
+		if (enabled) {
+			cacheOnly = false;
+			refreshTranslationOnly = false;
+		}
 	}
 
 	function setManualScrapeMode(enabled: boolean) {
 		manualScrapeMode = enabled;
-		if (enabled) refreshTranslationOnly = false;
+		if (enabled) {
+			cacheOnly = false;
+			refreshTranslationOnly = false;
+		}
 	}
 
 	function setRefreshTranslationOnly(enabled: boolean) {
 		refreshTranslationOnly = enabled;
 		if (enabled) {
 			forceRefresh = false;
+			cacheOnly = false;
+			showScraperSelector = false;
+			manualScrapeMode = false;
+		}
+	}
+
+	function setCacheOnly(enabled: boolean) {
+		cacheOnly = enabled;
+		if (enabled) {
+			forceRefresh = false;
+			refreshTranslationOnly = false;
 			showScraperSelector = false;
 			manualScrapeMode = false;
 		}
@@ -480,10 +509,11 @@
 				files: selectedFiles,
 				strict: false,
 				force: forceRefresh,
+				cache_only: cacheOnly,
 				refresh_translation_only: refreshTranslationOnly,
 				destination: isUpdateMode ? undefined : (destinationPath.trim() || undefined),
 				update: isUpdateMode,
-				selected_scrapers: !refreshTranslationOnly && showScraperSelector ? selectedScrapers : undefined,
+				selected_scrapers: !cacheOnly && !refreshTranslationOnly && showScraperSelector ? selectedScrapers : undefined,
 				preset: isUpdateMode ? (selectedPreset as 'conservative' | 'gap-fill' | 'aggressive' | undefined) : undefined,
 				scalar_strategy: isUpdateMode ? scalarStrategy : undefined,
 				array_strategy: isUpdateMode ? arrayStrategy : undefined,
@@ -501,8 +531,10 @@
 			pollJobCompletion(response.job_id);
 			void queryClient.invalidateQueries({ queryKey: ['batch-jobs'] });
 
-			const modeText = refreshTranslationOnly
-				? 'Refreshing translations'
+			const modeText = cacheOnly
+				? 'Loading cached metadata'
+				: refreshTranslationOnly
+					? 'Refreshing translations'
 				: isUpdateMode ? 'Updating metadata' : 'Batch scraping';
 			toastStore.success(
 				`${modeText} started for ${selectedFiles.length} file${selectedFiles.length !== 1 ? 's' : ''}`,
@@ -912,7 +944,7 @@
 						<input
 							type="checkbox"
 							checked={forceRefresh}
-							disabled={refreshTranslationOnly}
+							disabled={cacheOnly || refreshTranslationOnly}
 							onchange={(event) => setForceRefresh(event.currentTarget.checked)}
 							class="h-4 w-4 rounded border-input text-primary focus:ring-2 focus:ring-primary"
 						/>
@@ -928,7 +960,7 @@
 						<input
 							type="checkbox"
 							checked={showScraperSelector}
-							disabled={refreshTranslationOnly}
+							disabled={cacheOnly || refreshTranslationOnly}
 							onchange={(event) => setScraperSelectionMode(event.currentTarget.checked)}
 							class="h-4 w-4 rounded border-input text-primary focus:ring-2 focus:ring-primary"
 						/>
@@ -944,7 +976,7 @@
 						<input
 							type="checkbox"
 							checked={manualScrapeMode}
-							disabled={refreshTranslationOnly}
+							disabled={cacheOnly || refreshTranslationOnly}
 							onchange={(event) => setManualScrapeMode(event.currentTarget.checked)}
 							class="h-4 w-4 rounded border-input text-primary focus:ring-2 focus:ring-primary"
 						/>
@@ -959,7 +991,24 @@
 					>
 						<input
 							type="checkbox"
+							checked={cacheOnly}
+							disabled={refreshTranslationOnly}
+							onchange={(event) => setCacheOnly(event.currentTarget.checked)}
+							class="h-4 w-4 rounded border-input text-primary focus:ring-2 focus:ring-primary"
+						/>
+						<div class="flex-1">
+							<span class="text-sm font-medium">Use Cached Metadata</span>
+							<p class="text-xs text-muted-foreground">No scraping, translation, or movie-cache writes; cache misses fail</p>
+						</div>
+					</label>
+
+					<label
+						class="flex items-center gap-3 p-3 rounded-lg border border-border bg-background hover:bg-accent/50 cursor-pointer transition-colors"
+					>
+						<input
+							type="checkbox"
 							checked={refreshTranslationOnly}
+							disabled={cacheOnly}
 							onchange={(event) => setRefreshTranslationOnly(event.currentTarget.checked)}
 							class="h-4 w-4 rounded border-input text-primary focus:ring-2 focus:ring-primary"
 						/>
@@ -968,7 +1017,6 @@
 							<p class="text-xs text-muted-foreground">Re-translate cached metadata; if cache is missing, run a full scrape</p>
 						</div>
 					</label>
-
 				</div>
 
 				<!-- Scraper Selector (if enabled) -->
@@ -1055,7 +1103,7 @@
 				</Button>
 
 				<!-- Active options indicators -->
-				{#if manualScrapeMode || forceRefresh || showScraperSelector || refreshTranslationOnly}
+				{#if manualScrapeMode || forceRefresh || showScraperSelector || cacheOnly || refreshTranslationOnly}
 					<div class="hidden sm:flex items-center gap-1 text-xs">
 						{#if manualScrapeMode}
 							<span class="px-2 py-0.5 bg-primary/10 text-primary rounded">Manual</span>
@@ -1065,6 +1113,9 @@
 						{/if}
 						{#if showScraperSelector}
 							<span class="px-2 py-0.5 bg-primary/10 text-primary rounded">{selectedScrapers.length} scrapers</span>
+						{/if}
+						{#if cacheOnly}
+							<span class="px-2 py-0.5 bg-primary/10 text-primary rounded">Cache only</span>
 						{/if}
 						{#if refreshTranslationOnly}
 							<span class="px-2 py-0.5 bg-primary/10 text-primary rounded">Translation only</span>
@@ -1079,6 +1130,8 @@
 							<FileEdit class="h-4 w-4 mr-2" />
 						{:else if scraping}
 							<LoaderCircle class="h-4 w-4 mr-2 animate-spin" />
+						{:else if cacheOnly}
+							<Database class="h-4 w-4 mr-2" />
 						{:else if refreshTranslationOnly || operationMode === 'update'}
 							<RefreshCw class="h-4 w-4 mr-2" />
 						{:else}
@@ -1088,6 +1141,8 @@
 							Continue to manual review
 						{:else if scraping}
 							Starting...
+						{:else if cacheOnly}
+							Load cached metadata for {selectedFiles.length} File{selectedFiles.length !== 1 ? 's' : ''}
 						{:else if refreshTranslationOnly}
 							Refresh translations for {selectedFiles.length} File{selectedFiles.length !== 1 ? 's' : ''}
 						{:else if operationMode === 'update'}

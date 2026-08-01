@@ -68,6 +68,7 @@ export interface BatchScrapeRequest {
 	files: string[];
 	strict: boolean;
 	force: boolean;
+	cache_only?: boolean;
 	refresh_translation_only?: boolean;
 	destination?: string;
 	update?: boolean;

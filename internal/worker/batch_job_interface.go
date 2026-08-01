@@ -746,6 +746,7 @@ type ScrapePhaseConfig struct {
 	SelectedScrapers       []string          // Restrict scraping to these scrapers (empty = all)
 	Strict                 bool              // Strict mode: fail if no results from any scraper
 	Force                  bool              // Force refresh: bypass cache and re-scrape
+	CacheOnly              bool              // Use DB-cached metadata only; skip translation and movie-cache persistence, and fail cache misses
 	RefreshTranslationOnly bool              // Re-translate cached metadata; fall back to a general scrape when cache is missing
 	MovieIDOverride        map[string]string // Override movie ID per file path (rescrape use case)
 	RawInputOverride       map[string]string // Per-file manual input (ID or URL) keyed by file path; takes precedence over the matcher and MovieIDOverride — resolveScrapeInput parses it into MovieID + PriorityOverride

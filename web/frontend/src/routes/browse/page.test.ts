@@ -285,6 +285,47 @@ describe('/browse — translation-only refresh', () => {
 	});
 });
 
+describe('/browse — cached metadata reuse', () => {
+	it('clears conflicting options and submits a cache-only request', async () => {
+		const { findByText, getByText, getByRole, getByLabelText } = renderPage();
+		await findByText('a.mp4');
+		await fireEvent.click(getByText('a.mp4'));
+		await findByText('1 File Selected for Scraping');
+
+		await fireEvent.click(getByRole('button', { name: /Options/ }));
+		const forceCheckbox = getByLabelText(/Clear cache and fetch fresh metadata/) as HTMLInputElement;
+		await fireEvent.click(forceCheckbox);
+		expect(forceCheckbox.checked).toBe(true);
+
+		const cacheOnlyCheckbox = getByLabelText(
+			/No scraping, translation, or movie-cache writes; cache misses fail/
+		) as HTMLInputElement;
+		await fireEvent.click(cacheOnlyCheckbox);
+
+		expect(cacheOnlyCheckbox.checked).toBe(true);
+		expect(forceCheckbox.checked).toBe(false);
+		expect(forceCheckbox.disabled).toBe(true);
+		expect((getByLabelText(/Choose specific scrapers/) as HTMLInputElement).disabled).toBe(true);
+		expect((getByLabelText(/Review & override IDs/) as HTMLInputElement).disabled).toBe(true);
+		expect((getByLabelText(/Re-translate cached metadata/) as HTMLInputElement).disabled).toBe(true);
+		expect(getByText('Cache only')).toBeTruthy();
+
+		const raw = sessionStorage.getItem(STORAGE_KEY_SCRAPE_STATE);
+		expect(raw).not.toBeNull();
+		expect(JSON.parse(raw as string).cacheOnly).toBe(true);
+
+		await fireEvent.click(getByRole('button', { name: 'Load cached metadata for 1 File' }));
+		await waitFor(() => expect(apiClient.batchScrape).toHaveBeenCalledTimes(1));
+		expect(apiClient.batchScrape).toHaveBeenCalledWith(expect.objectContaining({
+			files: ['/library/a.mp4'],
+			force: false,
+			cache_only: true,
+			refresh_translation_only: false,
+			selected_scrapers: undefined
+		}));
+	});
+});
+
 describe('/browse — phantom selection pruning on refresh', () => {
 	it('drops a selected file that has been moved out of the listed directory after Refresh', async () => {
 		// Initial listing: a.mp4 + b.mp4 both present.

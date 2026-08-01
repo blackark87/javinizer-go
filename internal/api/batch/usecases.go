@@ -134,6 +134,7 @@ type StartScrapeInput struct {
 	SelectedScrapers       []string
 	Strict                 bool
 	Force                  bool
+	CacheOnly              bool
 	RefreshTranslationOnly bool
 	ManualInputs           map[string]string
 }
@@ -157,6 +158,9 @@ func StartScrapeUseCase(
 	snap := rt.Snapshot()
 
 	if err := validateRefreshTranslationOnlyInput(input, snap.APIConfig().BatchConfig().TranslationEnabled); err != nil {
+		return nil, err
+	}
+	if err := validateCacheOnlyInput(input); err != nil {
 		return nil, err
 	}
 
@@ -213,6 +217,7 @@ func StartScrapeUseCase(
 	})
 
 	scrapeOpts := factory.NewScrapeConfig(input.SelectedScrapers, input.Strict, input.Force)
+	scrapeOpts.CacheOnly = input.CacheOnly
 	scrapeOpts.RefreshTranslationOnly = input.RefreshTranslationOnly
 	// Propagate the discovered file match metadata into the scrape phase so it
 	// is available during scraping (mirrors BatchJobOptions.FileMatchInfo above);
@@ -246,6 +251,16 @@ func validateRefreshTranslationOnlyInput(input StartScrapeInput, translationEnab
 	}
 	if input.Force || len(input.SelectedScrapers) > 0 || len(input.ManualInputs) > 0 {
 		return fmt.Errorf("refresh_translation_only is mutually exclusive with force, selected_scrapers, and manual_inputs")
+	}
+	return nil
+}
+
+func validateCacheOnlyInput(input StartScrapeInput) error {
+	if !input.CacheOnly {
+		return nil
+	}
+	if input.Force || input.RefreshTranslationOnly || len(input.SelectedScrapers) > 0 || len(input.ManualInputs) > 0 {
+		return fmt.Errorf("cache_only is mutually exclusive with force, refresh_translation_only, selected_scrapers, and manual_inputs")
 	}
 	return nil
 }

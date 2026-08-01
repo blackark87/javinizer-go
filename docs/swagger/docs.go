@@ -5201,6 +5201,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "merge"
                 },
+                "cache_only": {
+                    "description": "Use DB-cached metadata without scraping, translation, or movie-cache persistence; cache misses fail",
+                    "type": "boolean",
+                    "example": false
+                },
                 "destination": {
                     "description": "Persisted on job for UI retrieval; required for organize mode, optional for in-place modes",
                     "type": "string",

@@ -202,6 +202,80 @@ func TestScrape_CacheHit(t *testing.T) {
 	assert.Equal(t, "Cached Movie", result.Movie.Title)
 }
 
+func TestScrape_CacheOnlyHitPreservesStoredMetadataWithoutProviderCalls(t *testing.T) {
+	f := newFixture(t)
+	f.cfg.Metadata.Translation.Enabled = true
+	f.cfg.Metadata.Translation.TargetLanguage = "ko"
+	_, err := f.movieRepo.Upsert(context.Background(), &models.Movie{
+		ID:           "FC2-PPV-1946424",
+		ContentID:    "FC2-PPV-1946424",
+		Title:        "저장된 제목",
+		DisplayTitle: "[2026][1080p]저장된 제목",
+		Maker:        "進撃のごろうまる",
+		SourceName:   "fc2",
+		Actresses: []models.Actress{{
+			JapaneseName: "進撃のごろうまる",
+		}},
+		Translations: []models.MovieTranslation{{
+			Language:     "ko",
+			Title:        "저장된 제목",
+			SettingsHash: "old-settings",
+		}},
+	})
+	require.NoError(t, err)
+
+	provider := &mockScraper{
+		name:    "provider",
+		enabled: true,
+		result:  &models.ScraperResult{ID: "FC2-PPV-1946424", Title: "새 메타데이터", Source: "provider"},
+	}
+	resolver := &mockScraper{name: actressResolverScraperName, enabled: true}
+	f.registry.RegisterInstance(provider)
+	f.registry.RegisterInstance(resolver)
+	f.cfg.Scrapers.Priority = []string{"provider"}
+
+	result, err := f.build().Scrape(context.Background(), ScrapeCmd{
+		MovieID:   "FC2-PPV-1946424",
+		CacheOnly: true,
+	}, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, result.Movie)
+	assert.True(t, result.Cached)
+	assert.False(t, result.NeedsPersistence)
+	assert.Equal(t, "저장된 제목", result.Movie.Title)
+	assert.Equal(t, "[2026][1080p]저장된 제목", result.Movie.DisplayTitle)
+	require.Len(t, result.Movie.Actresses, 1)
+	assert.Equal(t, "進撃のごろうまる", result.Movie.Actresses[0].JapaneseName, "cache-only must not normalize cached actresses")
+	require.Len(t, result.Movie.Translations, 1)
+	assert.Equal(t, "old-settings", result.Movie.Translations[0].SettingsHash, "stale translations must be retained without an LLM refresh")
+	assert.Zero(t, provider.callCount)
+	assert.Zero(t, resolver.callCount)
+}
+
+func TestScrape_CacheOnlyMissFailsWithoutProviderFallback(t *testing.T) {
+	f := newFixture(t)
+	provider := &mockScraper{
+		name:    "provider",
+		enabled: true,
+		result:  &models.ScraperResult{ID: "MISS-001", Title: "Should not be fetched", Source: "provider"},
+	}
+	f.registry.RegisterInstance(provider)
+	f.cfg.Scrapers.Priority = []string{"provider"}
+
+	result, err := f.build().Scrape(context.Background(), ScrapeCmd{
+		MovieID:   "MISS-001",
+		CacheOnly: true,
+	}, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, StatusFailed, result.Status)
+	assert.Contains(t, result.Message, "no cached metadata")
+	assert.Zero(t, provider.callCount)
+}
+
 func TestScrape_CacheMiss_Scrapes(t *testing.T) {
 	s := newFixture(t).
 		withScraper("mock", &models.ScraperResult{ID: "TEST-001", Title: "Scraped Movie", Maker: "Test Studio"}, nil).

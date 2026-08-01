@@ -73,6 +73,7 @@ func batchScrape(rt *core.APIRuntime) gin.HandlerFunc {
 			SelectedScrapers:       req.SelectedScrapers,
 			Strict:                 req.Strict,
 			Force:                  req.Force,
+			CacheOnly:              req.CacheOnly,
 			RefreshTranslationOnly: req.RefreshTranslationOnly,
 			ManualInputs:           sanitizedManualInputs,
 		})

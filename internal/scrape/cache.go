@@ -20,11 +20,20 @@ import (
 // be redundant (posters are keyed by movie ID + format, not translation hash).
 func (s *Scraper) tryCache(ctx context.Context, cmd ScrapeCmd, actressRepo database.ActressRepositoryInterface, startTime time.Time) *ScrapeResult {
 	if s.movieRepo == nil {
+		if cmd.CacheOnly {
+			return failedResult(cmd.MovieID, "cache-only mode requires a movie repository", startTime)
+		}
 		return nil
 	}
 
 	cached, err := s.movieRepo.FindByID(ctx, cmd.MovieID)
 	if err != nil {
+		if cmd.CacheOnly {
+			if database.IsNotFound(err) {
+				return failedResult(cmd.MovieID, fmt.Sprintf("no cached metadata for %s", cmd.MovieID), startTime)
+			}
+			return failedResult(cmd.MovieID, fmt.Sprintf("cache-only lookup failed for %s: %v", cmd.MovieID, err), startTime)
+		}
 		if !database.IsNotFound(err) {
 			logging.Debugf("[scrape] Cache lookup failed for %s: %v", cmd.MovieID, err)
 			if cmd.RefreshTranslationOnly {
@@ -40,9 +49,12 @@ func (s *Scraper) tryCache(ctx context.Context, cmd ScrapeCmd, actressRepo datab
 	// Movie may be normalized or replaced by SougouWiki below, but provenance
 	// should still show what was originally stored.
 	cachedSourceResult := ScraperResultFromCachedMovie(cached)
-	actressesChanged := removeCachedFC2MakerActresses(cached)
+	actressesChanged := false
 	var resolverResult *models.ScraperResult
-	if !cmd.RefreshTranslationOnly {
+	if !cmd.CacheOnly {
+		actressesChanged = removeCachedFC2MakerActresses(cached)
+	}
+	if !cmd.CacheOnly && !cmd.RefreshTranslationOnly {
 		repairSourceResult := ScraperResultFromCachedMovie(cached)
 		repaired, resolved := s.repairCachedActresses(ctx, cached, repairSourceResult, actressRepo)
 		actressesChanged = actressesChanged || repaired
@@ -103,7 +115,7 @@ func (s *Scraper) tryCache(ctx context.Context, cmd ScrapeCmd, actressRepo datab
 		}
 	}
 
-	if actressRepo != nil && !cmd.RefreshTranslationOnly {
+	if actressRepo != nil && !cmd.CacheOnly && !cmd.RefreshTranslationOnly {
 		if enriched := enrichActressesFromDB(ctx, scrapedToReturn, actressRepo, s.cfg); enriched > 0 {
 			logging.Debugf("[scrape] Enriched %d actresses from database after cache hit", enriched)
 		}

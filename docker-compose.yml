@@ -13,11 +13,18 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-
-    ports:
-      # Container-side port: defaults to 8765. Set CONTAINER_PORT=8080 in .env
-      # if upgrading from a release that persisted server.port=8080 in config.yaml.
-      - "${HOST_PORT:-8765}:${CONTAINER_PORT:-8765}"
+    networks:
+      - default
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.javinizer.entrypoints=websecure"
+      - "traefik.http.routers.javinizer.rule=Host(`javinizer.blackark.xyz`)"
+      - "traefik.http.routers.javinizer.service=javinizer"
+      - "traefik.http.routers.javinizer.tls=true"
+      - "traefik.http.routers.javinizer.tls.certresolver=letsencrypt"
+      - "traefik.http.services.javinizer.loadbalancer.server.port=${CONTAINER_PORT:-8765}"
 
     volumes:
       # Application state (config, database, logs, cache)
@@ -116,3 +123,7 @@ services:
       - LOG_HTML=${FLARESOLVERR_LOG_HTML:-false}
       - CAPTCHA_SOLVER=${FLARESOLVERR_CAPTCHA_SOLVER:-none}
       - TZ=${TZ:-UTC}
+
+networks:
+  proxy:
+    external: true

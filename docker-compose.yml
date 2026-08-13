@@ -1,18 +1,13 @@
 services:
   javinizer:
-    # Build from the checked-out source on the Ubuntu host. Use
-    # `docker compose up -d --build` after pulling source updates.
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        - USER_ID=${PUID:-${USER_ID:-1000}}
-        - GROUP_ID=${PGID:-${GROUP_ID:-1000}}
-
+    build: .
     container_name: javinizer
     restart: unless-stopped
     env_file:
       - .env
+    volumes:
+      - ./data:/javinizer
+      - ${MEDIA_PATH}:/media
     networks:
       - vpn_network
       - proxy
@@ -26,102 +21,12 @@ services:
       - "traefik.http.routers.javinizer.tls.certresolver=letsencrypt"
       - "traefik.http.services.javinizer.loadbalancer.server.port=${CONTAINER_PORT:-8765}"
 
-    volumes:
-      # Application state (config, database, logs, cache)
-      - ./data:/javinizer
-
-      # JAV files for sorting (read-write for organize operations)
-      - ${MEDIA_PATH:-/path/to/your/jav-library}:/media
-
-    # UPDATED environment variables
-    environment:
-      # Application home directory
-      - JAVINIZER_HOME=/javinizer
-
-      # Configuration file location
-      - JAVINIZER_CONFIG=/javinizer/config.yaml
-
-      # Database location
-      - JAVINIZER_DB=/javinizer/javinizer.db
-
-      # Log directory (applies only when logging.output includes a file target)
-      - JAVINIZER_LOG_DIR=/javinizer/logs
-
-      # Temp directory for file processing
-      - JAVINIZER_TEMP_DIR=/javinizer/temp
-
-      # Log level (optional: debug, info, warn, error)
-      # Uncomment to override config.yaml
-      # - LOG_LEVEL=${LOG_LEVEL:-info}
-
-      # File creation mask (optional: 002, 022, etc.)
-      # 002 = rwxrwxr-x (group can write)
-      # 022 = rwxr-xr-x (only owner can write)
-      # Uncomment to override config.yaml
-      # - UMASK=${UMASK:-002}
-
-      # Timezone
-      - TZ=${TZ:-UTC}
-
-      # Extra numeric groups retained after dropping root privileges. This lets
-      # uid:gid 1000:1000 access Synology NFS content owned by gid 100.
-      - SUPPLEMENTARY_GIDS=${SUPPLEMENTARY_GIDS:-100}
-
-      # Trusted CIDRs for /auth/setup access (Docker bridge gateway)
-      # Without this, setup is only available from localhost inside the container
-      - JAVINIZER_SETUP_TRUSTED_CIDRS=${JAVINIZER_SETUP_TRUSTED_CIDRS:-172.16.0.0/12}
-
-    healthcheck:
-      test: ["CMD", "wget", "--method=GET", "-O", "/dev/null", "-q", "http://localhost:${CONTAINER_PORT:-8765}/health"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-      start_period: 10s
-
-  # Optional: Development profile
-  javinizer-dev:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        - USER_ID=${PUID:-${USER_ID:-1000}}
-        - GROUP_ID=${PGID:-${GROUP_ID:-1000}}
-    profiles: ["dev"]
-    env_file:
-      - .env
-    networks:
-      - vpn_network
-    ports:
-      # Container-side port: defaults to 8765. Set CONTAINER_PORT=8080 in .env
-      # if upgrading from a release that persisted server.port=8080 in config.yaml.
-      - "${HOST_PORT:-8765}:${CONTAINER_PORT:-8765}"
-    volumes:
-      - ./data:/javinizer
-      - ${MEDIA_PATH:-/path/to/your/jav-library}:/media
-      # Mount frontend source for live development
-      - ./web/frontend:/app/web/frontend
-    environment:
-      - JAVINIZER_DEV_MODE=${JAVINIZER_DEV_MODE:-true}
-      - VITE_API_URL=${VITE_API_URL:-http://localhost:${HOST_PORT:-8765}}
-      - JAVINIZER_HOME=/javinizer
-      - JAVINIZER_CONFIG=/javinizer/config.yaml
-      - JAVINIZER_DB=/javinizer/javinizer.db
-      - JAVINIZER_LOG_DIR=/javinizer/logs
-      - JAVINIZER_TEMP_DIR=/javinizer/temp
-      - LOG_LEVEL=${LOG_LEVEL:-debug}
-      - UMASK=${UMASK:-002}
-      - TZ=${TZ:-UTC}
-      - SUPPLEMENTARY_GIDS=${SUPPLEMENTARY_GIDS:-100}
-
-  # Optional: FlareSolverr for Cloudflare-protected sources (e.g., JavDB/JavLibrary)
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest
     container_name: flaresolverr
     restart: unless-stopped
     networks:
       - vpn_network
-    ports:
-      - "${FLARESOLVERR_HOST_PORT:-8191}:8191"
     environment:
       - LOG_LEVEL=${FLARESOLVERR_LOG_LEVEL:-info}
       - LOG_HTML=${FLARESOLVERR_LOG_HTML:-false}

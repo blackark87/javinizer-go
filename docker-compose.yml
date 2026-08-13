@@ -1,18 +1,13 @@
 services:
   javinizer:
-    # Option 1: Pull pre-built image (recommended for end users)
-    # Use 'latest' for most recent release, or pin to specific version (e.g., 'v0.1.1-alpha')
-    # Available tags: https://github.com/javinizer/javinizer-go/pkgs/container/javinizer-go
-    image: ghcr.io/javinizer/javinizer-go:latest
-
-    # Option 2: Build locally (for developers)
-    # Uncomment the 'build' section below and comment out 'image' above to build from source
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile
-    #   args:
-    #     - USER_ID=${PUID:-${USER_ID:-1000}}
-    #     - GROUP_ID=${PGID:-${GROUP_ID:-1000}}
+    # Build from the checked-out source on the Ubuntu host. Use
+    # `docker compose up -d --build` after pulling source updates.
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - USER_ID=${PUID:-${USER_ID:-1000}}
+        - GROUP_ID=${PGID:-${GROUP_ID:-1000}}
 
     container_name: javinizer
     restart: unless-stopped
@@ -61,6 +56,10 @@ services:
       # Timezone
       - TZ=${TZ:-UTC}
 
+      # Extra numeric groups retained after dropping root privileges. This lets
+      # uid:gid 1000:1000 access Synology NFS content owned by gid 100.
+      - SUPPLEMENTARY_GIDS=${SUPPLEMENTARY_GIDS:-100}
+
       # Trusted CIDRs for /auth/setup access (Docker bridge gateway)
       # Without this, setup is only available from localhost inside the container
       - JAVINIZER_SETUP_TRUSTED_CIDRS=${JAVINIZER_SETUP_TRUSTED_CIDRS:-172.16.0.0/12}
@@ -103,6 +102,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-debug}
       - UMASK=${UMASK:-002}
       - TZ=${TZ:-UTC}
+      - SUPPLEMENTARY_GIDS=${SUPPLEMENTARY_GIDS:-100}
 
   # Optional: FlareSolverr for Cloudflare-protected sources (e.g., JavDB/JavLibrary)
   flaresolverr:

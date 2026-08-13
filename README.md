@@ -109,15 +109,17 @@ docker run --rm \
 See [Quick Start](#quick-start) above. For a complete setup with optional FlareSolverr support, use Docker Compose:
 
 ```bash
-curl -o .env https://raw.githubusercontent.com/javinizer/javinizer-go/main/.env.example
-curl -o docker-compose.yml https://raw.githubusercontent.com/javinizer/javinizer-go/main/docker-compose.yml
-# Edit .env: MEDIA_PATH=/path/to/your/library, PUID, PGID, TZ
-docker compose up -d
+git clone https://github.com/javinizer/javinizer-go.git
+cd javinizer-go
+cp .env.example .env
+# Edit .env: MEDIA_PATH, PUID/PGID, SUPPLEMENTARY_GIDS, and TZ
+docker compose up -d --build
 ```
 
 The compose file includes **javinizer** (API + web UI) and an optional **flaresolverr** (Cloudflare solver for JavDB/JavLibrary). See the [Docker Deployment Guide](./docs/docker-deployment.md) for details.
 
-**Tag policy:** `latest` tracks the most recent release; pin a tag (e.g. `v1.0.0`) for reproducible deployments.
+The bundled Compose file builds Javinizer from the checked-out source. After
+updating the repository, rerun `docker compose up -d --build`.
 
 ### Homebrew (macOS / Linux)
 
@@ -451,6 +453,7 @@ Docker deployments support environment-variable overrides. Defaults shown are fo
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `PUID` / `PGID` | Runtime user/group ID for the container process | `1000` |
+| `SUPPLEMENTARY_GIDS` | Extra numeric groups retained for mounted storage (comma-separated) | `100` |
 | `USER_ID` / `GROUP_ID` | Legacy aliases for `PUID`/`PGID` | `1000` |
 | `JAVINIZER_CONFIG` | Path to config file | `/javinizer/config.yaml` |
 | `JAVINIZER_DB` | Path to SQLite database | `/javinizer/javinizer.db` |

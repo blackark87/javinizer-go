@@ -682,6 +682,8 @@ docker-logs:
 docker-test: docker-build
 	@echo "Validating Docker image version output..."
 	docker run --rm --entrypoint /usr/local/bin/javinizer $(DOCKER_FULL_IMAGE) version --short
+	@echo "Validating Docker runtime and supplementary group mapping..."
+	./scripts/test-docker-permissions.sh $(DOCKER_FULL_IMAGE)
 
 # Clean Docker images and containers
 docker-clean:
@@ -708,27 +710,27 @@ docker-push:
 # Start services with docker-compose
 docker-compose-up:
 	@echo "Starting services with docker-compose..."
-	docker-compose up -d
+	docker compose up -d --build
 	@echo "Services started! Access at http://localhost:$(HOST_PORT)"
 
 # Stop services
 docker-compose-down:
 	@echo "Stopping docker-compose services..."
-	docker-compose down
+	docker compose down
 
 # Restart services
 docker-compose-restart:
 	@echo "Restarting docker-compose services..."
-	docker-compose restart
+	docker compose restart
 
 # View docker-compose logs
 docker-compose-logs:
-	docker-compose logs -f
+	docker compose logs -f
 
 # Build docker-compose services
 docker-compose-build:
 	@echo "Building docker-compose services..."
-	docker-compose build
+	docker compose build
 
 # Help target for Docker commands
 docker-help:

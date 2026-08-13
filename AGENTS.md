@@ -47,5 +47,5 @@ Recent commits use concise, imperative summaries, often in Korean, describing on
 - `main` is reserved exclusively for synchronizing with upstream. It is not the user's working, release, or publishing branch; do not switch to it, base routine changes on it, commit feature work to it, or push ordinary work to it unless the user explicitly requests an upstream-sync operation.
 - Base repository work directly on `feature/mediainfo-source-tags` and perform changes on that branch.
 - Do not create `agent/*`, fork, worktree, or task branches unless the user explicitly requests one.
-- Commit completed changes and push them directly to `origin/feature/mediainfo-source-tags` so the image-build workflow can start from the branch push.
+- Commit completed changes and push them directly to `origin/feature/mediainfo-source-tags`; deployment builds the Docker image locally from this branch on the Ubuntu host.
 - Do not open a pull request unless the user explicitly requests one. Fork PRs can expose both the upstream repository and the fork and make the release path ambiguous.

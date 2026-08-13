@@ -35,16 +35,16 @@ cd javinizer-go
 
 # 2. Configure environment variables
 cp .env.example .env
-# Edit .env to set your PUID, PGID, and MEDIA_PATH
+# Edit .env to set PUID, PGID, MEDIA_PATH, and any storage SUPPLEMENTARY_GIDS
 
-# 3. Run with Docker Compose (pulls the pre-built image from GHCR)
-docker compose up -d
+# 3. Build from the checked-out source and start Docker Compose
+docker compose up -d --build
 
 # 4. Access the web UI
 open http://localhost:8765
 ```
 
-To build the image locally instead of pulling the pre-built one, see [Building the Image](#building-the-image).
+See [Building the Image](#building-the-image) for build metadata options.
 
 ---
 
@@ -71,7 +71,7 @@ docker build \
   .
 ```
 
-> **Note:** The default `docker-compose.yml` pulls the pre-built image `ghcr.io/javinizer/javinizer-go:latest` and has its `build:` section commented out. To run a locally-built image with Compose, edit `docker-compose.yml`: comment out the `image:` line and uncomment the `build:` section.
+The default `docker-compose.yml` already uses this Dockerfile as a local build.
 
 ### Build Process
 
@@ -92,8 +92,8 @@ The Dockerfile uses a multi-stage build:
 The `docker-compose.yml` provides a production-ready setup:
 
 ```bash
-# Start the container
-docker compose up -d
+# Build from the current checkout and start the container
+docker compose up -d --build
 
 # View logs
 docker compose logs -f
@@ -108,14 +108,11 @@ docker compose restart
 ### Updating the Application
 
 ```bash
-# Pull the latest image from GHCR
-docker compose pull
-
-# Restart with the new image
-docker compose up -d
+git pull --ff-only
+docker compose up -d --build
 ```
 
-If you build locally (the `build:` section enabled in `docker-compose.yml`), use `docker compose build` instead of `docker compose pull`.
+Compose reuses Docker layer caches, so unchanged dependency layers are not rebuilt from scratch.
 
 ---
 
@@ -136,6 +133,7 @@ Javinizer uses a `.env` file to configure Docker Compose variables. This makes i
    # Unraid commonly uses PUID=99 and PGID=100
    PUID=1000        # Run: id -u
    PGID=1000       # Run: id -g
+   SUPPLEMENTARY_GIDS=100  # Synology NFS group; keep empty if not needed
 
    # Required: Set your JAV library path
    MEDIA_PATH=/Users/you/JAV
@@ -149,7 +147,7 @@ Javinizer uses a `.env` file to configure Docker Compose variables. This makes i
 
 3. **Start the container**:
    ```bash
-   docker compose up -d
+   docker compose up -d --build
    ```
 
 ### Available Variables
@@ -158,6 +156,7 @@ Javinizer uses a `.env` file to configure Docker Compose variables. This makes i
 |----------|-------------|---------|----------|
 | `PUID` | User ID for container (run `id -u`) | 1000 | Recommended |
 | `PGID` | Group ID for container (run `id -g`) | 1000 | Recommended |
+| `SUPPLEMENTARY_GIDS` | Extra numeric groups for mounted storage, comma-separated | 100 | Optional |
 | `USER_ID` | Legacy alias for `PUID` | 1000 | Optional |
 | `GROUP_ID` | Legacy alias for `PGID` | 1000 | Optional |
 | `MEDIA_PATH` | Path to your JAV library on host | `/path/to/your/jav-library` | Yes |
@@ -178,7 +177,7 @@ Javinizer uses a `.env` file to configure Docker Compose variables. This makes i
 You can also set variables on the command line (overrides `.env`):
 
 ```bash
-PUID=$(id -u) PGID=$(id -g) docker compose up -d
+PUID=$(id -u) PGID=$(id -g) SUPPLEMENTARY_GIDS=100 docker compose up -d --build
 ```
 
 ---
@@ -470,10 +469,17 @@ PGID=1000      # Get with: id -g
 
 **Alternative**: Set via command line:
 ```bash
-PUID=$(id -u) PGID=$(id -g) docker compose up -d
+PUID=$(id -u) PGID=$(id -g) SUPPLEMENTARY_GIDS=100 docker compose up -d --build
 ```
 
 **Why this matters**: Matching the container UID/GID to your host user prevents permission issues when the container writes to mounted volumes (`./data` and `/media`). Without this, you may see "permission denied" errors or files owned by the wrong user.
+
+For a Synology NFS mount owned by `1026:100` on an Ubuntu host, keep
+`PUID=1000` and `PGID=1000`, then set `SUPPLEMENTARY_GIDS=100`. The entrypoint
+keeps the NFS mount ownership unchanged and grants the application membership
+in group `100`. The NFS directories must also grant group write permission (or
+an equivalent ACL). Use setgid directories on the NAS when new files must keep
+group `100`; `UMASK=002` alone does not select the owning group.
 
 ### Network Security
 
@@ -522,6 +528,7 @@ services:
     environment:
       - TZ=UTC
       - LOG_LEVEL=info  # Reduce log verbosity (overrides config.yaml)
+      - SUPPLEMENTARY_GIDS=100  # Synology NFS storage group
 
     healthcheck:
       interval: 30s
@@ -542,8 +549,8 @@ services:
 
 **Usage**:
 ```bash
-# Set user/group to match your host user
-PUID=$(id -u) PGID=$(id -g) docker compose up -d
+# Keep the Ubuntu runtime IDs and add the Synology storage group
+PUID=1000 PGID=1000 SUPPLEMENTARY_GIDS=100 docker compose up -d --build
 ```
 
 ---
@@ -617,12 +624,7 @@ The build pipeline is defined in `.github/workflows/cli-release.yml`:
    - **macOS**: `amd64`, `arm64`, and universal binary (lipo merge)
    - **Windows**: `amd64` with CGO support
 
-4. **Build Docker images**:
-   - Multi-architecture builds (`linux/amd64`, `linux/arm64`)
-   - Pushes to GitHub Container Registry (`ghcr.io`)
-   - Tags: version-specific, `latest` (stable releases), `nightly` (nightly builds)
-
-5. **Create GitHub release**:
+4. **Create GitHub release**:
    - Uploads all binary artifacts
    - Generates checksums (SHA256)
    - Auto-generates release notes from commit history
@@ -666,29 +668,16 @@ If a deployment encounters issues, you can revert to a previous version:
    docker compose down
    ```
 
-2. **Identify the previous image version**:
+2. **Identify the previous source revision**:
    ```bash
-   # List available images
-   docker images | grep javinizer
-   
-   # Or check GitHub releases for previous versions
-   # https://github.com/javinizer/javinizer-go/releases
+   git log --oneline -10
    ```
 
 3. **Redeploy the previous version**:
    ```bash
-   # Option 1: Pin a specific version tag in docker-compose.yml
-   # Edit the `image:` line to the desired version, e.g.:
-   #   image: ghcr.io/javinizer/javinizer-go:v1.2.3
-   docker compose pull
-   docker compose up -d
-   
-   # Option 2: Build from a previous Git tag
-   # Enable the `build:` section in docker-compose.yml (comment out `image:`), then:
+   # Build from a previous release tag or known-good commit.
    git checkout v1.2.3
-   docker compose build
-   docker compose up -d
-   git checkout main  # Return to the main branch
+   docker compose up -d --build
    ```
 
 4. **Verify the rollback**:

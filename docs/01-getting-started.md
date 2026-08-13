@@ -218,7 +218,7 @@ The Windows build includes the CLI/TUI/API plus the embedded web UI, with a stat
 
 ### Docker
 
-Javinizer ships a pre-built multi-arch image on GitHub Container Registry, so you can run it without building anything. The supported path uses the bundled `docker-compose.yml` and `.env.example`:
+The bundled `docker-compose.yml` builds Javinizer locally from the checked-out source:
 
 ```bash
 # 1. Clone the repository (for docker-compose.yml and .env.example)
@@ -227,10 +227,10 @@ cd javinizer-go
 
 # 2. Configure environment
 cp .env.example .env
-# Edit .env: set MEDIA_PATH to your JAV library, and PUID/PGID to your host user
+# Edit .env: set MEDIA_PATH, PUID/PGID, and any storage SUPPLEMENTARY_GIDS
 
-# 3. Start the container (pulls ghcr.io/javinizer/javinizer-go:latest)
-docker compose up -d
+# 3. Build the local image and start the container
+docker compose up -d --build
 
 # 4. Access the web UI
 open http://localhost:8765
@@ -242,10 +242,11 @@ Essential `.env` values:
 |----------|---------|
 | `MEDIA_PATH` | Absolute host path to your JAV library (mounted at `/media` in the container) |
 | `PUID` / `PGID` | Match your host user (`id -u` / `id -g`) to avoid volume permission issues |
+| `SUPPLEMENTARY_GIDS` | Extra storage group IDs; use `100` for Synology NFS files owned by `1026:100` |
 | `HOST_PORT` | Host port for the web UI/API (default `8765`) |
 | `TZ` | Container timezone, e.g. `America/New_York` (default `UTC`) |
 
-State (config, database, logs) persists in the `./data` volume; your media library is mounted read-write at `/media` for organize operations. To build the image locally instead of pulling, uncomment the `build:` block in `docker-compose.yml` (and comment out `image:`).
+State (config, database, logs) persists in the `./data` volume; your media library is mounted read-write at `/media` for organize operations. Source updates take effect after rerunning `docker compose up -d --build`.
 
 For the full guide — volume structure, FlareSolverr, Unraid `PUID`/`PGID` notes, setup-endpoint protection, and updates — see the [Docker Deployment Guide](./docker-deployment.md).
 

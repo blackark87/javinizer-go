@@ -6,7 +6,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ./data:/javinizer
+      - ${JAVINIZER_DATA_PATH}:/javinizer
       - ${MEDIA_PATH}:/media
     networks:
       - vpn_network
